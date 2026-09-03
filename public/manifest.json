@@ -1,0 +1,22 @@
+{
+  "name": "CodeMind Academy — Learn. Build. Think.",
+  "short_name": "CodeMind",
+  "description": "منصة تعليمية متخصصة في Programming & AI لطلاب الثانوية العامة.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#10b981",
+  "orientation": "portrait-primary",
+  "dir": "rtl",
+  "lang": "ar",
+  "icons": [
+    {
+      "src": "/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["education", "productivity"],
+  "screenshots": []
+}
