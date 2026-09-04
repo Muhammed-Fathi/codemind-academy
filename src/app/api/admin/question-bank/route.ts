@@ -1,3 +1,4 @@
+import { getServerT } from "@/lib/i18n-server";
 // GET /api/admin/question-bank?difficulty=&type=&search=
 // POST /api/admin/question-bank — create question
 import { NextRequest } from "next/server";
@@ -53,6 +54,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const tApi = await getServerT();
   const { user, error } = await requireRole("ADMIN");
   if (error) return error;
   if (!user) return err("Unauthorized", 401);
@@ -78,10 +80,10 @@ export async function POST(req: NextRequest) {
     answer = answer === "1" || String(answer).toLowerCase() === "false" ? "1" : "0";
   } else {
     if (!Array.isArray(optionsRaw) || optionsRaw.length < 2)
-      return err("لازم على الأقل خيارين للسؤال", 400);
+      return err(tApi("api.045"), 400);
   }
 
-  if (!prompt) return err("نص السؤال مطلوب", 400);
+  if (!prompt) return err(tApi("api.046"), 400);
 
   const question = await db.question.create({
     data: {

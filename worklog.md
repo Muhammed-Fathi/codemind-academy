@@ -1616,3 +1616,12 @@ Added 8 new CSS utilities to `src/app/globals.css`:
    renewal rates, seasonal patterns)
 7. **Parent daily report** — Daily summary notifications
 8. **Student study goals** — Let students set weekly study targets
+
+## 2026-09-04 — i18n final round: server/client split + API locale + verification
+- ROOT CAUSE of dashboard 500s: `translate()` lived in `"use client"` i18n.ts; route handlers couldn't call it. Fix: new isomorphic `src/lib/i18n-core.ts` (translate/pickL10n/fmtDate*/applyLocale/readStoredLocale/STRINGS); `i18n.ts` = client layer (useT/useLocale/pickAuto) re-exporting core; `i18n-server.ts` + `parent-subscription.ts` import from core.
+- Cookie sync CONFIRMED: `applyLocale` writes `cm-locale` cookie; `serverLocale()` reads it → server strings follow the toggle.
+- students/me/dashboard + parents/me/dashboard: `serverPick` for lesson/quiz/homework/session titles (was `titleAr || title`).
+- admin/revenue-analytics: month/monthFull labels via cookie locale (en-GB/ar-EG).
+- achievements-view + leaderboard-view: level title → `pickAuto(title, titleEn)`.
+- FINAL AUDIT (all APIs 200): [ar] 1145/111/1 (== pre-round, zero regressions), [en] 130/66/1 (was 1141/171/1 at baseline). 1 console error both = benign 401. Residue = DB seed content + intentional «عربي» toggle label (app.011).
+- Report: docs/I18N_REPORT.md. Evidence refreshed: tests/i18n/evidence/final/.

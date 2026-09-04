@@ -1,4 +1,5 @@
 "use client";
+import { useT , pickAuto } from "@/lib/i18n";
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -46,6 +47,7 @@ type ExamData = {
 type Phase = "setup" | "exam" | "result";
 
 export function MockExamRunner() {
+  const tr = useT();
   const setView = useApp((s) => s.setView);
   const [phase, setPhase] = React.useState<Phase>("setup");
   const [exam, setExam] = React.useState<ExamData | null>(null);
@@ -61,11 +63,11 @@ export function MockExamRunner() {
       const r = await fetch(`/api/exams/mock?count=${count}&difficulty=${difficulty}`);
       const d = await r.json();
       if (!r.ok) {
-        toast.error(d.error || "مفيش أسئلة متاحة");
+        toast.error(d.error || tr("student.049"));
         return;
       }
       if (!d.exam) {
-        toast.error(d.message || "مفيش أسئلة في الـQuestion Bank");
+        toast.error(d.message || tr("student.050"));
         return;
       }
       setExam(d.exam);
@@ -73,9 +75,9 @@ export function MockExamRunner() {
       setCurrent(0);
       setTimeLeft(d.exam.durationMin * 60);
       setPhase("exam");
-      toast.success(`بدأ الـMock Exam! ${d.exam.questions.length} سؤال في ${d.exam.durationMin} دقيقة`);
+      toast.success(tr("student.051", { p1: d.exam.questions.length, p2: d.exam.durationMin }));
     } catch {
-      toast.error("حصلت مشكلة في تحميل الامتحان");
+      toast.error(tr("student.052"));
     } finally {
       setLoading(false);
     }
@@ -117,18 +119,18 @@ export function MockExamRunner() {
       });
       const d = await r.json();
       if (!r.ok) {
-        toast.error(d.error || "فشل حفظ النتيجة");
+        toast.error(d.error || tr("student.053"));
         return;
       }
       setResult({ ...d.attempt, questions: exam.questions, answers });
       setPhase("result");
       if (d.attempt.percentage >= 60) {
-        toast.success(`نجحت! ${d.attempt.percentage}% 🎉`);
+        toast.success(tr("student.054", { p1: d.attempt.percentage }));
       } else {
-        toast.info(`النتيجة: ${d.attempt.percentage}% — حاول تاني`);
+        toast.info(tr("student.055", { p1: d.attempt.percentage }));
       }
     } catch {
-      toast.error("حصلت مشكلة في حفظ النتيجة");
+      toast.error(tr("student.056"));
     } finally {
       setLoading(false);
     }
@@ -143,8 +145,7 @@ export function MockExamRunner() {
           className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
         >
           <ChevronRight className="w-4 h-4" />
-          رجوع للـDashboard
-        </button>
+          {tr("student.057")}</button>
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
@@ -159,14 +160,13 @@ export function MockExamRunner() {
                 <div>
                   <CardTitle className="text-xl">Mock Exam Mode</CardTitle>
                   <CardDescription>
-                    امتحان تجريبي بأسئلة عشوائية من الـQuestion Bank — مع مؤقت وتصحيص فوري
-                  </CardDescription>
+                    {tr("student.058")}</CardDescription>
                 </div>
               </div>
             </CardHeader>
             <CardContent className="space-y-5">
               <div>
-                <div className="text-sm font-bold mb-2">اختار عدد الأسئلة</div>
+                <div className="text-sm font-bold mb-2">{tr("student.059")}</div>
                 <div className="grid grid-cols-3 gap-2">
                   {[5, 10, 15].map((n) => (
                     <button
@@ -178,18 +178,18 @@ export function MockExamRunner() {
                       <div className="text-2xl font-extrabold text-gradient group-hover:scale-110 transition-transform">
                         {n}
                       </div>
-                      <div className="text-xs text-muted-foreground mt-0.5">أسئلة</div>
+                      <div className="text-xs text-muted-foreground mt-0.5">{tr("student.060")}</div>
                     </button>
                   ))}
                 </div>
               </div>
               <div>
-                <div className="text-sm font-bold mb-2">حسب الصعوبة</div>
+                <div className="text-sm font-bold mb-2">{tr("student.061")}</div>
                 <div className="grid grid-cols-3 gap-2">
                   {[
-                    { key: "EASY", label: "سهل", color: "from-emerald-400 to-teal-500" },
-                    { key: "MEDIUM", label: "متوسط", color: "from-amber-400 to-orange-500" },
-                    { key: "HARD", label: "صعب", color: "from-rose-400 to-red-500" },
+                    { key: "EASY", label: tr("student.062"), color: "from-emerald-400 to-teal-500" },
+                    { key: "MEDIUM", label: tr("student.063"), color: "from-amber-400 to-orange-500" },
+                    { key: "HARD", label: tr("student.064"), color: "from-rose-400 to-red-500" },
                   ].map((d) => (
                     <button
                       key={d.key}
@@ -205,14 +205,11 @@ export function MockExamRunner() {
               {loading && (
                 <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  جارٍ تجهيز الأسئلة...
-                </div>
+                  {tr("student.065")}</div>
               )}
               <div className="rounded-xl bg-muted/40 border border-border/40 p-4 text-xs text-muted-foreground leading-relaxed">
-                <Sparkles className="w-4 h-4 text-amber-500 inline ml-1" />
-                الأسئلة بتتجاب بشكل عشوائي من كل الـLessons. كل امتحان بيختلف عن اللي قبله.
-                المؤقت بيبدأ أول ما تضغط، والنتيجة بتتحفظ تلقائيًا.
-              </div>
+                <Sparkles className="w-4 h-4 text-amber-500 inline ms-1" />
+                {tr("student.066")}</div>
             </CardContent>
           </Card>
         </motion.div>
@@ -235,7 +232,7 @@ export function MockExamRunner() {
         <div className="flex items-center justify-between gap-4">
           <button
             onClick={() => {
-              if (confirm("متأكد تخرج من الامتحان؟ النتيجة مش هتتحفظ.")) {
+              if (confirm(tr("student.067"))) {
                 setPhase("setup");
                 setExam(null);
               }
@@ -243,8 +240,7 @@ export function MockExamRunner() {
             className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
           >
             <ChevronRight className="w-4 h-4" />
-            خروج
-          </button>
+            {tr("student.068")}</button>
           <div className={`flex items-center gap-2 px-4 py-2 rounded-full font-bold text-sm ${
             timeWarning ? "bg-destructive/15 text-destructive animate-pulse" : "bg-primary/10 text-primary"
           }`}>
@@ -256,8 +252,8 @@ export function MockExamRunner() {
         <Progress value={progress} className="h-2" />
 
         <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>اتجاوب: {answered} / {exam.questions.length}</span>
-          <span>سؤال {current + 1} من {exam.questions.length}</span>
+          <span>{tr("student.069")}{answered} / {exam.questions.length}</span>
+          <span>{tr("student.070")}{current + 1} {tr("student.071")}{exam.questions.length}</span>
         </div>
 
         {/* Question card */}
@@ -278,7 +274,7 @@ export function MockExamRunner() {
                       q.difficulty === "MEDIUM" ? "border-amber-400/40 text-amber-600" :
                       "border-rose-400/40 text-rose-600"
                     }>
-                      {q.difficulty === "EASY" ? "سهل" : q.difficulty === "MEDIUM" ? "متوسط" : "صعب"}
+                      {q.difficulty === "EASY" ? tr("student.062") : q.difficulty === "MEDIUM" ? tr("student.063") : tr("student.064")}
                     </Badge>
                     <Badge variant="outline" className="text-muted-foreground">
                       {q.marks} marks
@@ -300,7 +296,7 @@ export function MockExamRunner() {
                       <button
                         key={i}
                         onClick={() => setAnswers((a) => ({ ...a, [q.id]: i }))}
-                        className={`w-full text-right p-3.5 rounded-xl border-2 transition-all flex items-center gap-3 ${
+                        className={`w-full text-end p-3.5 rounded-xl border-2 transition-all flex items-center gap-3 ${
                           selected
                             ? "border-primary bg-primary/10 shadow-sm"
                             : "border-border bg-card hover:border-primary/40"
@@ -330,9 +326,8 @@ export function MockExamRunner() {
             onClick={() => setCurrent((c) => Math.max(0, c - 1))}
             disabled={current === 0}
           >
-            <ChevronRight className="w-4 h-4 ml-1" />
-            السابق
-          </Button>
+            <ChevronRight className="w-4 h-4 ms-1" />
+            {tr("student.075")}</Button>
           {/* Question dots */}
           <div className="flex gap-1.5 flex-1 justify-center overflow-x-auto scrollbar-hide">
             {exam.questions.map((qq, i) => (
@@ -353,8 +348,7 @@ export function MockExamRunner() {
           </div>
           {current < exam.questions.length - 1 ? (
             <Button onClick={() => setCurrent((c) => c + 1)}>
-              التالي
-              <ChevronLeft className="w-4 h-4 mr-1" />
+              {tr("student.076")}<ChevronLeft className="w-4 h-4 me-1" />
             </Button>
           ) : (
             <Button
@@ -362,7 +356,7 @@ export function MockExamRunner() {
               disabled={loading}
               className="bg-gradient-to-r from-emerald-500 to-teal-500"
             >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "تسليم"}
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : tr("student.077")}
             </Button>
           )}
         </div>
@@ -383,8 +377,7 @@ export function MockExamRunner() {
           className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
         >
           <ChevronRight className="w-4 h-4" />
-          امتحان تاني
-        </button>
+          {tr("student.078")}</button>
 
         {/* Score hero */}
         <motion.div
@@ -412,18 +405,17 @@ export function MockExamRunner() {
                 {result.percentage}%
               </div>
               <div className="text-lg font-bold">
-                {result.passed ? "نجحت! 🎉" : "مكملة — حاول تاني"}
+                {result.passed ? tr("student.079") : tr("student.080")}
               </div>
               <p className="text-sm text-muted-foreground mt-2">
-                {result.score} / {result.totalMarks} marks · {exam.questions.length} سؤال
-              </p>
+                {result.score} / {result.totalMarks} marks · {exam.questions.length} {tr("student.070")}</p>
             </CardContent>
           </Card>
         </motion.div>
 
         {/* Answer review */}
         <div className="space-y-3">
-          <h3 className="text-lg font-bold">مراجعة الإجابات</h3>
+          <h3 className="text-lg font-bold">{tr("student.082")}</h3>
           {exam.questions.map((q, i) => {
             const userAnswer = result.answers[q.id];
             const correct = userAnswer === q.correctIndex;
@@ -471,7 +463,7 @@ export function MockExamRunner() {
                         </div>
                         {q.explanation && (
                           <div className="mt-2 p-2.5 rounded-lg bg-muted/40 text-xs text-muted-foreground">
-                            <Sparkles className="w-3 h-3 ml-1 inline text-amber-500" />
+                            <Sparkles className="w-3 h-3 ms-1 inline text-amber-500" />
                             {q.explanation}
                           </div>
                         )}

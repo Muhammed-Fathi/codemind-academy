@@ -1,3 +1,4 @@
+import { getServerT } from "@/lib/i18n-server";
 // GET /api/admin/groups — list groups with stats
 // POST /api/admin/groups — create group
 import { NextRequest } from "next/server";
@@ -35,6 +36,7 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const tApi = await getServerT();
   const { user, error } = await requireRole("ADMIN");
   if (error) return error;
   if (!user) return err("Unauthorized", 401);
@@ -46,10 +48,10 @@ export async function POST(req: NextRequest) {
   const capacity = Number(body.capacity || 20);
   const schedule = body.schedule ? String(body.schedule) : "Sat & Tue, 6:00 PM";
 
-  if (!name || !courseId) return err("الاسم والكورس مطلوبين", 400);
+  if (!name || !courseId) return err(tApi("api.021"), 400);
 
   const course = await db.course.findUnique({ where: { id: courseId } });
-  if (!course) return err("الكورس غير موجود", 404);
+  if (!course) return err(tApi("api.022"), 404);
 
   const group = await db.group.create({
     data: {

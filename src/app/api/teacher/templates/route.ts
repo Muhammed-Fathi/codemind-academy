@@ -1,3 +1,4 @@
+import { getServerT } from "@/lib/i18n-server";
 // CodeMind Academy — Teacher Lesson Plan Templates API
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser, ok, err } from "@/lib/api";
@@ -5,10 +6,11 @@ import { db } from "@/lib/db";
 
 // GET — list templates (public + teacher's own)
 export async function GET() {
+  const tApi = await getServerT();
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
   if (user.role !== "TEACHER" && user.role !== "ADMIN")
-    return err("Templates متاحة للمعلمين فقط", 403);
+    return err(tApi("api.186"), 403);
 
   let teacherId: string | undefined;
   if (user.role === "TEACHER") {
@@ -46,10 +48,11 @@ export async function GET() {
 
 // POST — create template
 export async function POST(req: NextRequest) {
+  const tApi = await getServerT();
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
   if (user.role !== "TEACHER" && user.role !== "ADMIN")
-    return err("Templates متاحة للمعلمين فقط", 403);
+    return err(tApi("api.186"), 403);
 
   const body = await req.json().catch(() => ({}));
   const {
@@ -76,7 +79,7 @@ export async function POST(req: NextRequest) {
     isPublic?: boolean;
   };
 
-  if (!title || !titleAr) return err("العنوان مطلوب", 400);
+  if (!title || !titleAr) return err(tApi("api.187"), 400);
 
   let teacherId: string | undefined;
   if (user.role === "TEACHER") {

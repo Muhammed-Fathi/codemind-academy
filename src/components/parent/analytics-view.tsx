@@ -1,4 +1,5 @@
 "use client";
+import { useT , pickAuto } from "@/lib/i18n";
 
 import * as React from "react";
 import { motion } from "framer-motion";
@@ -54,6 +55,7 @@ type ChildAnalytics = {
 };
 
 export function ParentAnalyticsView({ onClose }: { onClose: () => void }) {
+  const tr = useT();
   const [data, setData] = React.useState<{ children: ChildAnalytics[] } | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [activeChild, setActiveChild] = React.useState(0);
@@ -62,7 +64,7 @@ export function ParentAnalyticsView({ onClose }: { onClose: () => void }) {
     fetch("/api/parents/me/analytics")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => setData(d))
-      .catch(() => toast.error("حصلت مشكلة في تحميل التحليلات"))
+      .catch(() => toast.error(tr("parent.001")))
       .finally(() => setLoading(false));
   }, []);
 
@@ -81,7 +83,7 @@ export function ParentAnalyticsView({ onClose }: { onClose: () => void }) {
       <Card>
         <CardContent className="py-10 text-center">
           <BarChart3 className="w-10 h-10 text-muted-foreground/40 mx-auto mb-2" />
-          <p className="text-sm text-muted-foreground">مفيش بيانات تحليلية متاحة</p>
+          <p className="text-sm text-muted-foreground">{tr("parent.002")}</p>
         </CardContent>
       </Card>
     );
@@ -95,8 +97,7 @@ export function ParentAnalyticsView({ onClose }: { onClose: () => void }) {
         onClick={onClose}
         className="text-sm text-muted-foreground hover:text-foreground"
       >
-        ← رجوع للـDashboard
-      </button>
+        {tr("parent.003")}</button>
 
       {/* Child selector */}
       {data.children.length > 1 && (
@@ -130,7 +131,7 @@ export function ParentAnalyticsView({ onClose }: { onClose: () => void }) {
           icon={CalendarDays}
           label="Attendance"
           value={`${child.attendancePct}%`}
-          sub="آخر 6 شهور"
+          sub={tr("parent.004")}
           color="from-teal-400 to-cyan-500"
         />
         <AnalyticsStat
@@ -158,7 +159,7 @@ export function ParentAnalyticsView({ onClose }: { onClose: () => void }) {
               <TrendingUp className="w-5 h-5 text-primary" />
               Quiz Performance Trend
             </CardTitle>
-            <CardDescription className="text-xs">آخر 10 Quizzes</CardDescription>
+            <CardDescription className="text-xs">{tr("parent.005")}</CardDescription>
           </CardHeader>
           <CardContent>
             <div dir="ltr" className="w-full h-56">
@@ -191,7 +192,7 @@ export function ParentAnalyticsView({ onClose }: { onClose: () => void }) {
               <CalendarDays className="w-5 h-5 text-teal-500" />
               Attendance by Month
             </CardTitle>
-            <CardDescription className="text-xs">آخر 6 شهور</CardDescription>
+            <CardDescription className="text-xs">{tr("parent.004")}</CardDescription>
           </CardHeader>
           <CardContent>
             <div dir="ltr" className="w-full h-56">
@@ -229,7 +230,7 @@ export function ParentAnalyticsView({ onClose }: { onClose: () => void }) {
           </CardHeader>
           <CardContent className="space-y-2">
             {child.strongTopics.length === 0 ? (
-              <p className="text-xs text-muted-foreground">مفيش بيانات كفاية</p>
+              <p className="text-xs text-muted-foreground">{tr("parent.007")}</p>
             ) : (
               child.strongTopics.map((t) => (
                 <div key={t.title} className="flex items-center gap-3 p-2 rounded-lg bg-emerald-500/5 border border-emerald-400/20">
@@ -252,7 +253,7 @@ export function ParentAnalyticsView({ onClose }: { onClose: () => void }) {
           </CardHeader>
           <CardContent className="space-y-2">
             {child.weakTopics.length === 0 ? (
-              <p className="text-xs text-muted-foreground">مفيش بيانات كفاية</p>
+              <p className="text-xs text-muted-foreground">{tr("parent.007")}</p>
             ) : (
               child.weakTopics.map((t) => (
                 <div key={t.title} className="flex items-center gap-3 p-2 rounded-lg bg-amber-500/5 border border-amber-400/20">

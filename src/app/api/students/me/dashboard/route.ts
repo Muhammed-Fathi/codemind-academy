@@ -1,3 +1,4 @@
+import { getServerT, serverPick, serverLocale } from "@/lib/i18n-server";
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireUser, getStudentProfile } from "@/lib/api";
@@ -5,6 +6,9 @@ import { ok, err, requireUser, getStudentProfile } from "@/lib/api";
 // GET /api/students/me/dashboard
 // Aggregated student dashboard data.
 export async function GET(_req: NextRequest) {
+  const tApi = await getServerT();
+  const __loc = await serverLocale();
+  const sp = (ar: string | null | undefined, en: string | null | undefined) => serverPick(__loc, ar, en);
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
   if (user.role !== "STUDENT") return err("Forbidden", 403);
@@ -143,8 +147,8 @@ export async function GET(_req: NextRequest) {
     if (!lp.lastViewedAt) continue;
     activity.push({
       type: "lesson",
-      title: lp.lesson.titleAr || lp.lesson.title,
-      detail: `Lesson — ${lp.isCompleted ? "اتخلص" : "في السير"}`,
+      title: sp(lp.lesson.titleAr, lp.lesson.title),
+      detail: `Lesson — ${lp.isCompleted ? tApi("api.125") : tApi("api.126")}`,
       date: lp.lastViewedAt,
       meta: { lessonId: lp.lessonId, progress: lp.progress, completed: lp.isCompleted },
     });
@@ -152,8 +156,8 @@ export async function GET(_req: NextRequest) {
   for (const qa of recentQuizAttempts) {
     activity.push({
       type: "quiz",
-      title: qa.quiz.titleAr || qa.quiz.title,
-      detail: `Quiz — ${qa.percentage}% ${qa.passed ? "(نجحت)" : "(مكملة)"}`,
+      title: sp(qa.quiz.titleAr, qa.quiz.title),
+      detail: `Quiz — ${qa.percentage}% ${qa.passed ? tApi("api.127") : tApi("api.128")}`,
       date: qa.finishedAt || qa.startedAt,
       meta: { quizId: qa.quizId, percentage: qa.percentage, passed: qa.passed },
     });
@@ -161,13 +165,13 @@ export async function GET(_req: NextRequest) {
   for (const hs of recentHomeworkSubs) {
     activity.push({
       type: "homework",
-      title: hs.homework.titleAr || hs.homework.title,
+      title: sp(hs.homework.titleAr, hs.homework.title),
       detail: `Homework — ${
         hs.status === "GRADED"
-          ? `تم التقييم (${hs.grade}/${hs.homework.maxMarks})`
+          ? tApi("api.129", { p1: hs.grade, p2: hs.homework.maxMarks })
           : hs.status === "SUBMITTED"
-          ? "اتسابمت"
-          : "في الانتظار"
+          ? tApi("api.130")
+          : tApi("api.131")
       }`,
       date: hs.submittedAt || hs.homework.deadline,
       meta: { homeworkId: hs.homeworkId, status: hs.status, grade: hs.grade },
@@ -236,10 +240,10 @@ export async function GET(_req: NextRequest) {
     continueLesson: continueLesson
       ? {
           id: continueLesson.id,
-          title: continueLesson.titleAr || continueLesson.title,
-          part: continueLesson.topic.unit.part.titleAr,
-          unit: continueLesson.topic.unit.titleAr,
-          topic: continueLesson.topic.titleAr,
+          title: sp(continueLesson.titleAr, continueLesson.title),
+          part: sp(continueLesson.topic.unit.part.titleAr, continueLesson.topic.unit.part.title),
+          unit: sp(continueLesson.topic.unit.titleAr, continueLesson.topic.unit.title),
+          topic: sp(continueLesson.topic.titleAr, continueLesson.topic.title),
           progress: continueLesson.progress[0]?.progress || 0,
           isCompleted: continueLesson.progress[0]?.isCompleted || false,
           videoUrl: continueLesson.videoUrl,
@@ -249,7 +253,7 @@ export async function GET(_req: NextRequest) {
     nextSession: nextSession
       ? {
           id: nextSession.id,
-          title: nextSession.titleAr || nextSession.title,
+          title: sp(nextSession.titleAr, nextSession.title),
           startAt: nextSession.startAt,
           duration: nextSession.duration,
           meetingUrl: nextSession.meetingUrl,
@@ -266,9 +270,9 @@ export async function GET(_req: NextRequest) {
       ? {
           attemptId: latestAttempt.id,
           quizId: latestAttempt.quizId,
-          quizTitle: latestAttempt.quiz.titleAr || latestAttempt.quiz.title,
+          quizTitle: sp(latestAttempt.quiz.titleAr, latestAttempt.quiz.title),
           lessonTitle:
-            latestAttempt.quiz.lesson?.titleAr || latestAttempt.quiz.lesson?.title || "",
+            sp(latestAttempt.quiz.lesson?.titleAr, latestAttempt.quiz.lesson?.title) || "",
           score: latestAttempt.score,
           totalMarks: latestAttempt.totalMarks,
           percentage: latestAttempt.percentage,

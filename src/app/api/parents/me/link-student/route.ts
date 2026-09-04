@@ -1,3 +1,4 @@
+import { getServerT } from "@/lib/i18n-server";
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireUser, getParentProfile } from "@/lib/api";
@@ -10,6 +11,7 @@ import { isValidStudentCode, normalizePhone } from "@/lib/registration";
 //     matching Parent Phone + Student National ID (+ Student Code), i.e. the
 //     data the student provided at registration.
 export async function POST(req: NextRequest) {
+  const tApi = await getServerT();
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
   if (user.role !== "PARENT") return err("Forbidden", 403);
@@ -30,22 +32,22 @@ export async function POST(req: NextRequest) {
   if (studentNationalId || studentCode || parentPhone) {
     // Verified mode — all three required.
     if (!studentNationalId || !parentPhone || !studentCode) {
-      return err("الرقم القومي للطالب + رقم تليفون ولي الأمر + كود الطالب مطلوبين", 400);
+      return err(tApi("api.110"), 400);
     }
     if (!/^[0-9]{14}$/.test(studentNationalId))
-      return err("الرقم القومي للطالب لازم يكون 14 رقم", 400);
+      return err(tApi("api.111"), 400);
     if (!isValidStudentCode(studentCode))
-      return err("كود الطالب غير صالح (مثال: CM-ABC123)", 400);
+      return err(tApi("api.112"), 400);
 
     const matched = await (db as any).student.findFirst({
       where: { nationalId: studentNationalId, studentCode },
       include: { user: true },
     });
-    if (!matched) return err("مفيش طالب بالرقم القومي وكود الطالب دول", 404);
+    if (!matched) return err(tApi("api.113"), 404);
     const stored = normalizePhone(String(matched.parentPhone || ""));
     if (!stored || stored !== normalizePhone(parentPhone)) {
       return err(
-        "رقم تليفون ولي الأمر غير مطابق للرقم المسجل مع بيانات الطالب",
+        tApi("api.114"),
         404
       );
     }
@@ -56,14 +58,14 @@ export async function POST(req: NextRequest) {
       include: { student: { include: { user: true } } },
     });
     if (!studentUser || !studentUser.student) {
-      return err("مفيش طالب بالإيميل ده. تأكد من الإيميل وحاول تاني.", 404);
+      return err(tApi("api.115"), 404);
     }
     if (studentUser.role !== "STUDENT") {
-      return err("الحساب ده مش طالب.", 400);
+      return err(tApi("api.116"), 400);
     }
     student = studentUser.student;
   } else {
-    return err("اكتب إيميل الطالب أو بيانات الربط (الرقم القومي + التليفون + الكود)", 400);
+    return err(tApi("api.117"), 400);
   }
 
   // Idempotent link

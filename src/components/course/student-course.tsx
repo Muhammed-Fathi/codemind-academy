@@ -1,4 +1,5 @@
 "use client";
+import { useT , pickAuto } from "@/lib/i18n";
 
 import * as React from "react";
 import { motion } from "framer-motion";
@@ -107,6 +108,7 @@ type CourseData = {
 // Main
 // ============================================================
 export function StudentCourseView() {
+  const tr = useT();
   const setView = useApp((s) => s.setView);
   const navParam = useApp((s) => s.navParam);
 
@@ -131,7 +133,7 @@ export function StudentCourseView() {
         setOpenUnits(ids);
       })
       .catch(() => {
-        setError("حصلت مشكلة وإحنا بنجيب بيانات الكورس. حاول تاني.");
+        setError(tr("course.034"));
       })
       .finally(() => setLoading(false));
   }, [navParam]);
@@ -145,10 +147,9 @@ export function StudentCourseView() {
     return (
       <Card className="glass">
         <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-          <p className="text-base font-semibold mb-1">{error || "مفيش بيانات"}</p>
+          <p className="text-base font-semibold mb-1">{error || tr("course.035")}</p>
           <Button variant="outline" className="mt-3" onClick={reload}>
-            حاول تاني
-          </Button>
+            {tr("course.036")}</Button>
         </CardContent>
       </Card>
     );
@@ -170,10 +171,9 @@ export function StudentCourseView() {
               className="px-2 text-muted-foreground"
               onClick={() => setView("student-dashboard")}
             >
-              <ArrowRight className="w-3.5 h-3.5 ml-1 flip-rtl" />
-              رجوع
-            </Button>
-            <span>الكورس</span>
+              <ArrowRight className="w-3.5 h-3.5 ms-1 flip-rtl" />
+              {tr("course.037")}</Button>
+            <span>{tr("course.038")}</span>
           </div>
           <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-3">
             <span
@@ -182,7 +182,7 @@ export function StudentCourseView() {
             >
               <BookOpen className="w-5 h-5" />
             </span>
-            <span className="text-gradient">{data.course.nameAr}</span>
+            <span className="text-gradient">{pickAuto(data.course.nameAr, data.course.name)}</span>
           </h1>
           <p className="text-sm text-muted-foreground mt-2 max-w-2xl">
             {data.course.description}
@@ -200,8 +200,7 @@ export function StudentCourseView() {
             <div className="flex items-center justify-between text-xs text-muted-foreground">
               <span className="flex items-center gap-1">
                 <CheckCircle2 className="w-3.5 h-3.5 text-primary" />
-                {data.progress.completedLessons} اتخلصت
-              </span>
+                {data.progress.completedLessons} {tr("course.039")}</span>
               <span className="flex items-center gap-1">
                 <Layers className="w-3.5 h-3.5" />
                 {data.progress.totalLessons} Lessons
@@ -213,10 +212,10 @@ export function StudentCourseView() {
 
       {/* Legend */}
       <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-        <LegendDot color="bg-primary" label="اتخلصت" />
-        <LegendDot color="bg-amber-400" label="الحالي" />
-        <LegendDot color="bg-muted-foreground/30" label="متاح" />
-        <LegendDot color="bg-muted-foreground/50" label="مقفول" icon="lock" />
+        <LegendDot color="bg-primary" label={tr("course.039")} />
+        <LegendDot color="bg-amber-400" label={tr("course.041")} />
+        <LegendDot color="bg-muted-foreground/30" label={tr("course.042")} />
+        <LegendDot color="bg-muted-foreground/50" label={tr("course.043")} icon="lock" />
       </div>
 
       {/* Parts timeline */}
@@ -249,7 +248,7 @@ export function StudentCourseView() {
                       </div>
                       <div>
                         <CardTitle className="text-base">
-                          {part.titleAr || part.title}
+                          {pickAuto(part.titleAr, part.title)}
                         </CardTitle>
                         {part.description && (
                           <CardDescription className="text-xs mt-0.5 max-w-xl">
@@ -287,9 +286,9 @@ export function StudentCourseView() {
                             <div className="grid place-items-center w-8 h-8 rounded-lg bg-amber-400/15 text-amber-500 shrink-0">
                               <Layers className="w-4 h-4" />
                             </div>
-                            <div className="text-right min-w-0">
+                            <div className="text-end min-w-0">
                               <div className="text-sm font-semibold truncate">
-                                {unit.titleAr || unit.title}
+                                {pickAuto(unit.titleAr, unit.title)}
                               </div>
                               <div className="text-[11px] text-muted-foreground">
                                 {unit.topics.length} Topics ·{" "}
@@ -312,7 +311,7 @@ export function StudentCourseView() {
                                 <div className="flex items-center gap-2 mb-2">
                                   <Sparkles className="w-3.5 h-3.5 text-primary" />
                                   <div className="text-sm font-medium">
-                                    {topic.titleAr || topic.title}
+                                    {pickAuto(topic.titleAr, topic.title)}
                                   </div>
                                 </div>
                                 <ul className="space-y-1.5">
@@ -344,6 +343,7 @@ export function StudentCourseView() {
 // LessonRow
 // ============================================================
 function LessonRow({ lesson }: { lesson: LessonItem }) {
+  const tr = useT();
   const setView = useApp((s) => s.setView);
   const setNavParam = useApp((s) => s.setNavParam);
 
@@ -351,7 +351,7 @@ function LessonRow({ lesson }: { lesson: LessonItem }) {
 
   const open = () => {
     if (isLocked) {
-      toast.warning("اتفرج على اللي قبله الأول 🔒");
+      toast.warning(tr("course.044"));
       return;
     }
     setView("student-lesson");
@@ -383,14 +383,13 @@ function LessonRow({ lesson }: { lesson: LessonItem }) {
       <div className="grid place-items-center w-7 h-7 rounded-full bg-background border border-border/60 shrink-0">
         {StatusIcon}
       </div>
-      <div className="flex-1 min-w-0 text-right">
+      <div className="flex-1 min-w-0 text-end">
         <div className="text-sm font-medium truncate">
-          {lesson.order}. {lesson.titleAr || lesson.title}
+          {lesson.order}. {pickAuto(lesson.titleAr, lesson.title)}
         </div>
         <div className="text-[11px] text-muted-foreground flex items-center gap-2 mt-0.5">
           <Clock className="w-3 h-3" />
-          {lesson.duration} دقيقة
-          {lesson.quiz && (
+          {lesson.duration} {tr("course.045")}{lesson.quiz && (
             <span className="flex items-center gap-0.5">
               · <Trophy className="w-3 h-3" /> Quiz
             </span>
@@ -421,7 +420,7 @@ function LessonRow({ lesson }: { lesson: LessonItem }) {
       <li>
         <Tooltip>
           <TooltipTrigger asChild>{inner}</TooltipTrigger>
-          <TooltipContent side="top">اتفرج على اللي قبله الأول</TooltipContent>
+          <TooltipContent side="top">{tr("course.046")}</TooltipContent>
         </Tooltip>
       </li>
     );

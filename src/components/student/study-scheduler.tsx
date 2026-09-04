@@ -1,4 +1,5 @@
 "use client";
+import { useT , pickAuto } from "@/lib/i18n";
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -35,13 +36,14 @@ type Task = {
   status: string;
 };
 
-const DAY_NAMES = ["الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
+const DAY_NAMES = ["student.198", "student.199", "student.200", "student.201", "student.202", "student.203", "student.204"];
 const MONTH_NAMES = [
-  "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو",
-  "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر",
+  "student.205", "student.206", "student.207", "student.208", "student.209", "student.210",
+  "student.211", "student.212", "student.213", "student.214", "student.215", "student.216",
 ];
 
 export function StudySchedulerView() {
+  const tr = useT();
   const setView = useApp((s) => s.setView);
   const [tasks, setTasks] = React.useState<Task[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -83,10 +85,10 @@ export function StudySchedulerView() {
         }),
       });
       if (!r.ok) {
-        toast.error("فشل حفظ المهمة");
+        toast.error(tr("student.217"));
         return;
       }
-      toast.success("اتضافت المهمة 📅");
+      toast.success(tr("student.218"));
       setNewTask({ title: "", description: "", durationMin: "60" });
       setShowAdd(false);
       reload();
@@ -109,7 +111,7 @@ export function StudySchedulerView() {
     await fetch(`/api/students/me/study-plan?taskId=${encodeURIComponent(taskId)}`, {
       method: "DELETE",
     });
-    toast.success("اتمسحت المهمة");
+    toast.success(tr("student.219"));
     reload();
   };
 
@@ -147,8 +149,7 @@ export function StudySchedulerView() {
         className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
       >
         <ChevronLeft className="w-4 h-4 flip-rtl" />
-        رجوع
-      </button>
+        {tr("student.220")}</button>
 
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
         <Card className="glass card-hover">
@@ -161,8 +162,7 @@ export function StudySchedulerView() {
                 <div>
                   <CardTitle className="text-xl">Study Scheduler</CardTitle>
                   <CardDescription>
-                    خطط أيام دراستك وتابع التزامك
-                  </CardDescription>
+                    {tr("student.221")}</CardDescription>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -174,7 +174,7 @@ export function StudySchedulerView() {
                   <ChevronRight className="w-4 h-4" />
                 </Button>
                 <div className="text-sm font-bold min-w-[120px] text-center">
-                  {MONTH_NAMES[month]} {year}
+                  {tr(MONTH_NAMES[month])} {year}
                 </div>
                 <Button
                   variant="ghost"
@@ -207,7 +207,7 @@ export function StudySchedulerView() {
                   <button
                     key={i}
                     onClick={() => setSelectedDate(date)}
-                    className={`relative aspect-square rounded-lg border-2 p-1.5 text-right transition-all hover:scale-105 ${
+                    className={`relative aspect-square rounded-lg border-2 p-1.5 text-end transition-all hover:scale-105 ${
                       isSelected
                         ? "border-primary bg-primary/10 shadow-sm"
                         : isToday
@@ -219,7 +219,7 @@ export function StudySchedulerView() {
                       {date.getDate()}
                     </div>
                     {dayTasks.length > 0 && (
-                      <div className="absolute bottom-1 left-1 flex gap-0.5">
+                      <div className="absolute bottom-1 start-1 flex gap-0.5">
                         {hasDone && (
                           <div className="w-1.5 h-1.5 rounded-full bg-primary" />
                         )}
@@ -229,7 +229,7 @@ export function StudySchedulerView() {
                       </div>
                     )}
                     {dayTasks.length > 0 && (
-                      <div className="absolute top-1 right-1 text-[9px] font-bold text-muted-foreground">
+                      <div className="absolute top-1 end-1 text-[9px] font-bold text-muted-foreground">
                         {dayTasks.length}
                       </div>
                     )}
@@ -242,12 +242,10 @@ export function StudySchedulerView() {
             <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
               <div className="flex items-center gap-1">
                 <div className="w-2 h-2 rounded-full bg-primary" />
-                خلصت
-              </div>
+                {tr("student.222")}</div>
               <div className="flex items-center gap-1">
                 <div className="w-2 h-2 rounded-full bg-amber-400" />
-                مستنية
-              </div>
+                {tr("student.223")}</div>
             </div>
           </CardContent>
         </Card>
@@ -264,16 +262,14 @@ export function StudySchedulerView() {
               <div className="flex items-center justify-between">
                 <div>
                   <CardTitle className="text-base">
-                    {DAY_NAMES[selectedDate.getDay()]}، {selectedDate.getDate()} {MONTH_NAMES[selectedDate.getMonth()]}
+                    {tr(DAY_NAMES[selectedDate.getDay()])}{tr("student.224")}{selectedDate.getDate()} {tr(MONTH_NAMES[selectedDate.getMonth()])}
                   </CardTitle>
                   <CardDescription className="text-xs">
-                    {selectedTasks.length} مهمة · {selectedTasks.filter((t) => t.status === "DONE").length} خلصت
-                  </CardDescription>
+                    {selectedTasks.length} {tr("student.225")}{selectedTasks.filter((t) => t.status === "DONE").length} {tr("student.222")}</CardDescription>
                 </div>
                 <Button size="sm" onClick={() => setShowAdd((s) => !s)}>
-                  <Plus className="w-4 h-4 ml-1" />
-                  أضف مهمة
-                </Button>
+                  <Plus className="w-4 h-4 ms-1" />
+                  {tr("student.227")}</Button>
               </div>
             </CardHeader>
             <CardContent className="space-y-2">
@@ -288,13 +284,13 @@ export function StudySchedulerView() {
                     <Input
                       value={newTask.title}
                       onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
-                      placeholder="عنوان المهمة (مثال: مراجعة Neural Networks)"
+                      placeholder={tr("student.228")}
                       autoFocus
                     />
                     <Textarea
                       value={newTask.description}
                       onChange={(e) => setNewTask({ ...newTask, description: e.target.value })}
-                      placeholder="تفاصيل (اختياري)"
+                      placeholder={tr("student.229")}
                       className="min-h-[60px] resize-none"
                     />
                     <div className="flex items-center gap-2">
@@ -306,10 +302,10 @@ export function StudySchedulerView() {
                           onChange={(e) => setNewTask({ ...newTask, durationMin: e.target.value })}
                           className="w-20"
                         />
-                        <span className="text-xs text-muted-foreground">دقيقة</span>
+                        <span className="text-xs text-muted-foreground">{tr("student.230")}</span>
                       </div>
                       <Button onClick={addTask} disabled={!newTask.title.trim() || saving} size="sm">
-                        {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : "احفظ"}
+                        {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : tr("student.231")}
                       </Button>
                       <Button variant="ghost" size="sm" onClick={() => setShowAdd(false)}>
                         <X className="w-4 h-4" />
@@ -325,8 +321,7 @@ export function StudySchedulerView() {
                 <div className="text-center py-6">
                   <Calendar className="w-8 h-8 text-muted-foreground/40 mx-auto mb-1.5" />
                   <p className="text-xs text-muted-foreground">
-                    مفيش مهام في اليوم ده. اضغط "أضف مهمة" عشان تخطط.
-                  </p>
+                    {tr("student.232")}</p>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -362,9 +357,8 @@ export function StudySchedulerView() {
                         )}
                         <div className="flex items-center gap-2 mt-1">
                           <Badge variant="outline" className="text-[10px]">
-                            <Clock className="w-2.5 h-2.5 ml-1" />
-                            {t.durationMin} دقيقة
-                          </Badge>
+                            <Clock className="w-2.5 h-2.5 ms-1" />
+                            {t.durationMin} {tr("student.230")}</Badge>
                         </div>
                       </div>
                       <button

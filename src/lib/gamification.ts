@@ -10,6 +10,7 @@ export type BadgeDef = {
   title: string;
   titleAr: string;
   description: string;
+  descriptionEn: string;
   icon: string; // emoji or lucide name
   color: string; // tailwind gradient classes
   check: (stats: GamificationStats) => boolean;
@@ -53,6 +54,7 @@ export const BADGES: BadgeDef[] = [
     title: "First Step",
     titleAr: "أول خطوة",
     description: "خلصت أول Lesson ليك في الكورس.",
+    descriptionEn: "Complete your first lesson in the course.",
     icon: "🎯",
     color: "from-emerald-400 to-teal-500",
     check: (s) => s.lessonsCompleted >= 1,
@@ -62,6 +64,7 @@ export const BADGES: BadgeDef[] = [
     title: "Lesson Explorer",
     titleAr: "مستكشف الدروس",
     description: "خلصت 5 Lessons.",
+    descriptionEn: "Complete 5 lessons.",
     icon: "🧭",
     color: "from-teal-400 to-cyan-500",
     check: (s) => s.lessonsCompleted >= 5,
@@ -71,6 +74,7 @@ export const BADGES: BadgeDef[] = [
     title: "Quiz Rookie",
     titleAr: "باديء Quizzes",
     description: "حليت أول Quiz ليك.",
+    descriptionEn: "Take your first quiz.",
     icon: "✏️",
     color: "from-amber-400 to-orange-400",
     check: (s) => s.quizzesTaken >= 1,
@@ -80,6 +84,7 @@ export const BADGES: BadgeDef[] = [
     title: "Quiz Master",
     titleAr: "بطل Quizzes",
     description: "نجحت في 5 Quizzes.",
+    descriptionEn: "Pass 5 quizzes.",
     icon: "🏆",
     color: "from-amber-500 to-orange-500",
     check: (s) => s.quizzesPassed >= 5,
@@ -89,6 +94,7 @@ export const BADGES: BadgeDef[] = [
     title: "Perfect Score",
     titleAr: "الدرجة الكاملة",
     description: "جبت 100% في Quiz.",
+    descriptionEn: "Score 100% on a quiz.",
     icon: "💯",
     color: "from-rose-400 to-pink-500",
     check: (s) => s.avgQuizPct >= 100 && s.quizzesTaken > 0,
@@ -98,6 +104,7 @@ export const BADGES: BadgeDef[] = [
     title: "Homework Hero",
     titleAr: "بطل الواجبات",
     description: "سلّمت 3 واجبات.",
+    descriptionEn: "Submit 3 homework assignments.",
     icon: "📚",
     color: "from-indigo-400 to-purple-500",
     check: (s) => s.homeworkSubmitted >= 3,
@@ -107,6 +114,7 @@ export const BADGES: BadgeDef[] = [
     title: "Show Up",
     titleAr: "حاضر ومستني",
     description: "حضرت 5 Sessions.",
+    descriptionEn: "Attend 5 live sessions.",
     icon: "📅",
     color: "from-cyan-400 to-blue-500",
     check: (s) => s.attendancePct >= 80,
@@ -116,6 +124,7 @@ export const BADGES: BadgeDef[] = [
     title: "Week Warrior",
     titleAr: "بطل الأسبوع",
     description: "اتابع 7 أيام ورا بعض.",
+    descriptionEn: "Keep a 7-day activity streak.",
     icon: "🔥",
     color: "from-orange-500 to-red-500",
     check: (s) => s.currentStreak >= 7,
@@ -125,6 +134,7 @@ export const BADGES: BadgeDef[] = [
     title: "Monthly Master",
     titleAr: "بطل الشهر",
     description: "اتابع 30 يوم ورا بعض.",
+    descriptionEn: "Keep a 30-day activity streak.",
     icon: "⚡",
     color: "from-purple-500 to-pink-500",
     check: (s) => s.currentStreak >= 30,

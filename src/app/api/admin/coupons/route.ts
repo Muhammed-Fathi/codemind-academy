@@ -1,3 +1,4 @@
+import { getServerT } from "@/lib/i18n-server";
 // CodeMind Academy — Admin Coupons API
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, ok, err } from "@/lib/api";
@@ -35,6 +36,7 @@ export async function GET() {
 
 // POST /api/admin/coupons — create coupon
 export async function POST(req: NextRequest) {
+  const tApi = await getServerT();
   const { user, error } = await requireRole("ADMIN");
   if (error) return error;
   if (!user) return err("Unauthorized", 401);
@@ -50,13 +52,13 @@ export async function POST(req: NextRequest) {
   };
 
   if (!code || !type || value === undefined)
-    return err("الكود والنوع والقيمة مطلوبين", 400);
+    return err(tApi("api.014"), 400);
 
   const upperCode = code.trim().toUpperCase();
-  if (upperCode.length < 3) return err("الكود لازم 3 أحرف على الأقل", 400);
+  if (upperCode.length < 3) return err(tApi("api.015"), 400);
 
   const exists = await db.coupon.findUnique({ where: { code: upperCode } });
-  if (exists) return err("الكود ده موجود بالفعل", 409);
+  if (exists) return err(tApi("api.016"), 409);
 
   const coupon = await db.coupon.create({
     data: {

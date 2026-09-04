@@ -1,3 +1,4 @@
+import { getServerT } from "@/lib/i18n-server";
 // GET /api/admin/teachers — list teachers
 // POST /api/admin/teachers — create teacher (also creates user)
 import { NextRequest } from "next/server";
@@ -47,6 +48,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const tApi = await getServerT();
   const { user, error } = await requireRole("ADMIN");
   if (error) return error;
   if (!user) return err("Unauthorized", 401);
@@ -60,11 +62,11 @@ export async function POST(req: NextRequest) {
   const specialty = body.specialty ? String(body.specialty) : null;
 
   if (!name || !email || !password)
-    return err("الاسم والإيميل والباسورد مطلوبين", 400);
-  if (password.length < 6) return err("كلمة السر لازم 6 أحرف على الأقل", 400);
+    return err(tApi("api.051"), 400);
+  if (password.length < 6) return err(tApi("api.052"), 400);
 
   const exists = await db.user.findUnique({ where: { email } });
-  if (exists) return err("البريد الإلكتروني مستخدم بالفعل", 409);
+  if (exists) return err(tApi("api.053"), 409);
 
   const newUser = await db.user.create({
     data: {

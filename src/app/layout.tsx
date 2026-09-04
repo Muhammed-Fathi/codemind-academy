@@ -1,20 +1,18 @@
 import type { Metadata } from "next";
-import { Cairo, Geist_Mono } from "next/font/google";
+// Self-hosted fonts (no network dependency at build time):
+// - Cairo variable (Arabic + Latin) from the google/fonts repo (OFL).
+// - Geist Mono from the `geist` npm package.
+import localFont from "next/font/local";
+import { GeistMono } from "geist/font/mono";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AppProviders } from "@/components/app-providers";
 
-const cairo = Cairo({
+const cairo = localFont({
+  src: "../fonts/Cairo-Variable.ttf",
   variable: "--font-cairo",
-  subsets: ["arabic", "latin"],
-  display: "swap",
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
   display: "swap",
 });
 
@@ -68,7 +66,7 @@ export default function RootLayout({
   return (
     <html lang="ar" dir="rtl" suppressHydrationWarning>
       <body
-        className={`${cairo.variable} ${geistMono.variable} font-sans antialiased bg-background text-foreground min-h-screen`}
+        className={`${cairo.variable} ${GeistMono.variable} font-sans antialiased bg-background text-foreground min-h-screen`}
         suppressHydrationWarning
       >
         <ThemeProvider

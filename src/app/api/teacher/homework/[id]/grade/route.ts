@@ -2,6 +2,7 @@
 //   body: { studentId, grade: number, feedback: string }
 //   Updates the HomeworkSubmission for that homework + student, sets
 //   status=GRADED. Returns the updated submission.
+import { getServerT } from "@/lib/i18n-server";
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireUser, getTeacherProfile } from "@/lib/api";
@@ -10,6 +11,7 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const tApi = await getServerT();
   const { id } = await params;
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
@@ -24,10 +26,10 @@ export async function PATCH(
   const gradeNum = Number(body.grade);
   const feedback = body.feedback ? String(body.feedback) : null;
 
-  if (!studentId) return err("studentId مطلوب", 400);
-  if (Number.isNaN(gradeNum)) return err("الدرجة لازم تكون رقم", 400);
+  if (!studentId) return err(tApi("api.168"), 400);
+  if (Number.isNaN(gradeNum)) return err(tApi("api.169"), 400);
   if (gradeNum < 0 || gradeNum > 100)
-    return err("الدرجة لازم تكون بين 0 و 100", 400);
+    return err(tApi("api.170"), 400);
 
   // Verify the homework belongs to one of the teacher's courses
   const hw = await db.homework.findUnique({
@@ -44,10 +46,10 @@ export async function PATCH(
       },
     },
   });
-  if (!hw) return err("الـHomework مش موجود", 404);
+  if (!hw) return err(tApi("api.171"), 404);
   const teacherCourseIds = teacher.groups.map((g) => g.courseId);
   if (!teacherCourseIds.includes(hw.lesson.topic.unit.part.courseId)) {
-    return err("الـHomework مش بتاع الكورسات بتاعتك", 403);
+    return err(tApi("api.172"), 403);
   }
 
   // Find or create the submission row
@@ -101,10 +103,12 @@ export async function PATCH(
         data: {
           userId: student.userId,
           type: "QUIZ_RESULT",
-          title: `Homework اتصحح: ${hw.titleAr || hw.title}`,
-          message: `الدرجة: ${gradeNum}/${hw.maxMarks}. ${
-            feedback ? `ملاحظة: ${feedback}` : ""
-          }`,
+          title: tApi("api.173", { p1: hw.titleAr || hw.title }),
+          message: tApi("api.174", {
+            p1: gradeNum,
+            p2: hw.maxMarks,
+            p3: feedback ? tApi("api.175", { p1: feedback }) : "",
+          }),
           link: "student-homework",
         },
       })

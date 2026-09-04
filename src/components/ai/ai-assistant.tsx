@@ -1,4 +1,5 @@
 "use client";
+import { useT , pickAuto } from "@/lib/i18n";
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -20,13 +21,14 @@ import {
 type Msg = { role: "user" | "assistant"; content: string };
 
 const SUGGESTIONS = [
-  "اشرحلي إيه هو الـMachine Learning؟",
-  "إزاي أبدأ أتعلم Programming؟",
-  "إيه الفرق بين Supervised و Unsupervised Learning؟",
-  "اعرف أكتر عن Neural Networks",
+  "ai.001",
+  "ai.002",
+  "ai.003",
+  "ai.004",
 ];
 
 export function AiAssistant() {
+  const t = useT();
   const user = useApp((s) => s.user);
   const view = useApp((s) => s.view);
   const [open, setOpen] = React.useState(false);
@@ -81,13 +83,13 @@ export function AiAssistant() {
       });
       const d = await r.json();
       if (!r.ok) {
-        toast.error(d.error || "حصلت مشكلة في الإرسال");
+        toast.error(d.error || t("ai.005"));
         return;
       }
       setMessages((m) => [...m, { role: "assistant", content: d.reply }]);
       if (d.sessionId) setSessionId(d.sessionId);
     } catch {
-      toast.error("مفيش اتصال بالـAI. حاول تاني.");
+      toast.error(t("ai.006"));
     } finally {
       setLoading(false);
     }
@@ -101,7 +103,7 @@ export function AiAssistant() {
     }
     setMessages([]);
     setSessionId(null);
-    toast.success("اتمسحت المحادثة");
+    toast.success(t("ai.007"));
   };
 
   if (shouldHide) return null;
@@ -113,7 +115,7 @@ export function AiAssistant() {
         initial={{ scale: 0, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         transition={{ delay: 0.3, type: "spring", stiffness: 260, damping: 20 }}
-        className="fixed bottom-5 left-5 z-50"
+        className="fixed bottom-5 start-5 z-50"
       >
         <motion.button
           whileHover={{ scale: 1.06 }}
@@ -148,7 +150,7 @@ export function AiAssistant() {
             )}
           </AnimatePresence>
           {!open && (
-            <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-400 ring-2 ring-background animate-pulse" />
+            <span className="absolute -top-1 -end-1 w-4 h-4 rounded-full bg-amber-400 ring-2 ring-background animate-pulse" />
           )}
         </motion.button>
       </motion.div>
@@ -161,7 +163,7 @@ export function AiAssistant() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
             transition={{ duration: 0.2 }}
-            className="fixed bottom-24 left-5 z-50 w-[min(92vw,26rem)] h-[min(70vh,32rem)] flex flex-col glass-strong rounded-2xl shadow-2xl border border-border/60 overflow-hidden"
+            className="fixed bottom-24 start-5 z-50 w-[min(92vw,26rem)] h-[min(70vh,32rem)] flex flex-col glass-strong rounded-2xl shadow-2xl border border-border/60 overflow-hidden"
           >
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-border/60 bg-gradient-to-r from-primary/10 via-teal-500/10 to-amber-500/10">
@@ -184,7 +186,7 @@ export function AiAssistant() {
                   <button
                     onClick={clear}
                     className="p-1.5 rounded-md hover:bg-muted/60 text-muted-foreground hover:text-destructive transition-colors"
-                    title="امسح المحادثة"
+                    title={t("ai.008")}
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -209,20 +211,18 @@ export function AiAssistant() {
                     <Sparkles className="w-6 h-6 text-primary" />
                   </div>
                   <div>
-                    <div className="text-sm font-bold">أهلاً! أنا CodeMind Assistant 👋</div>
+                    <div className="text-sm font-bold">{t("ai.009")}</div>
                     <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed max-w-xs mx-auto">
-                      اسألني أي حاجة عن Programming & AI، Quizzes، Homework، أو
-                      الـLessons. أنا هنا أساعدك تتعلم أسرع.
-                    </p>
+                      {t("ai.010")}</p>
                   </div>
                   <div className="grid grid-cols-1 gap-1.5 max-w-xs mx-auto">
                     {SUGGESTIONS.map((s) => (
                       <button
                         key={s}
-                        onClick={() => send(s)}
-                        className="text-right text-xs px-3 py-2 rounded-lg bg-muted/50 hover:bg-primary/10 hover:text-primary border border-border/40 transition-colors"
+                        onClick={() => send(t(s))}
+                        className="text-end text-xs px-3 py-2 rounded-lg bg-muted/50 hover:bg-primary/10 hover:text-primary border border-border/40 transition-colors"
                       >
-                        {s}
+                        {t(s)}
                       </button>
                     ))}
                   </div>
@@ -268,7 +268,7 @@ export function AiAssistant() {
                       send();
                     }
                   }}
-                  placeholder="اكتب سؤالك..."
+                  placeholder={t("ai.011")}
                   className="min-h-[40px] max-h-[120px] resize-none text-sm bg-muted/40 border-0 focus-visible:ring-1 focus-visible:ring-primary"
                   rows={1}
                 />
@@ -286,8 +286,7 @@ export function AiAssistant() {
                 </Button>
               </div>
               <div className="text-[10px] text-muted-foreground mt-1.5 text-center">
-                CodeMind Assistant · ممكن يغلط، اتأكد من المعلومات المهمة.
-              </div>
+                {t("ai.012")}</div>
             </div>
           </motion.div>
         )}

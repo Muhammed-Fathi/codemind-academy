@@ -1,4 +1,5 @@
 "use client";
+import { useT, useLocale , pickAuto } from "@/lib/i18n";
 
 import * as React from "react";
 import { Button } from "@/components/ui/button";
@@ -50,19 +51,26 @@ type ReportData = {
  * defaulted because a freshly registered student may have no group, no
  * progress and — most importantly — no subscription at all.
  */
-export function buildReportData(child: any): ReportData {
-  const monthName = new Date().toLocaleDateString("ar-EG", {
+export function buildReportData(child: any, locale: "ar" | "en" = "ar"): ReportData {
+  const dtLocale = locale === "en" ? "en-GB" : "ar-EG";
+  const monthName = new Date().toLocaleDateString(dtLocale, {
     month: "long",
     year: "numeric",
   });
+  const course = child.group?.course;
+  const courseName = course
+    ? locale === "en"
+      ? course.name || course.nameAr
+      : pickAuto(course.nameAr, course.name)
+    : "Programming & AI";
   return {
     studentName: child.name,
     studentEmail: child.email,
     grade: child.grade || "2nd Secondary",
-    courseName: child.group?.course?.nameAr || "Programming & AI",
+    courseName,
     groupName: child.group?.name || "—",
     reportMonth: monthName,
-    generatedAt: new Date().toLocaleDateString("ar-EG"),
+    generatedAt: new Date().toLocaleDateString(dtLocale),
     courseProgress: child.courseProgress || { completed: 0, total: 0, pct: 0 },
     attendance: child.attendance || { pct: 0, present: 0, total: 0 },
     quizzes: child.quizzes || { average: 0, taken: 0, passed: 0, failed: 0 },
@@ -74,18 +82,22 @@ export function buildReportData(child: any): ReportData {
       title: q.quizTitle,
       percentage: q.percentage,
       passed: q.passed,
-      date: new Date(q.finishedAt).toLocaleDateString("ar-EG"),
+      date: new Date(q.finishedAt).toLocaleDateString(dtLocale),
     })),
     teacherNotes: (child.teacherNotes || []).slice(0, 3).map((n: any) => ({
       teacherName: n.teacherName,
       note: n.note,
-      date: new Date(n.createdAt).toLocaleDateString("ar-EG"),
+      date: new Date(n.createdAt).toLocaleDateString(dtLocale),
     })),
     recommendations: generateRecommendations(child),
   };
 }
 
 export function MonthlyReportView({ onClose }: { onClose: () => void }) {
+  const tr = useT();
+  const locale = useLocale();
+  const localeRef = React.useRef(locale);
+  localeRef.current = locale;
   const [data, setData] = React.useState<ReportData | null>(null);
   const [loading, setLoading] = React.useState(true);
 
@@ -94,17 +106,17 @@ export function MonthlyReportView({ onClose }: { onClose: () => void }) {
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (d?.children?.[0]) {
-          setData(buildReportData(d.children[0]));
+          setData(buildReportData(d.children[0], localeRef.current));
         }
       })
-      .catch(() => toast.error("حصلت مشكلة في تحميل البيانات"))
+      .catch(() => toast.error(tr("parent.009")))
       .finally(() => setLoading(false));
   }, []);
 
   if (loading) {
     return (
       <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
-        <div className="text-sm text-muted-foreground">جارٍ تجهيز التقرير…</div>
+        <div className="text-sm text-muted-foreground">{tr("parent.010")}</div>
       </div>
     );
   }
@@ -120,6 +132,8 @@ export function MonthlyReportContent({
   data: ReportData | null;
   onClose: () => void;
 }) {
+  const tr = useT();
+  const locale = useLocale();
   const handlePrint = () => {
     window.print();
   };
@@ -129,16 +143,15 @@ export function MonthlyReportContent({
       <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
         <div className="text-center">
           <AlertTriangle className="w-10 h-10 text-amber-500 mx-auto mb-3" />
-          <p className="text-sm text-muted-foreground">مفيش بيانات متاحة للتقرير</p>
+          <p className="text-sm text-muted-foreground">{tr("parent.011")}</p>
           <Button variant="outline" className="mt-4" onClick={onClose}>
-            رجوع
-          </Button>
+            {tr("parent.012")}</Button>
         </div>
       </div>
     );
   }
 
-  const subscriptionInfo = describeParentSubscription(data.subscription);
+  const subscriptionInfo = describeParentSubscription(data.subscription, locale);
 
   // Student is linked correctly but has never subscribed to a plan → there is
   // nothing to report yet. Show a friendly explanation instead of the report.
@@ -161,8 +174,7 @@ export function MonthlyReportContent({
               {subscriptionInfo.message}
             </p>
             <Button variant="outline" className="mt-6" onClick={onClose}>
-              رجوع للوحة التحكم
-            </Button>
+              {tr("parent.013")}</Button>
           </CardContent>
         </Card>
       </div>
@@ -189,9 +201,8 @@ export function MonthlyReportContent({
             <h2 className="text-lg font-bold">Monthly Report — {data.studentName}</h2>
             <div className="flex items-center gap-2">
               <Button onClick={handlePrint} className="font-bold">
-                <Printer className="w-4 h-4 ml-2" />
-                حفظ كـ PDF
-              </Button>
+                <Printer className="w-4 h-4 ms-2" />
+                {tr("parent.014")}</Button>
               <Button variant="outline" onClick={onClose}>
                 <X className="w-4 h-4" />
               </Button>
@@ -218,10 +229,10 @@ export function MonthlyReportContent({
             {/* Student info */}
             <div className="p-8 border-b border-gray-200">
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <InfoField label="الطالب" value={data.studentName} />
-                <InfoField label="الصف" value={data.grade} />
-                <InfoField label="الكورس" value={data.courseName} />
-                <InfoField label="المجموعة" value={data.groupName} />
+                <InfoField label={tr("parent.015")} value={data.studentName} />
+                <InfoField label={tr("parent.016")} value={data.grade} />
+                <InfoField label={tr("parent.017")} value={data.courseName} />
+                <InfoField label={tr("parent.018")} value={data.groupName} />
               </div>
             </div>
 
@@ -229,12 +240,11 @@ export function MonthlyReportContent({
             <div className="p-8">
               <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
                 <TrendingUp className="w-5 h-5 text-emerald-600" />
-                نظرة عامة على الأداء
-              </h3>
+                {tr("parent.019")}</h3>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <MetricCard label="Course Progress" value={`${data.courseProgress.pct}%`} sub={`${data.courseProgress.completed}/${data.courseProgress.total} Lessons`} tone="emerald" />
                 <MetricCard label="Attendance" value={`${data.attendance.pct}%`} sub={`${data.attendance.present}/${data.attendance.total} Sessions`} tone="teal" />
-                <MetricCard label="Quiz Average" value={`${data.quizzes.average}%`} sub={`${data.quizzes.passed} نجح`} tone="amber" />
+                <MetricCard label="Quiz Average" value={`${data.quizzes.average}%`} sub={tr("parent.020", { p1: data.quizzes.passed })} tone="amber" />
                 <MetricCard label="Homework" value={`${data.homework.completionPct}%`} sub={`${data.homework.submitted} submitted`} tone="orange" />
               </div>
             </div>
@@ -257,8 +267,8 @@ export function MonthlyReportContent({
                     </div>
                   )}
                 </div>
-                <div className="text-left shrink-0">
-                  <div className="text-xs text-gray-500">الأيام المتبقية</div>
+                <div className="text-start shrink-0">
+                  <div className="text-xs text-gray-500">{tr("parent.021")}</div>
                   <div className="text-lg font-bold text-emerald-600">
                     {data.subscription?.daysLeft ?? "—"}
                   </div>
@@ -275,7 +285,7 @@ export function MonthlyReportContent({
                     Strong Topics
                   </h4>
                   {data.strongTopics.length === 0 ? (
-                    <p className="text-xs text-gray-400">مفيش بيانات كفاية</p>
+                    <p className="text-xs text-gray-400">{tr("parent.022")}</p>
                   ) : (
                     <ul className="space-y-2">
                       {data.strongTopics.map((t, i) => (
@@ -290,10 +300,9 @@ export function MonthlyReportContent({
                 <div>
                   <h4 className="text-sm font-bold mb-3 flex items-center gap-2 text-amber-700">
                     <AlertTriangle className="w-4 h-4" />
-                    Weak Topics — محتاجة تركيز
-                  </h4>
+                    {tr("parent.023")}</h4>
                   {data.weakTopics.length === 0 ? (
-                    <p className="text-xs text-gray-400">مفيش بيانات كفاية</p>
+                    <p className="text-xs text-gray-400">{tr("parent.022")}</p>
                   ) : (
                     <ul className="space-y-2">
                       {data.weakTopics.map((t, i) => (
@@ -311,14 +320,14 @@ export function MonthlyReportContent({
             {/* Recent quizzes */}
             {data.recentQuizzes.length > 0 && (
               <div className="p-8 border-t border-gray-200">
-                <h4 className="text-sm font-bold mb-3">آخر Quizzes</h4>
+                <h4 className="text-sm font-bold mb-3">{tr("parent.025")}</h4>
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="text-left text-xs text-gray-500 border-b border-gray-200">
-                      <th className="pb-2">الـQuiz</th>
-                      <th className="pb-2 text-center">النسبة</th>
-                      <th className="pb-2 text-center">النتيجة</th>
-                      <th className="pb-2 text-left">التاريخ</th>
+                    <tr className="text-start text-xs text-gray-500 border-b border-gray-200">
+                      <th className="pb-2">{tr("parent.026")}</th>
+                      <th className="pb-2 text-center">{tr("parent.027")}</th>
+                      <th className="pb-2 text-center">{tr("parent.028")}</th>
+                      <th className="pb-2 text-start">{tr("parent.029")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -328,12 +337,12 @@ export function MonthlyReportContent({
                         <td className="py-2 text-center font-bold">{q.percentage}%</td>
                         <td className="py-2 text-center">
                           {q.passed ? (
-                            <span className="text-emerald-600 font-bold">نجح</span>
+                            <span className="text-emerald-600 font-bold">{tr("parent.030")}</span>
                           ) : (
-                            <span className="text-amber-600 font-bold">مكملة</span>
+                            <span className="text-amber-600 font-bold">{tr("parent.031")}</span>
                           )}
                         </td>
-                        <td className="py-2 text-left text-gray-500">{q.date}</td>
+                        <td className="py-2 text-start text-gray-500">{q.date}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -346,8 +355,7 @@ export function MonthlyReportContent({
               <div className="p-8 border-t border-gray-200">
                 <h4 className="text-sm font-bold mb-3 flex items-center gap-2">
                   <User className="w-4 h-4" />
-                  ملاحظات المعلم
-                </h4>
+                  {tr("parent.032")}</h4>
                 <ul className="space-y-3">
                   {data.teacherNotes.map((n, i) => (
                     <li key={i} className="text-sm bg-gray-50 rounded-lg p-3">
@@ -363,8 +371,7 @@ export function MonthlyReportContent({
             <div className="p-8 border-t border-gray-200 bg-gradient-to-br from-emerald-50 to-amber-50">
               <h4 className="text-sm font-bold mb-3 flex items-center gap-2">
                 <Award className="w-4 h-4 text-amber-600" />
-                توصيات وخطوات قادمة
-              </h4>
+                {tr("parent.033")}</h4>
               <ul className="space-y-2">
                 {data.recommendations.map((r, i) => (
                   <li key={i} className="text-sm flex items-start gap-2">
@@ -379,7 +386,7 @@ export function MonthlyReportContent({
             <div className="p-6 bg-gray-900 text-white text-center text-xs">
               <div className="font-bold mb-1">{brand.name}</div>
               <div className="opacity-75">
-                تم إنشاء هذا التقرير في {data.generatedAt} · {brand.academicYear}
+                {tr("parent.034")}{data.generatedAt} · {brand.academicYear}
               </div>
               <div className="opacity-50 mt-2">
                 CodeMind Academy · Learn. Build. Think.
@@ -430,25 +437,25 @@ function MetricCard({
 function generateRecommendations(child: any): string[] {
   const recs: string[] = [];
   if (child.courseProgress?.pct < 30) {
-    recs.push("الطالب محتاج يكمل Lessons أكتر — خلّي يداوم على Lesson يومياً.");
+    recs.push("parent.035");
   } else if (child.courseProgress?.pct < 60) {
-    recs.push("التقدم حلو، بس محتاج استمرارية في حل Lessons.");
+    recs.push("parent.036");
   } else {
-    recs.push("التقدم ممتاز! خلّي الطالب يبدأ مراجعة الـLessons اللي فاتت.");
+    recs.push("parent.037");
   }
   if (child.attendance?.pct < 75) {
-    recs.push("Attendance منخفض — لازم نأكد على الطالب بحضور Live Sessions.");
+    recs.push("parent.038");
   }
   if (child.quizzes?.average < 60) {
-    recs.push("متوسط Quizzes منخفض — يحتاج مراجعة المواضيع اللي ضعيف فيها.");
+    recs.push("parent.039");
   } else if (child.quizzes?.average >= 85) {
-    recs.push("أداء Quizzes ممتاز — تشجيع على التحدي بمواضيع أصعب.");
+    recs.push("parent.040");
   }
   if (child.homework?.completionPct < 50) {
-    recs.push("Homework مش بيتسلم بانتظام — متابعة أقرب من الأهل.");
+    recs.push("parent.041");
   }
   if (recs.length === 0) {
-    recs.push("الأداء العام جيد، استمر على نفس الوتيرة.");
+    recs.push("parent.042");
   }
   return recs;
 }

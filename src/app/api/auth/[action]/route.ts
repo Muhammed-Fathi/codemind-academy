@@ -1,3 +1,4 @@
+import { getServerT } from "@/lib/i18n-server";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import {
@@ -19,6 +20,7 @@ import {
 import { createStudentWithCode } from "@/lib/curriculum-seed";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ action: string }> }) {
+  const tApi = await getServerT();
   const { action } = await params;
   const body = await req.json().catch(() => ({}));
 
@@ -27,9 +29,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ act
       where: { email: String(body.email || "").toLowerCase().trim() },
     });
     if (!user || !verifyPassword(String(body.password || ""), user.password)) {
-      return err("بيانات الدخول مش صحيحة", 401);
+      return err(tApi("api.057"), 401);
     }
-    if (!user.isActive) return err("الحساب موقوف", 403);
+    if (!user.isActive) return err(tApi("api.058"), 403);
     await createSession(user.id);
     return ok({ user: safeUser(user) });
   }
@@ -44,12 +46,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ act
       | "TEACHER"
       | "ADMIN";
     if (!email || !password || !name)
-      return err("كل الحقول مطلوبة", 400);
-    if (!isValidEmail(email)) return err("البريد الإلكتروني غير صالح", 400);
-    if (password.length < 6) return err("كلمة السر لازم 6 أحرف على الأقل", 400);
+      return err(tApi("api.059"), 400);
+    if (!isValidEmail(email)) return err(tApi("api.060"), 400);
+    if (password.length < 6) return err(tApi("api.061"), 400);
 
     const exists = await db.user.findUnique({ where: { email } });
-    if (exists) return err("البريد الإلكتروني مستخدم بالفعل", 409);
+    if (exists) return err(tApi("api.062"), 409);
 
     // ---------------- STUDENT ----------------
     if (role === "STUDENT") {
@@ -60,21 +62,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ act
       const schoolType = String(body.schoolType || "").trim().toUpperCase();
 
       if (!isValidArabicThreePartName(name))
-        return err("الاسم الكامل لازم يكون ثلاثي باللغة العربية (مطابق للبطاقة)", 400);
+        return err(tApi("api.063"), 400);
       if (!studentPhone || !isValidEgyptianPhone(studentPhone))
-        return err("رقم تليفون الطالب غير صالح (مثال: 01147422177)", 400);
+        return err(tApi("api.064"), 400);
       if (!parentPhone || !isValidEgyptianPhone(parentPhone))
-        return err("رقم تليفون ولي الأمر غير صالح (مثال: 01147422177)", 400);
+        return err(tApi("api.065"), 400);
       if (!isValidNationalId(nationalId))
-        return err("الرقم القومي لازم يكون 14 رقم", 400);
-      if (!schoolName) return err("اسم المدرسة مطلوب", 400);
+        return err(tApi("api.066"), 400);
+      if (!schoolName) return err(tApi("api.067"), 400);
       if (schoolType !== "LANGUAGE" && schoolType !== "ARABIC")
-        return err("اختار نوع المدرسة: لغات أو عربي", 400);
+        return err(tApi("api.068"), 400);
 
       const nationalTaken = await (db as any).student.findUnique({
         where: { nationalId },
       }).catch(() => null);
-      if (nationalTaken) return err("الرقم القومي ده مسجل بالفعل", 409);
+      if (nationalTaken) return err(tApi("api.069"), 409);
 
       const user = await db.user.create({
         data: {
@@ -110,13 +112,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ act
       const studentCode = String(body.studentCode || "").trim().toUpperCase();
 
       if (!isValidThreePartName(name))
-        return err("الاسم الكامل لازم يكون ثلاثي", 400);
+        return err(tApi("api.070"), 400);
       if (!parentPhone || !isValidEgyptianPhone(parentPhone))
-        return err("رقم تليفون ولي الأمر غير صالح (مثال: 01147422177)", 400);
+        return err(tApi("api.065"), 400);
       if (!isValidNationalId(studentNationalId))
-        return err("الرقم القومي للطالب لازم يكون 14 رقم", 400);
+        return err(tApi("api.071"), 400);
       if (!isValidStudentCode(studentCode))
-        return err("كود الطالب غير صالح (مثال: CM-ABC123)", 400);
+        return err(tApi("api.072"), 400);
 
       // Linking logic: match Parent Phone Number + Student National ID
       // (provided by the student during their registration) plus the
@@ -125,11 +127,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ act
         where: { nationalId: studentNationalId, studentCode },
         include: { user: true },
       });
-      if (!matched) return err("مفيش طالب بالرقم القومي وكود الطالب دول", 404);
+      if (!matched) return err(tApi("api.073"), 404);
       const storedParentPhone = normalizePhone(String(matched.parentPhone || ""));
       if (!storedParentPhone || storedParentPhone !== normalizePhone(parentPhone)) {
         return err(
-          "رقم تليفون ولي الأمر غير مطابق للرقم المسجل مع بيانات الطالب",
+          tApi("api.074"),
           404
         );
       }
@@ -158,7 +160,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ act
     }
 
     // ---------------- TEACHER / ADMIN (unchanged) ----------------
-    if (!name) return err("كل الحقول مطلوبة", 400);
+    if (!name) return err(tApi("api.059"), 400);
     const user = await db.user.create({
       data: {
         email,

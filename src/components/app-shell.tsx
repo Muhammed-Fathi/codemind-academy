@@ -1,4 +1,5 @@
 "use client";
+import { useT , pickAuto } from "@/lib/i18n";
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -43,6 +44,7 @@ const pageTransition = {
 };
 
 export function AppShell() {
+  const t = useT();
   const view = useApp((s) => s.view);
   const user = useApp((s) => s.user);
 
@@ -124,7 +126,7 @@ export function AppShell() {
           className="flex flex-col items-center gap-3"
         >
           <div className="w-8 h-8 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
-          <div className="text-sm text-muted-foreground">جارٍ التحميل…</div>
+          <div className="text-sm text-muted-foreground">{t("app.001")}</div>
         </motion.div>
       </div>
     );

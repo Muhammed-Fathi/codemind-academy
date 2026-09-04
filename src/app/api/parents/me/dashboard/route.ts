@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { getServerT, serverPick, serverLocale } from "@/lib/i18n-server";
 import { db } from "@/lib/db";
 import { ok, err, requireUser, getParentProfile } from "@/lib/api";
 import type { ParentSubscriptionPayload } from "@/lib/parent-subscription";
@@ -6,6 +7,9 @@ import type { ParentSubscriptionPayload } from "@/lib/parent-subscription";
 // GET /api/parents/me/dashboard
 // Returns aggregated analytics for the current parent's children.
 export async function GET(_req: NextRequest) {
+  const tApi = await getServerT();
+  const __loc = await serverLocale();
+  const sp = (ar: string | null | undefined, en: string | null | undefined) => serverPick(__loc, ar, en);
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
   if (user.role !== "PARENT") return err("Forbidden", 403);
@@ -92,7 +96,7 @@ export async function GET(_req: NextRequest) {
       const recentQuizAttempts = quizAttempts.slice(0, 6).map((a) => ({
         id: a.id,
         quizId: a.quizId,
-        quizTitle: a.quiz?.titleAr || a.quiz?.title || "Quiz",
+        quizTitle: sp(a.quiz?.titleAr, a.quiz?.title) || "Quiz",
         score: a.score,
         totalMarks: a.totalMarks,
         percentage: a.percentage,
@@ -168,7 +172,7 @@ export async function GET(_req: NextRequest) {
       const nextSessionPayload = nextSession
         ? {
             id: nextSession.id,
-            title: nextSession.titleAr || nextSession.title,
+            title: sp(nextSession.titleAr, nextSession.title),
             startAt: nextSession.startAt,
             duration: nextSession.duration,
             meetingUrl: nextSession.meetingUrl,
@@ -282,7 +286,7 @@ export async function GET(_req: NextRequest) {
         activities.push({
           type: "quiz",
           title: `Quiz: ${a.quiz?.titleAr || a.quiz?.title || "Quiz"}`,
-          description: `${a.percentage}% — ${a.passed ? "نجح" : "محتاج مراجعة"}`,
+          description: `${a.percentage}% — ${a.passed ? tApi("api.100") : tApi("api.101")}`,
           time: a.finishedAt || a.startedAt,
           kind: a.passed ? "good" : "warn",
         });
@@ -293,12 +297,12 @@ export async function GET(_req: NextRequest) {
           title: `Homework: ${s.homework?.titleAr || s.homework?.title || ""}`,
           description:
             s.status === "GRADED"
-              ? `اتصحح — الدرجة ${s.grade ?? 0}/10`
+              ? tApi("api.102", { p1: s.grade ?? 0 })
               : s.status === "SUBMITTED"
-              ? "اتسلم — مستني التصحيح"
+              ? tApi("api.103")
               : s.status === "LATE"
-              ? "اتسلم متأخر"
-              : "لسه ماتسلمش",
+              ? tApi("api.104")
+              : tApi("api.105"),
           time: s.submittedAt || s.homework?.deadline || new Date(),
           kind: s.status === "GRADED" ? "good" : s.status === "PENDING" ? "warn" : "neutral",
         });
@@ -306,12 +310,12 @@ export async function GET(_req: NextRequest) {
       for (const a of attendances.slice(0, 5)) {
         const label =
           a.status === "PRESENT"
-            ? "حاضر"
+            ? tApi("api.106")
             : a.status === "LATE"
-            ? "متأخر"
+            ? tApi("api.107")
             : a.status === "EXCUSED"
-            ? "غياب بعذر"
-            : "غايب";
+            ? tApi("api.108")
+            : tApi("api.109");
         activities.push({
           type: "attendance",
           title: `Live Session: ${a.session?.titleAr || a.session?.title || ""}`,

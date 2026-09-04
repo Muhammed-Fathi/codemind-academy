@@ -1,4 +1,5 @@
 "use client";
+import { useT, useLocale, pickAuto } from "@/lib/i18n";
 
 import * as React from "react";
 import { motion } from "framer-motion";
@@ -42,45 +43,46 @@ import { CodeMindLogo } from "@/components/logo";
 
 /* ----------------------------------- WHY ---------------------------------- */
 export function WhySection() {
+  const tr = useT();
   const items = [
     {
       icon: Video,
-      title: "Live Classes حقيقية",
-      desc: "حصتين في الأسبوع، تفاعل مباشر مع الـTeacher، وتسجيلات متاحة بعد كل حصة.",
+      title: tr("landing.010"),
+      desc: tr("landing.011"),
     },
     {
       icon: Brain,
-      title: "Programming & AI من الصفر",
-      desc: "منهج رسمي للثانوية العامة يبنيك خطوة بخطوة لحد ما توصل للـMachine Learning.",
+      title: tr("landing.012"),
+      desc: tr("landing.013"),
     },
     {
       icon: ShieldCheck,
-      title: "متابعة الأهل",
-      desc: "Dashboard مخصص لكل أب/أم يعرف مستوى ابنه، حضوره، وواجباته بشكل دوري.",
+      title: tr("landing.014"),
+      desc: tr("landing.015"),
     },
     {
       icon: LineChart,
-      title: "تتبع التقدم",
-      desc: "شوف إنت فين في كل وحدة، تحل Quiz وتشوف نتيجتك فورًا، وتعرف نقاط قوتك وضعفك.",
+      title: tr("landing.016"),
+      desc: tr("landing.017"),
     },
     {
       icon: Users,
-      title: "Groups صغيرة",
-      desc: "مجموعات منظمة بـTeacher مختص عشان كل طالب ياخد حقه في المتابعة.",
+      title: tr("landing.018"),
+      desc: tr("landing.019"),
     },
     {
       icon: Bell,
-      title: "Notifications ذكية",
-      desc: "تنبيهات قبل الحصص، عند إضافة واجب، أو لما تقرب مدة الاشتراك على الانتهاء.",
+      title: tr("landing.020"),
+      desc: tr("landing.021"),
     },
   ];
   return (
     <section id="why" className="py-24 sm:py-32 relative">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <SectionHeading
-          eyebrow="ليه CodeMind؟"
-          title="اللي يخلّي CodeMind مختلفة"
-          subtitle="مش مجرد فيديوهات. دي تجربة تعليمية متكاملة معمولة بقلب وعقل."
+          eyebrow={tr("landing.022")}
+          title={tr("landing.023")}
+          subtitle={tr("landing.024")}
         />
         <div className="mt-14 grid sm:grid-cols-2 lg:grid-cols-3 gap-5 stagger-in">
           {items.map((it) => (
@@ -107,21 +109,22 @@ export function WhySection() {
 
 /* --------------------------------- JOURNEY -------------------------------- */
 export function JourneySection() {
+  const tr = useT();
   const steps = [
-    { num: "01", title: "Register", desc: "اعمل حساب في أقل من دقيقة.", icon: Rocket },
-    { num: "02", title: "اختر Group", desc: "اختار المجموعة اللي تناسب جدولك.", icon: Users },
-    { num: "03", title: "اشترك", desc: "اختار باقة شهرية أو مخفضة.", icon: CreditCard },
-    { num: "04", title: "Admin Approval", desc: "نتأكد من الدفع ونفعل الاشتراك.", icon: ShieldCheck },
-    { num: "05", title: "ابدأ تتعلم", desc: "تابع Live Classes، Recordings، Quizzes.", icon: BookOpen },
-    { num: "06", title: "اتابع مستواك", desc: "شوف Progress وخطط الباقي.", icon: LineChart },
+    { num: "01", title: "Register", desc: tr("landing.025"), icon: Rocket },
+    { num: "02", title: tr("landing.026"), desc: tr("landing.027"), icon: Users },
+    { num: "03", title: tr("landing.028"), desc: tr("landing.029"), icon: CreditCard },
+    { num: "04", title: "Admin Approval", desc: tr("landing.030"), icon: ShieldCheck },
+    { num: "05", title: tr("landing.031"), desc: tr("landing.032"), icon: BookOpen },
+    { num: "06", title: tr("landing.033"), desc: tr("landing.034"), icon: LineChart },
   ];
   return (
     <section id="journey" className="py-24 sm:py-32 bg-gradient-to-b from-background via-primary/5 to-background">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <SectionHeading
-          eyebrow="رحلتك"
-          title="إزاي تبدأ — خطوة بخطوة"
-          subtitle="من أول ما تعمل حساب لحد ما تخلص الكورس.كل خطوة واضحة."
+          eyebrow={tr("landing.035")}
+          title={tr("landing.036")}
+          subtitle={tr("landing.037")}
         />
         <div className="mt-14 grid sm:grid-cols-2 lg:grid-cols-3 gap-5 stagger-in">
           {steps.map((s) => (
@@ -129,7 +132,7 @@ export function JourneySection() {
               key={s.num}
               className="relative bg-card rounded-2xl p-6 border border-border/60 shadow-sm card-hover"
             >
-              <div className="absolute top-4 left-4 text-5xl font-black text-primary/10 leading-none select-none">
+              <div className="absolute top-4 start-4 text-5xl font-black text-primary/10 leading-none select-none">
                 {s.num}
               </div>
               <div className="relative">
@@ -151,11 +154,13 @@ export function JourneySection() {
 
 /* ------------------------------- CURRICULUM ------------------------------- */
 export function CurriculumSection() {
+  const tr = useT();
+  const locale = useLocale();
   const [activePart, setActivePart] = React.useState(0);
 
   const parts = [
     {
-      titleAr: "الجزء الأول",
+      titleAr: tr("landing.038"),
       title: "Part One",
       color: "from-emerald-500 to-teal-500",
       units: [
@@ -166,7 +171,7 @@ export function CurriculumSection() {
       ],
     },
     {
-      titleAr: "الجزء الثاني",
+      titleAr: tr("landing.039"),
       title: "Part Two",
       color: "from-amber-500 to-orange-500",
       units: [
@@ -181,9 +186,9 @@ export function CurriculumSection() {
     <section id="curriculum" className="py-24 sm:py-32">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <SectionHeading
-          eyebrow="المنهج"
-          title="كل اللي هتتعلمه"
-          subtitle="منهج Programming & AI كامل للثانوية العامة، مقسم على جزئين وكل جزء فيه وحدات واضحة."
+          eyebrow={tr("landing.040")}
+          title={tr("landing.041")}
+          subtitle={tr("landing.042")}
         />
 
         {/* Part toggle */}
@@ -199,7 +204,7 @@ export function CurriculumSection() {
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                {p.titleAr} <span className="text-xs opacity-70">({p.title})</span>
+                {pickAuto(p.titleAr, p.title)}{locale === "ar" && <span className="text-xs opacity-70"> ({p.title})</span>}
               </button>
             ))}
           </div>
@@ -248,36 +253,37 @@ export function CurriculumSection() {
 
 /* -------------------------------- FEATURES -------------------------------- */
 export function FeaturesSection() {
+  const tr = useT();
   const features = [
     {
       icon: Video,
-      title: "Live Sessions أسبوعية",
-      desc: "حصتين لايف أسبوعيًا، تسجيلات متاحة بعد كل حصة، حضور وإدارة منظمة.",
+      title: tr("landing.043"),
+      desc: tr("landing.044"),
     },
     {
       icon: Brain,
-      title: "Quizzes أوتوماتيك",
-      desc: "اختبارات بعد كل Lesson، تصحيص فوري، شرح للإجابات، ومتابعة متقدمة.",
+      title: tr("landing.045"),
+      desc: tr("landing.046"),
     },
     {
       icon: BookOpen,
       title: "PDFs & Summaries",
-      desc: "ملخصات لكل Lesson، PDFs قابلة للتحميل، ومواد إضافية منظمة.",
+      desc: tr("landing.047"),
     },
     {
       icon: Users,
       title: "Parent Dashboard",
-      desc: "الأهل يشوفوا مستوى الطالب، حضوره، واجباته، وتقارير شهرية مفصلة.",
+      desc: tr("landing.048"),
     },
     {
       icon: CreditCard,
-      title: "Subscription ذكي",
-      desc: "اشتراك شهري، 3 شهور، أو 6 شهور. الـAdmin يفعّل بعد تأكيد الدفع.",
+      title: tr("landing.049"),
+      desc: tr("landing.050"),
     },
     {
       icon: Bell,
-      title: "Notifications مخصصة",
-      desc: "تنبيهات قبل الحصص، عند إضافة محتوى جديد، وعند انتهاء الاشتراك.",
+      title: tr("landing.051"),
+      desc: tr("landing.052"),
     },
   ];
 
@@ -285,9 +291,9 @@ export function FeaturesSection() {
     <section id="features" className="py-24 sm:py-32 bg-gradient-to-b from-background to-muted/40">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <SectionHeading
-          eyebrow="المميزات"
-          title="حاجة في كل ركن من المنصة"
-          subtitle="الكل شغّال فعلاً — من أول الحصة اللايف لحد ما يوصلك الـReport الشهري."
+          eyebrow={tr("landing.053")}
+          title={tr("landing.054")}
+          subtitle={tr("landing.055")}
         />
         <div className="mt-14 grid sm:grid-cols-2 lg:grid-cols-3 gap-5 stagger-in">
           {features.map((f) => (
@@ -314,32 +320,29 @@ export function FeaturesSection() {
 
 /* --------------------------------- PARENT --------------------------------- */
 export function ParentSection() {
+  const tr = useT();
   return (
     <section className="py-24 sm:py-32 relative overflow-hidden">
-      <div className="absolute -left-32 top-20 w-96 h-96 rounded-full bg-amber-400/10 blur-3xl" />
+      <div className="absolute -start-32 top-20 w-96 h-96 rounded-full bg-amber-400/10 blur-3xl" />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid lg:grid-cols-2 gap-12 items-center">
           {/* Copy */}
           <div>
             <Badge variant="secondary" className="mb-4 bg-amber-400/15 text-amber-700 hover:bg-amber-400/20">
-              <HeartHandshake className="w-3.5 h-3.5 ml-1.5" />
-              للأهل
-            </Badge>
+              <HeartHandshake className="w-3.5 h-3.5 ms-1.5" />
+              {tr("landing.056")}</Badge>
             <h2 className="text-3xl sm:text-4xl font-extrabold leading-tight">
-              متبقاش قلقان على مستوى ابنك.
-              <br />
-              <span className="text-gradient">تابع كل حاجة من مكان واحد.</span>
+              {tr("landing.057")}<br />
+              <span className="text-gradient">{tr("landing.058")}</span>
             </h2>
             <p className="mt-5 text-muted-foreground leading-relaxed">
-              Parent Dashboard مخصوص بيخلّي الأهل على اطلاع دائم: مستوى التقدم، Attendance،
-              نتائج الـQuizzes والـHomework، وملاحظات الـTeacher — كله بشكل مبسط وواضح.
-            </p>
+              {tr("landing.059")}</p>
             <ul className="mt-6 space-y-3">
               {[
-                "تقارير شهرية مفصلة",
-                "Attendance ونقاط القوة والضعف",
-                "تنبيهات قبل الحصص والامتحانات",
-                "تتبع التحصيل الشهري",
+                tr("landing.060"),
+                tr("landing.061"),
+                tr("landing.062"),
+                tr("landing.063"),
               ].map((it) => (
                 <li key={it} className="flex items-center gap-2 text-sm">
                   <CheckCircle2 className="w-4 h-4 text-primary shrink-0" />
@@ -372,7 +375,7 @@ export function ParentSection() {
                 <div className="grid grid-cols-2 gap-3">
                   <MiniStat label="Course Progress" value="68%" tone="primary" />
                   <MiniStat label="Attendance" value="92%" tone="amber" />
-                  <MiniStat label="آخر Quiz" value="88%" tone="primary" />
+                  <MiniStat label={tr("landing.064")} value="88%" tone="primary" />
                   <MiniStat label="Homework" value="3/4" tone="amber" />
                 </div>
 
@@ -394,8 +397,7 @@ export function ParentSection() {
 
                 <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
                   <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                  Monthly Report جاهز للتحميل
-                </div>
+                  {tr("landing.065")}</div>
               </CardContent>
             </Card>
           </div>
@@ -430,6 +432,7 @@ function MiniStat({
 
 /* --------------------------------- PRICING -------------------------------- */
 export function PricingSection() {
+  const tr = useT();
   const setView = useApp((s) => s.setView);
 
   const plans = [
@@ -437,20 +440,20 @@ export function PricingSection() {
       name: "Early Bird",
       nameAr: "Early Bird",
       price: 100,
-      duration: "شهر",
-      desc: "لفترة محدودة — استفيد من العرض.",
+      duration: tr("landing.066"),
+      desc: tr("landing.067"),
       features: ["Live Classes", "Recordings", "Quizzes", "PDFs"],
       highlight: false,
       promo: true,
     },
     {
       name: "Monthly",
-      nameAr: "شهري",
+      nameAr: tr("landing.068"),
       price: 200,
-      duration: "/شهر",
-      desc: "الأنسب للتجربة.",
+      duration: tr("landing.069"),
+      desc: tr("landing.070"),
       features: [
-        "كل مميزات Early Bird",
+        tr("landing.071"),
         "Homework + Grading",
         "Parent Dashboard",
         "Monthly Report",
@@ -459,14 +462,14 @@ export function PricingSection() {
     },
     {
       name: "6 Months",
-      nameAr: "6 شهور",
+      nameAr: tr("landing.072"),
       price: 1000,
-      duration: "/6 شهور",
-      desc: "وفّر 16% مع الباقة الفصلية.",
+      duration: tr("landing.073"),
+      desc: tr("landing.074"),
       features: [
-        "كل مميزات الشهري",
-        "تقارير شهرية مفصلة",
-        "أولوية في Support",
+        tr("landing.075"),
+        tr("landing.060"),
+        tr("landing.077"),
         "Mock Exams",
       ],
       highlight: false,
@@ -477,9 +480,9 @@ export function PricingSection() {
     <section id="pricing" className="py-24 sm:py-32 bg-gradient-to-b from-muted/40 to-background">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <SectionHeading
-          eyebrow="الأسعار"
-          title="باقة تناسب كل واحد"
-          subtitle="ابدأ بـ Early Bird، أو اطلع باقة شهرية/فصلية.كلها قابلة للإلغاء في أي وقت."
+          eyebrow={tr("landing.078")}
+          title={tr("landing.079")}
+          subtitle={tr("landing.080")}
         />
         <div className="mt-14 grid md:grid-cols-3 gap-6 items-stretch">
           {plans.map((p) => (
@@ -492,17 +495,17 @@ export function PricingSection() {
               }`}
             >
               {p.highlight && (
-                <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary via-teal-500 to-amber-400" />
+                <div className="absolute top-0 start-0 end-0 h-1 bg-gradient-to-r from-primary via-teal-500 to-amber-400" />
               )}
               {p.promo && (
-                <Badge className="absolute top-3 left-4 bg-amber-500 hover:bg-amber-500 text-white shadow-md">
-                  <Star className="w-3 h-3 ml-1 fill-white" />
+                <Badge className="absolute top-3 start-4 bg-amber-500 hover:bg-amber-500 text-white shadow-md">
+                  <Star className="w-3 h-3 ms-1 fill-white" />
                   Limited Offer
                 </Badge>
               )}
               <CardContent className="p-6 flex flex-col flex-1">
                 <div className="mb-4">
-                  <h3 className="text-lg font-bold">{p.nameAr}</h3>
+                  <h3 className="text-lg font-bold">{pickAuto(p.nameAr, p.name)}</h3>
                   <p className="text-xs text-muted-foreground mt-1">{p.desc}</p>
                 </div>
                 <div className="flex items-end gap-1.5 mb-5">
@@ -523,16 +526,14 @@ export function PricingSection() {
                   variant={p.highlight ? "default" : "outline"}
                   onClick={() => setView("register")}
                 >
-                  ابدأ دلوقتي
-                </Button>
+                  {tr("landing.081")}</Button>
               </CardContent>
             </Card>
           ))}
         </div>
         <p className="text-center text-xs text-muted-foreground mt-6">
-          الأسعار شاملة للـVAT. طرق الدفع: InstaPay ({brand.payments.instapay}) · e&
-          Cash ({brand.payments.eCash}) · Vodafone Cash (قريبًا)
-        </p>
+          {tr("landing.082")}{brand.payments.instapay}) · e&
+          Cash ({brand.payments.eCash}{tr("landing.083")}</p>
       </div>
     </section>
   );
@@ -540,39 +541,40 @@ export function PricingSection() {
 
 /* ---------------------------------- FAQ ----------------------------------- */
 export function FaqSection() {
+  const tr = useT();
   const faqs = [
     {
-      q: "المنصة دي لمين؟",
-      a: "لطلاب الصف الثاني الثانوي اللي عايزين يتعلموا Programming & AI بطريقة منظمة. الأهل كمان معاهم Dashboard خاص لمتابعة الأبناء.",
+      q: tr("landing.084"),
+      a: tr("landing.085"),
     },
     {
-      q: "إزاي بدأ؟",
-      a: "تعمل حساب، تختار Group، تشترك، تدفع عن طريق InstaPay أو e& Cash على +20 1147422177، وبعد ما الـAdmin يؤكد الدفع يتفعل اشتراكك خلال 24 ساعة.",
+      q: tr("landing.086"),
+      a: tr("landing.087"),
     },
     {
-      q: "في Recordings بعد كل Live Session؟",
-      a: "أيوا. كل حصة بتتسجل تلقائيًا، و Recording بيكون متاح لكل المشتركين النشطين.",
+      q: tr("landing.088"),
+      a: tr("landing.089"),
     },
     {
-      q: "أقدر أشوف المستوى بتاعي إزاي؟",
-      a: "في Dashboard هتلاقي Course Progress، Attendance، نتائج Quizzes، Homework، وتقارير شهرية. والأهل يقدروا يشوفوا اللي بيعملوه.",
+      q: tr("landing.090"),
+      a: tr("landing.091"),
     },
     {
-      q: "إيه طرق الدفع؟",
-      a: "InstaPay و e& Cash على +20 1147422177 (تحويل يدوي وتبعت الـReference، والـAdmin يفعّل اشتراكك). Vodafone Cash قريبًا.",
+      q: tr("landing.092"),
+      a: tr("landing.093"),
     },
     {
-      q: "لو اشتراكي خلص إيه اللي بيحصل؟",
-      a: "حسابك بيفضل موجود، لكن المحتوى التعليمي بيتقفل لحد ما تجدد الاشتراك. تقدر تجدد في أي وقت من الـDashboard.",
+      q: tr("landing.094"),
+      a: tr("landing.095"),
     },
   ];
   return (
     <section id="faq" className="py-24 sm:py-32">
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
         <SectionHeading
-          eyebrow="الأسئلة الشائعة"
-          title="كل اللي محتاج تعرفه"
-          subtitle="لو سؤالك مش هنا، تواصل معانا على WhatsApp."
+          eyebrow={tr("landing.096")}
+          title={tr("landing.097")}
+          subtitle={tr("landing.098")}
         />
         <Accordion type="single" collapsible className="mt-12 space-y-3">
           {faqs.map((f, i) => (
@@ -581,7 +583,7 @@ export function FaqSection() {
               value={`item-${i}`}
               className="border-0 bg-card rounded-2xl px-5 shadow-sm border border-border/40"
             >
-              <AccordionTrigger className="text-right font-bold hover:no-underline">
+              <AccordionTrigger className="text-end font-bold hover:no-underline">
                 <div className="flex items-center gap-3 flex-1">
                   <HelpCircle className="w-4 h-4 text-primary shrink-0" />
                   {f.q}
@@ -600,26 +602,27 @@ export function FaqSection() {
 
 /* ------------------------------- TESTIMONIAL ------------------------------ */
 export function TestimonialSection() {
+  const tr = useT();
   const items = [
     {
       name: "Mariam A.",
-      role: "طالبة 2nd Secondary",
+      role: tr("landing.099"),
       content:
-        "أخيراً منصة عربية محترمة تشرح الـMachine Learning بشكل بسيط. الـLive Sessions مريحة والـQuizzes بتثبت المعلومة.",
+        tr("landing.100"),
       rating: 5,
     },
     {
       name: "Mr. Adel",
-      role: "أب طالب",
+      role: tr("landing.101"),
       content:
-        "بقدر أشوف مستوى ابني كل أسبوع من غير ما أسأل. الـDashboard واضح والتقارير الشهرية ممتازة.",
+        tr("landing.102"),
       rating: 5,
     },
     {
       name: "Youssef M.",
-      role: "طالبة 2nd Secondary",
+      role: tr("landing.099"),
       content:
-        "الـRecordings بتنقذني كتير لما بفوت حصة. الـPDFs والـSummaries بترجعلي المعلومة بسرعة.",
+        tr("landing.104"),
       rating: 5,
     },
   ];
@@ -627,9 +630,9 @@ export function TestimonialSection() {
     <section className="py-24 sm:py-32 bg-gradient-to-b from-background via-muted/30 to-background">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <SectionHeading
-          eyebrow="آراء"
-          title="طلابنا وأهلهم بيقولوا إيه"
-          subtitle="ثقة الناس هي أكبر نجاح لينا."
+          eyebrow={tr("landing.105")}
+          title={tr("landing.106")}
+          subtitle={tr("landing.107")}
         />
         <div className="mt-14 grid md:grid-cols-3 gap-6 stagger-in">
           {items.map((t) => (
@@ -645,7 +648,7 @@ export function TestimonialSection() {
                     <div className="text-sm font-bold">{t.name}</div>
                     <div className="text-[11px] text-muted-foreground">{t.role}</div>
                   </div>
-                  <div className="ml-auto flex">
+                  <div className="ms-auto flex">
                     {Array.from({ length: t.rating }).map((_, i) => (
                       <Star key={i} className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
                     ))}
@@ -662,39 +665,36 @@ export function TestimonialSection() {
 
 /* --------------------------------- FINAL CTA ------------------------------ */
 export function FinalCtaSection() {
+  const tr = useT();
   const setView = useApp((s) => s.setView);
   return (
     <section className="py-24 sm:py-32 relative overflow-hidden">
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="relative rounded-[2.5rem] overflow-hidden p-10 sm:p-16 bg-gradient-to-br from-primary via-teal-500 to-amber-500 text-white shadow-2xl">
           <div className="absolute inset-0 bg-grid opacity-20" />
-          <div className="absolute -top-20 -right-20 w-80 h-80 rounded-full bg-white/10 blur-3xl" />
-          <div className="absolute -bottom-20 -left-20 w-80 h-80 rounded-full bg-white/10 blur-3xl" />
+          <div className="absolute -top-20 -end-20 w-80 h-80 rounded-full bg-white/10 blur-3xl" />
+          <div className="absolute -bottom-20 -start-20 w-80 h-80 rounded-full bg-white/10 blur-3xl" />
           <div className="relative text-center">
             <GraduationCap className="w-12 h-12 mx-auto mb-4" />
             <h2 className="text-3xl sm:text-4xl font-extrabold leading-tight">
-              جاهز تبدأ رحلتك في Programming & AI؟
-            </h2>
+              {tr("landing.108")}</h2>
             <p className="mt-4 text-white/90 max-w-xl mx-auto">
-              انضم لأكثر من 500 طالب بيدرسوا بطريقة منظمة وممتعة. أول Lesson مجانية!
-            </p>
+              {tr("landing.109")}</p>
             <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
               <Button
                 size="lg"
                 onClick={() => setView("register")}
                 className="bg-white text-primary hover:bg-white/90 h-12 px-7 text-base font-bold"
               >
-                <Rocket className="w-4 h-4 ml-2" />
-                ابدأ مجاناً
-              </Button>
+                <Rocket className="w-4 h-4 ms-2" />
+                {tr("landing.110")}</Button>
               <a
-                href={whatsappLink(brand.whatsapp.subscription, "السلام عليكم، عايز أعرف أكتر عن CodeMind")}
+                href={whatsappLink(brand.whatsapp.subscription, tr("landing.111"))}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center h-12 px-6 rounded-full bg-white/10 hover:bg-white/15 backdrop-blur-sm text-white text-sm font-bold transition-colors"
               >
-                اسأل على WhatsApp
-              </a>
+                {tr("landing.112")}</a>
             </div>
           </div>
         </div>
@@ -705,6 +705,7 @@ export function FinalCtaSection() {
 
 /* ---------------------------------- FOOTER -------------------------------- */
 export function Footer() {
+  const tr = useT();
   const setView = useApp((s) => s.setView);
   return (
     <footer className="border-t bg-card mt-auto">
@@ -721,17 +722,17 @@ export function Footer() {
           </div>
 
           <div>
-            <h4 className="font-bold mb-3 text-sm">المنصة</h4>
+            <h4 className="font-bold mb-3 text-sm">{tr("landing.113")}</h4>
             <ul className="space-y-2 text-sm text-muted-foreground">
-              <li><button className="hover:text-foreground" onClick={() => setView("login")}>تسجيل الدخول</button></li>
-              <li><button className="hover:text-foreground" onClick={() => setView("register")}>إنشاء حساب</button></li>
-              <li><button className="hover:text-foreground" onClick={() => useApp.getState().scrollTo("pricing")}>الأسعار</button></li>
-              <li><button className="hover:text-foreground" onClick={() => useApp.getState().scrollTo("curriculum")}>المنهج</button></li>
+              <li><button className="hover:text-foreground" onClick={() => setView("login")}>{tr("landing.114")}</button></li>
+              <li><button className="hover:text-foreground" onClick={() => setView("register")}>{tr("landing.115")}</button></li>
+              <li><button className="hover:text-foreground" onClick={() => useApp.getState().scrollTo("pricing")}>{tr("landing.078")}</button></li>
+              <li><button className="hover:text-foreground" onClick={() => useApp.getState().scrollTo("curriculum")}>{tr("landing.040")}</button></li>
             </ul>
           </div>
 
           <div>
-            <h4 className="font-bold mb-3 text-sm">تواصل معانا</h4>
+            <h4 className="font-bold mb-3 text-sm">{tr("landing.118")}</h4>
             <ul className="space-y-2 text-sm text-muted-foreground">
               <li>
                 <a
@@ -752,8 +753,7 @@ export function Footer() {
                   className="hover:text-foreground inline-flex items-center gap-1.5"
                 >
                   <GraduationCap className="w-3.5 h-3.5" />
-                  اسأل الـTeacher
-                </a>
+                  {tr("landing.119")}</a>
               </li>
               <li>
                 <a
@@ -766,7 +766,7 @@ export function Footer() {
                   Subscription Support
                 </a>
               </li>
-              <li dir="ltr" className="text-left">
+              <li dir="ltr" className="text-start">
                 <a
                   href={`tel:${brand.contact.phone.replace(/[^+0-9]/g, "")}`}
                   className="hover:text-foreground font-bold"
@@ -779,7 +779,7 @@ export function Footer() {
         </div>
 
         <div className="mt-10 pt-6 border-t flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-muted-foreground">
-          <div>© {new Date().getFullYear()} {brand.name}. كل الحقوق محفوظة.</div>
+          <div>© {new Date().getFullYear()} {brand.name}{tr("landing.120")}</div>
           <div className="flex items-center gap-3">
             <span className="px-2 py-1 rounded-md bg-muted/50">Make it Beautiful.</span>
             <span className="px-2 py-1 rounded-md bg-muted/50">Make it Fast.</span>

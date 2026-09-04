@@ -1,3 +1,4 @@
+import { getServerT } from "@/lib/i18n-server";
 // CodeMind Academy — Teacher Analytics API
 // Returns performance metrics for the teacher's groups and students.
 import { NextResponse } from "next/server";
@@ -5,9 +6,10 @@ import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
 
 export async function GET() {
+  const tApi = await getServerT();
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
-  if (user.role !== "TEACHER") return err("Analytics متاحة للمعلمين فقط", 403);
+  if (user.role !== "TEACHER") return err(tApi("api.154"), 403);
 
   const teacher = await db.teacher.findUnique({
     where: { userId: user.id },
@@ -34,7 +36,7 @@ export async function GET() {
       },
     },
   });
-  if (!teacher) return err("ملف المعلم غير موجود", 404);
+  if (!teacher) return err(tApi("api.155"), 404);
 
   // Compute per-group stats
   const groups = teacher.groups.map((g) => {

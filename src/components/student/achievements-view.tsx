@@ -1,4 +1,5 @@
 "use client";
+import { useT , pickAuto } from "@/lib/i18n";
 
 import * as React from "react";
 import { motion } from "framer-motion";
@@ -21,6 +22,7 @@ import {
 } from "lucide-react";
 
 export function AchievementsView() {
+  const t = useT();
   const setView = useApp((s) => s.setView);
   const [data, setData] = React.useState<any>(null);
   const [loading, setLoading] = React.useState(true);
@@ -29,7 +31,7 @@ export function AchievementsView() {
     fetch("/api/students/me/gamification")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => setData(d))
-      .catch(() => toast.error("حصلت مشكلة"))
+      .catch(() => toast.error(t("student.001")))
       .finally(() => setLoading(false));
   }, []);
 
@@ -62,8 +64,7 @@ export function AchievementsView() {
         className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
       >
         <ChevronLeft className="w-4 h-4 flip-rtl" />
-        رجوع
-      </button>
+        {t("student.002")}</button>
 
       {/* Header */}
       <motion.div
@@ -80,7 +81,7 @@ export function AchievementsView() {
               <div>
                 <h2 className="text-xl font-bold">Achievements</h2>
                 <p className="text-xs text-muted-foreground">
-                  {earned.length} من {data.badges.length} شارة مفتوحة ({earnedPct}%)
+                  {earned.length} {t("student.003")}{data.badges.length} {t("student.004")}{earnedPct}%)
                 </p>
               </div>
             </div>
@@ -106,7 +107,7 @@ export function AchievementsView() {
               <Zap className="w-4 h-4" />
             </div>
             <div className="text-xl font-extrabold">Lvl {data.level.current.level}</div>
-            <div className="text-[10px] text-muted-foreground">{data.level.current.title}</div>
+            <div className="text-[10px] text-muted-foreground">{pickAuto(data.level.current.title, data.level.current.titleEn)}</div>
           </CardContent>
         </Card>
         <Card className="glass card-hover">
@@ -125,7 +126,7 @@ export function AchievementsView() {
         <div>
           <h3 className="text-sm font-bold mb-3 flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-amber-500" />
-            Badges المفتوحة ({earned.length})
+            {t("student.005")}{earned.length})
           </h3>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
             {earned.map((b: any, i: number) => (
@@ -138,15 +139,14 @@ export function AchievementsView() {
                 <Card className="glass card-hover border-amber-400/30 bg-gradient-to-br from-amber-400/10 to-orange-500/5">
                   <CardContent className="p-4 text-center">
                     <div className="text-4xl mb-2 float-icon">{b.icon}</div>
-                    <div className="text-sm font-bold">{b.titleAr}</div>
+                    <div className="text-sm font-bold">{pickAuto(b.titleAr, b.title)}</div>
                     <div className="text-[10px] text-muted-foreground mt-1">{b.title}</div>
                     <div className="text-[9px] text-muted-foreground mt-2 leading-relaxed">
-                      {b.description}
+                      {pickAuto(b.description, b.descriptionEn)}
                     </div>
                     <Badge className="mt-2 bg-amber-400/20 text-amber-600 text-[10px]">
-                      <Trophy className="w-2.5 h-2.5 ml-1" />
-                      مفتوحة
-                    </Badge>
+                      <Trophy className="w-2.5 h-2.5 ms-1" />
+                      {t("student.006")}</Badge>
                   </CardContent>
                 </Card>
               </motion.div>
@@ -160,7 +160,7 @@ export function AchievementsView() {
         <div>
           <h3 className="text-sm font-bold mb-3 flex items-center gap-2">
             <Lock className="w-4 h-4 text-muted-foreground" />
-            Badges المقفولة ({locked.length})
+            {t("student.007")}{locked.length})
           </h3>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
             {locked.map((b: any, i: number) => (
@@ -173,15 +173,14 @@ export function AchievementsView() {
                 <Card className="glass opacity-70 hover:opacity-100 transition-opacity border-border/40">
                   <CardContent className="p-4 text-center">
                     <div className="text-4xl mb-2 grayscale opacity-40">{b.icon}</div>
-                    <div className="text-sm font-bold">{b.titleAr}</div>
+                    <div className="text-sm font-bold">{pickAuto(b.titleAr, b.title)}</div>
                     <div className="text-[10px] text-muted-foreground mt-1">{b.title}</div>
                     <div className="text-[9px] text-muted-foreground mt-2 leading-relaxed">
-                      {b.description}
+                      {pickAuto(b.description, b.descriptionEn)}
                     </div>
                     <Badge variant="outline" className="mt-2 text-[10px] text-muted-foreground">
-                      <Lock className="w-2.5 h-2.5 ml-1" />
-                      مقفولة
-                    </Badge>
+                      <Lock className="w-2.5 h-2.5 ms-1" />
+                      {t("student.008")}</Badge>
                   </CardContent>
                 </Card>
               </motion.div>
@@ -208,14 +207,14 @@ export function AchievementsView() {
                 {data.level.current.level}
               </div>
               <div>
-                <div className="font-bold">{data.level.current.title}</div>
+                <div className="font-bold">{pickAuto(data.level.current.title, data.level.current.titleEn)}</div>
                 <div className="text-xs text-muted-foreground">{data.xp} XP</div>
               </div>
             </div>
             {data.level.next && (
-              <div className="text-left">
+              <div className="text-start">
                 <div className="font-bold text-muted-foreground">{data.level.next.title}</div>
-                <div className="text-xs text-muted-foreground">{data.level.xpToNext} XP للـLevel اللي جاي</div>
+                <div className="text-xs text-muted-foreground">{data.level.xpToNext} {t("student.009")}</div>
               </div>
             )}
           </div>

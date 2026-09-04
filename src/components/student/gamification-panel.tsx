@@ -1,4 +1,5 @@
 "use client";
+import { useT , pickAuto } from "@/lib/i18n";
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -22,6 +23,7 @@ type Badge = {
   title: string;
   titleAr: string;
   description: string;
+  descriptionEn?: string;
   icon: string;
   color: string;
   earned: boolean;
@@ -52,6 +54,7 @@ type GamificationData = {
 };
 
 export function GamificationPanel() {
+  const t = useT();
   const [data, setData] = React.useState<GamificationData | null>(null);
   const [loading, setLoading] = React.useState(true);
 
@@ -67,7 +70,7 @@ export function GamificationPanel() {
             for (const code of d.newlyEarned) {
               const b = d.badges.find((x) => x.code === code);
               if (b) {
-                toast.success(`حصلت على Badge جديدة: ${b.titleAr} ${b.icon}`, {
+                toast.success(t("student.034", { p1: pickAuto(b.titleAr, b.title), p2: b.icon }), {
                   duration: 5000,
                 });
               }
@@ -118,19 +121,19 @@ export function GamificationPanel() {
                 <CardTitle className="text-base flex items-center gap-2">
                   Level {data.level.current.level}
                   <span className="text-xs font-normal text-muted-foreground">
-                    · {data.level.current.title}
+                    · {pickAuto(data.level.current.title, data.level.current.titleEn)}
                   </span>
                 </CardTitle>
                 <CardDescription className="text-xs">
                   {data.level.next
-                    ? `${data.level.xpToNext} XP للـLevel ${data.level.next.level} (${data.level.next.title})`
-                    : "أعلى Level 👑"}
+                    ? t("student.035", { p1: data.level.xpToNext, p2: data.level.next.level, p3: pickAuto(data.level.next.title, data.level.next.titleEn) })
+                    : t("student.036")}
                 </CardDescription>
               </div>
             </div>
-            <div className="text-left">
+            <div className="text-start">
               <div className="text-2xl font-extrabold text-gradient">{data.xp}</div>
-              <div className="text-[10px] text-muted-foreground">XP كامل</div>
+              <div className="text-[10px] text-muted-foreground">{t("student.037")}</div>
             </div>
           </div>
         </CardHeader>
@@ -163,12 +166,11 @@ export function GamificationPanel() {
               <div>
                 <CardTitle className="text-base">Badges</CardTitle>
                 <CardDescription className="text-xs">
-                  {data.badges.filter((b) => b.earned).length} من {data.badges.length} شارة
-                </CardDescription>
+                  {data.badges.filter((b) => b.earned).length} {t("student.038")}{data.badges.length} {t("student.039")}</CardDescription>
               </div>
             </div>
             <Badge variant="outline" className="bg-amber-400/10 text-amber-600 border-amber-400/30">
-              <Sparkles className="w-3 h-3 ml-1" />
+              <Sparkles className="w-3 h-3 ms-1" />
               {data.badges.filter((b) => b.earned).length}
             </Badge>
           </div>
@@ -223,7 +225,7 @@ function BadgeTile({ badge }: { badge: Badge }) {
           ? "border-amber-400/40 bg-gradient-to-br from-amber-400/10 to-orange-500/10 shadow-sm"
           : "border-border/40 bg-muted/20 opacity-50 grayscale"
       )}
-      title={badge.description}
+      title={pickAuto(badge.description, badge.descriptionEn)}
     >
       <div className={cn(
         "text-2xl mb-1 transition-transform",
@@ -232,10 +234,10 @@ function BadgeTile({ badge }: { badge: Badge }) {
         {badge.icon}
       </div>
       <div className="text-[10px] font-bold leading-tight line-clamp-2">
-        {badge.titleAr}
+        {pickAuto(badge.titleAr, badge.title)}
       </div>
       {badge.earned && (
-        <div className="absolute top-1 right-1 w-3.5 h-3.5 rounded-full bg-amber-400 flex items-center justify-center">
+        <div className="absolute top-1 end-1 w-3.5 h-3.5 rounded-full bg-amber-400 flex items-center justify-center">
           <Trophy className="w-2 h-2 text-white" />
         </div>
       )}

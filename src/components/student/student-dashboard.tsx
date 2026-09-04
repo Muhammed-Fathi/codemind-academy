@@ -1,4 +1,5 @@
 "use client";
+import { useT, translate , pickAuto } from "@/lib/i18n";
 
 import * as React from "react";
 import { motion } from "framer-motion";
@@ -141,23 +142,23 @@ type DashboardData = {
 // ============================================================
 // Helpers
 // ============================================================
-const arDateFmt = new Intl.DateTimeFormat("ar-EG", {
-  weekday: "long",
-  day: "numeric",
-  month: "long",
-});
-
+const curLocale = () => (useApp.getState().locale === "en" ? "en" : "ar");
+const dtLocale = () => (curLocale() === "en" ? "en-GB" : "ar-EG");
 function timeAgo(dateStr: string): string {
   const d = new Date(dateStr).getTime();
   const diff = Date.now() - d;
   const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return "دلوقتي";
-  if (minutes < 60) return `من ${minutes} دقيقة`;
+  if (minutes < 1) return translate(curLocale(), "student.110");
+  if (minutes < 60) return translate(curLocale(), "student.111");
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `من ${hours} ساعة`;
+  if (hours < 24) return translate(curLocale(), "student.112");
   const days = Math.floor(hours / 24);
-  if (days < 7) return `من ${days} يوم`;
-  return arDateFmt.format(new Date(dateStr));
+  if (days < 7) return translate(curLocale(), "student.113");
+  return new Intl.DateTimeFormat(dtLocale(), {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  }).format(new Date(dateStr));
 }
 
 function formatSessionDate(startAt: string): {
@@ -166,12 +167,12 @@ function formatSessionDate(startAt: string): {
   countdown: string;
 } {
   const d = new Date(startAt);
-  const dateStr = new Intl.DateTimeFormat("ar-EG", {
+  const dateStr = new Intl.DateTimeFormat(dtLocale(), {
     weekday: "long",
     day: "numeric",
     month: "long",
   }).format(d);
-  const timeStr = new Intl.DateTimeFormat("ar-EG", {
+  const timeStr = new Intl.DateTimeFormat(dtLocale(), {
     hour: "2-digit",
     minute: "2-digit",
   }).format(d);
@@ -181,7 +182,10 @@ function formatSessionDate(startAt: string): {
     0,
     Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
   );
-  const countdown = days > 0 ? `بعد ${days} يوم` : `بعد ${hours} ساعة`;
+  const countdown = translate(
+    curLocale(),
+    days > 0 ? "student.114" : "student.115"
+  );
   return { date: dateStr, time: timeStr, countdown };
 }
 
@@ -189,6 +193,7 @@ function formatSessionDate(startAt: string): {
 // Main
 // ============================================================
 export function StudentDashboard() {
+  const t = useT();
   const view = useApp((s) => s.view);
   const user = useApp((s) => s.user);
 
@@ -203,8 +208,8 @@ export function StudentDashboard() {
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error("fail"))))
       .then((d) => setData(d))
       .catch(() => {
-        setError("حصلت مشكلة وإحنا بنجيب البيانات. حاول تاني.");
-        toast.error("حصلت مشكلة وإحنا بنجيب البيانات. حاول تاني.");
+        setError(t("student.116"));
+        toast.error(t("student.116"));
       })
       .finally(() => setLoading(false));
   }, []);
@@ -256,14 +261,18 @@ function DashboardHome({
   onRetry: () => void;
   userName: string;
 }) {
+  const t = useT();
   const setView = useApp((s) => s.setView);
   const setNavParam = useApp((s) => s.setNavParam);
 
   if (loading) return <DashboardSkeleton />;
   if (error || !data)
-    return <ErrorState message={error || "مفيش بيانات"} onRetry={onRetry} />;
+    return <ErrorState message={error || t("student.118")} onRetry={onRetry} />;
 
-  const todayLabel = arDateFmt.format(new Date());
+  const todayLabel = new Intl.DateTimeFormat(
+    useApp.getState().locale === "en" ? "en-GB" : "ar-EG",
+    { weekday: "long", day: "numeric", month: "long" }
+  ).format(new Date());
 
   const openLesson = (lessonId: string) => {
     setView("student-lesson");
@@ -288,7 +297,7 @@ function DashboardHome({
       >
         <div>
           <h1 className="text-2xl md:text-3xl font-bold">
-            أهلاً يا <span className="text-gradient">{data.student.firstName}</span>{" "}
+            {t("student.119")}<span className="text-gradient">{data.student.firstName}</span>{" "}
             <span className="inline-block animate-float-slow">👋</span>
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
@@ -296,7 +305,7 @@ function DashboardHome({
           </p>
           {data.student.studentCode && (
             <div className="mt-2 inline-flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5">
-              <span className="text-[11px] text-muted-foreground">كود الطالب:</span>
+              <span className="text-[11px] text-muted-foreground">{t("student.120")}</span>
               <code className="text-sm font-black font-mono tracking-widest text-primary" dir="ltr">
                 {data.student.studentCode}
               </code>
@@ -304,15 +313,14 @@ function DashboardHome({
                 onClick={() => {
                   try {
                     navigator.clipboard.writeText(data.student.studentCode || "");
-                    toast.success("اتنسخ الكود ✅");
+                    toast.success(t("student.121"));
                   } catch {
-                    toast.error("انسخ الكود يدويًا");
+                    toast.error(t("student.122"));
                   }
                 }}
                 className="text-[11px] text-primary hover:underline font-bold"
               >
-                نسخ
-              </button>
+                {t("student.123")}</button>
             </div>
           )}
         </div>
@@ -342,8 +350,7 @@ function DashboardHome({
                 <div>
                   <CardTitle className="text-base">Continue Learning</CardTitle>
                   <CardDescription className="text-xs">
-                    كمل اللي سيبته
-                  </CardDescription>
+                    {t("student.124")}</CardDescription>
                 </div>
               </div>
               {data.group && (
@@ -353,8 +360,7 @@ function DashboardHome({
                   className="text-xs"
                   onClick={openCourse}
                 >
-                  كل الكورس
-                  <ChevronLeft className="w-3.5 h-3.5 flip-rtl" />
+                  {t("student.125")}<ChevronLeft className="w-3.5 h-3.5 flip-rtl" />
                 </Button>
               )}
             </CardHeader>
@@ -373,7 +379,7 @@ function DashboardHome({
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-muted-foreground">
-                        {data.continueLesson.isCompleted ? "اتخلصت ✅" : "Progress"}
+                        {data.continueLesson.isCompleted ? t("student.126") : "Progress"}
                       </span>
                       <span className="font-semibold">
                         {data.continueLesson.progress}%
@@ -385,16 +391,16 @@ function DashboardHome({
                     className="w-full"
                     onClick={() => openLesson(data.continueLesson!.id)}
                   >
-                    <PlayCircle className="w-4 h-4 ml-1" />
-                    {data.continueLesson.progress > 0 ? "يكمل" : "ابدأ"}
+                    <PlayCircle className="w-4 h-4 ms-1" />
+                    {data.continueLesson.progress > 0 ? t("student.127") : t("student.128")}
                   </Button>
                 </div>
               ) : (
                 <EmptyState
                   icon={<BookOpen className="w-5 h-5" />}
-                  title="لسه مبدأتش 🚀"
-                  hint="اختار Lesson من الكورس عشان تبدأ."
-                  actionLabel="افتح الكورس"
+                  title={t("student.129")}
+                  hint={t("student.130")}
+                  actionLabel={t("student.131")}
                   onAction={openCourse}
                 />
               )}
@@ -417,7 +423,7 @@ function DashboardHome({
                 <div>
                   <CardTitle className="text-base">Course Progress</CardTitle>
                   <CardDescription className="text-xs">
-                    {data.courseProgress.completedLessons} من{" "}
+                    {data.courseProgress.completedLessons} {t("student.132")}{" "}
                     {data.courseProgress.totalLessons} Lessons
                   </CardDescription>
                 </div>
@@ -449,8 +455,7 @@ function DashboardHome({
                   <div>
                     <CardTitle className="text-base">Next Live Session</CardTitle>
                     <CardDescription className="text-xs">
-                      الحصة الجاية
-                    </CardDescription>
+                      {t("student.133")}</CardDescription>
                   </div>
                 </div>
                 {data.nextSession && (
@@ -458,7 +463,7 @@ function DashboardHome({
                     variant="outline"
                     className="bg-amber-400/10 text-amber-600 border-amber-400/30"
                   >
-                    <Clock className="w-3 h-3 ml-1" />
+                    <Clock className="w-3 h-3 ms-1" />
                     {formatSessionDate(data.nextSession.startAt).countdown}
                   </Badge>
                 )}
@@ -472,15 +477,15 @@ function DashboardHome({
                   </div>
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     <Meta
-                      label="التاريخ"
+                      label={t("student.134")}
                       value={formatSessionDate(data.nextSession.startAt).date}
                     />
                     <Meta
-                      label="الميعاد"
+                      label={t("student.135")}
                       value={formatSessionDate(data.nextSession.startAt).time}
                     />
-                    <Meta label="المجموعة" value={data.nextSession.groupName} />
-                    <Meta label="المعلم" value={data.nextSession.teacherName} />
+                    <Meta label={t("student.136")} value={data.nextSession.groupName} />
+                    <Meta label={t("student.137")} value={data.nextSession.teacherName} />
                   </div>
                   {data.nextSession.meetingUrl ? (
                     <a
@@ -490,21 +495,19 @@ function DashboardHome({
                       className="inline-flex items-center justify-center w-full"
                     >
                       <Button className="w-full">
-                        <Video className="w-4 h-4 ml-1.5" />
-                        انضم
-                      </Button>
+                        <Video className="w-4 h-4 ms-1.5" />
+                        {t("student.138")}</Button>
                     </a>
                   ) : (
                     <Button variant="secondary" disabled className="w-full">
-                      هتقريبًا
-                    </Button>
+                      {t("student.139")}</Button>
                   )}
                 </div>
               ) : (
                 <EmptyState
                   icon={<CalendarClock className="w-5 h-5" />}
-                  title="مفيش Live Session مجدولة"
-                  hint="هتظهر هنا أول ما تتضاف."
+                  title={t("student.140")}
+                  hint={t("student.141")}
                 />
               )}
             </CardContent>
@@ -526,8 +529,7 @@ function DashboardHome({
                 <div>
                   <CardTitle className="text-base">Attendance</CardTitle>
                   <CardDescription className="text-xs">
-                    حضورك في الـLive Sessions
-                  </CardDescription>
+                    {t("student.142")}</CardDescription>
                 </div>
               </div>
             </CardHeader>
@@ -537,14 +539,13 @@ function DashboardHome({
                   {data.attendance.percentage}%
                 </div>
                 <div className="text-xs text-muted-foreground pb-1.5">
-                  {data.attendance.present}/{data.attendance.total} حصة
-                </div>
+                  {data.attendance.present}/{data.attendance.total} {t("student.143")}</div>
               </div>
               <MiniBars percentage={data.attendance.percentage} />
               <p className="text-xs text-muted-foreground">
                 {data.attendance.percentage >= 75
-                  ? "ممتاز! استمر على ده 🎯"
-                  : "حاول ما تغيبش عن الحصص كتير."}
+                  ? t("student.144")
+                  : t("student.145")}
               </p>
             </CardContent>
           </Card>
@@ -565,8 +566,7 @@ function DashboardHome({
                 <div>
                   <CardTitle className="text-base">Latest Quiz</CardTitle>
                   <CardDescription className="text-xs">
-                    أحدث نتيجة Quiz
-                  </CardDescription>
+                    {t("student.146")}</CardDescription>
                 </div>
               </div>
             </CardHeader>
@@ -605,8 +605,8 @@ function DashboardHome({
                     }
                   >
                     {data.latestQuizResult.passed
-                      ? "نجحت ✅"
-                      : "مكملة — حاول تاني"}
+                      ? t("student.147")
+                      : t("student.148")}
                   </Badge>
                   <Button
                     variant="outline"
@@ -616,15 +616,14 @@ function DashboardHome({
                       setNavParam(data.latestQuizResult!.quizId);
                     }}
                   >
-                    <RefreshCw className="w-4 h-4 ml-1.5" />
-                    حل تاني
-                  </Button>
+                    <RefreshCw className="w-4 h-4 ms-1.5" />
+                    {t("student.149")}</Button>
                 </div>
               ) : (
                 <EmptyState
                   icon={<Trophy className="w-5 h-5" />}
-                  title="لسه محلتش Quiz"
-                  hint="بعد ما تحل أول Quiz، النتيجة هتظهر هنا."
+                  title={t("student.150")}
+                  hint={t("student.151")}
                 />
               )}
             </CardContent>
@@ -649,8 +648,7 @@ function DashboardHome({
                 <div>
                   <CardTitle className="text-base">Pending Homework</CardTitle>
                   <CardDescription className="text-xs">
-                    واجبات لازم تخلصها
-                  </CardDescription>
+                    {t("student.152")}</CardDescription>
                 </div>
               </div>
               <div className="text-3xl font-bold text-gradient">
@@ -661,12 +659,12 @@ function DashboardHome({
               {data.pendingHomework.count === 0 ? (
                 <EmptyState
                   icon={<Sparkles className="w-5 h-5" />}
-                  title="مفيش واجبات عليك دلوقتي 🎉"
-                  hint="ارتاح شوية، وفاكرنا لما يجيلك جديد."
+                  title={t("student.153")}
+                  hint={t("student.154")}
                 />
               ) : (
                 <div className="space-y-3">
-                  <ScrollArea className="max-h-48 overflow-y-auto pr-2">
+                  <ScrollArea className="max-h-48 overflow-y-auto pe-2">
                     <ul className="space-y-2">
                       {data.pendingHomework.items.slice(0, 4).map((h) => {
                         const days = Math.max(
@@ -699,10 +697,10 @@ function DashboardHome({
                               }
                             >
                               {days === 0
-                                ? "النهارده"
+                                ? t("student.155")
                                 : days === 1
-                                ? "بكرة"
-                                : `بعد ${days} يوم`}
+                                ? t("student.156")
+                                : t("student.114", { p1: days })}
                             </Badge>
                           </li>
                         );
@@ -714,8 +712,7 @@ function DashboardHome({
                     className="w-full"
                     onClick={() => setView("student-homework")}
                   >
-                    افتتاح
-                    <ChevronLeft className="w-4 h-4 flip-rtl" />
+                    {t("student.158")}<ChevronLeft className="w-4 h-4 flip-rtl" />
                   </Button>
                 </div>
               )}
@@ -738,8 +735,7 @@ function DashboardHome({
                 <div>
                   <CardTitle className="text-base">Recent Activity</CardTitle>
                   <CardDescription className="text-xs">
-                    آخر 5 حاجات اتعملت
-                  </CardDescription>
+                    {t("student.159")}</CardDescription>
                 </div>
               </div>
             </CardHeader>
@@ -747,11 +743,11 @@ function DashboardHome({
               {data.recentActivity.length === 0 ? (
                 <EmptyState
                   icon={<CircleDashed className="w-5 h-5" />}
-                  title="لسه مفيش نشاط"
-                  hint="ابدأ Lesson أو حل Quiz وهيسجل هنا."
+                  title={t("student.160")}
+                  hint={t("student.161")}
                 />
               ) : (
-                <ScrollArea className="max-h-72 overflow-y-auto pr-2">
+                <ScrollArea className="max-h-72 overflow-y-auto pe-2">
                   <ol className="relative space-y-3">
                     {data.recentActivity.map((a, i) => (
                       <ActivityRow
@@ -786,12 +782,9 @@ function DashboardHome({
               </div>
               <div className="flex-1">
                 <div className="text-sm font-bold">
-                  استمر في الـStreak بتاعك!
-                </div>
+                  {t("student.162")}</div>
                 <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
-                  كل يوم تتعلم فيه بيزود الـStreak ويديك XP أكتر.
-                  خلّيك منتظم واكسب Badges جديدة!
-                </p>
+                  {t("student.163")}</p>
               </div>
             </CardContent>
           </Card>
@@ -838,18 +831,17 @@ function ErrorState({
   message: string;
   onRetry: () => void;
 }) {
+  const t = useT();
   return (
     <Card className="glass">
       <CardContent className="flex flex-col items-center justify-center py-16 text-center">
         <AlertTriangle className="w-10 h-10 text-amber-500 mb-3" />
         <p className="text-base font-semibold mb-1">{message}</p>
         <p className="text-xs text-muted-foreground mb-4">
-          اتأكد إنك لسه مسجل دخول وحاول تاني.
-        </p>
+          {t("student.164")}</p>
         <Button onClick={onRetry} variant="outline">
-          <RefreshCw className="w-4 h-4 ml-2" />
-          حاول تاني
-        </Button>
+          <RefreshCw className="w-4 h-4 ms-2" />
+          {t("student.165")}</Button>
       </CardContent>
     </Card>
   );
@@ -896,6 +888,7 @@ function Meta({ label, value }: { label: string; value: string }) {
 }
 
 function ProgressRing({ percentage }: { percentage: number }) {
+  const t = useT();
   const radius = 56;
   const stroke = 10;
   const circumference = 2 * Math.PI * radius;
@@ -937,7 +930,7 @@ function ProgressRing({ percentage }: { percentage: number }) {
       <div className="absolute inset-0 grid place-items-center">
         <div className="text-center">
           <div className="text-3xl font-bold text-gradient">{percentage}%</div>
-          <div className="text-[10px] text-muted-foreground">اتخلص</div>
+          <div className="text-[10px] text-muted-foreground">{t("student.166")}</div>
         </div>
       </div>
     </div>
@@ -1024,12 +1017,12 @@ function SubscriptionPill({
   planName: string | null;
   onRenew: () => void;
 }) {
+  const t = useT();
   if (status === "NONE") {
     return (
       <Button size="sm" onClick={onRenew}>
-        <CreditCard className="w-4 h-4 ml-1.5" />
-        اشترك دلوقتي
-      </Button>
+        <CreditCard className="w-4 h-4 ms-1.5" />
+        {t("student.167")}</Button>
     );
   }
   if (status === "ACTIVE") {
@@ -1038,7 +1031,7 @@ function SubscriptionPill({
         variant="outline"
         className="border-primary/30 text-primary bg-primary/10 px-3 py-1 text-xs"
       >
-        <CheckCircle2 className="w-3.5 h-3.5 ml-1" />
+        <CheckCircle2 className="w-3.5 h-3.5 ms-1" />
         Active
         {planName && <span className="opacity-70">· {planName}</span>}
       </Badge>
@@ -1051,17 +1044,15 @@ function SubscriptionPill({
           variant="outline"
           className="border-amber-400/40 text-amber-600 bg-amber-400/10 px-3 py-1 text-xs hover:bg-amber-400/20 transition-colors"
         >
-          <AlertTriangle className="w-3.5 h-3.5 ml-1" />
-          بينتهي بعد {daysToExpiry} يوم · جدد
-        </Badge>
+          <AlertTriangle className="w-3.5 h-3.5 ms-1" />
+          {t("student.168")}{daysToExpiry} {t("student.169")}</Badge>
       </button>
     );
   }
   return (
     <Button size="sm" variant="destructive" onClick={onRenew}>
-      <AlertTriangle className="w-4 h-4 ml-1.5" />
-      انتهى الاشتراك — جدد
-    </Button>
+      <AlertTriangle className="w-4 h-4 ms-1.5" />
+      {t("student.170")}</Button>
   );
 }
 
@@ -1069,6 +1060,7 @@ function SubscriptionPill({
 // Sub-views
 // ============================================================
 function HomeworkView() {
+  const t = useT();
   const setView = useApp((s) => s.setView);
   const setNavParam = useApp((s) => s.setNavParam);
   const [items, setItems] = React.useState<any[] | null>(null);
@@ -1097,11 +1089,9 @@ function HomeworkView() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <ClipboardList className="w-5 h-5 text-amber-500" />
-            الواجبات عليك
-          </CardTitle>
+            {t("student.171")}</CardTitle>
           <CardDescription>
-            شوف كل واجباتك ومواعيدها وتقدر تفتح الـLesson بتاعتها.
-          </CardDescription>
+            {t("student.172")}</CardDescription>
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -1113,11 +1103,11 @@ function HomeworkView() {
           ) : !items || items.length === 0 ? (
             <EmptyState
               icon={<Sparkles className="w-5 h-5" />}
-              title="مفيش واجبات عليك دلوقتي 🎉"
-              hint="ارتاح، ولما يتضاف حاجة هتلاقيها هنا."
+              title={t("student.153")}
+              hint={t("student.174")}
             />
           ) : (
-            <ScrollArea className="max-h-96 overflow-y-auto pr-2">
+            <ScrollArea className="max-h-96 overflow-y-auto pe-2">
               <ul className="space-y-2">
                 {items.map((h) => {
                   const days = Math.max(
@@ -1150,7 +1140,7 @@ function HomeworkView() {
                         {isGraded && (
                           <div className="text-[11px] mt-1 text-primary flex items-center gap-1">
                             <CheckCircle2 className="w-3 h-3" />
-                            الدرجة: {sub.grade}/{h.maxMarks}
+                            {t("student.175")}{sub.grade}/{h.maxMarks}
                             {sub.feedback && (
                               <span className="text-muted-foreground truncate">
                                 — {sub.feedback}
@@ -1161,19 +1151,16 @@ function HomeworkView() {
                         {isSubmitted && (
                           <div className="text-[11px] mt-1 text-amber-600 dark:text-amber-400 flex items-center gap-1">
                             <Clock className="w-3 h-3" />
-                            اتبعتت — مستنية التصحيح
-                          </div>
+                            {t("student.176")}</div>
                         )}
                         {isLate && (
                           <div className="text-[11px] mt-1 text-destructive flex items-center gap-1">
                             <AlertTriangle className="w-3 h-3" />
-                            اتبعتت متأخر
-                          </div>
+                            {t("student.177")}</div>
                         )}
                         {isPending && (
                           <div className="text-[11px] mt-1 text-muted-foreground">
-                            لسه متبعتش
-                          </div>
+                            {t("student.178")}</div>
                         )}
                       </div>
                       <div className="flex flex-col items-end gap-1.5">
@@ -1186,10 +1173,10 @@ function HomeworkView() {
                           }
                         >
                           {days === 0
-                            ? "اليوم"
+                            ? t("student.179")
                             : days === 1
-                            ? "بكرة"
-                            : `بعد ${days} يوم`}
+                            ? t("student.156")
+                            : t("student.114", { p1: days })}
                         </Badge>
                         {isGraded && (
                           <Badge className="bg-primary/10 text-primary hover:bg-primary/15 text-[10px]">
@@ -1206,8 +1193,7 @@ function HomeworkView() {
                             setNavParam(h.lessonId);
                           }}
                         >
-                          افتح
-                          <ChevronLeft className="w-3.5 h-3.5 flip-rtl" />
+                          {t("student.182")}<ChevronLeft className="w-3.5 h-3.5 flip-rtl" />
                         </Button>
                       )}
                     </li>
@@ -1223,6 +1209,7 @@ function HomeworkView() {
 }
 
 function NotificationsView() {
+  const t = useT();
   const setView = useApp((s) => s.setView);
   const [items, setItems] = React.useState<any[] | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -1247,19 +1234,18 @@ function NotificationsView() {
       body: JSON.stringify({ markAllRead: true }),
     });
     reload();
-    toast.success("اتمخلت كل الإشعارات كمقروءة");
+    toast.success(t("student.183"));
   };
 
   return (
     <div className="space-y-4">
       <BackBar
-        title="الإشعارات"
+        title={t("student.184")}
         onBack={() => setView("student-dashboard")}
         action={
           <Button variant="ghost" size="sm" onClick={markAll}>
-            <CheckCircle2 className="w-4 h-4 ml-1.5" />
-            علم الكل كمقروء
-          </Button>
+            <CheckCircle2 className="w-4 h-4 ms-1.5" />
+            {t("student.185")}</Button>
         }
       />
       <Card className="glass">
@@ -1273,8 +1259,8 @@ function NotificationsView() {
           ) : !items || items.length === 0 ? (
             <EmptyState
               icon={<Bell className="w-5 h-5" />}
-              title="مفيش إشعارات جديدة 🔕"
-              hint="أي إشعار جديد هتلاقيه هنا."
+              title={t("student.186")}
+              hint={t("student.187")}
             />
           ) : (
             <ScrollArea className="max-h-[70vh] overflow-y-auto">
@@ -1329,12 +1315,13 @@ function ProgressView({
   error: string | null;
   onRetry: () => void;
 }) {
+  const t = useT();
   const setView = useApp((s) => s.setView);
   const exportProgress = async () => {
     try {
       const r = await fetch("/api/students/me/export-progress");
       if (!r.ok) {
-        toast.error("فشل التصدير");
+        toast.error(t("student.188"));
         return;
       }
       const blob = await r.blob();
@@ -1344,19 +1331,19 @@ function ProgressView({
       a.download = `my-progress-${new Date().toISOString().slice(0, 10)}.csv`;
       a.click();
       URL.revokeObjectURL(url);
-      toast.success("اتنزّل ملف التقدم ✅");
+      toast.success(t("student.189"));
     } catch {
-      toast.error("حصلت مشكلة في التصدير");
+      toast.error(t("student.190"));
     }
   };
   return (
     <div className="space-y-4">
       <BackBar
-        title="تقدمي"
+        title={t("student.191")}
         onBack={() => setView("student-dashboard")}
         action={
           <Button variant="outline" size="sm" onClick={exportProgress}>
-            <Download className="w-4 h-4 ml-1.5" />
+            <Download className="w-4 h-4 ms-1.5" />
             Export CSV
           </Button>
         }
@@ -1364,7 +1351,7 @@ function ProgressView({
       {loading ? (
         <DashboardSkeleton />
       ) : error || !data ? (
-        <ErrorState message={error || "مفيش بيانات"} onRetry={onRetry} />
+        <ErrorState message={error || t("student.118")} onRetry={onRetry} />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card className="glass">
@@ -1385,8 +1372,7 @@ function ProgressView({
               </div>
               <MiniBars percentage={data.attendance.percentage} />
               <div className="text-xs text-muted-foreground">
-                {data.attendance.present} من {data.attendance.total} حصة
-              </div>
+                {data.attendance.present} {t("student.132")}{data.attendance.total} {t("student.143")}</div>
             </CardContent>
           </Card>
           <Card className="glass">
@@ -1395,12 +1381,12 @@ function ProgressView({
             </CardHeader>
             <CardContent className="space-y-3">
               <Stat
-                label="اتخلصت"
+                label={t("student.195")}
                 value={data.courseProgress.completedLessons}
                 icon={<CheckCircle2 className="w-4 h-4 text-primary" />}
               />
               <Stat
-                label="إجمالي"
+                label={t("student.196")}
                 value={data.courseProgress.totalLessons}
                 icon={<BookOpen className="w-4 h-4 text-muted-foreground" />}
               />
@@ -1444,12 +1430,12 @@ function BackBar({
   onBack: () => void;
   action?: React.ReactNode;
 }) {
+  const t = useT();
   return (
     <div className="flex items-center justify-between">
       <Button variant="ghost" size="sm" onClick={onBack}>
-        <ArrowLeft className="w-4 h-4 ml-1.5 flip-rtl" />
-        رجوع
-      </Button>
+        <ArrowLeft className="w-4 h-4 ms-1.5 flip-rtl" />
+        {t("student.197")}</Button>
       <h1 className="text-lg font-bold">{title}</h1>
       <div className="min-w-20 flex justify-end">{action}</div>
     </div>

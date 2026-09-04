@@ -1,4 +1,5 @@
 "use client";
+import { useT , pickAuto } from "@/lib/i18n";
 
 import * as React from "react";
 import { motion } from "framer-motion";
@@ -40,6 +41,7 @@ type LeaderEntry = {
 };
 
 export function LeaderboardView() {
+  const t = useT();
   const setView = useApp((s) => s.setView);
   const user = useApp((s) => s.user);
   const [data, setData] = React.useState<{
@@ -54,7 +56,7 @@ export function LeaderboardView() {
     fetch("/api/students/me/leaderboard")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => setData(d))
-      .catch(() => toast.error("حصلت مشكلة"))
+      .catch(() => toast.error(t("student.040")))
       .finally(() => setLoading(false));
   }, []);
 
@@ -82,8 +84,7 @@ export function LeaderboardView() {
         className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
       >
         <ChevronLeft className="w-4 h-4 flip-rtl" />
-        رجوع
-      </button>
+        {t("student.041")}</button>
 
       {/* Header */}
       <motion.div
@@ -100,7 +101,7 @@ export function LeaderboardView() {
               <div>
                 <h2 className="text-xl font-bold">Leaderboard</h2>
                 <p className="text-xs text-muted-foreground">
-                  أكتر الطلاب نشاطًا في الأكاديمية — ترتيبك الحالي: #{myRank}
+                  {t("student.042")}{myRank}
                 </p>
               </div>
             </div>
@@ -122,23 +123,23 @@ export function LeaderboardView() {
                   #{myRank}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-bold">أنت — {user?.name}</div>
+                  <div className="text-sm font-bold">{t("student.043")}{user?.name}</div>
                   <div className="flex items-center gap-2 mt-1">
                     <Badge className="bg-primary/15 text-primary text-xs">
-                      <Star className="w-3 h-3 ml-1 fill-primary" />
+                      <Star className="w-3 h-3 ms-1 fill-primary" />
                       Level {myStats.level} · {myStats.levelTitle}
                     </Badge>
                     <Badge variant="outline" className="text-xs">
-                      <Zap className="w-3 h-3 ml-1 text-amber-500" />
+                      <Zap className="w-3 h-3 ms-1 text-amber-500" />
                       {myStats.xp} XP
                     </Badge>
                     <Badge variant="outline" className="text-xs">
-                      <Award className="w-3 h-3 ml-1 text-amber-500" />
+                      <Award className="w-3 h-3 ms-1 text-amber-500" />
                       {myStats.badgeCount} Badges
                     </Badge>
                   </div>
                 </div>
-                <div className="text-left shrink-0">
+                <div className="text-start shrink-0">
                   <div className="flex items-center gap-1 text-sm font-bold text-orange-500">
                     <Flame className="w-4 h-4" />
                     {myStats.streak}
@@ -230,11 +231,10 @@ export function LeaderboardView() {
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <Users className="w-5 h-5 text-primary" />
-                الترتيب الكامل
-              </CardTitle>
+                {t("student.044")}</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+              <div className="space-y-2 max-h-96 overflow-y-auto pe-1">
                 {rest.map((entry, i) => {
                   const isMe = entry.name === user?.name;
                   return (
@@ -260,24 +260,24 @@ export function LeaderboardView() {
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-semibold truncate">
                           {entry.name}
-                          {isMe && <span className="text-primary mr-1"> (أنت)</span>}
+                          {isMe && <span className="text-primary me-1"> {t("student.045")}</span>}
                         </div>
                         <div className="flex items-center gap-2 mt-0.5">
                           <Badge variant="outline" className="text-[10px]">
-                            <Star className="w-2.5 h-2.5 ml-0.5 text-amber-500" />
+                            <Star className="w-2.5 h-2.5 ms-0.5 text-amber-500" />
                             Lvl {entry.level}
                           </Badge>
                           <Badge variant="outline" className="text-[10px]">
-                            <Award className="w-2.5 h-2.5 ml-0.5 text-amber-500" />
+                            <Award className="w-2.5 h-2.5 ms-0.5 text-amber-500" />
                             {entry.badgeCount}
                           </Badge>
                           <Badge variant="outline" className="text-[10px]">
-                            <Flame className="w-2.5 h-2.5 ml-0.5 text-orange-500" />
+                            <Flame className="w-2.5 h-2.5 ms-0.5 text-orange-500" />
                             {entry.streak}
                           </Badge>
                         </div>
                       </div>
-                      <div className="text-left shrink-0">
+                      <div className="text-start shrink-0">
                         <div className="text-sm font-bold text-gradient">
                           {entry.xp}
                         </div>
@@ -304,18 +304,16 @@ export function LeaderboardView() {
               <TrendingUp className="w-5 h-5" />
             </div>
             <div className="flex-1">
-              <div className="text-sm font-bold">عايز تطلع فوق؟ 🔥</div>
+              <div className="text-sm font-bold">{t("student.046")}</div>
               <p className="text-xs text-muted-foreground mt-0.5">
-                خلّص Lessons، حل Quizzes، وامشي في الـStreak بتاعك كل يوم عشان تجمع XP أكتر وتطلع في الـLeaderboard.
-              </p>
+                {t("student.047")}</p>
             </div>
             <Button
               size="sm"
               variant="outline"
               onClick={() => setView("student-course")}
             >
-              كمّل دراسة
-              <ChevronLeft className="w-3.5 h-3.5 flip-rtl" />
+              {t("student.048")}<ChevronLeft className="w-3.5 h-3.5 flip-rtl" />
             </Button>
           </CardContent>
         </Card>

@@ -1,3 +1,4 @@
+import { getServerT } from "@/lib/i18n-server";
 // CodeMind Academy — Parent Analytics API
 // Returns detailed analytics for parent's children with date-range support.
 import { NextRequest, NextResponse } from "next/server";
@@ -5,9 +6,10 @@ import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
 
 export async function GET(req: NextRequest) {
+  const tApi = await getServerT();
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
-  if (user.role !== "PARENT") return err("Analytics متاحة لأولياء الأمور فقط", 403);
+  if (user.role !== "PARENT") return err(tApi("api.098"), 403);
 
   const parent = await db.parent.findUnique({
     where: { userId: user.id },
@@ -36,7 +38,7 @@ export async function GET(req: NextRequest) {
       },
     },
   });
-  if (!parent) return err("ملف ولي الأمر غير موجود", 404);
+  if (!parent) return err(tApi("api.099"), 404);
 
   const childrenAnalytics = parent.children.map((link) => {
     const s = link.student;

@@ -1,3 +1,4 @@
+import { getServerT } from "@/lib/i18n-server";
 // CodeMind Academy — Student Referral API
 // Students can share their referral code, track referrals, and earn XP rewards.
 import { NextResponse } from "next/server";
@@ -6,12 +7,13 @@ import { db } from "@/lib/db";
 
 // GET — returns student's referral code + referral stats
 export async function GET() {
+  const tApi = await getServerT();
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
-  if (user.role !== "STUDENT") return err("الإحالات متاحة للطلاب فقط", 403);
+  if (user.role !== "STUDENT") return err(tApi("api.140"), 403);
 
   const student = await db.student.findUnique({ where: { userId: user.id } });
-  if (!student) return err("ملف الطالب غير موجود", 404);
+  if (!student) return err(tApi("api.141"), 404);
 
   // Generate a stable referral code from student ID
   const referralCode = `CM-${student.id.slice(-6).toUpperCase()}`;
@@ -58,34 +60,35 @@ export async function GET() {
 
 // POST — process a referral (called when a new student registers with a ref code)
 export async function POST(req: Request) {
+  const tApi = await getServerT();
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
-  if (user.role !== "STUDENT") return err("الإحالات متاحة للطلاب فقط", 403);
+  if (user.role !== "STUDENT") return err(tApi("api.140"), 403);
 
   const body = await req.json().catch(() => ({}));
   const { referralCode } = body as { referralCode?: string };
-  if (!referralCode) return err("كود الإحالة مطلوب", 400);
+  if (!referralCode) return err(tApi("api.142"), 400);
 
   const student = await db.student.findUnique({ where: { userId: user.id } });
-  if (!student) return err("ملف الطالب غير موجود", 404);
+  if (!student) return err(tApi("api.141"), 404);
 
   // Parse the referral code to find the referrer
   const code = referralCode.trim().toUpperCase();
-  if (!code.startsWith("CM-")) return err("كود الإحالة مش صحيح", 400);
+  if (!code.startsWith("CM-")) return err(tApi("api.143"), 400);
 
   const suffix = code.slice(3);
   const referrer = await db.student.findFirst({
     where: { id: { contains: suffix.toLowerCase() } },
   });
 
-  if (!referrer) return err("كود الإحالة مش موجود", 404);
-  if (referrer.id === student.id) return err("مينفعش تحيل نفسك", 400);
+  if (!referrer) return err(tApi("api.144"), 404);
+  if (referrer.id === student.id) return err(tApi("api.145"), 400);
 
   // Check if referral already exists
   const existing = await db.referral.findUnique({
     where: { referrerId_referredId: { referrerId: referrer.id, referredId: student.id } },
   });
-  if (existing) return err("أنت بالفعل محال بهذا الطالب", 400);
+  if (existing) return err(tApi("api.146"), 400);
 
   // Create referral with BOTH XP + DISCOUNT reward
   const referral = await db.referral.create({
@@ -110,7 +113,7 @@ export async function POST(req: Request) {
         value: 10,
         maxUses: 1,
         isActive: true,
-        description: `Referral reward — 10% خصم على التجديد`,
+        description: tApi("api.147"),
         createdById: referrer.userId,
       },
     });
@@ -121,13 +124,13 @@ export async function POST(req: Request) {
   await createNotificationIfAllowed({
     userId: referrer.userId,
     type: "ANNOUNCEMENT",
-    title: "إحالة جديدة! 🎉 + خصم 10%",
-    message: `${user.name} سجل بإحالتك. كسبت 50 XP + كود خصم 10%: ${couponCode}`,
+    title: tApi("api.148"),
+    message: tApi("api.149", { p1: user.name, p2: couponCode }),
   });
 
   return ok({
     referral,
-    message: "تم تسجيل الإحالة بنجاح",
+    message: tApi("api.150"),
     rewardCoupon: couponCode,
   });
 }

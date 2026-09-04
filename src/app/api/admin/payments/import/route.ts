@@ -1,3 +1,4 @@
+import { getServerT } from "@/lib/i18n-server";
 // CodeMind Academy — Admin Bulk Payment Import API
 // Accepts an xlsx file, parses payment records, creates them in bulk.
 import { NextRequest, NextResponse } from "next/server";
@@ -9,6 +10,7 @@ import * as XLSX from "xlsx";
 // reference, status (PENDING|APPROVED|REJECTED), notes
 
 export async function POST(req: NextRequest) {
+  const tApi = await getServerT();
   const { user, error } = await requireRole("ADMIN");
   if (error) return error;
   if (!user) return err("Unauthorized", 401);
@@ -16,15 +18,15 @@ export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
     const file = formData.get("file") as File;
-    if (!file) return err("ملف xlsx مطلوب", 400);
+    if (!file) return err(tApi("api.032"), 400);
 
     const buffer = await file.arrayBuffer();
     const workbook = XLSX.read(buffer, { type: "array" });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    if (!sheet) return err("مفيش sheet في الملف", 400);
+    if (!sheet) return err(tApi("api.033"), 400);
 
     const rows = XLSX.utils.sheet_to_json<any>(sheet);
-    if (rows.length === 0) return err("الـsheet فاضي", 400);
+    if (rows.length === 0) return err(tApi("api.034"), 400);
 
     const results: any[] = [];
     let created = 0;
@@ -32,19 +34,19 @@ export async function POST(req: NextRequest) {
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
-      const userEmail = String(row.userEmail || row.email || row["الإيميل"] || "").trim().toLowerCase();
-      const amount = parseFloat(String(row.amount || row["المبلغ"] || 0));
-      const method = String(row.method || row["الطريقة"] || "INSTAPAY").trim().toUpperCase();
-      const reference = row.reference || row["المرجع"] ? String(row.reference || row["المرجع"]) : null;
-      const status = String(row.status || row["الحالة"] || "PENDING").trim().toUpperCase();
-      const notes = row.notes || row["ملاحظات"] ? String(row.notes || row["ملاحظات"]) : null;
+      const userEmail = String(row.userEmail || row.email || row[tApi("api.035")] || "").trim().toLowerCase();
+      const amount = parseFloat(String(row.amount || row[tApi("api.036")] || 0));
+      const method = String(row.method || row[tApi("api.037")] || "INSTAPAY").trim().toUpperCase();
+      const reference = row.reference || row[tApi("api.038")] ? String(row.reference || row[tApi("api.038")]) : null;
+      const status = String(row.status || row[tApi("api.039")] || "PENDING").trim().toUpperCase();
+      const notes = row.notes || row[tApi("api.040")] ? String(row.notes || row[tApi("api.040")]) : null;
 
       if (!userEmail || !amount) {
         results.push({
           row: i + 2,
           userEmail: userEmail || "—",
           status: "failed",
-          error: "بيانات ناقصة (الإيميل أو المبلغ)",
+          error: tApi("api.041"),
         });
         failed++;
         continue;
@@ -60,7 +62,7 @@ export async function POST(req: NextRequest) {
           row: i + 2,
           userEmail,
           status: "failed",
-          error: "المستخدم مش موجود",
+          error: tApi("api.042"),
         });
         failed++;
         continue;
@@ -110,12 +112,13 @@ export async function POST(req: NextRequest) {
     });
   } catch (e: any) {
     console.error("[bulk payment import error]", e);
-    return err("حصلت مشكلة في قراءة الملف. تأكد إنه xlsx صحيح.", 500);
+    return err(tApi("api.043"), 500);
   }
 }
 
 // GET — returns a template xlsx for download
 export async function GET() {
+  const tApi = await getServerT();
   const { error } = await requireRole("ADMIN");
   if (error) return error;
 
@@ -126,7 +129,7 @@ export async function GET() {
       method: "INSTAPAY",
       reference: "REF123456",
       status: "APPROVED",
-      notes: "دفعة شهرية",
+      notes: tApi("api.044"),
     },
     {
       userEmail: "student2@codemind.academy",
