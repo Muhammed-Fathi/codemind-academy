@@ -1,5 +1,5 @@
 "use client";
-import { useT , pickAuto } from "@/lib/i18n";
+import { useT , pickAuto, useLocale } from "@/lib/i18n";
 
 // ============================================================
 // CodeMind Academy — Admin Dashboard
@@ -792,6 +792,10 @@ function StudentProfileDrawer({
   onUpdated: () => void;
 }) {
   const tr = useT();
+  // vaul anchors side drawers by physical direction; RTL opens the panel
+  // from the left, so mirror the prop here. Width/max-width constraints
+  // ([dir]-agnostic w-3/4 + sm:max-w-sm) stay identical for both sides.
+  const locale = useLocale();
   const [groups, setGroups] = React.useState<{ id: string; name: string }[]>([]);
   const [groupId, setGroupId] = React.useState<string | undefined>(undefined);
   const [saving, setSaving] = React.useState(false);
@@ -847,7 +851,7 @@ function StudentProfileDrawer({
   };
 
   return (
-    <Drawer open={!!student} onOpenChange={(v) => !v && onClose()} direction="right">
+    <Drawer open={!!student} onOpenChange={(v) => !v && onClose()} direction={locale === "ar" ? "left" : "right"}>
       <DrawerContent className="w-full sm:max-w-md ms-auto h-full max-h-screen flex flex-col">
         {student && (
           <>

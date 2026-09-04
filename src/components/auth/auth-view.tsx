@@ -60,7 +60,7 @@ export function AuthView() {
 
   return (
     <div className="flex-1 flex items-stretch">
-      <div className="w-full grid lg:grid-cols-2 min-h-[calc(100vh-5rem)]">
+      <div className="w-full grid lg:grid-cols-2 min-h-dvh">
         {/* Left: form */}
         <div className="flex items-center justify-center p-6 sm:p-10">
           <div className="w-full max-w-md">
@@ -552,7 +552,7 @@ function Field({
         {label}
         {required ? " *" : ""}
       </Label>
-      <div className="relative">
+      <div className="relative" dir={dir}>
         <div className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none">
           {icon}
         </div>
