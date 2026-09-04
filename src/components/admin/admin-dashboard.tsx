@@ -844,14 +844,14 @@ function StudentProfileDrawer({
 
   return (
     <Drawer open={!!student} onOpenChange={(v) => !v && onClose()} direction="right">
-      <DrawerContent className="w-full sm:max-w-md ml-auto">
+      <DrawerContent className="w-full sm:max-w-md ml-auto h-full max-h-screen flex flex-col">
         {student && (
           <>
-            <DrawerHeader>
-              <DrawerTitle>{student.name}</DrawerTitle>
-              <DrawerDescription>{student.email}</DrawerDescription>
+            <DrawerHeader className="shrink-0 border-b border-border/60 pb-3">
+              <DrawerTitle className="text-lg font-bold">{student.name}</DrawerTitle>
+              <DrawerDescription className="text-xs">{student.email}</DrawerDescription>
             </DrawerHeader>
-            <div className="px-4 pb-6 space-y-4">
+            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 min-h-0">
               {student.studentCode && (
                 <div className="rounded-xl border border-primary/30 bg-primary/5 p-3 flex items-center justify-between">
                   <div>
@@ -2519,7 +2519,7 @@ function PaymentsView() {
                   <TableHead>المرجع</TableHead>
                   <TableHead>التاريخ</TableHead>
                   <TableHead>الحالة</TableHead>
-                  <TableHead className="text-left">إجراءات</TableHead>
+                  <TableHead>إجراءات</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
