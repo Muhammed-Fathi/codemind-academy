@@ -10,6 +10,10 @@ import { motion } from "framer-motion";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { MonthlyReportView } from "@/components/parent/monthly-report";
+import {
+  describeParentSubscription,
+  type ParentSubscriptionPayload,
+} from "@/lib/parent-subscription";
 import { NotificationPreferences } from "@/components/shared/notification-preferences";
 import { ParentAnalyticsView } from "@/components/parent/analytics-view";
 import { WeeklyReportView } from "@/components/parent/weekly-report";
@@ -162,15 +166,8 @@ type Child = {
     teacherName: string;
     lessonTitle: string | null;
   } | null;
-  subscription: {
-    status: string;
-    planName: string;
-    startDate: string | null;
-    endDate: string | null;
-    daysLeft: number | null;
-    price: number;
-    durationMonths: number;
-  } | null;
+  // null when the student registered but has not enrolled in a plan yet.
+  subscription: ParentSubscriptionPayload | null;
   strongTopics: { id: string; title: string; avgPct: number }[];
   weakTopics: { id: string; title: string; avgPct: number }[];
   recentActivity: {
@@ -793,42 +790,36 @@ function SubscriptionCard({
             مفعّلش
           </Badge>
           <p className="text-xs text-muted-foreground">
-            مفيش اشتراك حاليًا للطالب ده.
+            ابنك لسه ما اشتركش في أي باقة. لما يشترك، تفاصيل الاشتراك هتظهر هنا.
           </p>
         </CardContent>
       </Card>
     );
   }
-  const status = subscription.status;
+  const info = describeParentSubscription(subscription);
   const daysLeft = subscription.daysLeft;
   let variant: "default" | "secondary" | "destructive" = "default";
-  let label = status;
+  const label = info.label;
   let tone = "text-primary";
   let helper = "";
-  if (status === "ACTIVE") {
-    if (daysLeft != null && daysLeft <= 7) {
-      variant = "secondary";
-      label = "Expiring";
-      tone = "text-amber-600 dark:text-amber-400";
-      helper = `بينتهي خلال ${daysLeft} يوم`;
-    } else {
-      variant = "default";
-      label = "Active";
-      helper = daysLeft != null ? `فاضل ${daysLeft} يوم` : "نشط";
-    }
-  } else if (status === "EXPIRED") {
+  if (info.state === "EXPIRING") {
+    variant = "secondary";
+    tone = "text-amber-600 dark:text-amber-400";
+    helper = `بينتهي خلال ${daysLeft} يوم`;
+  } else if (info.state === "ACTIVE") {
+    variant = "default";
+    helper = daysLeft != null ? `فاضل ${daysLeft} يوم` : "نشط";
+  } else if (info.state === "EXPIRED") {
     variant = "destructive";
-    label = "Expired";
     tone = "text-destructive";
     helper = "اتمنىش — جدد الاشتراك";
-  } else if (status === "PENDING") {
+  } else if (info.state === "PENDING") {
     variant = "secondary";
-    label = "Pending";
     tone = "text-amber-600 dark:text-amber-400";
     helper = "مستني التفعيل";
   } else {
     variant = "secondary";
-    label = status;
+    helper = info.title;
   }
   return (
     <Card className="glass card-hover p-6">

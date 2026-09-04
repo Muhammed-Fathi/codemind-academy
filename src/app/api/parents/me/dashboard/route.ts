@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireUser, getParentProfile } from "@/lib/api";
+import type { ParentSubscriptionPayload } from "@/lib/parent-subscription";
 
 // GET /api/parents/me/dashboard
 // Returns aggregated analytics for the current parent's children.
@@ -177,19 +178,14 @@ export async function GET(_req: NextRequest) {
         : null;
 
       // --- Subscription status
+      // A Subscription row only exists after the student enrolls
+      // (POST /api/enroll). A freshly registered student has none, so
+      // `null` is a valid, expected value here — consumers must handle it.
       const subscription = await db.subscription.findUnique({
         where: { studentId: student.id },
         include: { plan: true },
       });
-      let subscriptionPayload: {
-        status: string;
-        planName: string;
-        startDate: string | null;
-        endDate: string | null;
-        daysLeft: number | null;
-        price: number;
-        durationMonths: number;
-      } | null = null;
+      let subscriptionPayload: ParentSubscriptionPayload | null = null;
       if (subscription) {
         const daysLeft = subscription.endDate
           ? Math.ceil((subscription.endDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24))

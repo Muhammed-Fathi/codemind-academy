@@ -1,23 +1,23 @@
 "use client";
 
 import * as React from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { useApp } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 import { CodeMindLogo } from "@/components/logo";
 import { brand } from "@/lib/brand";
 import { toast } from "sonner";
 import {
+  describeParentSubscription,
+  type ParentSubscriptionPayload,
+} from "@/lib/parent-subscription";
+import {
   X,
   Printer,
   TrendingUp,
-  TrendingDown,
   CheckCircle2,
   AlertTriangle,
-  Calendar,
+  CreditCard,
   User,
   Award,
 } from "lucide-react";
@@ -35,13 +35,55 @@ type ReportData = {
   attendance: { pct: number; present: number; total: number };
   quizzes: { average: number; taken: number; passed: number; failed: number };
   homework: { submitted: number; graded: number; completionPct: number };
-  subscription: { status: string; planName: string; daysLeft: number };
+  // null when the student registered but never enrolled in a plan.
+  subscription: ParentSubscriptionPayload | null;
   strongTopics: { title: string; avgPct: number }[];
   weakTopics: { title: string; avgPct: number }[];
   recentQuizzes: { title: string; percentage: number; passed: boolean; date: string }[];
   teacherNotes: { teacherName: string; note: string; date: string }[];
   recommendations: string[];
 };
+
+/**
+ * Map one child entry from GET /api/parents/me/dashboard into the report
+ * shape. Exported so the mapping can be unit-tested; every nested block is
+ * defaulted because a freshly registered student may have no group, no
+ * progress and — most importantly — no subscription at all.
+ */
+export function buildReportData(child: any): ReportData {
+  const monthName = new Date().toLocaleDateString("ar-EG", {
+    month: "long",
+    year: "numeric",
+  });
+  return {
+    studentName: child.name,
+    studentEmail: child.email,
+    grade: child.grade || "2nd Secondary",
+    courseName: child.group?.course?.nameAr || "Programming & AI",
+    groupName: child.group?.name || "—",
+    reportMonth: monthName,
+    generatedAt: new Date().toLocaleDateString("ar-EG"),
+    courseProgress: child.courseProgress || { completed: 0, total: 0, pct: 0 },
+    attendance: child.attendance || { pct: 0, present: 0, total: 0 },
+    quizzes: child.quizzes || { average: 0, taken: 0, passed: 0, failed: 0 },
+    homework: child.homework || { submitted: 0, graded: 0, completionPct: 0 },
+    subscription: child.subscription ?? null,
+    strongTopics: child.strongTopics || [],
+    weakTopics: child.weakTopics || [],
+    recentQuizzes: (child.quizzes?.recent || []).slice(0, 5).map((q: any) => ({
+      title: q.quizTitle,
+      percentage: q.percentage,
+      passed: q.passed,
+      date: new Date(q.finishedAt).toLocaleDateString("ar-EG"),
+    })),
+    teacherNotes: (child.teacherNotes || []).slice(0, 3).map((n: any) => ({
+      teacherName: n.teacherName,
+      note: n.note,
+      date: new Date(n.createdAt).toLocaleDateString("ar-EG"),
+    })),
+    recommendations: generateRecommendations(child),
+  };
+}
 
 export function MonthlyReportView({ onClose }: { onClose: () => void }) {
   const [data, setData] = React.useState<ReportData | null>(null);
@@ -52,48 +94,12 @@ export function MonthlyReportView({ onClose }: { onClose: () => void }) {
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (d?.children?.[0]) {
-          const child = d.children[0];
-          const monthName = new Date().toLocaleDateString("ar-EG", {
-            month: "long",
-            year: "numeric",
-          });
-          setData({
-            studentName: child.name,
-            studentEmail: child.email,
-            grade: child.grade || "2nd Secondary",
-            courseName: child.group?.course?.nameAr || "Programming & AI",
-            groupName: child.group?.name || "—",
-            reportMonth: monthName,
-            generatedAt: new Date().toLocaleDateString("ar-EG"),
-            courseProgress: child.courseProgress,
-            attendance: child.attendance,
-            quizzes: child.quizzes,
-            homework: child.homework,
-            subscription: child.subscription,
-            strongTopics: child.strongTopics || [],
-            weakTopics: child.weakTopics || [],
-            recentQuizzes: (child.quizzes?.recent || []).slice(0, 5).map((q: any) => ({
-              title: q.quizTitle,
-              percentage: q.percentage,
-              passed: q.passed,
-              date: new Date(q.finishedAt).toLocaleDateString("ar-EG"),
-            })),
-            teacherNotes: (child.teacherNotes || []).slice(0, 3).map((n: any) => ({
-              teacherName: n.teacherName,
-              note: n.note,
-              date: new Date(n.createdAt).toLocaleDateString("ar-EG"),
-            })),
-            recommendations: generateRecommendations(child),
-          });
+          setData(buildReportData(d.children[0]));
         }
       })
       .catch(() => toast.error("حصلت مشكلة في تحميل البيانات"))
       .finally(() => setLoading(false));
   }, []);
-
-  const handlePrint = () => {
-    window.print();
-  };
 
   if (loading) {
     return (
@@ -102,6 +108,21 @@ export function MonthlyReportView({ onClose }: { onClose: () => void }) {
       </div>
     );
   }
+
+  return <MonthlyReportContent data={data} onClose={onClose} />;
+}
+
+/** Pure presentational part of the report (no fetching) — testable in isolation. */
+export function MonthlyReportContent({
+  data,
+  onClose,
+}: {
+  data: ReportData | null;
+  onClose: () => void;
+}) {
+  const handlePrint = () => {
+    window.print();
+  };
 
   if (!data) {
     return (
@@ -113,6 +134,37 @@ export function MonthlyReportView({ onClose }: { onClose: () => void }) {
             رجوع
           </Button>
         </div>
+      </div>
+    );
+  }
+
+  const subscriptionInfo = describeParentSubscription(data.subscription);
+
+  // Student is linked correctly but has never subscribed to a plan → there is
+  // nothing to report yet. Show a friendly explanation instead of the report.
+  if (!subscriptionInfo.reportAvailable) {
+    return (
+      <div
+        className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4"
+        data-testid="monthly-report-no-subscription"
+      >
+        <Card className="glass w-full max-w-md">
+          <CardContent className="p-8 text-center">
+            <div className="w-14 h-14 rounded-2xl bg-amber-500/10 flex items-center justify-center mx-auto mb-4">
+              <CreditCard className="w-7 h-7 text-amber-500" />
+            </div>
+            <Badge variant="secondary" className="mb-3">
+              Monthly Report — {data.studentName}
+            </Badge>
+            <h2 className="text-lg font-bold mb-2">{subscriptionInfo.title}</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              {subscriptionInfo.message}
+            </p>
+            <Button variant="outline" className="mt-6" onClick={onClose}>
+              رجوع للوحة التحكم
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -189,17 +241,27 @@ export function MonthlyReportView({ onClose }: { onClose: () => void }) {
 
             {/* Subscription status */}
             <div className="px-8 pb-6">
-              <div className="bg-gray-50 rounded-xl p-4 flex items-center justify-between">
+              <div
+                className="bg-gray-50 rounded-xl p-4 flex items-center justify-between gap-4"
+                data-testid="monthly-report-subscription"
+              >
                 <div>
                   <div className="text-xs text-gray-500">Subscription Status</div>
                   <div className="text-sm font-bold mt-1">
-                    {data.subscription.status === "ACTIVE" ? "Active" : data.subscription.status}
-                    {data.subscription.planName && ` · ${data.subscription.planName}`}
+                    {subscriptionInfo.label}
+                    {data.subscription?.planName && ` · ${data.subscription.planName}`}
                   </div>
+                  {subscriptionInfo.state !== "ACTIVE" && (
+                    <div className="text-xs text-amber-700 mt-1">
+                      {subscriptionInfo.title} {subscriptionInfo.message}
+                    </div>
+                  )}
                 </div>
-                <div className="text-left">
+                <div className="text-left shrink-0">
                   <div className="text-xs text-gray-500">الأيام المتبقية</div>
-                  <div className="text-lg font-bold text-emerald-600">{data.subscription.daysLeft}</div>
+                  <div className="text-lg font-bold text-emerald-600">
+                    {data.subscription?.daysLeft ?? "—"}
+                  </div>
                 </div>
               </div>
             </div>
