@@ -1211,7 +1211,7 @@ function AttendanceView() {
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/40 hover:bg-muted/40">
-                  <TableHead className="text-right">Student</TableHead>
+                  <TableHead>Student</TableHead>
                   <TableHead className="text-center w-[120px] sm:w-[160px]">
                     حاضر
                   </TableHead>
