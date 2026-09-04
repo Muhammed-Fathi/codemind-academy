@@ -174,6 +174,7 @@ type GroupInfo = {
     email: string;
     avatarUrl: string | null;
     grade: string;
+    studentCode?: string | null;
   }>;
   stats: {
     attendancePct: number;
@@ -224,6 +225,7 @@ type AttendanceStudent = {
   email: string;
   avatarUrl: string | null;
   grade: string;
+  studentCode?: string | null;
   status: AttendanceStatus | null;
   note: string | null;
   attendancePct: number;
@@ -1242,6 +1244,11 @@ function AttendanceView() {
                           <div className="min-w-0">
                             <div className="text-sm font-semibold truncate">
                               {s.name}
+                              {(s as any).studentCode && (
+                                <code className="ml-2 text-[10px] font-mono font-bold text-primary" dir="ltr">
+                                  {(s as any).studentCode}
+                                </code>
+                              )}
                             </div>
                             <div className="text-[10px] text-muted-foreground truncate">
                               {s.email}

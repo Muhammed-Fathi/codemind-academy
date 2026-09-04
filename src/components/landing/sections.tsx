@@ -495,7 +495,7 @@ export function PricingSection() {
                 <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary via-teal-500 to-amber-400" />
               )}
               {p.promo && (
-                <Badge className="absolute -top-2 left-4 bg-amber-500 hover:bg-amber-500 text-white">
+                <Badge className="absolute top-3 left-4 bg-amber-500 hover:bg-amber-500 text-white shadow-md">
                   <Star className="w-3 h-3 ml-1 fill-white" />
                   Limited Offer
                 </Badge>
@@ -530,7 +530,8 @@ export function PricingSection() {
           ))}
         </div>
         <p className="text-center text-xs text-muted-foreground mt-6">
-          الأسعار شاملة للـVAT. طرق الدفع: InstaPay · Vodafone Cash · e& Cash
+          الأسعار شاملة للـVAT. طرق الدفع: InstaPay ({brand.payments.instapay}) · e&
+          Cash ({brand.payments.eCash}) · Vodafone Cash (قريبًا)
         </p>
       </div>
     </section>
@@ -546,7 +547,7 @@ export function FaqSection() {
     },
     {
       q: "إزاي بدأ؟",
-      a: "تعمل حساب، تختار Group، تشترك، تدفع عن طريق InstaPay/Vodafone Cash، وبعد ما الـAdmin يؤكد الدفع يتفعل اشتراكك خلال 24 ساعة.",
+      a: "تعمل حساب، تختار Group، تشترك، تدفع عن طريق InstaPay أو e& Cash على +20 1147422177، وبعد ما الـAdmin يؤكد الدفع يتفعل اشتراكك خلال 24 ساعة.",
     },
     {
       q: "في Recordings بعد كل Live Session؟",
@@ -558,7 +559,7 @@ export function FaqSection() {
     },
     {
       q: "إيه طرق الدفع؟",
-      a: "InstaPay، Vodafone Cash، أو e& Cash. عملية الدفع يدوية — تحول المبلغ وتبعت Reference، والـAdmin يفعّل اشتراكك.",
+      a: "InstaPay و e& Cash على +20 1147422177 (تحويل يدوي وتبعت الـReference، والـAdmin يفعّل اشتراكك). Vodafone Cash قريبًا.",
     },
     {
       q: "لو اشتراكي خلص إيه اللي بيحصل؟",
@@ -763,6 +764,14 @@ export function Footer() {
                 >
                   <CreditCard className="w-3.5 h-3.5" />
                   Subscription Support
+                </a>
+              </li>
+              <li dir="ltr" className="text-left">
+                <a
+                  href={`tel:${brand.contact.phone.replace(/[^+0-9]/g, "")}`}
+                  className="hover:text-foreground font-bold"
+                >
+                  {brand.contact.phone}
                 </a>
               </li>
             </ul>

@@ -84,6 +84,10 @@ type Child = {
   avatarUrl: string | null;
   grade: string;
   schoolName: string | null;
+  schoolType?: string | null;
+  nationalId?: string | null;
+  parentPhone?: string | null;
+  studentCode?: string | null;
   enrolledAt: string;
   group: {
     id: string;
@@ -480,10 +484,16 @@ function ChildSummaryCard({ child }: { child: Child }) {
             <Badge variant="secondary" className="text-[11px]">
               {child.grade}
             </Badge>
+            {child.studentCode && (
+              <Badge variant="outline" className="text-[11px] font-mono font-bold text-primary border-primary/30" dir="ltr">
+                {child.studentCode}
+              </Badge>
+            )}
           </div>
           <p className="text-sm text-muted-foreground mt-0.5">
             {course?.nameAr || course?.name || "—"}
             {child.schoolName ? ` · ${child.schoolName}` : ""}
+            {child.studentCode ? ` · كود الطالب: ${child.studentCode}` : ""}
           </p>
         </div>
         <div className="flex items-center gap-2 text-xs">
@@ -1173,14 +1183,16 @@ function RecentActivityCard({
 // ============================================================
 function LinkStudentButton() {
   const [open, setOpen] = React.useState(false);
-  const [email, setEmail] = React.useState("");
+  const [nationalId, setNationalId] = React.useState("");
+  const [parentPhone, setParentPhone] = React.useState("");
+  const [studentCode, setStudentCode] = React.useState("");
   const qc = useQueryClient();
   const mutation = useMutation({
-    mutationFn: async (studentEmail: string) => {
+    mutationFn: async (payload: { studentNationalId: string; parentPhone: string; studentCode: string }) => {
       const r = await fetch("/api/parents/me/link-student", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ studentEmail }),
+        body: JSON.stringify(payload),
       });
       const json = await r.json();
       if (!r.ok) throw new Error(json?.error || "حصلت مشكلة. حاول تاني.");
@@ -1188,7 +1200,9 @@ function LinkStudentButton() {
     },
     onSuccess: () => {
       toast.success("اتربط الطالب بحسابك بنجاح ✅");
-      setEmail("");
+      setNationalId("");
+      setParentPhone("");
+      setStudentCode("");
       setOpen(false);
       qc.invalidateQueries({ queryKey: ["parent-dashboard"] });
     },
@@ -1208,20 +1222,46 @@ function LinkStudentButton() {
         <DialogHeader>
           <DialogTitle>اربط طالب تاني بحسابك</DialogTitle>
           <DialogDescription>
-            اكتب إيميل الطالب اللي عايز تتابعه، وهنربطه بحسابك.
+            اكتب الرقم القومي للطالب + رقم تليفون ولي الأمر المسجل مع بيانات الطالب + كود
+            الطالب، وهنربطه بحسابك بعد التحقق.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3 py-2">
-          <Input
-            type="email"
-            dir="ltr"
-            placeholder="student@codemind.academy"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            disabled={mutation.isPending}
-          />
+          <div>
+            <label className="text-xs font-semibold">الرقم القومي للطالب *</label>
+            <Input
+              dir="ltr"
+              placeholder="14 رقم"
+              value={nationalId}
+              onChange={(e) => setNationalId(e.target.value)}
+              disabled={mutation.isPending}
+              className="mt-1"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold">رقم تليفون ولي الأمر *</label>
+            <Input
+              dir="ltr"
+              placeholder="01147422177"
+              value={parentPhone}
+              onChange={(e) => setParentPhone(e.target.value)}
+              disabled={mutation.isPending}
+              className="mt-1"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold">كود الطالب *</label>
+            <Input
+              dir="ltr"
+              placeholder="CM-XXXXXX"
+              value={studentCode}
+              onChange={(e) => setStudentCode(e.target.value.toUpperCase())}
+              disabled={mutation.isPending}
+              className="mt-1 font-mono uppercase"
+            />
+          </div>
           <p className="text-[11px] text-muted-foreground">
-            لازم الطالب يكون مسجّل على المنصة بنفس الإيميل ده.
+            بنتحقق بمطابقة رقم التليفون + الرقم القومي مع البيانات المسجلة وقت تسجيل الطالب.
           </p>
         </div>
         <DialogFooter>
@@ -1233,8 +1273,14 @@ function LinkStudentButton() {
             إلغاء
           </Button>
           <Button
-            onClick={() => mutation.mutate(email)}
-            disabled={mutation.isPending || !email}
+            onClick={() =>
+              mutation.mutate({
+                studentNationalId: nationalId.trim(),
+                parentPhone: parentPhone.trim(),
+                studentCode: studentCode.trim().toUpperCase(),
+              })
+            }
+            disabled={mutation.isPending || !nationalId || !parentPhone || !studentCode}
           >
             {mutation.isPending ? "بربط…" : "اربط"}
           </Button>
@@ -1248,13 +1294,15 @@ function LinkStudentButton() {
 // Empty parent state (no children linked)
 // ============================================================
 function EmptyParentState({ parentName }: { parentName: string }) {
-  const [email, setEmail] = React.useState("");
+  const [nationalId, setNationalId] = React.useState("");
+  const [parentPhone, setParentPhone] = React.useState("");
+  const [studentCode, setStudentCode] = React.useState("");
   const mutation = useMutation({
-    mutationFn: async (studentEmail: string) => {
+    mutationFn: async (payload: { studentNationalId: string; parentPhone: string; studentCode: string }) => {
       const r = await fetch("/api/parents/me/link-student", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ studentEmail }),
+        body: JSON.stringify(payload),
       });
       const json = await r.json();
       if (!r.ok) throw new Error(json?.error || "حصلت مشكلة. حاول تاني.");
@@ -1277,30 +1325,48 @@ function EmptyParentState({ parentName }: { parentName: string }) {
           أهلاً يا <span className="text-gradient">{parentName}</span> 👋
         </h1>
         <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
-          لسه مفيش طلاب مربوطين بحسابك. اربط ابنك بالإيميل بتاعه عشان تقدر تتابع
-          مستواه.
+          لسه مفيش طلاب مربوطين بحسابك. اربط ابنك بالرقم القومي + رقم تليفون ولي
+          الأمر + كود الطالب عشان تقدر تتابع مستواه.
         </p>
       </div>
       <div className="w-full space-y-2">
         <Input
-          type="email"
           dir="ltr"
-          placeholder="student@codemind.academy"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          placeholder="الرقم القومي للطالب (14 رقم)"
+          value={nationalId}
+          onChange={(e) => setNationalId(e.target.value)}
           disabled={mutation.isPending}
           className="text-center"
         />
+        <Input
+          dir="ltr"
+          placeholder="رقم تليفون ولي الأمر"
+          value={parentPhone}
+          onChange={(e) => setParentPhone(e.target.value)}
+          disabled={mutation.isPending}
+          className="text-center"
+        />
+        <Input
+          dir="ltr"
+          placeholder="كود الطالب (CM-XXXXXX)"
+          value={studentCode}
+          onChange={(e) => setStudentCode(e.target.value.toUpperCase())}
+          disabled={mutation.isPending}
+          className="text-center font-mono uppercase"
+        />
         <Button
           className="w-full"
-          onClick={() => mutation.mutate(email)}
-          disabled={mutation.isPending || !email}
+          onClick={() =>
+            mutation.mutate({
+              studentNationalId: nationalId.trim(),
+              parentPhone: parentPhone.trim(),
+              studentCode: studentCode.trim().toUpperCase(),
+            })
+          }
+          disabled={mutation.isPending || !nationalId || !parentPhone || !studentCode}
         >
           {mutation.isPending ? "بربط…" : "اربط الطالب"}
         </Button>
-        <p className="text-[11px] text-muted-foreground mt-1">
-          تقدر تجرب بإيميل الديمو: student@codemind.academy
-        </p>
       </div>
     </div>
   );

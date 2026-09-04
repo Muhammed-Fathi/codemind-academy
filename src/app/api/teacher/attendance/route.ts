@@ -84,7 +84,7 @@ export async function GET(req: NextRequest) {
     perStudent.set(r.studentId, entry);
   }
 
-  const studentsPayload = students.map((s) => {
+  const studentsPayload = students.map((s: any) => {
     const att = attendanceRecords.find((a) => a.studentId === s.id);
     const stats = perStudent.get(s.id) || { total: 0, present: 0 };
     return {
@@ -93,6 +93,7 @@ export async function GET(req: NextRequest) {
       email: s.user.email,
       avatarUrl: s.user.avatarUrl,
       grade: s.grade,
+      studentCode: s.studentCode ?? null,
       status: att?.status ?? null,
       note: att?.note ?? null,
       attendancePct:

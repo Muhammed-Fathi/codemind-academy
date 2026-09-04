@@ -61,6 +61,10 @@ type DashboardData = {
     email: string;
     grade: string;
     schoolName: string | null;
+    schoolType?: string | null;
+    nationalId?: string | null;
+    parentPhone?: string | null;
+    studentCode?: string | null;
   };
   group: {
     id: string;
@@ -290,6 +294,27 @@ function DashboardHome({
           <p className="text-sm text-muted-foreground mt-1">
             {todayLabel} · {brand.academicYear}
           </p>
+          {data.student.studentCode && (
+            <div className="mt-2 inline-flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5">
+              <span className="text-[11px] text-muted-foreground">كود الطالب:</span>
+              <code className="text-sm font-black font-mono tracking-widest text-primary" dir="ltr">
+                {data.student.studentCode}
+              </code>
+              <button
+                onClick={() => {
+                  try {
+                    navigator.clipboard.writeText(data.student.studentCode || "");
+                    toast.success("اتنسخ الكود ✅");
+                  } catch {
+                    toast.error("انسخ الكود يدويًا");
+                  }
+                }}
+                className="text-[11px] text-primary hover:underline font-bold"
+              >
+                نسخ
+              </button>
+            </div>
+          )}
         </div>
         <SubscriptionPill
           status={data.subscription.status}

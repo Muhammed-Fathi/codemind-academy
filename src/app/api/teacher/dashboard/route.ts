@@ -99,12 +99,13 @@ export async function GET(_req: NextRequest) {
             }
           : null,
         studentsCount: g.students.length,
-        students: g.students.map((s) => ({
+        students: g.students.map((s: any) => ({
           id: s.id,
           name: s.user.name,
           email: s.user.email,
           avatarUrl: s.user.avatarUrl,
           grade: s.grade,
+          studentCode: s.studentCode ?? null,
         })),
         stats: {
           attendancePct,
