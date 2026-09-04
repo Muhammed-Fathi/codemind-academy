@@ -3,6 +3,9 @@
 // renders safely when a student has NO subscription — GET /api/parents/me/dashboard
 // returns `subscription: null` in that case, which previously crashed the
 // component with "TypeError: Cannot read properties of null (reading 'status')".
+// Also pins the user-facing Egyptian Arabic labels for every SubscriptionStatus
+// enum value (PENDING / ACTIVE / EXPIRED / CANCELLED) so raw English enum
+// values never reach the parent-facing report.
 //
 // Run: node tests/monthly-report-no-subscription.test.js
 // Exit code: 0 = all pass, 1 = failure.
@@ -54,10 +57,20 @@ const safeCall = (fn) => {
 // --- Regression: student with NO subscription (API payload: null) ---
 const none = safeCall(() => M.formatSubscriptionStatus(null));
 ok(none.ok, "null subscription must not throw");
+ok(none.ok && none.value.noSubscription === true, "null → noSubscription flag set");
 ok(
   none.ok && none.value.statusLabel === M.NO_SUBSCRIPTION_STATUS_LABEL,
   "null → fallback status label"
 );
+ok(
+  none.ok && none.value.statusLabel === "ابنك لسه ما اشتركش في أي باقة.",
+  "null → Egyptian Arabic no-subscription message"
+);
+ok(
+  none.ok && none.value.hint === M.NO_SUBSCRIPTION_HINT && !!none.value.hint,
+  "null → hint message provided"
+);
+ok(none.ok && /يشترك/.test(none.value.hint), "hint is Arabic, not English");
 ok(none.ok && none.value.planName === null, "null → no plan name rendered");
 ok(
   none.ok && none.value.daysLeftLabel === M.NO_VALUE_PLACEHOLDER,
@@ -68,25 +81,42 @@ ok(
 const undef = safeCall(() => M.formatSubscriptionStatus(undefined));
 ok(undef.ok, "undefined subscription must not throw");
 ok(
-  undef.ok && undef.value.statusLabel === M.NO_SUBSCRIPTION_STATUS_LABEL,
-  "undefined → fallback status label"
+  undef.ok &&
+    undef.value.noSubscription === true &&
+    undef.value.statusLabel === M.NO_SUBSCRIPTION_STATUS_LABEL,
+  "undefined → behaves like no subscription"
 );
 
-// --- Active subscription behaves exactly like the old render path ---
+// --- Enum → user-facing Egyptian Arabic labels (never raw English) ---
+const cases = [
+  ["ACTIVE", "نشط"],
+  ["PENDING", "مستني التفعيل"],
+  ["EXPIRED", "منتهي"],
+  ["CANCELLED", "ملغي"],
+];
+for (const [status, label] of cases) {
+  const r = safeCall(() =>
+    M.formatSubscriptionStatus({ status, planName: "6 Months", daysLeft: 120 })
+  );
+  ok(r.ok, `${status} must not throw`);
+  ok(r.ok && r.value.statusLabel === label, `${status} → "${label}"`);
+  ok(r.ok && r.value.noSubscription === false, `${status} → noSubscription false`);
+  ok(r.ok && r.value.hint === null, `${status} → no empty-state hint`);
+  ok(r.ok && r.value.statusLabel !== status, `${status} not rendered as raw enum`);
+}
+
+// --- Active subscription keeps plan name and days ---
 const active = safeCall(() =>
   M.formatSubscriptionStatus({ status: "ACTIVE", planName: "6 Months", daysLeft: 120 })
 );
-ok(active.ok, "active subscription must not throw");
-ok(active.ok && active.value.statusLabel === "Active", "ACTIVE maps to 'Active'");
 ok(active.ok && active.value.planName === "6 Months", "plan name preserved");
 ok(active.ok && active.value.daysLeftLabel === "120", "daysLeft rendered as string");
 
-// --- Non-ACTIVE status passes through verbatim (old behavior) ---
-const pending = safeCall(() =>
-  M.formatSubscriptionStatus({ status: "PENDING", planName: "1 Month", daysLeft: 0 })
+// --- Zero daysLeft is a real value, not "missing" ---
+const zero = safeCall(() =>
+  M.formatSubscriptionStatus({ status: "ACTIVE", planName: "1 Month", daysLeft: 0 })
 );
-ok(pending.ok && pending.value.statusLabel === "PENDING", "non-ACTIVE status passes through");
-ok(pending.ok && pending.value.daysLeftLabel === "0", "zero daysLeft is not treated as missing");
+ok(zero.ok && zero.value.daysLeftLabel === "0", "zero daysLeft is not treated as missing");
 
 // --- Subscription row exists but has no endDate → daysLeft: null ---
 const noEnd = safeCall(() =>
@@ -97,6 +127,7 @@ ok(
   noEnd.ok && noEnd.value.daysLeftLabel === M.NO_VALUE_PLACEHOLDER,
   "null daysLeft → placeholder"
 );
+ok(noEnd.ok && noEnd.value.planName === null, "API '—' plan fallback is suppressed");
 
 // --- Degenerate payload: empty strings degrade gracefully ---
 const empty = safeCall(() =>
@@ -104,10 +135,16 @@ const empty = safeCall(() =>
 );
 ok(empty.ok, "empty-string payload must not throw");
 ok(
-  empty.ok && empty.value.statusLabel === M.NO_SUBSCRIPTION_STATUS_LABEL,
-  "empty status → fallback label"
+  empty.ok && empty.value.statusLabel === "",
+  "unknown/empty status falls back to raw value (defensive only)"
 );
 ok(empty.ok && empty.value.planName === null, "empty plan name → suppressed");
+
+// --- Unknown future enum value: passes through rather than throwing ---
+const future = safeCall(() =>
+  M.formatSubscriptionStatus({ status: "SUSPENDED", planName: "", daysLeft: null })
+);
+ok(future.ok && future.value.statusLabel === "SUSPENDED", "unknown status passes through safely");
 
 console.log(`\nmonthly report (no subscription): ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

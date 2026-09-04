@@ -196,18 +196,23 @@ export function MonthlyReportView({ onClose }: { onClose: () => void }) {
 
             {/* Subscription status */}
             <div className="px-8 pb-6">
-              <div className="bg-gray-50 rounded-xl p-4 flex items-center justify-between">
-                <div>
-                  <div className="text-xs text-gray-500">Subscription Status</div>
-                  <div className="text-sm font-bold mt-1">
-                    {subscriptionView.statusLabel}
-                    {subscriptionView.planName && ` · ${subscriptionView.planName}`}
+              <div className="bg-gray-50 rounded-xl p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-xs text-gray-500">Subscription Status</div>
+                    <div className="text-sm font-bold mt-1">
+                      {subscriptionView.statusLabel}
+                      {subscriptionView.planName && ` · ${subscriptionView.planName}`}
+                    </div>
+                  </div>
+                  <div className="text-left">
+                    <div className="text-xs text-gray-500">الأيام المتبقية</div>
+                    <div className="text-lg font-bold text-emerald-600">{subscriptionView.daysLeftLabel}</div>
                   </div>
                 </div>
-                <div className="text-left">
-                  <div className="text-xs text-gray-500">الأيام المتبقية</div>
-                  <div className="text-lg font-bold text-emerald-600">{subscriptionView.daysLeftLabel}</div>
-                </div>
+                {subscriptionView.hint && (
+                  <p className="text-xs text-gray-500 mt-2">{subscriptionView.hint}</p>
+                )}
               </div>
             </div>
 
