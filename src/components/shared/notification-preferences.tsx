@@ -1,4 +1,5 @@
 "use client";
+import { useT , pickAuto } from "@/lib/i18n";
 
 import * as React from "react";
 import { motion } from "framer-motion";
@@ -51,19 +52,20 @@ const PREF_CONFIG: {
   desc: string;
   icon: React.ComponentType<{ className?: string }>;
 }[] = [
-  { key: "newLesson", label: "Lesson جديدة", desc: "لما تتضاف Lesson جديدة في الكورس", icon: BookOpen },
-  { key: "newQuiz", label: "Quiz جديد", desc: "لما يتضاف Quiz جديد", icon: Trophy },
-  { key: "quizResult", label: "نتيجة Quiz", desc: "لما تطلع نتيجة Quiz حلّيته", icon: Trophy },
-  { key: "newHomework", label: "واجب جديد", desc: "لما يتضاف واجب جديد", icon: FileText },
-  { key: "homeworkDeadline", label: "موعد الواجب", desc: "تنبيه قبل موعد تسليم الواجب", icon: Clock },
-  { key: "upcomingSession", label: "حصة قادمة", desc: "تنبيه قبل الـLive Session", icon: CalendarClock },
-  { key: "lowAttendance", label: "انخفاض الحضور", desc: "لما نسبتك في الحضور تنزل", icon: TrendingDown },
-  { key: "monthlyReport", label: "التقرير الشهري", desc: "لما التقرير الشهري يبقى جاهز", icon: FileBarChart },
-  { key: "subscriptionExpiration", label: "انتهاء الاشتراك", desc: "تنبيه قبل ما الاشتراك يخلص", icon: ShieldCheck },
-  { key: "announcements", label: "إعلانات عامة", desc: "إعلانات وإشعارات من الـAdmin", icon: Megaphone },
+  { key: "newLesson", label: "shared.001", desc: "shared.002", icon: BookOpen },
+  { key: "newQuiz", label: "shared.003", desc: "shared.004", icon: Trophy },
+  { key: "quizResult", label: "shared.005", desc: "shared.006", icon: Trophy },
+  { key: "newHomework", label: "shared.007", desc: "shared.008", icon: FileText },
+  { key: "homeworkDeadline", label: "shared.009", desc: "shared.010", icon: Clock },
+  { key: "upcomingSession", label: "shared.011", desc: "shared.012", icon: CalendarClock },
+  { key: "lowAttendance", label: "shared.013", desc: "shared.014", icon: TrendingDown },
+  { key: "monthlyReport", label: "shared.015", desc: "shared.016", icon: FileBarChart },
+  { key: "subscriptionExpiration", label: "shared.017", desc: "shared.018", icon: ShieldCheck },
+  { key: "announcements", label: "shared.019", desc: "shared.020", icon: Megaphone },
 ];
 
 export function NotificationPreferences() {
+  const t = useT();
   const [prefs, setPrefs] = React.useState<Prefs | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
@@ -96,10 +98,10 @@ export function NotificationPreferences() {
         body: JSON.stringify(prefs),
       });
       if (!r.ok) {
-        toast.error("فشل حفظ الإعدادات");
+        toast.error(t("shared.021"));
         return;
       }
-      toast.success("اتحفظت الإعدادات ✅");
+      toast.success(t("shared.022"));
     } finally {
       setSaving(false);
     }
@@ -135,8 +137,7 @@ export function NotificationPreferences() {
               <div>
                 <h2 className="text-lg font-bold">Notification Preferences</h2>
                 <p className="text-xs text-muted-foreground">
-                    تحكم في الإشعارات اللي بتوصل لك
-                </p>
+                    {t("shared.023")}</p>
               </div>
             </div>
           </CardContent>
@@ -151,10 +152,9 @@ export function NotificationPreferences() {
       >
         <Card className="glass">
           <CardHeader>
-            <CardTitle className="text-base">أنواع الإشعارات</CardTitle>
+            <CardTitle className="text-base">{t("shared.024")}</CardTitle>
             <CardDescription className="text-xs">
-              اختار إيه اللي عايز توصلك إشعاراته
-            </CardDescription>
+              {t("shared.025")}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-1">
             {PREF_CONFIG.map((p, i) => (
@@ -171,8 +171,8 @@ export function NotificationPreferences() {
                   <p.icon className="w-4 h-4" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold">{p.label}</div>
-                  <div className="text-xs text-muted-foreground">{p.desc}</div>
+                  <div className="text-sm font-semibold">{t(p.label)}</div>
+                  <div className="text-xs text-muted-foreground">{t(p.desc)}</div>
                 </div>
                 <Switch
                   checked={prefs[p.key] as boolean}
@@ -192,10 +192,9 @@ export function NotificationPreferences() {
       >
         <Card className="glass">
           <CardHeader>
-            <CardTitle className="text-base">طرق الاستلام</CardTitle>
+            <CardTitle className="text-base">{t("shared.026")}</CardTitle>
             <CardDescription className="text-xs">
-              اختار إزاي تحب توصلك الإشعارات
-            </CardDescription>
+              {t("shared.027")}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-1">
             <div className="flex items-center gap-3 p-3 rounded-lg hover:bg-muted/40 transition-colors">
@@ -206,7 +205,7 @@ export function NotificationPreferences() {
               </div>
               <div className="flex-1">
                 <div className="text-sm font-semibold">Push Notifications</div>
-                <div className="text-xs text-muted-foreground">إشعارات داخل المنصة</div>
+                <div className="text-xs text-muted-foreground">{t("shared.028")}</div>
               </div>
               <Switch
                 checked={prefs.pushEnabled}
@@ -222,8 +221,7 @@ export function NotificationPreferences() {
               <div className="flex-1">
                 <div className="text-sm font-semibold">Email</div>
                 <div className="text-xs text-muted-foreground">
-                  إشعارات على البريد الإلكتروني (قريبًا)
-                </div>
+                  {t("shared.029")}</div>
               </div>
               <Switch
                 checked={prefs.emailEnabled}
@@ -244,16 +242,14 @@ export function NotificationPreferences() {
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <Moon className="w-5 h-5 text-amber-500" />
-              ساعات السكوت
-            </CardTitle>
+              {t("shared.030")}</CardTitle>
             <CardDescription className="text-xs">
-              مفيش إشعارات هتوصلك في الفترة دي
-            </CardDescription>
+              {t("shared.031")}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs">من</Label>
+                <Label className="text-xs">{t("shared.032")}</Label>
                 <Input
                   type="time"
                   value={prefs.quietHoursStart || ""}
@@ -264,7 +260,7 @@ export function NotificationPreferences() {
                 />
               </div>
               <div>
-                <Label className="text-xs">لحد</Label>
+                <Label className="text-xs">{t("shared.033")}</Label>
                 <Input
                   type="time"
                   value={prefs.quietHoursEnd || ""}
@@ -277,8 +273,8 @@ export function NotificationPreferences() {
             </div>
             {(prefs.quietHoursStart || prefs.quietHoursEnd) && (
               <Badge variant="outline" className="mt-3 bg-amber-400/10 text-amber-600 border-amber-400/30">
-                <Moon className="w-3 h-3 ml-1" />
-                السكوت من {prefs.quietHoursStart || "؟"} لـ {prefs.quietHoursEnd || "؟"}
+                <Moon className="w-3 h-3 ms-1" />
+                {t("shared.034")}{prefs.quietHoursStart || t("shared.035")} {t("shared.036")}{prefs.quietHoursEnd || t("shared.035")}
               </Badge>
             )}
           </CardContent>
@@ -294,11 +290,11 @@ export function NotificationPreferences() {
           className="font-bold bg-gradient-to-r from-primary to-teal-500"
         >
           {saving ? (
-            <Loader2 className="w-4 h-4 ml-2 animate-spin" />
+            <Loader2 className="w-4 h-4 ms-2 animate-spin" />
           ) : (
-            <Save className="w-4 h-4 ml-2" />
+            <Save className="w-4 h-4 ms-2" />
           )}
-          {saving ? "جارٍ الحفظ..." : "احفظ التغييرات"}
+          {saving ? t("shared.038") : t("shared.039")}
         </Button>
       </div>
     </div>

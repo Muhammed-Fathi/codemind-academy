@@ -1,0 +1,1214 @@
+[
+ {
+  "key": "api.001",
+  "file": "app/api/admin/ai-generate-quiz/route.ts",
+  "ar": "Lesson ID مطلوب",
+  "kind": "plain"
+ },
+ {
+  "key": "api.002",
+  "file": "app/api/admin/ai-generate-quiz/route.ts",
+  "ar": "الـLesson مش موجود",
+  "kind": "plain"
+ },
+ {
+  "key": "api.003",
+  "file": "app/api/admin/ai-generate-quiz/route.ts",
+  "ar": "سهلة (مستوى المبتدئ)",
+  "kind": "plain"
+ },
+ {
+  "key": "api.004",
+  "file": "app/api/admin/ai-generate-quiz/route.ts",
+  "ar": "متوسطة الصعوبة",
+  "kind": "plain"
+ },
+ {
+  "key": "api.005",
+  "file": "app/api/admin/ai-generate-quiz/route.ts",
+  "ar": "صعبة (مستوى متقدم)",
+  "kind": "plain"
+ },
+ {
+  "key": "api.006",
+  "file": "app/api/admin/ai-generate-quiz/route.ts",
+  "ar": "متنوعة الصعوبة",
+  "kind": "plain"
+ },
+ {
+  "key": "api.007",
+  "file": "app/api/admin/ai-generate-quiz/route.ts",
+  "ar": "إنت مساعد تعليمي متخصص في إنشاء أسئلة Quizzes لطلاب الثانوية العامة في مادة Programming & AI.\n\nمهمتك: توليد {p1} أسئلة اختيار من متعدد (MCQ) أو صح/خطأ (TRUE_FALSE) بناءً على محتوى Lesson معطى.\n\nمتطلبات الأسئلة:\n1. الأسئلة لازم تكون مرتبطة مباشرة بمحتوى الـLesson\n2. كل سؤال له 4 خيارات للـMCQ أو خيارين للـTRUE_FALSE\n3. حدد الإجابة الصحيحة بشكل واضح\n4. اكتب شرح مختصر لكل إجابة (explanation)\n5. الصعوبة: {p2}\n6. الأسئلة بالعربية المصرية مع المصطلحات التقنية بالإنجليزي\n\nمطلوب الرد بصيغة JSON فقط (بدون نص إضافي):\n{\n  \"questions\": [\n    {\n      \"type\": \"MCQ\",\n      \"prompt\": \"السؤال هنا\",\n      \"options\": [\"الخيار 1\", \"الخيار 2\", \"الخيار 3\", \"الخيار 4\"],\n      \"correctIndex\": 0,\n      \"explanation\": \"شرح الإجابة\",\n      \"difficulty\": \"EASY\"\n    }\n  ]\n}\n\nمحتوى الـLesson:\n{p3}",
+  "kind": "tmpl"
+ },
+ {
+  "key": "api.008",
+  "file": "app/api/admin/ai-generate-quiz/route.ts",
+  "ar": "ولّد {p1} أسئلة للـLesson ده.",
+  "kind": "tmpl"
+ },
+ {
+  "key": "api.009",
+  "file": "app/api/admin/ai-generate-quiz/route.ts",
+  "ar": "الـAI ردّ بشكل مش صحيح. حاول تاني.",
+  "kind": "plain"
+ },
+ {
+  "key": "api.010",
+  "file": "app/api/admin/ai-generate-quiz/route.ts",
+  "ar": "الـAI ماولّدش أسئلة صحيحة. حاول تاني.",
+  "kind": "plain"
+ },
+ {
+  "key": "api.011",
+  "file": "app/api/admin/ai-generate-quiz/route.ts",
+  "ar": "اختبار — {p1}",
+  "kind": "tmpl"
+ },
+ {
+  "key": "api.012",
+  "file": "app/api/admin/ai-generate-quiz/route.ts",
+  "ar": "أسئلة مولّدة بالـAI",
+  "kind": "plain"
+ },
+ {
+  "key": "api.013",
+  "file": "app/api/admin/ai-generate-quiz/route.ts",
+  "ar": "حصلت مشكلة في الـAI. حاول تاني.",
+  "kind": "plain"
+ },
+ {
+  "key": "api.014",
+  "file": "app/api/admin/coupons/route.ts",
+  "ar": "الكود والنوع والقيمة مطلوبين",
+  "kind": "plain"
+ },
+ {
+  "key": "api.015",
+  "file": "app/api/admin/coupons/route.ts",
+  "ar": "الكود لازم 3 أحرف على الأقل",
+  "kind": "plain"
+ },
+ {
+  "key": "api.016",
+  "file": "app/api/admin/coupons/route.ts",
+  "ar": "الكود ده موجود بالفعل",
+  "kind": "plain"
+ },
+ {
+  "key": "api.017",
+  "file": "app/api/admin/courses/route.ts",
+  "ar": "فشل استعادة المنهج",
+  "kind": "plain"
+ },
+ {
+  "key": "api.018",
+  "file": "app/api/admin/courses/route.ts",
+  "ar": "اسم الكورس (عربي + إنجليزي) مطلوب",
+  "kind": "plain"
+ },
+ {
+  "key": "api.019",
+  "file": "app/api/admin/courses/route.ts",
+  "ar": "الكورس غير موجود",
+  "kind": "plain"
+ },
+ {
+  "key": "api.020",
+  "file": "app/api/admin/groups/[id]/route.ts",
+  "ar": "المجموعة غير موجودة",
+  "kind": "plain"
+ },
+ {
+  "key": "api.021",
+  "file": "app/api/admin/groups/route.ts",
+  "ar": "الاسم والكورس مطلوبين",
+  "kind": "plain"
+ },
+ {
+  "key": "api.022",
+  "file": "app/api/admin/groups/route.ts",
+  "ar": "الكورس غير موجود",
+  "kind": "plain"
+ },
+ {
+  "key": "api.023",
+  "file": "app/api/admin/notifications/route.ts",
+  "ar": "العنوان والرسالة مطلوبين",
+  "kind": "plain"
+ },
+ {
+  "key": "api.024",
+  "file": "app/api/admin/notifications/route.ts",
+  "ar": "مفيش مستخدمين للإرسال ليهم",
+  "kind": "plain"
+ },
+ {
+  "key": "api.025",
+  "file": "app/api/admin/payments/[id]/approve/route.ts",
+  "ar": "الدفعة غير موجودة",
+  "kind": "plain"
+ },
+ {
+  "key": "api.026",
+  "file": "app/api/admin/payments/[id]/approve/route.ts",
+  "ar": "الدفعة دي معمول approve بالفعل",
+  "kind": "plain"
+ },
+ {
+  "key": "api.027",
+  "file": "app/api/admin/payments/[id]/approve/route.ts",
+  "ar": "تم تأكيد الدفع",
+  "kind": "plain"
+ },
+ {
+  "key": "api.028",
+  "file": "app/api/admin/payments/[id]/approve/route.ts",
+  "ar": "تمام! تم تأكيد دفعتك بقيمة {p1} EGP واتفعّل اشتراكك.",
+  "kind": "tmpl"
+ },
+ {
+  "key": "api.029",
+  "file": "app/api/admin/payments/[id]/reject/route.ts",
+  "ar": "الدفعة غير موجودة",
+  "kind": "plain"
+ },
+ {
+  "key": "api.030",
+  "file": "app/api/admin/payments/[id]/reject/route.ts",
+  "ar": "تم رفض الدفع",
+  "kind": "plain"
+ },
+ {
+  "key": "api.031",
+  "file": "app/api/admin/payments/[id]/reject/route.ts",
+  "ar": "للأسف اترفضت دفعتك بقيمة {p1} EGP. لو فيه مشكلة، تواصل معانا على WhatsApp.",
+  "kind": "tmpl"
+ },
+ {
+  "key": "api.032",
+  "file": "app/api/admin/payments/import/route.ts",
+  "ar": "ملف xlsx مطلوب",
+  "kind": "plain"
+ },
+ {
+  "key": "api.033",
+  "file": "app/api/admin/payments/import/route.ts",
+  "ar": "مفيش sheet في الملف",
+  "kind": "plain"
+ },
+ {
+  "key": "api.034",
+  "file": "app/api/admin/payments/import/route.ts",
+  "ar": "الـsheet فاضي",
+  "kind": "plain"
+ },
+ {
+  "key": "api.035",
+  "file": "app/api/admin/payments/import/route.ts",
+  "ar": "الإيميل",
+  "kind": "plain"
+ },
+ {
+  "key": "api.036",
+  "file": "app/api/admin/payments/import/route.ts",
+  "ar": "المبلغ",
+  "kind": "plain"
+ },
+ {
+  "key": "api.037",
+  "file": "app/api/admin/payments/import/route.ts",
+  "ar": "الطريقة",
+  "kind": "plain"
+ },
+ {
+  "key": "api.038",
+  "file": "app/api/admin/payments/import/route.ts",
+  "ar": "المرجع",
+  "kind": "plain"
+ },
+ {
+  "key": "api.039",
+  "file": "app/api/admin/payments/import/route.ts",
+  "ar": "الحالة",
+  "kind": "plain"
+ },
+ {
+  "key": "api.040",
+  "file": "app/api/admin/payments/import/route.ts",
+  "ar": "ملاحظات",
+  "kind": "plain"
+ },
+ {
+  "key": "api.041",
+  "file": "app/api/admin/payments/import/route.ts",
+  "ar": "بيانات ناقصة (الإيميل أو المبلغ)",
+  "kind": "plain"
+ },
+ {
+  "key": "api.042",
+  "file": "app/api/admin/payments/import/route.ts",
+  "ar": "المستخدم مش موجود",
+  "kind": "plain"
+ },
+ {
+  "key": "api.043",
+  "file": "app/api/admin/payments/import/route.ts",
+  "ar": "حصلت مشكلة في قراءة الملف. تأكد إنه xlsx صحيح.",
+  "kind": "plain"
+ },
+ {
+  "key": "api.044",
+  "file": "app/api/admin/payments/import/route.ts",
+  "ar": "دفعة شهرية",
+  "kind": "plain"
+ },
+ {
+  "key": "api.045",
+  "file": "app/api/admin/question-bank/route.ts",
+  "ar": "لازم على الأقل خيارين للسؤال",
+  "kind": "plain"
+ },
+ {
+  "key": "api.046",
+  "file": "app/api/admin/question-bank/route.ts",
+  "ar": "نص السؤال مطلوب",
+  "kind": "plain"
+ },
+ {
+  "key": "api.047",
+  "file": "app/api/admin/students/[id]/route.ts",
+  "ar": "الطالب غير موجود",
+  "kind": "plain"
+ },
+ {
+  "key": "api.048",
+  "file": "app/api/admin/students/route.ts",
+  "ar": "الاسم والإيميل والباسورد مطلوبين",
+  "kind": "plain"
+ },
+ {
+  "key": "api.049",
+  "file": "app/api/admin/students/route.ts",
+  "ar": "كلمة السر لازم 6 أحرف على الأقل",
+  "kind": "plain"
+ },
+ {
+  "key": "api.050",
+  "file": "app/api/admin/students/route.ts",
+  "ar": "البريد الإلكتروني مستخدم بالفعل",
+  "kind": "plain"
+ },
+ {
+  "key": "api.051",
+  "file": "app/api/admin/teachers/route.ts",
+  "ar": "الاسم والإيميل والباسورد مطلوبين",
+  "kind": "plain"
+ },
+ {
+  "key": "api.052",
+  "file": "app/api/admin/teachers/route.ts",
+  "ar": "كلمة السر لازم 6 أحرف على الأقل",
+  "kind": "plain"
+ },
+ {
+  "key": "api.053",
+  "file": "app/api/admin/teachers/route.ts",
+  "ar": "البريد الإلكتروني مستخدم بالفعل",
+  "kind": "plain"
+ },
+ {
+  "key": "api.054",
+  "file": "app/api/ai/chat/route.ts",
+  "ar": "إنت \"CodeMind Assistant\" — مساعد ذكاء اصطناعي لمنصة CodeMind Academy التعليمية. دورك: - تساعد طلاب الثانوية العامة (الصف الثاني) في فهم Programming & AI. - تشرح المفاهيم Programming و Artificial Intelligence و Machine Learning و Neural Networks و LLMs. - تجاوب على أسئلة الطلاب بطريقة بسيطة، مصرية لو طلب الطالب، أو MSA لو فضل. - دايماً خليك مشجّع، صبور، وواضح. - استخدم أمثلة كود برمجي متى ما كان مناسب (في code blocks). - لو السؤال خارج نطاق Programming & AI، ردّ بلطف واطلب من الطالب يبقى في النطاق. قواعد الرد: - لو السؤال تقني، اشرحه بشكل عملي بأمثلة. - لو السؤال عن المنهج، اشرح إزاي الـTopic ده بيفرق في حياته. - لو الطالب محتاج مساعدة في Quiz أو Homework، ساعده بس متديش الجواب مباشرةً لو هو quiz — وجاوبه بطريقة تخليه يفكر. - خلي الرد قصير ومرتب (paragraphs قصيرة + bullets لو محتاج). - Technical terms ابقيها بالإنجليزي زي ما هي (Programming, AI, Quiz, Lesson, Neural Network, etc.).",
+  "kind": "plain"
+ },
+ {
+  "key": "api.055",
+  "file": "app/api/ai/chat/route.ts",
+  "ar": "معلش، مقدرتش أجاوب دلوقتي. حاول تاني.",
+  "kind": "plain"
+ },
+ {
+  "key": "api.056",
+  "file": "app/api/ai/chat/route.ts",
+  "ar": "حصلت مشكلة في الـAI. حاول تاني.",
+  "kind": "plain"
+ },
+ {
+  "key": "api.057",
+  "file": "app/api/auth/[action]/route.ts",
+  "ar": "بيانات الدخول مش صحيحة",
+  "kind": "plain"
+ },
+ {
+  "key": "api.058",
+  "file": "app/api/auth/[action]/route.ts",
+  "ar": "الحساب موقوف",
+  "kind": "plain"
+ },
+ {
+  "key": "api.059",
+  "file": "app/api/auth/[action]/route.ts",
+  "ar": "كل الحقول مطلوبة",
+  "kind": "plain"
+ },
+ {
+  "key": "api.060",
+  "file": "app/api/auth/[action]/route.ts",
+  "ar": "البريد الإلكتروني غير صالح",
+  "kind": "plain"
+ },
+ {
+  "key": "api.061",
+  "file": "app/api/auth/[action]/route.ts",
+  "ar": "كلمة السر لازم 6 أحرف على الأقل",
+  "kind": "plain"
+ },
+ {
+  "key": "api.062",
+  "file": "app/api/auth/[action]/route.ts",
+  "ar": "البريد الإلكتروني مستخدم بالفعل",
+  "kind": "plain"
+ },
+ {
+  "key": "api.063",
+  "file": "app/api/auth/[action]/route.ts",
+  "ar": "الاسم الكامل لازم يكون ثلاثي باللغة العربية (مطابق للبطاقة)",
+  "kind": "plain"
+ },
+ {
+  "key": "api.064",
+  "file": "app/api/auth/[action]/route.ts",
+  "ar": "رقم تليفون الطالب غير صالح (مثال: 01147422177)",
+  "kind": "plain"
+ },
+ {
+  "key": "api.065",
+  "file": "app/api/auth/[action]/route.ts",
+  "ar": "رقم تليفون ولي الأمر غير صالح (مثال: 01147422177)",
+  "kind": "plain"
+ },
+ {
+  "key": "api.066",
+  "file": "app/api/auth/[action]/route.ts",
+  "ar": "الرقم القومي لازم يكون 14 رقم",
+  "kind": "plain"
+ },
+ {
+  "key": "api.067",
+  "file": "app/api/auth/[action]/route.ts",
+  "ar": "اسم المدرسة مطلوب",
+  "kind": "plain"
+ },
+ {
+  "key": "api.068",
+  "file": "app/api/auth/[action]/route.ts",
+  "ar": "اختار نوع المدرسة: لغات أو عربي",
+  "kind": "plain"
+ },
+ {
+  "key": "api.069",
+  "file": "app/api/auth/[action]/route.ts",
+  "ar": "الرقم القومي ده مسجل بالفعل",
+  "kind": "plain"
+ },
+ {
+  "key": "api.070",
+  "file": "app/api/auth/[action]/route.ts",
+  "ar": "الاسم الكامل لازم يكون ثلاثي",
+  "kind": "plain"
+ },
+ {
+  "key": "api.071",
+  "file": "app/api/auth/[action]/route.ts",
+  "ar": "الرقم القومي للطالب لازم يكون 14 رقم",
+  "kind": "plain"
+ },
+ {
+  "key": "api.072",
+  "file": "app/api/auth/[action]/route.ts",
+  "ar": "كود الطالب غير صالح (مثال: CM-ABC123)",
+  "kind": "plain"
+ },
+ {
+  "key": "api.073",
+  "file": "app/api/auth/[action]/route.ts",
+  "ar": "مفيش طالب بالرقم القومي وكود الطالب دول",
+  "kind": "plain"
+ },
+ {
+  "key": "api.074",
+  "file": "app/api/auth/[action]/route.ts",
+  "ar": "رقم تليفون ولي الأمر غير مطابق للرقم المسجل مع بيانات الطالب",
+  "kind": "plain"
+ },
+ {
+  "key": "api.075",
+  "file": "app/api/coupons/validate/route.ts",
+  "ar": "كود الخصم مطلوب",
+  "kind": "plain"
+ },
+ {
+  "key": "api.076",
+  "file": "app/api/coupons/validate/route.ts",
+  "ar": "الكود ده مش موجود",
+  "kind": "plain"
+ },
+ {
+  "key": "api.077",
+  "file": "app/api/coupons/validate/route.ts",
+  "ar": "الكود ده مش شغال دلوقتي",
+  "kind": "plain"
+ },
+ {
+  "key": "api.078",
+  "file": "app/api/coupons/validate/route.ts",
+  "ar": "الكود ده خلص استخدامه",
+  "kind": "plain"
+ },
+ {
+  "key": "api.079",
+  "file": "app/api/coupons/validate/route.ts",
+  "ar": "الكود ده انتهت صلاحيته",
+  "kind": "plain"
+ },
+ {
+  "key": "api.080",
+  "file": "app/api/coupons/validate/route.ts",
+  "ar": "أنت استخدمت الكود ده قبل كده",
+  "kind": "plain"
+ },
+ {
+  "key": "api.081",
+  "file": "app/api/enroll/route.ts",
+  "ar": "الباقات متاحة للطلاب فقط",
+  "kind": "plain"
+ },
+ {
+  "key": "api.082",
+  "file": "app/api/enroll/route.ts",
+  "ar": "كل البيانات مطلوبة",
+  "kind": "plain"
+ },
+ {
+  "key": "api.083",
+  "file": "app/api/enroll/route.ts",
+  "ar": "ملف الطالب غير موجود",
+  "kind": "plain"
+ },
+ {
+  "key": "api.084",
+  "file": "app/api/enroll/route.ts",
+  "ar": "الباقة مش موجودة",
+  "kind": "plain"
+ },
+ {
+  "key": "api.085",
+  "file": "app/api/enroll/route.ts",
+  "ar": "المجموعة مش متاحة",
+  "kind": "plain"
+ },
+ {
+  "key": "api.086",
+  "file": "app/api/enroll/route.ts",
+  "ar": "المجموعة مكتملة",
+  "kind": "plain"
+ },
+ {
+  "key": "api.087",
+  "file": "app/api/enroll/route.ts",
+  "ar": "كود الخصم مش موجود",
+  "kind": "plain"
+ },
+ {
+  "key": "api.088",
+  "file": "app/api/enroll/route.ts",
+  "ar": "كود الخصم مش شغال",
+  "kind": "plain"
+ },
+ {
+  "key": "api.089",
+  "file": "app/api/enroll/route.ts",
+  "ar": "كود الخصم خلص استخدامه",
+  "kind": "plain"
+ },
+ {
+  "key": "api.090",
+  "file": "app/api/enroll/route.ts",
+  "ar": "كود الخصم انتهت صلاحيته",
+  "kind": "plain"
+ },
+ {
+  "key": "api.091",
+  "file": "app/api/enroll/route.ts",
+  "ar": "أنت استخدمت الكود ده قبل كده",
+  "kind": "plain"
+ },
+ {
+  "key": "api.092",
+  "file": "app/api/enroll/route.ts",
+  "ar": "طلب اشتراك جديد",
+  "kind": "plain"
+ },
+ {
+  "key": "api.093",
+  "file": "app/api/enroll/route.ts",
+  "ar": "{p1} (طالب) عمل طلب اشتراك جديد — انتظر التأكيد.",
+  "kind": "tmpl"
+ },
+ {
+  "key": "api.094",
+  "file": "app/api/exams/mock/route.ts",
+  "ar": "Mock exams متاحة للطلاب فقط",
+  "kind": "plain"
+ },
+ {
+  "key": "api.095",
+  "file": "app/api/exams/mock/route.ts",
+  "ar": "ملف الطالب غير موجود",
+  "kind": "plain"
+ },
+ {
+  "key": "api.096",
+  "file": "app/api/exams/mock/route.ts",
+  "ar": "أنت مش مشترك في كورس دلوقتي",
+  "kind": "plain"
+ },
+ {
+  "key": "api.097",
+  "file": "app/api/exams/mock/route.ts",
+  "ar": "مفيش أسئلة في الـQuestion Bank حاليًا. اسأل الـAdmin يضيف أسئلة.",
+  "kind": "plain"
+ },
+ {
+  "key": "api.098",
+  "file": "app/api/parents/me/analytics/route.ts",
+  "ar": "Analytics متاحة لأولياء الأمور فقط",
+  "kind": "plain"
+ },
+ {
+  "key": "api.099",
+  "file": "app/api/parents/me/analytics/route.ts",
+  "ar": "ملف ولي الأمر غير موجود",
+  "kind": "plain"
+ },
+ {
+  "key": "api.100",
+  "file": "app/api/parents/me/dashboard/route.ts",
+  "ar": "نجح",
+  "kind": "plain"
+ },
+ {
+  "key": "api.101",
+  "file": "app/api/parents/me/dashboard/route.ts",
+  "ar": "محتاج مراجعة",
+  "kind": "plain"
+ },
+ {
+  "key": "api.102",
+  "file": "app/api/parents/me/dashboard/route.ts",
+  "ar": "اتصحح — الدرجة {p1}/10",
+  "kind": "tmpl"
+ },
+ {
+  "key": "api.103",
+  "file": "app/api/parents/me/dashboard/route.ts",
+  "ar": "اتسلم — مستني التصحيح",
+  "kind": "plain"
+ },
+ {
+  "key": "api.104",
+  "file": "app/api/parents/me/dashboard/route.ts",
+  "ar": "اتسلم متأخر",
+  "kind": "plain"
+ },
+ {
+  "key": "api.105",
+  "file": "app/api/parents/me/dashboard/route.ts",
+  "ar": "لسه ماتسلمش",
+  "kind": "plain"
+ },
+ {
+  "key": "api.106",
+  "file": "app/api/parents/me/dashboard/route.ts",
+  "ar": "حاضر",
+  "kind": "plain"
+ },
+ {
+  "key": "api.107",
+  "file": "app/api/parents/me/dashboard/route.ts",
+  "ar": "متأخر",
+  "kind": "plain"
+ },
+ {
+  "key": "api.108",
+  "file": "app/api/parents/me/dashboard/route.ts",
+  "ar": "غياب بعذر",
+  "kind": "plain"
+ },
+ {
+  "key": "api.109",
+  "file": "app/api/parents/me/dashboard/route.ts",
+  "ar": "غايب",
+  "kind": "plain"
+ },
+ {
+  "key": "api.110",
+  "file": "app/api/parents/me/link-student/route.ts",
+  "ar": "الرقم القومي للطالب + رقم تليفون ولي الأمر + كود الطالب مطلوبين",
+  "kind": "plain"
+ },
+ {
+  "key": "api.111",
+  "file": "app/api/parents/me/link-student/route.ts",
+  "ar": "الرقم القومي للطالب لازم يكون 14 رقم",
+  "kind": "plain"
+ },
+ {
+  "key": "api.112",
+  "file": "app/api/parents/me/link-student/route.ts",
+  "ar": "كود الطالب غير صالح (مثال: CM-ABC123)",
+  "kind": "plain"
+ },
+ {
+  "key": "api.113",
+  "file": "app/api/parents/me/link-student/route.ts",
+  "ar": "مفيش طالب بالرقم القومي وكود الطالب دول",
+  "kind": "plain"
+ },
+ {
+  "key": "api.114",
+  "file": "app/api/parents/me/link-student/route.ts",
+  "ar": "رقم تليفون ولي الأمر غير مطابق للرقم المسجل مع بيانات الطالب",
+  "kind": "plain"
+ },
+ {
+  "key": "api.115",
+  "file": "app/api/parents/me/link-student/route.ts",
+  "ar": "مفيش طالب بالإيميل ده. تأكد من الإيميل وحاول تاني.",
+  "kind": "plain"
+ },
+ {
+  "key": "api.116",
+  "file": "app/api/parents/me/link-student/route.ts",
+  "ar": "الحساب ده مش طالب.",
+  "kind": "plain"
+ },
+ {
+  "key": "api.117",
+  "file": "app/api/parents/me/link-student/route.ts",
+  "ar": "اكتب إيميل الطالب أو بيانات الربط (الرقم القومي + التليفون + الكود)",
+  "kind": "plain"
+ },
+ {
+  "key": "api.118",
+  "file": "app/api/parents/me/weekly-report/route.ts",
+  "ar": "التقارير متاحة لأولياء الأمور فقط",
+  "kind": "plain"
+ },
+ {
+  "key": "api.119",
+  "file": "app/api/parents/me/weekly-report/route.ts",
+  "ar": "ملف ولي الأمر غير موجود",
+  "kind": "plain"
+ },
+ {
+  "key": "api.120",
+  "file": "app/api/students/me/bookmarks/route.ts",
+  "ar": "ملف الطالب غير موجود",
+  "kind": "plain"
+ },
+ {
+  "key": "api.121",
+  "file": "app/api/students/me/bookmarks/route.ts",
+  "ar": "Lesson ID مطلوب",
+  "kind": "plain"
+ },
+ {
+  "key": "api.122",
+  "file": "app/api/students/me/certificate/route.ts",
+  "ar": "الشهادات متاحة للطلاب فقط",
+  "kind": "plain"
+ },
+ {
+  "key": "api.123",
+  "file": "app/api/students/me/certificate/route.ts",
+  "ar": "ملف الطالب غير موجود",
+  "kind": "plain"
+ },
+ {
+  "key": "api.124",
+  "file": "app/api/students/me/certificate/route.ts",
+  "ar": "أنت مش مشترك في كورس",
+  "kind": "plain"
+ },
+ {
+  "key": "api.125",
+  "file": "app/api/students/me/dashboard/route.ts",
+  "ar": "اتخلص",
+  "kind": "plain"
+ },
+ {
+  "key": "api.126",
+  "file": "app/api/students/me/dashboard/route.ts",
+  "ar": "في السير",
+  "kind": "plain"
+ },
+ {
+  "key": "api.127",
+  "file": "app/api/students/me/dashboard/route.ts",
+  "ar": "(نجحت)",
+  "kind": "plain"
+ },
+ {
+  "key": "api.128",
+  "file": "app/api/students/me/dashboard/route.ts",
+  "ar": "(مكملة)",
+  "kind": "plain"
+ },
+ {
+  "key": "api.129",
+  "file": "app/api/students/me/dashboard/route.ts",
+  "ar": "تم التقييم ({p1}/{p2})",
+  "kind": "tmpl"
+ },
+ {
+  "key": "api.130",
+  "file": "app/api/students/me/dashboard/route.ts",
+  "ar": "اتسابمت",
+  "kind": "plain"
+ },
+ {
+  "key": "api.131",
+  "file": "app/api/students/me/dashboard/route.ts",
+  "ar": "في الانتظار",
+  "kind": "plain"
+ },
+ {
+  "key": "api.132",
+  "file": "app/api/students/me/export-progress/route.ts",
+  "ar": "Export متاح للطلاب فقط",
+  "kind": "plain"
+ },
+ {
+  "key": "api.133",
+  "file": "app/api/students/me/export-progress/route.ts",
+  "ar": "ملف الطالب غير موجود",
+  "kind": "plain"
+ },
+ {
+  "key": "api.134",
+  "file": "app/api/students/me/gamification/route.ts",
+  "ar": "Gamification متاحة للطلاب فقط",
+  "kind": "plain"
+ },
+ {
+  "key": "api.135",
+  "file": "app/api/students/me/gamification/route.ts",
+  "ar": "ملف الطالب غير موجود",
+  "kind": "plain"
+ },
+ {
+  "key": "api.136",
+  "file": "app/api/students/me/leaderboard/route.ts",
+  "ar": "الـLeaderboard متاح للطلاب فقط",
+  "kind": "plain"
+ },
+ {
+  "key": "api.137",
+  "file": "app/api/students/me/notes/route.ts",
+  "ar": "ملف الطالب غير موجود",
+  "kind": "plain"
+ },
+ {
+  "key": "api.138",
+  "file": "app/api/students/me/notes/route.ts",
+  "ar": "Lesson ID + content مطلوبة",
+  "kind": "plain"
+ },
+ {
+  "key": "api.139",
+  "file": "app/api/students/me/notes/route.ts",
+  "ar": "Note ID مطلوب",
+  "kind": "plain"
+ },
+ {
+  "key": "api.140",
+  "file": "app/api/students/me/referral/route.ts",
+  "ar": "الإحالات متاحة للطلاب فقط",
+  "kind": "plain"
+ },
+ {
+  "key": "api.141",
+  "file": "app/api/students/me/referral/route.ts",
+  "ar": "ملف الطالب غير موجود",
+  "kind": "plain"
+ },
+ {
+  "key": "api.142",
+  "file": "app/api/students/me/referral/route.ts",
+  "ar": "كود الإحالة مطلوب",
+  "kind": "plain"
+ },
+ {
+  "key": "api.143",
+  "file": "app/api/students/me/referral/route.ts",
+  "ar": "كود الإحالة مش صحيح",
+  "kind": "plain"
+ },
+ {
+  "key": "api.144",
+  "file": "app/api/students/me/referral/route.ts",
+  "ar": "كود الإحالة مش موجود",
+  "kind": "plain"
+ },
+ {
+  "key": "api.145",
+  "file": "app/api/students/me/referral/route.ts",
+  "ar": "مينفعش تحيل نفسك",
+  "kind": "plain"
+ },
+ {
+  "key": "api.146",
+  "file": "app/api/students/me/referral/route.ts",
+  "ar": "أنت بالفعل محال بهذا الطالب",
+  "kind": "plain"
+ },
+ {
+  "key": "api.147",
+  "file": "app/api/students/me/referral/route.ts",
+  "ar": "Referral reward — 10% خصم على التجديد",
+  "kind": "plain"
+ },
+ {
+  "key": "api.148",
+  "file": "app/api/students/me/referral/route.ts",
+  "ar": "إحالة جديدة! 🎉 + خصم 10%",
+  "kind": "plain"
+ },
+ {
+  "key": "api.149",
+  "file": "app/api/students/me/referral/route.ts",
+  "ar": "{p1} سجل بإحالتك. كسبت 50 XP + كود خصم 10%: {p2}",
+  "kind": "tmpl"
+ },
+ {
+  "key": "api.150",
+  "file": "app/api/students/me/referral/route.ts",
+  "ar": "تم تسجيل الإحالة بنجاح",
+  "kind": "plain"
+ },
+ {
+  "key": "api.151",
+  "file": "app/api/students/me/study-plan/route.ts",
+  "ar": "ملف الطالب غير موجود",
+  "kind": "plain"
+ },
+ {
+  "key": "api.152",
+  "file": "app/api/students/me/study-plan/route.ts",
+  "ar": "العنوان والتاريخ مطلوبين",
+  "kind": "plain"
+ },
+ {
+  "key": "api.153",
+  "file": "app/api/students/me/study-plan/route.ts",
+  "ar": "Task ID مطلوب",
+  "kind": "plain"
+ },
+ {
+  "key": "api.154",
+  "file": "app/api/teacher/analytics/route.ts",
+  "ar": "Analytics متاحة للمعلمين فقط",
+  "kind": "plain"
+ },
+ {
+  "key": "api.155",
+  "file": "app/api/teacher/analytics/route.ts",
+  "ar": "ملف المعلم غير موجود",
+  "kind": "plain"
+ },
+ {
+  "key": "api.156",
+  "file": "app/api/teacher/attendance/route.ts",
+  "ar": "المجموعة دي مش بتاعتك",
+  "kind": "plain"
+ },
+ {
+  "key": "api.157",
+  "file": "app/api/teacher/attendance/route.ts",
+  "ar": "sessionId مطلوب",
+  "kind": "plain"
+ },
+ {
+  "key": "api.158",
+  "file": "app/api/teacher/attendance/route.ts",
+  "ar": "مفيش بيانات attendance",
+  "kind": "plain"
+ },
+ {
+  "key": "api.159",
+  "file": "app/api/teacher/attendance/route.ts",
+  "ar": "Session مش موجود",
+  "kind": "plain"
+ },
+ {
+  "key": "api.160",
+  "file": "app/api/teacher/attendance/route.ts",
+  "ar": "الـSession مش بتاع مجموعتك",
+  "kind": "plain"
+ },
+ {
+  "key": "api.161",
+  "file": "app/api/teacher/attendance/route.ts",
+  "ar": "كل سطر لازم يكون فيه studentId و status",
+  "kind": "plain"
+ },
+ {
+  "key": "api.162",
+  "file": "app/api/teacher/attendance/route.ts",
+  "ar": "Status غير مسموح: {p1}",
+  "kind": "tmpl"
+ },
+ {
+  "key": "api.163",
+  "file": "app/api/teacher/attendance/route.ts",
+  "ar": "في طالب مش من المجموعة دي",
+  "kind": "plain"
+ },
+ {
+  "key": "api.164",
+  "file": "app/api/teacher/dashboard/route.ts",
+  "ar": "اتصحح — الدرجة {p1}/10",
+  "kind": "tmpl"
+ },
+ {
+  "key": "api.165",
+  "file": "app/api/teacher/dashboard/route.ts",
+  "ar": "طالب",
+  "kind": "plain"
+ },
+ {
+  "key": "api.166",
+  "file": "app/api/teacher/dashboard/route.ts",
+  "ar": "نجح",
+  "kind": "plain"
+ },
+ {
+  "key": "api.167",
+  "file": "app/api/teacher/dashboard/route.ts",
+  "ar": "محتاج مراجعة",
+  "kind": "plain"
+ },
+ {
+  "key": "api.168",
+  "file": "app/api/teacher/homework/[id]/grade/route.ts",
+  "ar": "studentId مطلوب",
+  "kind": "plain"
+ },
+ {
+  "key": "api.169",
+  "file": "app/api/teacher/homework/[id]/grade/route.ts",
+  "ar": "الدرجة لازم تكون رقم",
+  "kind": "plain"
+ },
+ {
+  "key": "api.170",
+  "file": "app/api/teacher/homework/[id]/grade/route.ts",
+  "ar": "الدرجة لازم تكون بين 0 و 100",
+  "kind": "plain"
+ },
+ {
+  "key": "api.171",
+  "file": "app/api/teacher/homework/[id]/grade/route.ts",
+  "ar": "الـHomework مش موجود",
+  "kind": "plain"
+ },
+ {
+  "key": "api.172",
+  "file": "app/api/teacher/homework/[id]/grade/route.ts",
+  "ar": "الـHomework مش بتاع الكورسات بتاعتك",
+  "kind": "plain"
+ },
+ {
+  "key": "api.173",
+  "file": "app/api/teacher/homework/[id]/grade/route.ts",
+  "ar": "Homework اتصحح: {p1}",
+  "kind": "tmpl"
+ },
+ {
+  "key": "api.174",
+  "file": "app/api/teacher/homework/[id]/grade/route.ts",
+  "ar": "الدرجة: {p1}/{p2}. {p3}",
+  "kind": "tmpl"
+ },
+ {
+  "key": "api.175",
+  "file": "app/api/teacher/homework/[id]/grade/route.ts",
+  "ar": "ملاحظة: {p1}",
+  "kind": "tmpl"
+ },
+ {
+  "key": "api.176",
+  "file": "app/api/teacher/quizzes/route.ts",
+  "ar": "lessonId مطلوب",
+  "kind": "plain"
+ },
+ {
+  "key": "api.177",
+  "file": "app/api/teacher/quizzes/route.ts",
+  "ar": "عنوان الـQuiz مطلوب",
+  "kind": "plain"
+ },
+ {
+  "key": "api.178",
+  "file": "app/api/teacher/quizzes/route.ts",
+  "ar": "الـQuiz لازم يكون فيه سؤال واحد على الأقل",
+  "kind": "plain"
+ },
+ {
+  "key": "api.179",
+  "file": "app/api/teacher/quizzes/route.ts",
+  "ar": "الـLesson مش موجود",
+  "kind": "plain"
+ },
+ {
+  "key": "api.180",
+  "file": "app/api/teacher/quizzes/route.ts",
+  "ar": "الـLesson مش بتاع الكورسات بتاعتك",
+  "kind": "plain"
+ },
+ {
+  "key": "api.181",
+  "file": "app/api/teacher/quizzes/route.ts",
+  "ar": "السؤال رقم {p1} مفيهوش نص",
+  "kind": "tmpl"
+ },
+ {
+  "key": "api.182",
+  "file": "app/api/teacher/quizzes/route.ts",
+  "ar": "السؤال رقم {p1} لازم يكون فيه اختيارين على الأقل",
+  "kind": "tmpl"
+ },
+ {
+  "key": "api.183",
+  "file": "app/api/teacher/quizzes/route.ts",
+  "ar": "السؤال رقم {p1} محتاج إجابة صحيحة",
+  "kind": "tmpl"
+ },
+ {
+  "key": "api.184",
+  "file": "app/api/teacher/quizzes/route.ts",
+  "ar": "نوع سؤال غير معروف: {p1}",
+  "kind": "tmpl"
+ },
+ {
+  "key": "api.185",
+  "file": "app/api/teacher/templates/[id]/route.ts",
+  "ar": "Templates متاحة للمعلمين فقط",
+  "kind": "plain"
+ },
+ {
+  "key": "api.186",
+  "file": "app/api/teacher/templates/route.ts",
+  "ar": "Templates متاحة للمعلمين فقط",
+  "kind": "plain"
+ },
+ {
+  "key": "api.187",
+  "file": "app/api/teacher/templates/route.ts",
+  "ar": "العنوان مطلوب",
+  "kind": "plain"
+ },
+ {
+  "key": "lib.001",
+  "file": "lib/parent-subscription.ts",
+  "ar": "ابنك لسه ما اشتركش في أي باقة.",
+  "kind": "plain"
+ },
+ {
+  "key": "lib.002",
+  "file": "lib/parent-subscription.ts",
+  "ar": "الحساب شغال تمام وابنك مربوط بحسابك بنجاح، بس لسه ما اشتركش في أي باقة. لما ابنك يشترك في باقة، التقرير الشهري هيظهر هنا.",
+  "kind": "plain"
+ },
+ {
+  "key": "lib.003",
+  "file": "lib/parent-subscription.ts",
+  "ar": "الاشتراك شغال بس قرب يخلص.",
+  "kind": "plain"
+ },
+ {
+  "key": "lib.004",
+  "file": "lib/parent-subscription.ts",
+  "ar": "اشتراك ابنك بينتهي خلال {p1} يوم — جدده علشان التقرير يفضل متاح.",
+  "kind": "tmpl"
+ },
+ {
+  "key": "lib.005",
+  "file": "lib/parent-subscription.ts",
+  "ar": "الاشتراك شغال.",
+  "kind": "plain"
+ },
+ {
+  "key": "lib.006",
+  "file": "lib/parent-subscription.ts",
+  "ar": "فاضل {p1} يوم على انتهاء الاشتراك.",
+  "kind": "tmpl"
+ },
+ {
+  "key": "lib.007",
+  "file": "lib/parent-subscription.ts",
+  "ar": "اشتراك ابنك نشط.",
+  "kind": "plain"
+ },
+ {
+  "key": "lib.008",
+  "file": "lib/parent-subscription.ts",
+  "ar": "الاشتراك لسه بيتراجع.",
+  "kind": "plain"
+ },
+ {
+  "key": "lib.009",
+  "file": "lib/parent-subscription.ts",
+  "ar": "ابنك قدّم طلب اشتراك ولسه مستني تأكيد الدفع من الإدارة.",
+  "kind": "plain"
+ },
+ {
+  "key": "lib.010",
+  "file": "lib/parent-subscription.ts",
+  "ar": "اشتراك ابنك انتهى.",
+  "kind": "plain"
+ },
+ {
+  "key": "lib.011",
+  "file": "lib/parent-subscription.ts",
+  "ar": "جدد الاشتراك علشان ابنك يكمل ويفضل التقرير الشهري متحدث.",
+  "kind": "plain"
+ },
+ {
+  "key": "lib.012",
+  "file": "lib/parent-subscription.ts",
+  "ar": "اشتراك ابنك اتلغى.",
+  "kind": "plain"
+ },
+ {
+  "key": "lib.013",
+  "file": "lib/parent-subscription.ts",
+  "ar": "لو حابب يكمل، ابنك يقدر يشترك في باقة جديدة من حسابه.",
+  "kind": "plain"
+ },
+ {
+  "key": "lib.014",
+  "file": "lib/parent-subscription.ts",
+  "ar": "حالة الاشتراك غير معروفة.",
+  "kind": "plain"
+ },
+ {
+  "key": "lib.015",
+  "file": "lib/parent-subscription.ts",
+  "ar": "تواصل مع الإدارة لو محتاج تفاصيل أكتر عن الاشتراك.",
+  "kind": "plain"
+ }
+]

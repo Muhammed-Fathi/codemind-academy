@@ -1,3 +1,4 @@
+import { getServerT } from "@/lib/i18n-server";
 // CodeMind Academy — Parent Weekly Report API
 // Returns a weekly summary of the child's activity (last 7 days).
 import { NextResponse } from "next/server";
@@ -5,9 +6,10 @@ import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
 
 export async function GET() {
+  const tApi = await getServerT();
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
-  if (user.role !== "PARENT") return err("التقارير متاحة لأولياء الأمور فقط", 403);
+  if (user.role !== "PARENT") return err(tApi("api.118"), 403);
 
   const parent = await db.parent.findUnique({
     where: { userId: user.id },
@@ -40,7 +42,7 @@ export async function GET() {
       },
     },
   });
-  if (!parent) return err("ملف ولي الأمر غير موجود", 404);
+  if (!parent) return err(tApi("api.119"), 404);
 
   const now = new Date();
   const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);

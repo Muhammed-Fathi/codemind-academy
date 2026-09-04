@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useApp } from "@/lib/store";
-import { getStrings } from "@/lib/i18n";
+import { getStrings , useT, pickAuto } from "@/lib/i18n";
 import { CodeMindLogo } from "@/components/logo";
 import { GlobalControls } from "@/components/global-controls";
 import { Button } from "@/components/ui/button";
@@ -150,10 +150,11 @@ function homeFor(role: Role) {
 }
 
 function RolePicker({ role, onChange }: { role: Role; onChange: (r: Role) => void }) {
+  const tr = useT();
   const roles: { key: Role; label: string; icon: any; desc: string }[] = [
-    { key: "STUDENT", label: "Student", icon: GraduationCap, desc: "طالب" },
-    { key: "PARENT", label: "Parent", icon: Heart, desc: "ولي أمر" },
-    { key: "TEACHER", label: "Teacher", icon: Briefcase, desc: "معلم" },
+    { key: "STUDENT", label: "Student", icon: GraduationCap, desc: tr("auth.001") },
+    { key: "PARENT", label: "Parent", icon: Heart, desc: tr("auth.002") },
+    { key: "TEACHER", label: "Teacher", icon: Briefcase, desc: tr("auth.003") },
   ];
   return (
     <div className="grid grid-cols-3 gap-2 mb-5">
@@ -182,6 +183,7 @@ function RolePicker({ role, onChange }: { role: Role; onChange: (r: Role) => voi
 }
 
 function AuthForm({ mode, role }: { mode: "login" | "register"; role: Role }) {
+  const tr = useT();
   const setUser = useApp((s) => s.setUser);
   const setView = useApp((s) => s.setView);
   const locale = useApp((s) => s.locale);
@@ -198,7 +200,7 @@ function AuthForm({ mode, role }: { mode: "login" | "register"; role: Role }) {
 
     if (mode === "login") {
       if (!email || !password) {
-        toast.error(locale === "ar" ? "اكتب الإيميل وكلمة السر" : "Enter email and password");
+        toast.error(locale === "ar" ? tr("auth.004") : "Enter email and password");
         return;
       }
       setLoading(true);
@@ -210,14 +212,14 @@ function AuthForm({ mode, role }: { mode: "login" | "register"; role: Role }) {
         });
         const data = await r.json();
         if (!r.ok) {
-          toast.error(data.error || "حصلت مشكلة. حاول تاني.");
+          toast.error(data.error || tr("auth.005"));
           return;
         }
-        toast.success(locale === "ar" ? "أهلاً بعودتك!" : "Welcome back!");
+        toast.success(locale === "ar" ? tr("auth.006") : "Welcome back!");
         setUser(data.user);
         setView(homeFor(data.user.role));
       } catch {
-        toast.error("حصلت مشكلة في الاتصال. حاول تاني.");
+        toast.error(tr("auth.007"));
       } finally {
         setLoading(false);
       }
@@ -234,27 +236,27 @@ function AuthForm({ mode, role }: { mode: "login" | "register"; role: Role }) {
       const nationalId = String(fd.get("nationalId") || "").trim();
       const schoolName = String(fd.get("schoolName") || "").trim();
       if (!isValidArabicThreePartName(name)) {
-        toast.error("الاسم الكامل لازم يكون ثلاثي باللغة العربية (مطابق للبطاقة)");
+        toast.error(tr("auth.008"));
         return;
       }
       if (!isValidEgyptianPhone(studentPhone)) {
-        toast.error("رقم تليفون الطالب غير صالح (مثال: 01147422177)");
+        toast.error(tr("auth.009"));
         return;
       }
       if (!isValidEgyptianPhone(parentPhone)) {
-        toast.error("رقم تليفون ولي الأمر غير صالح (مثال: 01147422177)");
+        toast.error(tr("auth.010"));
         return;
       }
       if (!isValidNationalId(nationalId)) {
-        toast.error("الرقم القومي لازم يكون 14 رقم");
+        toast.error(tr("auth.011"));
         return;
       }
       if (!schoolName) {
-        toast.error("اسم المدرسة مطلوب");
+        toast.error(tr("auth.012"));
         return;
       }
       if (schoolType !== "LANGUAGE" && schoolType !== "ARABIC") {
-        toast.error("اختار نوع المدرسة: لغات أو عربي");
+        toast.error(tr("auth.013"));
         return;
       }
       Object.assign(payload, { studentPhone, parentPhone, nationalId, schoolName, schoolType });
@@ -263,26 +265,26 @@ function AuthForm({ mode, role }: { mode: "login" | "register"; role: Role }) {
       const studentNationalId = String(fd.get("studentNationalId") || "").trim();
       const studentCode = String(fd.get("studentCode") || "").trim().toUpperCase();
       if (!isValidThreePartName(name)) {
-        toast.error("الاسم الكامل لازم يكون ثلاثي");
+        toast.error(tr("auth.014"));
         return;
       }
       if (!isValidEgyptianPhone(parentPhone)) {
-        toast.error("رقم تليفون ولي الأمر غير صالح (مثال: 01147422177)");
+        toast.error(tr("auth.010"));
         return;
       }
       if (!isValidNationalId(studentNationalId)) {
-        toast.error("الرقم القومي للطالب لازم يكون 14 رقم");
+        toast.error(tr("auth.016"));
         return;
       }
       if (!isValidStudentCode(studentCode)) {
-        toast.error("كود الطالب غير صالح (مثال: CM-ABC123)");
+        toast.error(tr("auth.017"));
         return;
       }
       Object.assign(payload, { parentPhone, studentNationalId, studentCode });
     } else {
       const phone = String(fd.get("phone") || "").trim();
       if (!name) {
-        toast.error("الاسم مطلوب");
+        toast.error(tr("auth.018"));
         return;
       }
       if (phone) payload.phone = phone;
@@ -297,15 +299,15 @@ function AuthForm({ mode, role }: { mode: "login" | "register"; role: Role }) {
       });
       const data = await r.json();
       if (!r.ok) {
-        toast.error(data.error || "حصلت مشكلة. حاول تاني.");
+        toast.error(data.error || tr("auth.005"));
         return;
       }
       if (data.user?.studentCode) setCreatedCode(data.user.studentCode);
-      toast.success(locale === "ar" ? "تم إنشاء حسابك 🎉" : "Account created 🎉");
+      toast.success(locale === "ar" ? tr("auth.020") : "Account created 🎉");
       setUser(data.user);
       setView(homeFor(data.user.role));
     } catch {
-      toast.error("حصلت مشكلة في الاتصال. حاول تاني.");
+      toast.error(tr("auth.007"));
     } finally {
       setLoading(false);
     }
@@ -323,7 +325,7 @@ function AuthForm({ mode, role }: { mode: "login" | "register"; role: Role }) {
               name="name"
               label={t.auth.fullNameAr}
               icon={<UserIcon className="w-4 h-4" />}
-              placeholder="مثال: أحمد محمد حسن"
+              placeholder={tr("auth.022")}
               required
             />
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -349,7 +351,7 @@ function AuthForm({ mode, role }: { mode: "login" | "register"; role: Role }) {
                 name="nationalId"
                 label={t.auth.nationalId}
                 icon={<IdCard className="w-4 h-4" />}
-                placeholder="14 رقم"
+                placeholder={tr("auth.023")}
                 dir="ltr"
                 required
               />
@@ -357,7 +359,7 @@ function AuthForm({ mode, role }: { mode: "login" | "register"; role: Role }) {
                 name="schoolName"
                 label={t.auth.schoolName}
                 icon={<School className="w-4 h-4" />}
-                placeholder="اسم المدرسة"
+                placeholder={tr("auth.024")}
                 required
               />
             </div>
@@ -365,7 +367,7 @@ function AuthForm({ mode, role }: { mode: "login" | "register"; role: Role }) {
               <Label className="text-xs font-semibold">{t.auth.schoolType} *</Label>
               <Select value={schoolType} onValueChange={setSchoolType}>
                 <SelectTrigger className="h-11">
-                  <SelectValue placeholder="اختار نوع المدرسة" />
+                  <SelectValue placeholder={tr("auth.025")} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="LANGUAGE">{t.auth.schoolTypeLang} (Language)</SelectItem>
@@ -382,7 +384,7 @@ function AuthForm({ mode, role }: { mode: "login" | "register"; role: Role }) {
               name="name"
               label={t.auth.fullName}
               icon={<UserIcon className="w-4 h-4" />}
-              placeholder="الاسم الكامل (ثلاثي)"
+              placeholder={tr("auth.026")}
               required
             />
             <Field
@@ -398,7 +400,7 @@ function AuthForm({ mode, role }: { mode: "login" | "register"; role: Role }) {
                 name="studentNationalId"
                 label={t.auth.studentNationalId}
                 icon={<IdCard className="w-4 h-4" />}
-                placeholder="14 رقم"
+                placeholder={tr("auth.023")}
                 dir="ltr"
                 required
               />
@@ -412,9 +414,7 @@ function AuthForm({ mode, role }: { mode: "login" | "register"; role: Role }) {
               />
             </div>
             <p className="text-[11px] text-muted-foreground leading-relaxed">
-              بنتحقق من حسابك بمطابقة رقم تليفون ولي الأمر + الرقم القومي للطالب مع البيانات
-              المسجلة وقت تسجيل الطالب، بالإضافة لكود الطالب.
-            </p>
+              {tr("auth.028")}</p>
           </>
         )}
 
@@ -424,7 +424,7 @@ function AuthForm({ mode, role }: { mode: "login" | "register"; role: Role }) {
               name="name"
               label={t.auth.fullName}
               icon={<UserIcon className="w-4 h-4" />}
-              placeholder="الاسم الكامل"
+              placeholder={tr("auth.029")}
               required
             />
             <Field
@@ -470,35 +470,32 @@ function AuthForm({ mode, role }: { mode: "login" | "register"; role: Role }) {
 }
 
 function StudentCodeBanner({ code, onDismiss }: { code: string; onDismiss: () => void }) {
+  const tr = useT();
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(code);
-      toast.success("اتنسخ الكود ✅");
+      toast.success(tr("auth.030"));
     } catch {
-      toast.error("انسخ الكود يدويًا");
+      toast.error(tr("auth.031"));
     }
   };
   return (
     <div className="mb-4 rounded-xl border border-primary/30 bg-primary/5 p-4">
       <div className="flex items-center gap-2 text-sm font-bold text-primary">
         <CheckCircle2 className="w-4 h-4" />
-        كود الطالب الخاص بيك
-      </div>
+        {tr("auth.032")}</div>
       <div className="mt-2 flex items-center justify-between gap-2">
         <code className="text-xl font-black tracking-widest font-mono" dir="ltr">
           {code}
         </code>
         <Button type="button" size="sm" variant="outline" onClick={copy}>
-          <Copy className="w-3.5 h-3.5 ml-1" />
-          نسخ
-        </Button>
+          <Copy className="w-3.5 h-3.5 ms-1" />
+          {tr("auth.033")}</Button>
       </div>
       <p className="mt-1.5 text-[11px] text-muted-foreground">
-        احتفظ بالكود ده — ولي الأمر هيحتاجه عشان يربط حسابه بيك. هتلاقيه دايمًا في بروفايلك.
-      </p>
+        {tr("auth.034")}</p>
       <button onClick={onDismiss} className="mt-1 text-[11px] text-muted-foreground hover:text-foreground">
-        إخفاء
-      </button>
+        {tr("auth.035")}</button>
     </div>
   );
 }
@@ -512,7 +509,7 @@ function PasswordField({ label }: { label: string }) {
         {label}
       </Label>
       <div className="relative">
-        <div className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none">
+        <div className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none">
           <Lock className="w-4 h-4" />
         </div>
         <PasswordInput
@@ -522,7 +519,7 @@ function PasswordField({ label }: { label: string }) {
           required
           showLabel={t.auth.showPassword}
           hideLabel={t.auth.hidePassword}
-          className="h-11 pr-10"
+          className="h-11 pe-10"
         />
       </div>
     </div>
@@ -556,7 +553,7 @@ function Field({
         {required ? " *" : ""}
       </Label>
       <div className="relative">
-        <div className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none">
+        <div className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none">
           {icon}
         </div>
         <Input
@@ -566,7 +563,7 @@ function Field({
           placeholder={placeholder}
           required={required}
           dir={dir}
-          className="h-11 pr-10"
+          className="h-11 pe-10"
         />
       </div>
     </div>
@@ -574,30 +571,27 @@ function Field({
 }
 
 function AuthAside() {
+  const tr = useT();
   return (
     <div className="hidden lg:flex items-center justify-center bg-gradient-to-br from-primary via-teal-500 to-amber-500 relative overflow-hidden p-10">
       <div className="absolute inset-0 bg-grid opacity-20" />
-      <div className="absolute -top-20 -right-20 w-96 h-96 rounded-full bg-white/10 blur-3xl" />
-      <div className="absolute -bottom-20 -left-20 w-96 h-96 rounded-full bg-white/10 blur-3xl" />
+      <div className="absolute -top-20 -end-20 w-96 h-96 rounded-full bg-white/10 blur-3xl" />
+      <div className="absolute -bottom-20 -start-20 w-96 h-96 rounded-full bg-white/10 blur-3xl" />
 
       <div className="relative text-white max-w-md">
         <Rocket className="w-10 h-10 mb-4" />
         <h2 className="text-3xl font-extrabold leading-tight">
-          اتعلم Programming & AI
-          <br />
-          من مكان واحد.
-        </h2>
+          {tr("auth.036")}<br />
+          {tr("auth.037")}</h2>
         <p className="mt-4 text-white/90 leading-relaxed">
-          Live Classes · Quizzes · Homework · PDFs · Reports · Parent Dashboard.
-          كل اللي محتاجه عشان تنجح.
-        </p>
+          {tr("auth.038")}</p>
 
         <ul className="mt-8 space-y-3 text-sm">
           {[
-            "منهج Programming & AI كامل",
+            tr("auth.039"),
             "Live Classes + Recordings",
-            "تقارير شهرية ومتابعة الأهل",
-            "Quizzes أوتوماتيك التصحيح",
+            tr("auth.040"),
+            tr("auth.041"),
           ].map((it) => (
             <li key={it} className="flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4" />

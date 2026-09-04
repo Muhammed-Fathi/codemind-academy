@@ -1,3 +1,4 @@
+import { getServerT } from "@/lib/i18n-server";
 // CodeMind Academy — Coupon Validation API
 // Validates a coupon code and returns the discount if valid.
 import { NextRequest, NextResponse } from "next/server";
@@ -5,12 +6,13 @@ import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
 
 export async function POST(req: NextRequest) {
+  const tApi = await getServerT();
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
 
   const body = await req.json().catch(() => ({}));
   const { code, originalPrice } = body as { code?: string; originalPrice?: number };
-  if (!code) return err("كود الخصم مطلوب", 400);
+  if (!code) return err(tApi("api.075"), 400);
 
   const upperCode = code.trim().toUpperCase();
   const coupon = await db.coupon.findUnique({
@@ -18,13 +20,13 @@ export async function POST(req: NextRequest) {
     include: { redemptions: { where: { userId: user.id } } },
   });
 
-  if (!coupon) return err("الكود ده مش موجود", 404);
-  if (!coupon.isActive) return err("الكود ده مش شغال دلوقتي", 400);
-  if (coupon.usedCount >= coupon.maxUses) return err("الكود ده خلص استخدامه", 400);
+  if (!coupon) return err(tApi("api.076"), 404);
+  if (!coupon.isActive) return err(tApi("api.077"), 400);
+  if (coupon.usedCount >= coupon.maxUses) return err(tApi("api.078"), 400);
   if (coupon.validUntil && new Date() > coupon.validUntil)
-    return err("الكود ده انتهت صلاحيته", 400);
+    return err(tApi("api.079"), 400);
   if (coupon.redemptions.length > 0)
-    return err("أنت استخدمت الكود ده قبل كده", 400);
+    return err(tApi("api.080"), 400);
 
   const price = originalPrice || 200;
   let discount = 0;

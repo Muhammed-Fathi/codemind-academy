@@ -1,4 +1,5 @@
 "use client";
+import { useT , pickAuto } from "@/lib/i18n";
 
 import * as React from "react";
 import { motion } from "framer-motion";
@@ -48,6 +49,7 @@ type WeeklyReport = {
 };
 
 export function WeeklyReportView({ onClose }: { onClose: () => void }) {
+  const t = useT();
   const [data, setData] = React.useState<{ reports: WeeklyReport[] } | null>(null);
   const [loading, setLoading] = React.useState(true);
 
@@ -55,7 +57,7 @@ export function WeeklyReportView({ onClose }: { onClose: () => void }) {
     fetch("/api/parents/me/weekly-report")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => setData(d))
-      .catch(() => toast.error("حصلت مشكلة"))
+      .catch(() => toast.error(t("parent.117")))
       .finally(() => setLoading(false));
   }, []);
 
@@ -74,7 +76,7 @@ export function WeeklyReportView({ onClose }: { onClose: () => void }) {
       <Card>
         <CardContent className="py-10 text-center">
           <CalendarDays className="w-10 h-10 text-muted-foreground/40 mx-auto mb-2" />
-          <p className="text-sm text-muted-foreground">مفيش بيانات متاحة</p>
+          <p className="text-sm text-muted-foreground">{t("parent.118")}</p>
         </CardContent>
       </Card>
     );
@@ -86,8 +88,7 @@ export function WeeklyReportView({ onClose }: { onClose: () => void }) {
         onClick={onClose}
         className="text-sm text-muted-foreground hover:text-foreground"
       >
-        ← رجوع للـDashboard
-      </button>
+        {t("parent.119")}</button>
 
       {data.reports.map((report, ri) => (
         <motion.div
@@ -148,7 +149,7 @@ export function WeeklyReportView({ onClose }: { onClose: () => void }) {
           <Card className="glass">
             <CardHeader>
               <CardTitle className="text-base">Daily Activity (Last 7 Days)</CardTitle>
-              <CardDescription className="text-xs">نشاط يوم بيوم</CardDescription>
+              <CardDescription className="text-xs">{t("parent.120")}</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-7 gap-2">
@@ -209,7 +210,7 @@ export function WeeklyReportView({ onClose }: { onClose: () => void }) {
               </CardHeader>
               <CardContent>
                 {report.recentQuizzes.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">مفيش Quizzes هذا الأسبوع</p>
+                  <p className="text-xs text-muted-foreground">{t("parent.121")}</p>
                 ) : (
                   <div className="space-y-2">
                     {report.recentQuizzes.map((q, i) => (
@@ -244,7 +245,7 @@ export function WeeklyReportView({ onClose }: { onClose: () => void }) {
               </CardHeader>
               <CardContent>
                 {report.recentHomework.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">مفيش واجبات هذا الأسبوع</p>
+                  <p className="text-xs text-muted-foreground">{t("parent.122")}</p>
                 ) : (
                   <div className="space-y-2">
                     {report.recentHomework.map((h, i) => (

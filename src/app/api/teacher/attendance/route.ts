@@ -1,3 +1,4 @@
+import { getServerT } from "@/lib/i18n-server";
 // GET  /api/teacher/attendance?groupId=X&sessionId=Y
 //   Returns students of the group + their attendance record for the
 //   given session (if any).
@@ -12,6 +13,7 @@ import type { AttendanceStatus } from "@prisma/client";
 const ALLOWED: AttendanceStatus[] = ["PRESENT", "ABSENT", "LATE", "EXCUSED"];
 
 export async function GET(req: NextRequest) {
+  const tApi = await getServerT();
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
   if (user.role !== "TEACHER") return err("Forbidden", 403);
@@ -25,7 +27,7 @@ export async function GET(req: NextRequest) {
   const sessionId = url.searchParams.get("sessionId") || "";
 
   if (!teacherGroupIds.includes(groupId))
-    return err("المجموعة دي مش بتاعتك", 403);
+    return err(tApi("api.156"), 403);
 
   // Sessions for this group (upcoming + past)
   const sessions = await db.liveSession.findMany({
@@ -121,6 +123,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const tApi = await getServerT();
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
   if (user.role !== "TEACHER") return err("Forbidden", 403);
@@ -136,19 +139,19 @@ export async function POST(req: NextRequest) {
     note?: string;
   }> = Array.isArray(body.attendance) ? body.attendance : [];
 
-  if (!sessionId) return err("sessionId مطلوب", 400);
-  if (attendance.length === 0) return err("مفيش بيانات attendance", 400);
+  if (!sessionId) return err(tApi("api.157"), 400);
+  if (attendance.length === 0) return err(tApi("api.158"), 400);
 
   // Verify the session belongs to one of the teacher's groups
   const session = await db.liveSession.findUnique({
     where: { id: sessionId },
     select: { id: true, groupId: true },
   });
-  if (!session) return err("Session مش موجود", 404);
+  if (!session) return err(tApi("api.159"), 404);
   const belongsToTeacher = teacher.groups.some(
     (g) => g.id === session.groupId
   );
-  if (!belongsToTeacher) return err("الـSession مش بتاع مجموعتك", 403);
+  if (!belongsToTeacher) return err(tApi("api.160"), 403);
 
   // Validate each entry + verify student belongs to that group
   const validStudents = await db.student.findMany({
@@ -159,13 +162,13 @@ export async function POST(req: NextRequest) {
 
   for (const entry of attendance) {
     if (!entry.studentId || !entry.status) {
-      return err("كل سطر لازم يكون فيه studentId و status", 400);
+      return err(tApi("api.161"), 400);
     }
     if (!ALLOWED.includes(entry.status)) {
-      return err(`Status غير مسموح: ${entry.status}`, 400);
+      return err(tApi("api.162", { p1: entry.status }), 400);
     }
     if (!validStudentIds.has(entry.studentId)) {
-      return err("في طالب مش من المجموعة دي", 403);
+      return err(tApi("api.163"), 403);
     }
   }
 

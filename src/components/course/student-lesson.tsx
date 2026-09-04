@@ -1,4 +1,5 @@
 "use client";
+import { useT, useLocale , pickAuto } from "@/lib/i18n";
 
 import * as React from "react";
 import { motion } from "framer-motion";
@@ -87,6 +88,8 @@ type LessonView = {
 // Main
 // ============================================================
 export function StudentLessonView() {
+  const t = useT();
+  const locale = useLocale();
   const setView = useApp((s) => s.setView);
   const setNavParam = useApp((s) => s.setNavParam);
   const navParam = useApp((s) => s.navParam);
@@ -115,7 +118,7 @@ export function StudentLessonView() {
         method: "DELETE",
       });
       setBookmarked(false);
-      toast.success("اتشال الـBookmark");
+      toast.success(t("course.047"));
     } else {
       await fetch("/api/students/me/bookmarks", {
         method: "POST",
@@ -123,7 +126,7 @@ export function StudentLessonView() {
         body: JSON.stringify({ lessonId: navParam }),
       });
       setBookmarked(true);
-      toast.success("اتضاف الـBookmark ⭐");
+      toast.success(t("course.048"));
     }
   };
 
@@ -133,7 +136,7 @@ export function StudentLessonView() {
 
   const reload = React.useCallback(() => {
     if (!navParam) {
-      setError("مفيش Lesson محددة. ارجع للكورس واختار واحدة.");
+      setError(t("course.049"));
       setLoading(false);
       return;
     }
@@ -143,7 +146,7 @@ export function StudentLessonView() {
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error("fail"))))
       .then((d) => setData(d))
       .catch(() => {
-        setError("حصلت مشكلة وإحنا بنجيب الـLesson. حاول تاني.");
+        setError(t("course.050"));
       })
       .finally(() => setLoading(false));
   }, [navParam]);
@@ -159,16 +162,15 @@ export function StudentLessonView() {
       <Card className="glass">
         <CardContent className="flex flex-col items-center justify-center py-16 text-center">
           <p className="text-base font-semibold mb-1">
-            {error || "مفيش بيانات"}
+            {error || t("course.051")}
           </p>
           <Button
             variant="outline"
             className="mt-3"
             onClick={() => setView("student-course")}
           >
-            <ArrowRight className="w-4 h-4 ml-1.5 flip-rtl" />
-            ارجع للكورس
-          </Button>
+            <ArrowRight className="w-4 h-4 ms-1.5 flip-rtl" />
+            {t("course.052")}</Button>
         </CardContent>
       </Card>
     );
@@ -188,7 +190,7 @@ export function StudentLessonView() {
         }
       );
       if (!res.ok) throw new Error("fail");
-      toast.success("اتسجّلت كـ Completed ✅");
+      toast.success(t("course.053"));
       setData({
         ...data,
         progress: {
@@ -198,7 +200,7 @@ export function StudentLessonView() {
         },
       });
     } catch {
-      toast.error("حصلت مشكلة، حاول تاني.");
+      toast.error(t("course.054"));
     } finally {
       setCompleting(false);
     }
@@ -228,21 +230,20 @@ export function StudentLessonView() {
               setNavParam(data.course.slug);
             }}
           >
-            <ArrowRight className="w-3.5 h-3.5 ml-1 flip-rtl" />
-            رجوع للكورس
-          </Button>
+            <ArrowRight className="w-3.5 h-3.5 ms-1 flip-rtl" />
+            {t("course.055")}</Button>
           <span>›</span>
-          <span>{data.part.titleAr}</span>
+          <span>{pickAuto(data.part.titleAr, data.part.title)}</span>
           <span>›</span>
-          <span>{data.unit.titleAr}</span>
+          <span>{pickAuto(data.unit.titleAr, data.unit.title)}</span>
           <span>›</span>
-          <span className="text-foreground">{data.topic.titleAr}</span>
+          <span className="text-foreground">{pickAuto(data.topic.titleAr, data.topic.title)}</span>
         </div>
         <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
           <div>
             <h1 className="text-2xl md:text-3xl font-bold leading-tight">
               <span className="text-gradient">
-                {data.lesson.titleAr || data.lesson.title}
+                {pickAuto(data.lesson.titleAr, data.lesson.title)}
               </span>
             </h1>
             {data.lesson.description && (
@@ -253,15 +254,14 @@ export function StudentLessonView() {
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <Badge variant="outline" className="bg-muted/50">
-              <Clock className="w-3 h-3 ml-1" />
-              {data.lesson.duration} دقيقة
-            </Badge>
+              <Clock className="w-3 h-3 ms-1" />
+              {data.lesson.duration} {t("course.056")}</Badge>
             {isCompleted ? (
               <Badge
                 variant="outline"
                 className="border-primary/30 text-primary bg-primary/10"
               >
-                <CheckCircle2 className="w-3.5 h-3.5 ml-1" />
+                <CheckCircle2 className="w-3.5 h-3.5 ms-1" />
                 Completed
               </Badge>
             ) : (
@@ -269,9 +269,8 @@ export function StudentLessonView() {
                 variant="outline"
                 className="border-amber-400/30 text-amber-600 bg-amber-400/10"
               >
-                <PlayCircle className="w-3.5 h-3.5 ml-1" />
-                في السير
-              </Badge>
+                <PlayCircle className="w-3.5 h-3.5 ms-1" />
+                {t("course.057")}</Badge>
             )}
             <button
               onClick={toggleBookmark}
@@ -280,7 +279,7 @@ export function StudentLessonView() {
                   ? "bg-amber-400/20 text-amber-500"
                   : "bg-muted text-muted-foreground hover:bg-amber-400/10 hover:text-amber-500"
               }`}
-              title={bookmarked ? "اتشال الـBookmark" : "حفظ كـBookmark"}
+              title={bookmarked ? t("course.047") : t("course.059")}
             >
               {bookmarked ? (
                 <BookmarkCheck className="w-4 h-4" />
@@ -316,7 +315,7 @@ export function StudentLessonView() {
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                     allowFullScreen
                     className="absolute inset-0 w-full h-full"
-                    title={data.lesson.titleAr || data.lesson.title}
+                    title={pickAuto(data.lesson.titleAr, data.lesson.title)}
                   />
                 ) : (
                   <div className="absolute inset-0 grid place-items-center text-center">
@@ -325,11 +324,9 @@ export function StudentLessonView() {
                         <Video className="w-8 h-8 text-white/80" />
                       </div>
                       <p className="text-white/80 text-sm">
-                        الفيديو هيتضاف قريب
-                      </p>
+                        {t("course.060")}</p>
                       <p className="text-white/40 text-xs mt-1">
-                        تابع الـLesson من المواد اللي تحت
-                      </p>
+                        {t("course.061")}</p>
                     </div>
                   </div>
                 )}
@@ -348,8 +345,7 @@ export function StudentLessonView() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-base">
                     <BookOpen className="w-5 h-5 text-primary" />
-                    ملخص الـLesson
-                  </CardTitle>
+                    {t("course.062")}</CardTitle>
                 </CardHeader>
                 <CardContent className="prose prose-sm dark:prose-invert max-w-none leading-relaxed text-foreground/90">
                   <ReactMarkdown>{data.lesson.summary}</ReactMarkdown>
@@ -371,10 +367,9 @@ export function StudentLessonView() {
                     <FileText className="w-5 h-5" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-semibold">مادة PDF</div>
+                    <div className="text-sm font-semibold">{t("course.063")}</div>
                     <div className="text-xs text-muted-foreground">
-                      حمّل مذكرة الـLesson
-                    </div>
+                      {t("course.064")}</div>
                   </div>
                   <a
                     href={data.lesson.pdfUrl}
@@ -383,9 +378,8 @@ export function StudentLessonView() {
                     className="inline-flex"
                   >
                     <Button variant="outline">
-                      <FileText className="w-4 h-4 ml-1.5" />
-                      فتح
-                    </Button>
+                      <FileText className="w-4 h-4 ms-1.5" />
+                      {t("course.065")}</Button>
                   </a>
                 </CardContent>
               </Card>
@@ -406,13 +400,13 @@ export function StudentLessonView() {
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-semibold">
                     {isCompleted
-                      ? "خلصت الـLesson دي ✅"
-                      : "خلصت الـLesson؟"}
+                      ? t("course.066")
+                      : t("course.067")}
                   </div>
                   <div className="text-xs text-muted-foreground">
                     {isCompleted
-                      ? "تقدر تروح للـLesson اللي بعدها."
-                      : "علمها كـCompleted عشان نحسبها في تقدمك."}
+                      ? t("course.068")
+                      : t("course.069")}
                   </div>
                 </div>
                 <Button
@@ -420,8 +414,8 @@ export function StudentLessonView() {
                   disabled={completing || isCompleted}
                   variant={isCompleted ? "secondary" : "default"}
                 >
-                  <CheckCircle2 className="w-4 h-4 ml-1.5" />
-                  {isCompleted ? "اتخلصت" : "Mark as Complete"}
+                  <CheckCircle2 className="w-4 h-4 ms-1.5" />
+                  {isCompleted ? t("course.070") : "Mark as Complete"}
                 </Button>
               </CardContent>
             </Card>
@@ -434,21 +428,18 @@ export function StudentLessonView() {
                 variant="outline"
                 onClick={() => gotoLesson(data.prevLessonId!)}
               >
-                <ArrowRight className="w-4 h-4 ml-1.5 flip-rtl" />
-                السابق
-              </Button>
+                <ArrowRight className="w-4 h-4 ms-1.5 flip-rtl" />
+                {t("course.071")}</Button>
             ) : (
               <span />
             )}
             {data.nextLessonId ? (
               <Button onClick={() => gotoLesson(data.nextLessonId!)}>
-                التالي
-                <ArrowLeft className="w-4 h-4 ml-1.5 flip-rtl" />
+                {t("course.072")}<ArrowLeft className="w-4 h-4 ms-1.5 flip-rtl" />
               </Button>
             ) : (
               <Badge variant="outline" className="text-muted-foreground">
-                آخر Lesson في الكورس 🎉
-              </Badge>
+                {t("course.073")}</Badge>
             )}
           </div>
         </div>
@@ -470,8 +461,7 @@ export function StudentLessonView() {
                   <div>
                     <CardTitle className="text-base">Quiz</CardTitle>
                     <CardDescription className="text-xs">
-                      اختبر فهمك
-                    </CardDescription>
+                      {t("course.074")}</CardDescription>
                   </div>
                 </div>
               </CardHeader>
@@ -480,7 +470,7 @@ export function StudentLessonView() {
                   <div className="space-y-3">
                     <div>
                       <div className="text-sm font-semibold">
-                        {data.quiz.titleAr || data.quiz.title}
+                        {pickAuto(data.quiz.titleAr, data.quiz.title)}
                       </div>
                       {data.quiz.description && (
                         <div className="text-xs text-muted-foreground mt-1">
@@ -503,15 +493,13 @@ export function StudentLessonView() {
                         setNavParam(data.quiz!.id);
                       }}
                     >
-                      <Trophy className="w-4 h-4 ml-1.5" />
-                      ابدأ Quiz
-                    </Button>
+                      <Trophy className="w-4 h-4 ms-1.5" />
+                      {t("course.075")}</Button>
                   </div>
                 ) : (
                   <div className="text-center py-3 text-sm text-muted-foreground">
                     <Trophy className="w-5 h-5 mx-auto mb-1 opacity-40" />
-                    مفيش Quiz على الـLesson دي
-                  </div>
+                    {t("course.076")}</div>
                 )}
               </CardContent>
             </Card>
@@ -532,8 +520,7 @@ export function StudentLessonView() {
                   <div>
                     <CardTitle className="text-base">Homework</CardTitle>
                     <CardDescription className="text-xs">
-                      شوف الواجب
-                    </CardDescription>
+                      {t("course.077")}</CardDescription>
                   </div>
                 </div>
               </CardHeader>
@@ -542,7 +529,7 @@ export function StudentLessonView() {
                   <div className="space-y-3">
                     <div>
                       <div className="text-sm font-semibold">
-                        {data.homework.titleAr || data.homework.title}
+                        {pickAuto(data.homework.titleAr, data.homework.title)}
                       </div>
                       {data.homework.instructions && (
                         <div className="text-xs text-muted-foreground mt-1 leading-relaxed">
@@ -552,31 +539,31 @@ export function StudentLessonView() {
                     </div>
                     <div className="flex items-center gap-2 text-xs">
                       <Badge variant="outline" className="bg-muted/50">
-                        <Clock className="w-3 h-3 ml-1" />
-                        {new Intl.DateTimeFormat("ar-EG", {
-                          day: "numeric",
-                          month: "short",
-                        }).format(new Date(data.homework.deadline))}
+                        <Clock className="w-3 h-3 ms-1" />
+                        {new Intl.DateTimeFormat(
+                          locale === "en" ? "en-GB" : "ar-EG",
+                          {
+                            day: "numeric",
+                            month: "short",
+                          }
+                        ).format(new Date(data.homework.deadline))}
                       </Badge>
                       <Badge variant="outline" className="bg-muted/50">
-                        <GraduationCap className="w-3 h-3 ml-1" />
-                        {data.homework.maxMarks} درجات
-                      </Badge>
+                        <GraduationCap className="w-3 h-3 ms-1" />
+                        {data.homework.maxMarks} {t("course.078")}</Badge>
                     </div>
                     <Button
                       variant="outline"
                       className="w-full"
                       onClick={() => setView("student-homework")}
                     >
-                      <ClipboardList className="w-4 h-4 ml-1.5" />
-                      افتح الواجبات
-                    </Button>
+                      <ClipboardList className="w-4 h-4 ms-1.5" />
+                      {t("course.079")}</Button>
                   </div>
                 ) : (
                   <div className="text-center py-3 text-sm text-muted-foreground">
                     <ClipboardList className="w-5 h-5 mx-auto mb-1 opacity-40" />
-                    مفيش Homework على الـLesson دي
-                  </div>
+                    {t("course.080")}</div>
                 )}
               </CardContent>
             </Card>
@@ -590,10 +577,9 @@ export function StudentLessonView() {
                   <PlayCircle className="w-5 h-5" />
                 </div>
                 <div>
-                  <div className="text-sm font-semibold mb-0.5">نصيحة 💡</div>
+                  <div className="text-sm font-semibold mb-0.5">{t("course.081")}</div>
                   <div className="text-xs text-muted-foreground leading-relaxed">
-                    اتفرج على الفيديو كامل، وبعدين حل الـQuiz عشان تثبت المعلومة.
-                  </div>
+                    {t("course.082")}</div>
                 </div>
               </div>
             </CardContent>
@@ -633,6 +619,8 @@ function LessonSkeleton() {
 // Lesson Notes Section — sticky notes for the student
 // ============================================================
 function LessonNotesSection({ lessonId }: { lessonId: string | null }) {
+  const t = useT();
+  const locale = useLocale();
   const [notes, setNotes] = React.useState<any[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [adding, setAdding] = React.useState(false);
@@ -665,12 +653,12 @@ function LessonNotesSection({ lessonId }: { lessonId: string | null }) {
         body: JSON.stringify({ lessonId, content: newNote.trim() }),
       });
       if (!r.ok) {
-        toast.error("فشل حفظ الملاحظة");
+        toast.error(t("course.083"));
         return;
       }
       setNewNote("");
       setAdding(false);
-      toast.success("اتحفظت الملاحظة 📝");
+      toast.success(t("course.084"));
       reload();
     } finally {
       setSaving(false);
@@ -687,12 +675,12 @@ function LessonNotesSection({ lessonId }: { lessonId: string | null }) {
         body: JSON.stringify({ noteId, content: editContent.trim() }),
       });
       if (!r.ok) {
-        toast.error("فشل تحديث الملاحظة");
+        toast.error(t("course.085"));
         return;
       }
       setEditingId(null);
       setEditContent("");
-      toast.success("اتحدثت الملاحظة");
+      toast.success(t("course.086"));
       reload();
     } finally {
       setSaving(false);
@@ -703,7 +691,7 @@ function LessonNotesSection({ lessonId }: { lessonId: string | null }) {
     await fetch(`/api/students/me/notes?noteId=${encodeURIComponent(noteId)}`, {
       method: "DELETE",
     });
-    toast.success("اتمسحت الملاحظة");
+    toast.success(t("course.087"));
     reload();
   };
 
@@ -721,10 +709,9 @@ function LessonNotesSection({ lessonId }: { lessonId: string | null }) {
                 <StickyNote className="w-5 h-5" />
               </div>
               <div>
-                <CardTitle className="text-base">ملاحظاتي</CardTitle>
+                <CardTitle className="text-base">{t("course.088")}</CardTitle>
                 <CardDescription className="text-xs">
-                  دوّن أهم النقط
-                </CardDescription>
+                  {t("course.089")}</CardDescription>
               </div>
             </div>
             {!adding && (
@@ -735,8 +722,7 @@ function LessonNotesSection({ lessonId }: { lessonId: string | null }) {
                 className="h-8 px-2"
               >
                 <Plus className="w-4 h-4" />
-                أضف
-              </Button>
+                {t("course.090")}</Button>
             )}
           </div>
         </CardHeader>
@@ -754,7 +740,7 @@ function LessonNotesSection({ lessonId }: { lessonId: string | null }) {
                   <Textarea
                     value={newNote}
                     onChange={(e) => setNewNote(e.target.value)}
-                    placeholder="اكتب ملاحظتك هنا..."
+                    placeholder={t("course.091")}
                     className="min-h-[80px] resize-none text-sm bg-amber-400/5 border-amber-400/30 focus-visible:ring-amber-400/40"
                     autoFocus
                   />
@@ -768,7 +754,7 @@ function LessonNotesSection({ lessonId }: { lessonId: string | null }) {
                       {saving ? (
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
                       ) : (
-                        "احفظ"
+                        t("course.092")
                       )}
                     </Button>
                     <Button
@@ -780,8 +766,7 @@ function LessonNotesSection({ lessonId }: { lessonId: string | null }) {
                       }}
                       className="h-8"
                     >
-                      إلغاء
-                    </Button>
+                      {t("course.093")}</Button>
                   </div>
                 </motion.div>
               )}
@@ -790,11 +775,10 @@ function LessonNotesSection({ lessonId }: { lessonId: string | null }) {
                 <div className="text-center py-4">
                   <StickyNote className="w-8 h-8 text-muted-foreground/40 mx-auto mb-1.5" />
                   <p className="text-xs text-muted-foreground">
-                    مفيش ملاحظات لسه. اضغط "أضف" عشان تكتب واحدة.
-                  </p>
+                    {t("course.094")}</p>
                 </div>
               ) : (
-                <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                <div className="space-y-2 max-h-64 overflow-y-auto pe-1">
                   {notes.map((n) => (
                     <motion.div
                       key={n.id}
@@ -820,7 +804,7 @@ function LessonNotesSection({ lessonId }: { lessonId: string | null }) {
                               {saving ? (
                                 <Loader2 className="w-3 h-3 animate-spin" />
                               ) : (
-                                "احفظ"
+                                t("course.092")
                               )}
                             </Button>
                             <Button
@@ -832,38 +816,40 @@ function LessonNotesSection({ lessonId }: { lessonId: string | null }) {
                               }}
                               className="h-7 text-xs"
                             >
-                              إلغاء
-                            </Button>
+                              {t("course.093")}</Button>
                           </div>
                         </div>
                       ) : (
                         <>
-                          <p className="text-xs leading-relaxed whitespace-pre-wrap pr-6">
+                          <p className="text-xs leading-relaxed whitespace-pre-wrap pe-6">
                             {n.content}
                           </p>
                           <div className="mt-1.5 text-[10px] text-muted-foreground">
-                            {new Date(n.updatedAt).toLocaleDateString("ar-EG", {
-                              month: "short",
-                              day: "numeric",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
+                            {new Date(n.updatedAt).toLocaleDateString(
+                              locale === "en" ? "en-GB" : "ar-EG",
+                              {
+                                month: "short",
+                                day: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              }
+                            )}
                           </div>
-                          <div className="absolute top-2 left-2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="absolute top-2 start-2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                             <button
                               onClick={() => {
                                 setEditingId(n.id);
                                 setEditContent(n.content);
                               }}
                               className="p-1 rounded text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
-                              title="تعديل"
+                              title={t("course.097")}
                             >
                               <Edit3 className="w-3 h-3" />
                             </button>
                             <button
                               onClick={() => deleteNote(n.id)}
                               className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                              title="مسح"
+                              title={t("course.098")}
                             >
                               <Trash2 className="w-3 h-3" />
                             </button>

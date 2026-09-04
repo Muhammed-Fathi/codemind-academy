@@ -1,3 +1,4 @@
+import { getServerT } from "@/lib/i18n-server";
 // CodeMind Academy — Student Leaderboard API
 // Returns ranked list of students by XP (computed from stats).
 import { NextResponse } from "next/server";
@@ -6,9 +7,10 @@ import { db } from "@/lib/db";
 import { buildStats, computeXp, computeLevel, BADGES } from "@/lib/gamification";
 
 export async function GET() {
+  const tApi = await getServerT();
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
-  if (user.role !== "STUDENT") return err("الـLeaderboard متاح للطلاب فقط", 403);
+  if (user.role !== "STUDENT") return err(tApi("api.136"), 403);
 
   // Get all students with their user info
   const students = await db.student.findMany({

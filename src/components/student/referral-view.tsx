@@ -1,4 +1,5 @@
 "use client";
+import { useT , pickAuto } from "@/lib/i18n";
 
 import * as React from "react";
 import { motion } from "framer-motion";
@@ -44,6 +45,7 @@ type ReferralData = {
 };
 
 export function ReferralView() {
+  const t = useT();
   const setView = useApp((s) => s.setView);
   const [data, setData] = React.useState<ReferralData | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -54,7 +56,7 @@ export function ReferralView() {
     fetch("/api/students/me/referral")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => setData(d))
-      .catch(() => toast.error("حصلت مشكلة"))
+      .catch(() => toast.error(t("student.083")))
       .finally(() => setLoading(false));
   }, []);
 
@@ -67,10 +69,10 @@ export function ReferralView() {
     try {
       await navigator.clipboard.writeText(data.referralCode);
       setCopied(true);
-      toast.success("اتنسخ الكود ✅");
+      toast.success(t("student.084"));
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      toast.error("مقدرش أنسخ الكود");
+      toast.error(t("student.085"));
     }
   };
 
@@ -80,7 +82,7 @@ export function ReferralView() {
       try {
         await navigator.share({
           title: "CodeMind Academy",
-          text: "اتعلم Programming & AI معايا على CodeMind Academy!",
+          text: t("student.086"),
           url: data.shareUrl,
         });
       } catch {
@@ -88,7 +90,7 @@ export function ReferralView() {
       }
     } else {
       await navigator.clipboard.writeText(data.shareUrl);
-      toast.success("اتنسخ اللينك ✅");
+      toast.success(t("student.087"));
     }
   };
 
@@ -111,8 +113,7 @@ export function ReferralView() {
         className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
       >
         <ChevronLeft className="w-4 h-4 flip-rtl" />
-        رجوع
-      </button>
+        {t("student.088")}</button>
 
       {/* Hero card */}
       <motion.div
@@ -130,14 +131,13 @@ export function ReferralView() {
               <div>
                 <h2 className="text-xl font-bold">Referral Program</h2>
                 <p className="text-xs text-muted-foreground">
-                  ادعي أصحابك واكسب 50 XP + كود خصم 10% لكل واحد يسجل بإحالتك
-                </p>
+                  {t("student.089")}</p>
               </div>
             </div>
 
             {/* Referral code */}
             <div className="rounded-xl bg-background/60 border border-border/40 p-4">
-              <div className="text-xs text-muted-foreground mb-1.5">كود الإحالة بتاعك</div>
+              <div className="text-xs text-muted-foreground mb-1.5">{t("student.090")}</div>
               <div className="flex items-center gap-2">
                 <div className="flex-1 font-mono text-2xl font-extrabold text-gradient tracking-wider">
                   {data.referralCode}
@@ -150,14 +150,12 @@ export function ReferralView() {
                 >
                   {copied ? (
                     <>
-                      <CheckCircle2 className="w-4 h-4 ml-1" />
-                      اتنسخ
-                    </>
+                      <CheckCircle2 className="w-4 h-4 ms-1" />
+                      {t("student.091")}</>
                   ) : (
                     <>
-                      <Copy className="w-4 h-4 ml-1" />
-                      نسخ
-                    </>
+                      <Copy className="w-4 h-4 ms-1" />
+                      {t("student.092")}</>
                   )}
                 </Button>
               </div>
@@ -168,9 +166,8 @@ export function ReferralView() {
               onClick={shareLink}
               className="w-full mt-3 bg-gradient-to-r from-primary to-teal-500 font-bold"
             >
-              <Share2 className="w-4 h-4 ml-2" />
-              شارك اللينك
-            </Button>
+              <Share2 className="w-4 h-4 ms-2" />
+              {t("student.093")}</Button>
           </CardContent>
         </Card>
       </motion.div>
@@ -184,25 +181,25 @@ export function ReferralView() {
       >
         <StatCard
           icon={Users}
-          label="إجمالي الإحالات"
+          label={t("student.094")}
           value={data.stats.total}
           color="from-emerald-400 to-teal-500"
         />
         <StatCard
           icon={CheckCircle2}
-          label="خلصت"
+          label={t("student.095")}
           value={data.stats.completed}
           color="from-teal-400 to-cyan-500"
         />
         <StatCard
           icon={Clock}
-          label="مستنية"
+          label={t("student.096")}
           value={data.stats.pending}
           color="from-amber-400 to-orange-500"
         />
         <StatCard
           icon={Award}
-          label="XP المكسوب"
+          label={t("student.097")}
           value={data.stats.totalXpEarned}
           color="from-orange-400 to-rose-500"
         />
@@ -218,11 +215,9 @@ export function ReferralView() {
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <TrendingUp className="w-5 h-5 text-primary" />
-              الإحالات بتاعتك
-            </CardTitle>
+              {t("student.098")}</CardTitle>
             <CardDescription className="text-xs">
-              كل اللي سجلوا بإحالتك
-            </CardDescription>
+              {t("student.099")}</CardDescription>
           </CardHeader>
           <CardContent>
             {data.referrals.length === 0 ? (
@@ -230,13 +225,12 @@ export function ReferralView() {
                 <div className="w-14 h-14 rounded-2xl bg-muted/40 flex items-center justify-center mx-auto mb-3">
                   <Users className="w-6 h-6 text-muted-foreground" />
                 </div>
-                <p className="text-sm font-semibold">مفيش إحالات لسه</p>
+                <p className="text-sm font-semibold">{t("student.100")}</p>
                 <p className="text-xs text-muted-foreground mt-1 max-w-xs mx-auto">
-                  شارك كود الإحالة مع أصحابك، وأول ما حد يسجل هتلاقيه هنا.
-                </p>
+                  {t("student.101")}</p>
               </div>
             ) : (
-              <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+              <div className="space-y-2 max-h-96 overflow-y-auto pe-1">
                 {data.referrals.map((r, i) => (
                   <motion.div
                     key={r.id}
@@ -256,7 +250,7 @@ export function ReferralView() {
                         {r.referredEmail}
                       </div>
                     </div>
-                    <div className="text-left shrink-0">
+                    <div className="text-start shrink-0">
                       <Badge
                         variant="outline"
                         className={
@@ -267,7 +261,7 @@ export function ReferralView() {
                             : "border-amber-400/30 text-amber-600 bg-amber-400/10"
                         }
                       >
-                        {r.status === "REWARDED" ? "اتكافأت" : r.status === "COMPLETED" ? "خلصت" : "مستنية"}
+                        {r.status === "REWARDED" ? t("student.102") : r.status === "COMPLETED" ? t("student.095") : t("student.096")}
                       </Badge>
                       {r.status === "REWARDED" && (
                         <div className="text-xs text-primary font-bold mt-0.5">
@@ -293,16 +287,15 @@ export function ReferralView() {
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-amber-500" />
-              إزاي بيشتغل؟
-            </CardTitle>
+              {t("student.105")}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
               {[
-                { num: 1, text: "انسخ كود الإحالة أو شارك اللينك مع أصحابك" },
-                { num: 2, text: "أول ما يسجلوا بحساب جديد، الإحالة تتحسب" },
-                { num: 3, text: "تاخد 50 XP فورًا + كود خصم 10% لتجديد اشتراكك 🎁" },
-                { num: 4, text: "زود XP عشان تطلع لـLevels أعلى وتكسب Badges" },
+                { num: 1, text: t("student.106") },
+                { num: 2, text: t("student.107") },
+                { num: 3, text: t("student.108") },
+                { num: 4, text: t("student.109") },
               ].map((step) => (
                 <div key={step.num} className="flex items-start gap-3">
                   <div className="grid place-items-center w-7 h-7 rounded-full bg-primary/10 text-primary text-xs font-bold shrink-0">

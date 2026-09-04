@@ -1,4 +1,6 @@
 "use client";
+import { useT, translate, useLocale, pickAuto } from "@/lib/i18n";
+import { useApp } from "@/lib/store";
 
 // ============================================================
 // CodeMind Academy — Parent Dashboard (Task 3)
@@ -207,22 +209,24 @@ const itemVariants = {
 };
 
 // ---------- Helpers ----------
+const curLocale = () => (useApp.getState().locale === "en" ? "en" : "ar");
+const dtLocale = () => (curLocale() === "en" ? "en-GB" : "ar-EG");
 function timeAgoAr(date: string | Date): string {
   const d = typeof date === "string" ? new Date(date) : date;
   const diff = Date.now() - d.getTime();
   const day = 24 * 60 * 60 * 1000;
   const hour = 60 * 60 * 1000;
   const min = 60 * 1000;
-  if (diff < min) return "من شوية";
-  if (diff < hour) return `منذ ${Math.floor(diff / min)} دقيقة`;
-  if (diff < day) return `منذ ${Math.floor(diff / hour)} ساعة`;
-  if (diff < 30 * day) return `منذ ${Math.floor(diff / day)} يوم`;
-  return d.toLocaleDateString("ar-EG", { day: "numeric", month: "short" });
+  if (diff < min) return translate(curLocale(), "parent.043");
+  if (diff < hour) return translate(curLocale(), "parent.044");
+  if (diff < day) return translate(curLocale(), "parent.045");
+  if (diff < 30 * day) return translate(curLocale(), "parent.046");
+  return d.toLocaleDateString(dtLocale(), { day: "numeric", month: "short" });
 }
 
 function formatDateAr(date: string | Date): string {
   const d = typeof date === "string" ? new Date(date) : date;
-  return d.toLocaleDateString("ar-EG", {
+  return d.toLocaleDateString(dtLocale(), {
     weekday: "long",
     day: "numeric",
     month: "long",
@@ -233,6 +237,8 @@ function formatDateAr(date: string | Date): string {
 
 // ---------- Main ----------
 export function ParentDashboard() {
+  const tr = useT();
+  const locale = useLocale();
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["parent-dashboard"],
     queryFn: async () => {
@@ -273,8 +279,7 @@ export function ParentDashboard() {
           className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
         >
           <ChevronLeft className="w-4 h-4 flip-rtl" />
-          رجوع للـDashboard
-        </button>
+          {tr("parent.047")}</button>
         <NotificationPreferences />
       </div>
     );
@@ -286,15 +291,13 @@ export function ParentDashboard() {
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 text-center">
         <AlertTriangle className="w-10 h-10 text-amber-500" />
         <div>
-          <p className="text-lg font-bold">حصلت مشكلة. حاول تاني.</p>
+          <p className="text-lg font-bold">{tr("parent.048")}</p>
           <p className="text-sm text-muted-foreground mt-1">
-            مقدرناش نجيب بيانات الـDashboard.
-          </p>
+            {tr("parent.049")}</p>
         </div>
         <Button onClick={() => refetch()} variant="outline">
-          <RefreshCw className="w-4 h-4 ml-2" />
-          إعادة المحاولة
-        </Button>
+          <RefreshCw className="w-4 h-4 ms-2" />
+          {tr("parent.050")}</Button>
       </div>
     );
   }
@@ -320,11 +323,10 @@ export function ParentDashboard() {
       >
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-            أهلاً يا <span className="text-gradient">{data.parent.name}</span> 👋
+            {tr("parent.051")}<span className="text-gradient">{data.parent.name}</span> 👋
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
-            تابع مستوى ابنك في الـCourse خطوة بخطوة.
-          </p>
+            {tr("parent.052")}</p>
         </div>
         <div className="flex gap-2 flex-wrap">
           <Button
@@ -332,7 +334,7 @@ export function ParentDashboard() {
             size="sm"
             onClick={() => setShowAnalytics(true)}
           >
-            <TrendingUp className="w-4 h-4 ml-2" />
+            <TrendingUp className="w-4 h-4 ms-2" />
             Analytics
           </Button>
           <Button
@@ -341,7 +343,7 @@ export function ParentDashboard() {
             onClick={() => setShowWeekly(true)}
             className="border-primary/30 text-primary hover:bg-primary/5"
           >
-            <CalendarDays className="w-4 h-4 ml-2" />
+            <CalendarDays className="w-4 h-4 ms-2" />
             Weekly Report
           </Button>
           <Button
@@ -349,7 +351,7 @@ export function ParentDashboard() {
             size="sm"
             onClick={() => setShowReport(true)}
           >
-            <Download className="w-4 h-4 ml-2" />
+            <Download className="w-4 h-4 ms-2" />
             Monthly Report
           </Button>
           <Button
@@ -357,9 +359,8 @@ export function ParentDashboard() {
             size="sm"
             onClick={() => setShowPrefs(true)}
           >
-            <Bell className="w-4 h-4 ml-2" />
-            الإشعارات
-          </Button>
+            <Bell className="w-4 h-4 ms-2" />
+            {tr("parent.053")}</Button>
           <LinkStudentButton />
         </div>
       </motion.div>
@@ -428,8 +429,7 @@ export function ParentDashboard() {
                   Performance Trend
                 </CardTitle>
                 <CardDescription className="mt-1">
-                  نسبة آخر 6 Quizzes لابنك.
-                </CardDescription>
+                  {tr("parent.054")}</CardDescription>
               </div>
             </div>
           </CardHeader>
@@ -454,8 +454,7 @@ export function ParentDashboard() {
         variants={itemVariants}
         className="text-center text-xs text-muted-foreground pt-2 pb-1"
       >
-        CodeMind Academy — Dashboard دقيق ومحدّث لحظيًا من بيانات الكورس.
-      </motion.div>
+        {tr("parent.055")}</motion.div>
     </motion.div>
   );
 }
@@ -464,11 +463,12 @@ export function ParentDashboard() {
 // Child Summary Card
 // ============================================================
 function ChildSummaryCard({ child }: { child: Child }) {
+  const tr = useT();
   const course = child.group?.course;
   return (
     <Card className="glass-strong card-hover p-6 overflow-hidden relative">
-      <div className="absolute -top-12 -left-12 w-48 h-48 rounded-full bg-primary/10 blur-3xl pointer-events-none" />
-      <div className="absolute -bottom-16 -right-12 w-56 h-56 rounded-full bg-amber-300/10 blur-3xl pointer-events-none" />
+      <div className="absolute -top-12 -start-12 w-48 h-48 rounded-full bg-primary/10 blur-3xl pointer-events-none" />
+      <div className="absolute -bottom-16 -end-12 w-56 h-56 rounded-full bg-amber-300/10 blur-3xl pointer-events-none" />
       <div className="relative flex flex-col sm:flex-row sm:items-center gap-4">
         <Avatar className="w-16 h-16 ring-2 ring-primary/20">
           <AvatarFallback className="bg-primary/10 text-primary text-lg font-bold">
@@ -488,9 +488,9 @@ function ChildSummaryCard({ child }: { child: Child }) {
             )}
           </div>
           <p className="text-sm text-muted-foreground mt-0.5">
-            {course?.nameAr || course?.name || "—"}
+            {pickAuto(course?.nameAr, course?.name) || "—"}
             {child.schoolName ? ` · ${child.schoolName}` : ""}
-            {child.studentCode ? ` · كود الطالب: ${child.studentCode}` : ""}
+            {child.studentCode ? tr("parent.056", { p1: child.studentCode }) : ""}
           </p>
         </div>
         <div className="flex items-center gap-2 text-xs">
@@ -516,6 +516,7 @@ function ChildSummaryCard({ child }: { child: Child }) {
 // Card 1: Animated Progress Ring
 // ============================================================
 function ProgressRingCard({ pct, sub }: { pct: number; sub: string }) {
+  const tr = useT();
   const radius = 52;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (pct / 100) * circumference;
@@ -570,15 +571,15 @@ function ProgressRingCard({ pct, sub }: { pct: number; sub: string }) {
             <span className="text-2xl font-extrabold text-gradient">{pct}%</span>
           </div>
         </div>
-        <div className="text-right">
-          <div className="text-xs text-muted-foreground">اتمم</div>
+        <div className="text-end">
+          <div className="text-xs text-muted-foreground">{tr("parent.057")}</div>
           <div className="text-sm font-bold">{sub}</div>
           <div className="text-[11px] text-muted-foreground mt-2">
             {pct >= 75
-              ? "مستوى ممتاز 🔥"
+              ? tr("parent.058")
               : pct >= 40
-              ? "كويس، استمر 👍"
-              : "لسه في البداية 🌱"}
+              ? tr("parent.059")
+              : tr("parent.060")}
           </div>
         </div>
       </CardContent>
@@ -590,6 +591,7 @@ function ProgressRingCard({ pct, sub }: { pct: number; sub: string }) {
 // Card 2: Attendance with mini bar chart
 // ============================================================
 function AttendanceCard({ attendance }: { attendance: Child["attendance"] }) {
+  const tr = useT();
   const data = attendance.byMonth.map((b) => ({ month: b.month, pct: b.pct }));
   const tone =
     attendance.pct >= 80
@@ -612,10 +614,9 @@ function AttendanceCard({ attendance }: { attendance: Child["attendance"] }) {
               {attendance.pct}%
             </div>
             <div className="text-[11px] text-muted-foreground">
-              {attendance.present} من {attendance.total} حصة
-            </div>
+              {attendance.present} {tr("parent.061")}{attendance.total} {tr("parent.062")}</div>
           </div>
-          <div className="text-[10px] text-muted-foreground">آخر 6 شهور</div>
+          <div className="text-[10px] text-muted-foreground">{tr("parent.063")}</div>
         </div>
         <div dir="ltr" className="h-16 w-full">
           <ResponsiveContainer width="100%" height="100%">
@@ -662,6 +663,7 @@ function QuizAverageCard({
   attempts: number;
   passed: number;
 }) {
+  const tr = useT();
   const tone =
     average >= 80
       ? "text-primary"
@@ -678,19 +680,17 @@ function QuizAverageCard({
       </CardHeader>
       <CardContent className="px-0">
         {attempts === 0 ? (
-          <EmptyMini text="مفيش Quizzes لسه." />
+          <EmptyMini text={tr("parent.064")} />
         ) : (
           <>
             <div className={`text-4xl font-extrabold ${tone}`}>{average}%</div>
             <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
               <span className="inline-flex items-center gap-1">
                 <Award className="w-3 h-3 text-primary" />
-                {passed} نجح
-              </span>
+                {passed} {tr("parent.065")}</span>
               <span className="inline-flex items-center gap-1">
                 <AlertTriangle className="w-3 h-3 text-amber-500" />
-                {attempts - passed} محتاج مراجعة
-              </span>
+                {attempts - passed} {tr("parent.066")}</span>
             </div>
           </>
         )}
@@ -703,6 +703,7 @@ function QuizAverageCard({
 // Card 4: Homework Completion
 // ============================================================
 function HomeworkCard({ homework }: { homework: Child["homework"] }) {
+  const tr = useT();
   return (
     <Card className="glass card-hover p-6">
       <CardHeader className="px-0 pt-0">
@@ -713,7 +714,7 @@ function HomeworkCard({ homework }: { homework: Child["homework"] }) {
       </CardHeader>
       <CardContent className="px-0 space-y-3">
         {homework.total === 0 ? (
-          <EmptyMini text="مفيش Homeworks لسه." />
+          <EmptyMini text={tr("parent.067")} />
         ) : (
           <>
             <div className="flex items-baseline gap-2">
@@ -729,8 +730,8 @@ function HomeworkCard({ homework }: { homework: Child["homework"] }) {
             </div>
             <Progress value={homework.completionPct} className="h-2" />
             <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-              <span>اتسلم: {homework.submitted}</span>
-              <span>مستني: {homework.pending}</span>
+              <span>{tr("parent.068")}{homework.submitted}</span>
+              <span>{tr("parent.069")}{homework.pending}</span>
             </div>
           </>
         )}
@@ -743,6 +744,7 @@ function HomeworkCard({ homework }: { homework: Child["homework"] }) {
 // Card 5: Monthly Exam (placeholder)
 // ============================================================
 function MonthlyExamCard() {
+  const tr = useT();
   return (
     <Card className="glass card-hover p-6 border-dashed">
       <CardHeader className="px-0 pt-0">
@@ -757,11 +759,9 @@ function MonthlyExamCard() {
             variant="outline"
             className="bg-amber-400/10 text-amber-700 dark:text-amber-300"
           >
-            جاهز قريبًا
-          </Badge>
+            {tr("parent.070")}</Badge>
           <p className="text-xs text-muted-foreground leading-relaxed">
-            الامتحان الشهري هيتم إعلانه قريبًا، ونتيجته هتظهر هنا أول ما تطلع.
-          </p>
+            {tr("parent.071")}</p>
         </div>
       </CardContent>
     </Card>
@@ -776,6 +776,7 @@ function SubscriptionCard({
 }: {
   subscription: Child["subscription"];
 }) {
+  const tr = useT();
   if (!subscription) {
     return (
       <Card className="glass card-hover p-6">
@@ -787,11 +788,9 @@ function SubscriptionCard({
         </CardHeader>
         <CardContent className="px-0">
           <Badge variant="destructive" className="mb-2">
-            مفعّلش
-          </Badge>
+            {tr("parent.072")}</Badge>
           <p className="text-xs text-muted-foreground">
-            ابنك لسه ما اشتركش في أي باقة. لما يشترك، تفاصيل الاشتراك هتظهر هنا.
-          </p>
+            {tr("parent.073")}</p>
         </CardContent>
       </Card>
     );
@@ -805,18 +804,18 @@ function SubscriptionCard({
   if (info.state === "EXPIRING") {
     variant = "secondary";
     tone = "text-amber-600 dark:text-amber-400";
-    helper = `بينتهي خلال ${daysLeft} يوم`;
+    helper = tr("parent.074", { p1: daysLeft });
   } else if (info.state === "ACTIVE") {
     variant = "default";
-    helper = daysLeft != null ? `فاضل ${daysLeft} يوم` : "نشط";
+    helper = daysLeft != null ? tr("parent.075", { p1: daysLeft }) : tr("parent.076");
   } else if (info.state === "EXPIRED") {
     variant = "destructive";
     tone = "text-destructive";
-    helper = "اتمنىش — جدد الاشتراك";
+    helper = tr("parent.077");
   } else if (info.state === "PENDING") {
     variant = "secondary";
     tone = "text-amber-600 dark:text-amber-400";
-    helper = "مستني التفعيل";
+    helper = tr("parent.078");
   } else {
     variant = "secondary";
     helper = info.title;
@@ -838,8 +837,7 @@ function SubscriptionCard({
         </div>
         <div className={`text-xl font-bold ${tone}`}>{helper}</div>
         <div className="text-[11px] text-muted-foreground mt-1">
-          {subscription.price} EGP · {subscription.durationMonths} شهر
-        </div>
+          {subscription.price} EGP · {subscription.durationMonths} {tr("parent.079")}</div>
       </CardContent>
     </Card>
   );
@@ -855,6 +853,7 @@ function TopicsCard({
   kind: "strong" | "weak";
   topics: { id: string; title: string; avgPct: number }[];
 }) {
+  const tr = useT();
   const isStrong = kind === "strong";
   const Icon = isStrong ? ArrowUpRight : ArrowDownRight;
   const accent = isStrong
@@ -871,20 +870,19 @@ function TopicsCard({
           )}
           {isStrong ? "Strong Topics" : "Weak Topics"}
           <span className="text-muted-foreground text-[11px] font-normal">
-            · أعلى/أقل 3
-          </span>
+            {tr("parent.080")}</span>
         </CardTitle>
         <CardDescription>
           {isStrong
-            ? "المواضيع اللي ابنك بيتفوق فيها."
-            : "المواضيع اللي محتاجة تركيز أكتر."}
+            ? tr("parent.081")
+            : tr("parent.082")}
         </CardDescription>
       </CardHeader>
       <CardContent className="px-0">
         {topics.length === 0 ? (
-          <EmptyMini text="مفيش بيانات كفاية دلوقتي." />
+          <EmptyMini text={tr("parent.083")} />
         ) : (
-          <ul className="space-y-2 max-h-96 overflow-y-auto pr-1">
+          <ul className="space-y-2 max-h-96 overflow-y-auto pe-1">
             {topics.map((t, i) => (
               <li
                 key={t.id}
@@ -920,8 +918,9 @@ function PerformanceTrendChart({
 }: {
   data: Child["performanceTrend"];
 }) {
+  const tr = useT();
   if (!data || data.length === 0) {
-    return <EmptyMini text="مفيش Quizzes كفاية دلوقتي." />;
+    return <EmptyMini text={tr("parent.084")} />;
   }
   const chartData = data.map((d) => ({
     label: d.label,
@@ -959,7 +958,7 @@ function PerformanceTrendChart({
               fontSize: 12,
               color: "var(--popover-foreground)",
             }}
-            formatter={(v: number) => [`${v}%`, "النسبة"]}
+            formatter={(v: number) => [`${v}%`, tr("parent.085")]}
             labelFormatter={(
               _label: string,
               payload: Array<{ payload?: { title?: string } }>
@@ -987,6 +986,7 @@ function NextSessionCard({
 }: {
   session: Child["nextSession"];
 }) {
+  const tr = useT();
   return (
     <Card className="glass card-hover p-6 flex flex-col">
       <CardHeader className="px-0 pt-0">
@@ -997,7 +997,7 @@ function NextSessionCard({
       </CardHeader>
       <CardContent className="px-0 flex-1">
         {!session ? (
-          <EmptyMini text="مفيش Live Session مجدولة دلوقتي." />
+          <EmptyMini text={tr("parent.086")} />
         ) : (
           <div className="space-y-3">
             <div>
@@ -1021,14 +1021,12 @@ function NextSessionCard({
             {session.meetingUrl ? (
               <Button asChild size="sm" className="w-full mt-1">
                 <a href={session.meetingUrl} target="_blank" rel="noreferrer">
-                  <Video className="w-3.5 h-3.5 ml-2" />
-                  انضم للـSession
-                </a>
+                  <Video className="w-3.5 h-3.5 ms-2" />
+                  {tr("parent.087")}</a>
               </Button>
             ) : (
               <div className="text-[11px] text-muted-foreground bg-muted/40 rounded-md p-2 text-center mt-1">
-                رابط الـSession هيتضاف قريبًا.
-              </div>
+                {tr("parent.088")}</div>
             )}
           </div>
         )}
@@ -1045,6 +1043,7 @@ function TeacherNotesCard({
 }: {
   notes: Child["teacherNotes"];
 }) {
+  const tr = useT();
   return (
     <Card className="glass card-hover p-6">
       <CardHeader className="px-0 pt-0">
@@ -1052,13 +1051,13 @@ function TeacherNotesCard({
           <MessageSquare className="w-4 h-4 text-primary" />
           Teacher Notes
         </CardTitle>
-        <CardDescription>أحدث ملاحظات المعلمين على ابنك.</CardDescription>
+        <CardDescription>{tr("parent.089")}</CardDescription>
       </CardHeader>
       <CardContent className="px-0">
         {notes.length === 0 ? (
-          <EmptyMini text="مفيش ملاحظات من المعلمين لسه." />
+          <EmptyMini text={tr("parent.090")} />
         ) : (
-          <ul className="space-y-3 max-h-96 overflow-y-auto pr-1">
+          <ul className="space-y-3 max-h-96 overflow-y-auto pe-1">
             {notes.slice(0, 3).map((n) => (
               <li
                 key={n.id}
@@ -1099,6 +1098,7 @@ function RecentActivityCard({
 }: {
   activities: Child["recentActivity"];
 }) {
+  const tr = useT();
   const iconFor = (t: string, kind: string) => {
     if (t === "quiz") return kind === "good" ? Trophy : AlertTriangle;
     if (t === "homework") return FileText;
@@ -1119,19 +1119,19 @@ function RecentActivityCard({
           <TrendingUp className="w-4 h-4 text-primary" />
           Recent Activity
         </CardTitle>
-        <CardDescription>آخر تحركات ابنك على المنصة.</CardDescription>
+        <CardDescription>{tr("parent.091")}</CardDescription>
       </CardHeader>
       <CardContent className="px-0">
         {activities.length === 0 ? (
-          <EmptyMini text="مفيش نشاط لسه." />
+          <EmptyMini text={tr("parent.092")} />
         ) : (
-          <ol className="relative max-h-96 overflow-y-auto pr-3 border-r border-border/60 space-y-3">
+          <ol className="relative max-h-96 overflow-y-auto pe-3$1border-s border-border/60 space-y-3">
             {activities.map((a, i) => {
               const Icon = iconFor(a.type, a.kind);
               return (
-                <li key={i} className="relative pr-4">
+                <li key={i} className="relative pe-4">
                   <span
-                    className={`absolute -right-[7px] top-1 w-3 h-3 rounded-full ring-2 ring-background ${
+                    className={`absolute -end-[7px] top-1 w-3 h-3 rounded-full ring-2 ring-background ${
                       a.kind === "good"
                         ? "bg-primary"
                         : a.kind === "warn"
@@ -1173,6 +1173,7 @@ function RecentActivityCard({
 // Link Student Dialog (uses POST /api/parents/me/link-student)
 // ============================================================
 function LinkStudentButton() {
+  const tr = useT();
   const [open, setOpen] = React.useState(false);
   const [nationalId, setNationalId] = React.useState("");
   const [parentPhone, setParentPhone] = React.useState("");
@@ -1186,11 +1187,11 @@ function LinkStudentButton() {
         body: JSON.stringify(payload),
       });
       const json = await r.json();
-      if (!r.ok) throw new Error(json?.error || "حصلت مشكلة. حاول تاني.");
+      if (!r.ok) throw new Error(json?.error || tr("parent.048"));
       return json;
     },
     onSuccess: () => {
-      toast.success("اتربط الطالب بحسابك بنجاح ✅");
+      toast.success(tr("parent.094"));
       setNationalId("");
       setParentPhone("");
       setStudentCode("");
@@ -1198,31 +1199,28 @@ function LinkStudentButton() {
       qc.invalidateQueries({ queryKey: ["parent-dashboard"] });
     },
     onError: (e: Error) =>
-      toast.error(e?.message || "حصلت مشكلة. حاول تاني."),
+      toast.error(e?.message || tr("parent.048")),
   });
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button variant="outline" size="sm">
-          <Plus className="w-4 h-4 ml-2" />
-          ربط طالب
-        </Button>
+          <Plus className="w-4 h-4 ms-2" />
+          {tr("parent.096")}</Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>اربط طالب تاني بحسابك</DialogTitle>
+          <DialogTitle>{tr("parent.097")}</DialogTitle>
           <DialogDescription>
-            اكتب الرقم القومي للطالب + رقم تليفون ولي الأمر المسجل مع بيانات الطالب + كود
-            الطالب، وهنربطه بحسابك بعد التحقق.
-          </DialogDescription>
+            {tr("parent.098")}</DialogDescription>
         </DialogHeader>
         <div className="space-y-3 py-2">
           <div>
-            <label className="text-xs font-semibold">الرقم القومي للطالب *</label>
+            <label className="text-xs font-semibold">{tr("parent.099")}</label>
             <Input
               dir="ltr"
-              placeholder="14 رقم"
+              placeholder={tr("parent.100")}
               value={nationalId}
               onChange={(e) => setNationalId(e.target.value)}
               disabled={mutation.isPending}
@@ -1230,7 +1228,7 @@ function LinkStudentButton() {
             />
           </div>
           <div>
-            <label className="text-xs font-semibold">رقم تليفون ولي الأمر *</label>
+            <label className="text-xs font-semibold">{tr("parent.101")}</label>
             <Input
               dir="ltr"
               placeholder="01147422177"
@@ -1241,7 +1239,7 @@ function LinkStudentButton() {
             />
           </div>
           <div>
-            <label className="text-xs font-semibold">كود الطالب *</label>
+            <label className="text-xs font-semibold">{tr("parent.102")}</label>
             <Input
               dir="ltr"
               placeholder="CM-XXXXXX"
@@ -1252,8 +1250,7 @@ function LinkStudentButton() {
             />
           </div>
           <p className="text-[11px] text-muted-foreground">
-            بنتحقق بمطابقة رقم التليفون + الرقم القومي مع البيانات المسجلة وقت تسجيل الطالب.
-          </p>
+            {tr("parent.103")}</p>
         </div>
         <DialogFooter>
           <Button
@@ -1261,8 +1258,7 @@ function LinkStudentButton() {
             onClick={() => setOpen(false)}
             disabled={mutation.isPending}
           >
-            إلغاء
-          </Button>
+            {tr("parent.104")}</Button>
           <Button
             onClick={() =>
               mutation.mutate({
@@ -1273,7 +1269,7 @@ function LinkStudentButton() {
             }
             disabled={mutation.isPending || !nationalId || !parentPhone || !studentCode}
           >
-            {mutation.isPending ? "بربط…" : "اربط"}
+            {mutation.isPending ? tr("parent.105") : tr("parent.106")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1285,6 +1281,7 @@ function LinkStudentButton() {
 // Empty parent state (no children linked)
 // ============================================================
 function EmptyParentState({ parentName }: { parentName: string }) {
+  const tr = useT();
   const [nationalId, setNationalId] = React.useState("");
   const [parentPhone, setParentPhone] = React.useState("");
   const [studentCode, setStudentCode] = React.useState("");
@@ -1296,15 +1293,15 @@ function EmptyParentState({ parentName }: { parentName: string }) {
         body: JSON.stringify(payload),
       });
       const json = await r.json();
-      if (!r.ok) throw new Error(json?.error || "حصلت مشكلة. حاول تاني.");
+      if (!r.ok) throw new Error(json?.error || tr("parent.048"));
       return json;
     },
     onSuccess: () => {
-      toast.success("اتربط الطالب بنجاح ✅");
+      toast.success(tr("parent.108"));
       setTimeout(() => window.location.reload(), 800);
     },
     onError: (e: Error) =>
-      toast.error(e?.message || "حصلت مشكلة. حاول تاني."),
+      toast.error(e?.message || tr("parent.048")),
   });
   return (
     <div className="flex flex-col items-center justify-center min-h-[70vh] gap-5 text-center max-w-md mx-auto">
@@ -1313,17 +1310,15 @@ function EmptyParentState({ parentName }: { parentName: string }) {
       </div>
       <div>
         <h1 className="text-2xl font-bold">
-          أهلاً يا <span className="text-gradient">{parentName}</span> 👋
+          {tr("parent.051")}<span className="text-gradient">{parentName}</span> 👋
         </h1>
         <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
-          لسه مفيش طلاب مربوطين بحسابك. اربط ابنك بالرقم القومي + رقم تليفون ولي
-          الأمر + كود الطالب عشان تقدر تتابع مستواه.
-        </p>
+          {tr("parent.111")}</p>
       </div>
       <div className="w-full space-y-2">
         <Input
           dir="ltr"
-          placeholder="الرقم القومي للطالب (14 رقم)"
+          placeholder={tr("parent.112")}
           value={nationalId}
           onChange={(e) => setNationalId(e.target.value)}
           disabled={mutation.isPending}
@@ -1331,7 +1326,7 @@ function EmptyParentState({ parentName }: { parentName: string }) {
         />
         <Input
           dir="ltr"
-          placeholder="رقم تليفون ولي الأمر"
+          placeholder={tr("parent.113")}
           value={parentPhone}
           onChange={(e) => setParentPhone(e.target.value)}
           disabled={mutation.isPending}
@@ -1339,7 +1334,7 @@ function EmptyParentState({ parentName }: { parentName: string }) {
         />
         <Input
           dir="ltr"
-          placeholder="كود الطالب (CM-XXXXXX)"
+          placeholder={tr("parent.114")}
           value={studentCode}
           onChange={(e) => setStudentCode(e.target.value.toUpperCase())}
           disabled={mutation.isPending}
@@ -1356,7 +1351,7 @@ function EmptyParentState({ parentName }: { parentName: string }) {
           }
           disabled={mutation.isPending || !nationalId || !parentPhone || !studentCode}
         >
-          {mutation.isPending ? "بربط…" : "اربط الطالب"}
+          {mutation.isPending ? tr("parent.105") : tr("parent.116")}
         </Button>
       </div>
     </div>

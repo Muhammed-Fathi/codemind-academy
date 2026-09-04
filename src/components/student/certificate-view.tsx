@@ -1,4 +1,5 @@
 "use client";
+import { useT , pickAuto } from "@/lib/i18n";
 
 import * as React from "react";
 import { motion } from "framer-motion";
@@ -34,6 +35,7 @@ type Certificate = {
 };
 
 export function CertificateView() {
+  const t = useT();
   const setView = useApp((s) => s.setView);
   const [cert, setCert] = React.useState<Certificate | null>(null);
   const [eligible, setEligible] = React.useState(false);
@@ -50,7 +52,7 @@ export function CertificateView() {
           if (d.certificate) setCert(d.certificate);
         }
       })
-      .catch(() => toast.error("حصلت مشكلة"))
+      .catch(() => toast.error(t("student.019")))
       .finally(() => setLoading(false));
   }, []);
 
@@ -85,17 +87,15 @@ export function CertificateView() {
           className="no-print text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
         >
           <ChevronLeft className="w-4 h-4 flip-rtl" />
-          رجوع للـDashboard
-        </button>
+          {t("student.020")}</button>
 
         {eligible && cert ? (
           <>
             <div className="no-print flex items-center justify-between mb-2">
-              <h2 className="text-lg font-bold">شهادة إتمام الكورس</h2>
+              <h2 className="text-lg font-bold">{t("student.021")}</h2>
               <Button onClick={handlePrint} className="font-bold">
-                <Printer className="w-4 h-4 ml-2" />
-                حفظ كـ PDF
-              </Button>
+                <Printer className="w-4 h-4 ms-2" />
+                {t("student.022")}</Button>
             </div>
 
             {/* Certificate (also printed) */}
@@ -114,8 +114,8 @@ export function CertificateView() {
 
                 <div className="p-10 sm:p-14 relative">
                   {/* Decorative corner sparkles */}
-                  <Sparkles className="absolute top-6 right-6 w-6 h-6 text-amber-400/50" />
-                  <Sparkles className="absolute bottom-6 left-6 w-6 h-6 text-amber-400/50" />
+                  <Sparkles className="absolute top-6 end-6 w-6 h-6 text-amber-400/50" />
+                  <Sparkles className="absolute bottom-6 start-6 w-6 h-6 text-amber-400/50" />
 
                   {/* Header */}
                   <div className="flex items-center justify-between mb-8">
@@ -137,17 +137,14 @@ export function CertificateView() {
                       Certificate of Completion
                     </div>
                     <h1 className="text-4xl sm:text-5xl font-extrabold text-gray-900">
-                      شهادة إتمام
-                    </h1>
+                      {t("student.023")}</h1>
                     <div className="mt-4 text-lg text-gray-700">
-                      ده بيشهد بأن
-                    </div>
+                      {t("student.024")}</div>
                     <div className="text-3xl sm:text-4xl font-extrabold mt-3 text-emerald-700">
                       {cert.studentName}
                     </div>
                     <div className="mt-3 text-gray-600">
-                      قد أتم بنجاح متطلبات كورس
-                    </div>
+                      {t("student.025")}</div>
                     <div className="text-2xl font-bold mt-2 text-teal-700">
                       {cert.courseName}
                     </div>
@@ -162,7 +159,7 @@ export function CertificateView() {
                       <div className="text-2xl font-bold text-gray-900">
                         {cert.avgQuizScore}%
                       </div>
-                      <div className="text-xs text-gray-500">متوسط Quizzes</div>
+                      <div className="text-xs text-gray-500">{t("student.026")}</div>
                     </div>
                     <div className="text-center">
                       <div className="flex items-center justify-center w-12 h-12 rounded-full bg-teal-100 text-teal-600 mx-auto mb-2">
@@ -180,7 +177,7 @@ export function CertificateView() {
                       <div className="text-xs font-bold text-gray-700 mt-2">
                         {cert.completionDate}
                       </div>
-                      <div className="text-xs text-gray-500">تاريخ الإتمام</div>
+                      <div className="text-xs text-gray-500">{t("student.027")}</div>
                     </div>
                   </div>
 
@@ -213,13 +210,12 @@ export function CertificateView() {
               <div className="w-16 h-16 rounded-2xl bg-amber-400/15 flex items-center justify-center mx-auto mb-4">
                 <Award className="w-8 h-8 text-amber-500" />
               </div>
-              <h2 className="text-xl font-bold">لسه مش مؤهل للشهادة</h2>
+              <h2 className="text-xl font-bold">{t("student.028")}</h2>
               <p className="text-sm text-muted-foreground mt-2 max-w-md mx-auto">
-                لازم تخلص 80% على الأقل من Lessons الكورس عشان تقدر تحصل على شهادة الإتمام.
-              </p>
+                {t("student.029")}</p>
               <div className="mt-6 max-w-xs mx-auto">
                 <div className="flex items-center justify-between text-xs mb-2">
-                  <span className="text-muted-foreground">تقدمك الحالي</span>
+                  <span className="text-muted-foreground">{t("student.030")}</span>
                   <span className="font-bold text-amber-600">{progressPct}%</span>
                 </div>
                 <div className="h-3 bg-muted rounded-full overflow-hidden">
@@ -231,16 +227,14 @@ export function CertificateView() {
                   />
                 </div>
                 <div className="text-xs text-muted-foreground mt-2">
-                  باقي {Math.max(0, 80 - progressPct)}% للشهادة
-                </div>
+                  {t("student.031")}{Math.max(0, 80 - progressPct)}{t("student.032")}</div>
               </div>
               <Button
                 className="mt-6"
                 onClick={() => setView("student-course")}
               >
-                <BookOpen className="w-4 h-4 ml-2" />
-                كمّل الـLessons
-              </Button>
+                <BookOpen className="w-4 h-4 ms-2" />
+                {t("student.033")}</Button>
             </CardContent>
           </Card>
         )}

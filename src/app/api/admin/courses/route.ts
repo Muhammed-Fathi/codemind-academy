@@ -1,3 +1,4 @@
+import { getServerT } from "@/lib/i18n-server";
 // /api/admin/courses — list + create courses; seed curriculum from file.
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
@@ -5,6 +6,7 @@ import { ok, err, requireRole } from "@/lib/api";
 import { seedCurriculumFromFile } from "@/lib/curriculum-seed";
 
 export async function POST(req: NextRequest) {
+  const tApi = await getServerT();
   const { error } = await requireRole("ADMIN");
   if (error) return error;
 
@@ -16,7 +18,7 @@ export async function POST(req: NextRequest) {
       const result = await seedCurriculumFromFile();
       return ok({ ok: true, ...result });
     } catch (e: any) {
-      return err(e?.message || "فشل استعادة المنهج", 500);
+      return err(e?.message || tApi("api.017"), 500);
     }
   }
 
@@ -24,7 +26,7 @@ export async function POST(req: NextRequest) {
   const nameAr = String(body.nameAr || "").trim();
   const description = String(body.description || "").trim();
   const color = String(body.color || "#10b981").trim();
-  if (!name || !nameAr) return err("اسم الكورس (عربي + إنجليزي) مطلوب", 400);
+  if (!name || !nameAr) return err(tApi("api.018"), 400);
 
   const slugBase = (body.slug ? String(body.slug) : name)
     .toLowerCase()
@@ -45,6 +47,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
+  const tApi = await getServerT();
   const { error } = await requireRole("ADMIN");
   if (error) return error;
 
@@ -75,7 +78,7 @@ export async function GET(req: NextRequest) {
         groups: { select: { id: true, name: true } },
       },
     });
-    if (!course) return err("الكورس غير موجود", 404);
+    if (!course) return err(tApi("api.019"), 404);
     return ok({ course });
   }
 

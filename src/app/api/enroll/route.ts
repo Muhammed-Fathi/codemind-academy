@@ -1,11 +1,13 @@
+import { getServerT } from "@/lib/i18n-server";
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
 
 export async function POST(req: NextRequest) {
+  const tApi = await getServerT();
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
-  if (user.role !== "STUDENT") return err("الباقات متاحة للطلاب فقط", 403);
+  if (user.role !== "STUDENT") return err(tApi("api.081"), 403);
 
   const body = await req.json().catch(() => ({}));
   const { courseId, groupId, planId, method, reference, couponCode } = body as {
@@ -17,18 +19,18 @@ export async function POST(req: NextRequest) {
     couponCode?: string;
   };
   if (!courseId || !groupId || !planId || !method)
-    return err("كل البيانات مطلوبة", 400);
+    return err(tApi("api.082"), 400);
 
   const student = await db.student.findUnique({ where: { userId: user.id } });
-  if (!student) return err("ملف الطالب غير موجود", 404);
+  if (!student) return err(tApi("api.083"), 404);
 
   const plan = await db.subscriptionPlan.findUnique({ where: { id: planId } });
-  if (!plan) return err("الباقة مش موجودة", 404);
+  if (!plan) return err(tApi("api.084"), 404);
 
   const group = await db.group.findUnique({ where: { id: groupId } });
-  if (!group || !group.isActive) return err("المجموعة مش متاحة", 404);
+  if (!group || !group.isActive) return err(tApi("api.085"), 404);
   const filled = await db.student.count({ where: { groupId } });
-  if (filled >= group.capacity) return err("المجموعة مكتملة", 400);
+  if (filled >= group.capacity) return err(tApi("api.086"), 400);
 
   // Validate coupon if provided
   let coupon: any = null;
@@ -40,12 +42,12 @@ export async function POST(req: NextRequest) {
       where: { code: upperCode },
       include: { redemptions: { where: { userId: user.id } } },
     });
-    if (!coupon) return err("كود الخصم مش موجود", 404);
-    if (!coupon.isActive) return err("كود الخصم مش شغال", 400);
-    if (coupon.usedCount >= coupon.maxUses) return err("كود الخصم خلص استخدامه", 400);
+    if (!coupon) return err(tApi("api.087"), 404);
+    if (!coupon.isActive) return err(tApi("api.088"), 400);
+    if (coupon.usedCount >= coupon.maxUses) return err(tApi("api.089"), 400);
     if (coupon.validUntil && new Date() > coupon.validUntil)
-      return err("كود الخصم انتهت صلاحيته", 400);
-    if (coupon.redemptions.length > 0) return err("أنت استخدمت الكود ده قبل كده", 400);
+      return err(tApi("api.090"), 400);
+    if (coupon.redemptions.length > 0) return err(tApi("api.091"), 400);
 
     if (coupon.type === "PERCENTAGE") {
       discount = Math.round((plan.price * coupon.value) / 100);
@@ -112,8 +114,8 @@ export async function POST(req: NextRequest) {
         data: admins.map((a) => ({
           userId: a.id,
           type: "ANNOUNCEMENT",
-          title: "طلب اشتراك جديد",
-          message: `${user.name} (طالب) عمل طلب اشتراك جديد — انتظر التأكيد.`,
+          title: tApi("api.092"),
+          message: tApi("api.093", { p1: user.name }),
           link: "admin-payments",
         })),
       });

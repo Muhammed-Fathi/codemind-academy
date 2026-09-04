@@ -1,3 +1,4 @@
+import { getServerT } from "@/lib/i18n-server";
 // PATCH /api/admin/groups/[id] — update group (assign teacher, capacity, add/remove students)
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
@@ -7,6 +8,7 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const tApi = await getServerT();
   const { user, error } = await requireRole("ADMIN");
   if (error) return error;
   if (!user) return err("Unauthorized", 401);
@@ -15,7 +17,7 @@ export async function PATCH(
   const body = await req.json().catch(() => ({}));
 
   const group = await db.group.findUnique({ where: { id } });
-  if (!group) return err("المجموعة غير موجودة", 404);
+  if (!group) return err(tApi("api.020"), 404);
 
   const data: any = {};
   if (typeof body.name === "string") data.name = body.name;

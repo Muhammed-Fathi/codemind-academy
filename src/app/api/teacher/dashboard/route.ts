@@ -1,3 +1,4 @@
+import { getServerT } from "@/lib/i18n-server";
 // GET /api/teacher/dashboard
 // Returns teacher's groups (with students + per-group stats),
 // upcoming sessions (next 7 days), recent activity (last 5 graded
@@ -7,6 +8,7 @@ import { db } from "@/lib/db";
 import { ok, err, requireUser, getTeacherProfile } from "@/lib/api";
 
 export async function GET(_req: NextRequest) {
+  const tApi = await getServerT();
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
   if (user.role !== "TEACHER") return err("Forbidden", 403);
@@ -200,8 +202,8 @@ export async function GET(_req: NextRequest) {
     activities.push({
       type: "homework-graded",
       title: `Homework: ${s.homework.titleAr || s.homework.title}`,
-      description: `اتصحح — الدرجة ${s.grade ?? 0}/10`,
-      studentName: s.student?.user?.name || "طالب",
+      description: tApi("api.164", { p1: s.grade ?? 0 }),
+      studentName: s.student?.user?.name || tApi("api.165"),
       time: s.submittedAt || new Date(),
       kind: "good",
     });
@@ -210,8 +212,8 @@ export async function GET(_req: NextRequest) {
     activities.push({
       type: "quiz-attempt",
       title: `Quiz: ${a.quiz.titleAr || a.quiz.title}`,
-      description: `${a.percentage}% — ${a.passed ? "نجح" : "محتاج مراجعة"}`,
-      studentName: a.student?.user?.name || "طالب",
+      description: `${a.percentage}% — ${a.passed ? tApi("api.166") : tApi("api.167")}`,
+      studentName: a.student?.user?.name || tApi("api.165"),
       time: a.finishedAt || a.startedAt,
       kind: a.passed ? "good" : "warn",
     });

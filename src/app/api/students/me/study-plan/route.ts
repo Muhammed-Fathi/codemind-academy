@@ -1,3 +1,4 @@
+import { getServerT } from "@/lib/i18n-server";
 // CodeMind Academy — Study Scheduler API
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser, ok, err } from "@/lib/api";
@@ -5,10 +6,11 @@ import { db } from "@/lib/db";
 
 // GET /api/students/me/study-plan?from=&to= — list tasks in date range
 export async function GET(req: NextRequest) {
+  const tApi = await getServerT();
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
   const student = await db.student.findUnique({ where: { userId: user.id } });
-  if (!student) return err("ملف الطالب غير موجود", 404);
+  if (!student) return err(tApi("api.151"), 404);
 
   const url = new URL(req.url);
   const from = url.searchParams.get("from");
@@ -42,10 +44,11 @@ export async function GET(req: NextRequest) {
 
 // POST — create task
 export async function POST(req: NextRequest) {
+  const tApi = await getServerT();
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
   const student = await db.student.findUnique({ where: { userId: user.id } });
-  if (!student) return err("ملف الطالب غير موجود", 404);
+  if (!student) return err(tApi("api.151"), 404);
 
   const body = await req.json().catch(() => ({}));
   const { title, description, lessonId, scheduledDate, durationMin } = body as {
@@ -55,7 +58,7 @@ export async function POST(req: NextRequest) {
     scheduledDate?: string;
     durationMin?: number;
   };
-  if (!title || !scheduledDate) return err("العنوان والتاريخ مطلوبين", 400);
+  if (!title || !scheduledDate) return err(tApi("api.152"), 400);
 
   const task = await db.studyTask.create({
     data: {
@@ -72,10 +75,11 @@ export async function POST(req: NextRequest) {
 
 // PATCH — update task (status, title, etc.)
 export async function PATCH(req: NextRequest) {
+  const tApi = await getServerT();
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
   const student = await db.student.findUnique({ where: { userId: user.id } });
-  if (!student) return err("ملف الطالب غير موجود", 404);
+  if (!student) return err(tApi("api.151"), 404);
 
   const body = await req.json().catch(() => ({}));
   const { taskId, status, title, description, scheduledDate, durationMin } = body as {
@@ -86,7 +90,7 @@ export async function PATCH(req: NextRequest) {
     scheduledDate?: string;
     durationMin?: number;
   };
-  if (!taskId) return err("Task ID مطلوب", 400);
+  if (!taskId) return err(tApi("api.153"), 400);
 
   const data: any = {};
   if (status) data.status = status;
@@ -104,14 +108,15 @@ export async function PATCH(req: NextRequest) {
 
 // DELETE /api/students/me/study-plan?taskId=X
 export async function DELETE(req: NextRequest) {
+  const tApi = await getServerT();
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
   const student = await db.student.findUnique({ where: { userId: user.id } });
-  if (!student) return err("ملف الطالب غير موجود", 404);
+  if (!student) return err(tApi("api.151"), 404);
 
   const url = new URL(req.url);
   const taskId = url.searchParams.get("taskId");
-  if (!taskId) return err("Task ID مطلوب", 400);
+  if (!taskId) return err(tApi("api.153"), 400);
 
   await db.studyTask.deleteMany({
     where: { id: taskId, studentId: student.id },

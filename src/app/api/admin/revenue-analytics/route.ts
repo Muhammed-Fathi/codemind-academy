@@ -3,8 +3,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
+import { serverLocale } from "@/lib/i18n-server";
 
 export async function GET(req: NextRequest) {
+  const __loc = await serverLocale();
+  const __dtLocale = __loc === "en" ? "en-GB" : "ar-EG";
   const { error } = await requireRole("ADMIN");
   if (error) return error;
 
@@ -36,10 +39,10 @@ export async function GET(req: NextRequest) {
       (p) => p.createdAt >= monthStart && p.createdAt <= monthEnd
     );
     const revenue = monthPayments.reduce((sum, p) => sum + p.amount, 0);
-    const monthName = d.toLocaleDateString("ar-EG", { month: "short" });
+    const monthName = d.toLocaleDateString(__dtLocale, { month: "short" });
     monthlyData.push({
       month: monthName,
-      monthFull: d.toLocaleDateString("ar-EG", { month: "long", year: "numeric" }),
+      monthFull: d.toLocaleDateString(__dtLocale, { month: "long", year: "numeric" }),
       revenue,
       paymentCount: monthPayments.length,
       avgPayment: monthPayments.length > 0 ? Math.round(revenue / monthPayments.length) : 0,

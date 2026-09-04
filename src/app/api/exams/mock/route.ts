@@ -1,3 +1,4 @@
+import { getServerT } from "@/lib/i18n-server";
 // CodeMind Academy — Mock Exam API
 // Generates randomized practice exams from Question Bank.
 import { NextRequest, NextResponse } from "next/server";
@@ -15,9 +16,10 @@ function shuffle<T>(arr: T[]): T[] {
 
 // GET /api/exams/mock?count=10&difficulty=EASY|MEDIUM|HARD|mixed&examType=MOCK|UNIT|MONTHLY|FINAL
 export async function GET(req: NextRequest) {
+  const tApi = await getServerT();
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
-  if (user.role !== "STUDENT") return err("Mock exams متاحة للطلاب فقط", 403);
+  if (user.role !== "STUDENT") return err(tApi("api.094"), 403);
 
   const url = new URL(req.url);
   const count = parseInt(url.searchParams.get("count") || "10", 10);
@@ -25,12 +27,12 @@ export async function GET(req: NextRequest) {
   const examType = url.searchParams.get("examType") || "MOCK";
 
   const student = await db.student.findUnique({ where: { userId: user.id } });
-  if (!student) return err("ملف الطالب غير موجود", 404);
+  if (!student) return err(tApi("api.095"), 404);
 
   // Pull all quiz questions + exam questions available to this student
   // (via their group's course lessons + exam questions)
   const courseId = await getStudentCourseId(student.id);
-  if (!courseId) return err("أنت مش مشترك في كورس دلوقتي", 400);
+  if (!courseId) return err(tApi("api.096"), 400);
 
   // Get quiz questions from lessons in the course
   const lessons = await db.lesson.findMany({
@@ -96,7 +98,7 @@ export async function GET(req: NextRequest) {
   if (allQs.length === 0) {
     return ok({
       exam: null,
-      message: "مفيش أسئلة في الـQuestion Bank حاليًا. اسأل الـAdmin يضيف أسئلة.",
+      message: tApi("api.097"),
     });
   }
 
@@ -151,9 +153,10 @@ export async function GET(req: NextRequest) {
 
 // POST /api/exams/mock — submit exam answers, save attempt
 export async function POST(req: NextRequest) {
+  const tApi = await getServerT();
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
-  if (user.role !== "STUDENT") return err("Mock exams متاحة للطلاب فقط", 403);
+  if (user.role !== "STUDENT") return err(tApi("api.094"), 403);
 
   const body = await req.json().catch(() => ({}));
   const { examType, durationMin, answers } = body as {
@@ -164,7 +167,7 @@ export async function POST(req: NextRequest) {
   if (!answers || !Array.isArray(answers)) return err("Answers required", 400);
 
   const student = await db.student.findUnique({ where: { userId: user.id } });
-  if (!student) return err("ملف الطالب غير موجود", 404);
+  if (!student) return err(tApi("api.095"), 404);
 
   const totalMarks = answers.reduce((s, a) => s + (a.marks || 0), 0);
   const score = answers.filter((a) => a.isCorrect).reduce((s, a) => s + (a.marks || 0), 0);

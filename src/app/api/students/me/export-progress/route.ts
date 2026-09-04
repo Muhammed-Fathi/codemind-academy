@@ -1,12 +1,14 @@
+import { getServerT } from "@/lib/i18n-server";
 // CodeMind Academy — Student: Export own progress as CSV
 import { NextResponse } from "next/server";
 import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
 
 export async function GET() {
+  const tApi = await getServerT();
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
-  if (user.role !== "STUDENT") return err("Export متاح للطلاب فقط", 403);
+  if (user.role !== "STUDENT") return err(tApi("api.132"), 403);
 
   const student = await db.student.findUnique({
     where: { userId: user.id },
@@ -31,7 +33,7 @@ export async function GET() {
       },
     },
   });
-  if (!student) return err("ملف الطالب غير موجود", 404);
+  if (!student) return err(tApi("api.133"), 404);
 
   const headers = [
     "Type",

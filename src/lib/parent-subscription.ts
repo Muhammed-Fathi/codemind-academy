@@ -1,4 +1,6 @@
 // CodeMind Academy — Parent-facing subscription contract + status helper.
+
+import { translate, type Locale } from "@/lib/i18n-core";
 //
 // Single source of truth for the `subscription` field returned per child by
 // GET /api/parents/me/dashboard and consumed by the Parent Dashboard and the
@@ -44,19 +46,18 @@ export type ParentSubscriptionSummary = {
   reportAvailable: boolean;
 };
 
-const NO_SUBSCRIPTION_TITLE = "ابنك لسه ما اشتركش في أي باقة.";
-const NO_SUBSCRIPTION_MESSAGE =
-  "الحساب شغال تمام وابنك مربوط بحسابك بنجاح، بس لسه ما اشتركش في أي باقة. لما ابنك يشترك في باقة، التقرير الشهري هيظهر هنا.";
-
 export function describeParentSubscription(
-  sub: ParentSubscriptionPayload | null | undefined
+  sub: ParentSubscriptionPayload | null | undefined,
+  locale: Locale = "ar"
 ): ParentSubscriptionSummary {
+  const t = (key: string, params?: Record<string, unknown>) =>
+    translate(locale, key, params);
   if (!sub) {
     return {
       state: "NONE",
       label: "Not subscribed",
-      title: NO_SUBSCRIPTION_TITLE,
-      message: NO_SUBSCRIPTION_MESSAGE,
+      title: t("lib.001"),
+      message: t("lib.002"),
       reportAvailable: false,
     };
   }
@@ -68,48 +69,48 @@ export function describeParentSubscription(
         return {
           state: "EXPIRING",
           label: "Expiring",
-          title: "الاشتراك شغال بس قرب يخلص.",
-          message: `اشتراك ابنك بينتهي خلال ${Math.max(daysLeft, 0)} يوم — جدده علشان التقرير يفضل متاح.`,
+          title: t("lib.003"),
+          message: t("lib.004", { p1: Math.max(daysLeft, 0) }),
           reportAvailable: true,
         };
       }
       return {
         state: "ACTIVE",
         label: "Active",
-        title: "الاشتراك شغال.",
-        message: daysLeft != null ? `فاضل ${daysLeft} يوم على انتهاء الاشتراك.` : "اشتراك ابنك نشط.",
+        title: t("lib.005"),
+        message: daysLeft != null ? t("lib.006", { p1: daysLeft }) : t("lib.007"),
         reportAvailable: true,
       };
     case "PENDING":
       return {
         state: "PENDING",
         label: "Pending",
-        title: "الاشتراك لسه بيتراجع.",
-        message: "ابنك قدّم طلب اشتراك ولسه مستني تأكيد الدفع من الإدارة.",
+        title: t("lib.008"),
+        message: t("lib.009"),
         reportAvailable: true,
       };
     case "EXPIRED":
       return {
         state: "EXPIRED",
         label: "Expired",
-        title: "اشتراك ابنك انتهى.",
-        message: "جدد الاشتراك علشان ابنك يكمل ويفضل التقرير الشهري متحدث.",
+        title: t("lib.010"),
+        message: t("lib.011"),
         reportAvailable: true,
       };
     case "CANCELLED":
       return {
         state: "CANCELLED",
         label: "Cancelled",
-        title: "اشتراك ابنك اتلغى.",
-        message: "لو حابب يكمل، ابنك يقدر يشترك في باقة جديدة من حسابه.",
+        title: t("lib.012"),
+        message: t("lib.013"),
         reportAvailable: true,
       };
     default:
       return {
         state: "UNKNOWN",
         label: String(sub.status || "—"),
-        title: "حالة الاشتراك غير معروفة.",
-        message: "تواصل مع الإدارة لو محتاج تفاصيل أكتر عن الاشتراك.",
+        title: t("lib.014"),
+        message: t("lib.015"),
         reportAvailable: true,
       };
   }

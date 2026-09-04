@@ -1,0 +1,3276 @@
+{
+  "label": "baseline",
+  "generatedAt": "2026-09-04T17:18:42.514Z",
+  "base": "http://localhost:3000",
+  "locales": {
+    "ar": {
+      "landing": {
+        "dir": "rtl",
+        "lang": "ar",
+        "totalTextNodes": 231,
+        "arabicTextCount": 125,
+        "arabicSample": [
+          "ليه CodeMind؟",
+          "المنهج",
+          "المميزات",
+          "الأسعار",
+          "الأسئلة",
+          "تسجيل الدخول",
+          "ابدأ مجاناً",
+          "منصة تعليمية للأبطال - Programming & AI",
+          "اتعلم",
+          "بطريقة مختلفة.",
+          "Live Classes، Practice، Quizzes، ومتابعة مستواك خطوة بخطوة. منصة متكاملة تأخدك من أول درس لحد ما تبقى جاهز للامتحان — وأهلك تقدر تتابعوا معاك.",
+          "ابدأ رحلتك",
+          "شوف المنهج",
+          "طالب",
+          "تقييم",
+          "آخر Quiz",
+          "بكرة 6:00 م",
+          "Lesson جديدة",
+          "اللي يخلّي CodeMind مختلفة",
+          "مش مجرد فيديوهات. دي تجربة تعليمية متكاملة معمولة بقلب وعقل.",
+          "Live Classes حقيقية",
+          "حصتين في الأسبوع، تفاعل مباشر مع الـTeacher، وتسجيلات متاحة بعد كل حصة.",
+          "Programming & AI من الصفر",
+          "منهج رسمي للثانوية العامة يبنيك خطوة بخطوة لحد ما توصل للـMachine Learning.",
+          "متابعة الأهل"
+        ],
+        "attrTotal": 9,
+        "arabicAttrCount": 2,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تسجيل الدخول"
+          }
+        ]
+      },
+      "landingScrolled": {
+        "dir": "rtl",
+        "lang": "ar",
+        "totalTextNodes": 231,
+        "arabicTextCount": 125,
+        "arabicSample": [
+          "ليه CodeMind؟",
+          "المنهج",
+          "المميزات",
+          "الأسعار",
+          "الأسئلة",
+          "تسجيل الدخول",
+          "ابدأ مجاناً",
+          "منصة تعليمية للأبطال - Programming & AI",
+          "اتعلم",
+          "بطريقة مختلفة.",
+          "Live Classes، Practice، Quizzes، ومتابعة مستواك خطوة بخطوة. منصة متكاملة تأخدك من أول درس لحد ما تبقى جاهز للامتحان — وأهلك تقدر تتابعوا معاك.",
+          "ابدأ رحلتك",
+          "شوف المنهج",
+          "طالب",
+          "تقييم",
+          "آخر Quiz",
+          "بكرة 6:00 م",
+          "Lesson جديدة",
+          "اللي يخلّي CodeMind مختلفة",
+          "مش مجرد فيديوهات. دي تجربة تعليمية متكاملة معمولة بقلب وعقل.",
+          "Live Classes حقيقية",
+          "حصتين في الأسبوع، تفاعل مباشر مع الـTeacher، وتسجيلات متاحة بعد كل حصة.",
+          "Programming & AI من الصفر",
+          "منهج رسمي للثانوية العامة يبنيك خطوة بخطوة لحد ما توصل للـMachine Learning.",
+          "متابعة الأهل"
+        ],
+        "attrTotal": 9,
+        "arabicAttrCount": 2,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تسجيل الدخول"
+          }
+        ]
+      },
+      "login": {
+        "dir": "rtl",
+        "lang": "ar",
+        "totalTextNodes": 43,
+        "arabicTextCount": 24,
+        "arabicSample": [
+          "رجوع للرئيسية",
+          "أهلاً بعودتك 👋",
+          "ادخل بياناتك عشان تكمّل من حيث ما وقفت.",
+          "البريد الإلكتروني",
+          "كلمة السر",
+          "ادخل",
+          "ماعندكش حساب؟",
+          "اعمل واحد",
+          "للدعم والتواصل",
+          "اتعلم Programming & AI",
+          "من مكان واحد.",
+          "Live Classes · Quizzes · Homework · PDFs · Reports · Parent Dashboard. كل اللي محتاجه عشان تنجح.",
+          "منهج Programming & AI كامل",
+          "تقارير شهرية ومتابعة الأهل",
+          "Quizzes أوتوماتيك التصحيح",
+          "منصة تعليمية متخصصة في Programming & AI لطلاب الثانوية العامة - الصف الثاني.",
+          "المنصة",
+          "تسجيل الدخول",
+          "إنشاء حساب",
+          "الأسعار",
+          "المنهج",
+          "تواصل معانا",
+          "اسأل الـTeacher",
+          ". كل الحقوق محفوظة."
+        ],
+        "attrTotal": 12,
+        "arabicAttrCount": 3,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "إظهار كلمة السر"
+          },
+          {
+            "kind": "title",
+            "text": "إظهار كلمة السر"
+          }
+        ]
+      },
+      "register": {
+        "dir": "rtl",
+        "lang": "ar",
+        "totalTextNodes": 64,
+        "arabicTextCount": 36,
+        "arabicSample": [
+          "رجوع للرئيسية",
+          "اخلق حسابك",
+          "اختار نوع الحساب وادخل بياناتك عشان تبدأ.",
+          "طالب",
+          "ولي أمر",
+          "معلم",
+          "الاسم الكامل بالعربية (ثلاثي — مطابق للبطاقة)",
+          "رقم تليفون الطالب",
+          "رقم تليفون ولي الأمر",
+          "الرقم القومي",
+          "اسم المدرسة",
+          "نوع المدرسة",
+          "اختار نوع المدرسة",
+          "لغات (Language)",
+          "عربي (Arabic)",
+          "البريد الإلكتروني",
+          "كلمة السر",
+          "اعمل حسابي",
+          "عندك حساب بالفعل؟",
+          "ادخل",
+          "للدعم والتواصل",
+          "اتعلم Programming & AI",
+          "من مكان واحد.",
+          "Live Classes · Quizzes · Homework · PDFs · Reports · Parent Dashboard. كل اللي محتاجه عشان تنجح.",
+          "منهج Programming & AI كامل"
+        ],
+        "attrTotal": 17,
+        "arabicAttrCount": 6,
+        "arabicAttrSample": [
+          {
+            "kind": "placeholder",
+            "text": "مثال: أحمد محمد حسن"
+          },
+          {
+            "kind": "placeholder",
+            "text": "14 رقم"
+          },
+          {
+            "kind": "placeholder",
+            "text": "اسم المدرسة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "إظهار كلمة السر"
+          },
+          {
+            "kind": "title",
+            "text": "إظهار كلمة السر"
+          }
+        ]
+      },
+      "admin:admin-overview": {
+        "dir": "rtl",
+        "lang": "ar",
+        "totalTextNodes": 173,
+        "arabicTextCount": 51,
+        "arabicSample": [
+          "الطلاب",
+          "المعلمون",
+          "المجموعات",
+          "الكورسات",
+          "المدفوعات",
+          "الاشتراكات",
+          "أكواد الخصم",
+          "الإشعارات",
+          "الإعدادات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "Revenue (هذا الشهر)",
+          "آخر 6 شهور",
+          "حسب الكورس",
+          "تحليل تفصيلي للإيرادات والمدفوعات",
+          "مقارنة بالشهر اللي فات —",
+          "دفعة مستنية المراجعة",
+          "آخر 6 شهور — بالـBar Chart",
+          "أبريل",
+          "مايو",
+          "يونيو",
+          "يوليو",
+          "أغسطس",
+          "سبتمبر",
+          "توزيع طرق الدفع"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 3,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          }
+        ]
+      },
+      "admin:admin-students": {
+        "dir": "rtl",
+        "lang": "ar",
+        "totalTextNodes": 46,
+        "arabicTextCount": 23,
+        "arabicSample": [
+          "الطلاب",
+          "المعلمون",
+          "المجموعات",
+          "الكورسات",
+          "المدفوعات",
+          "الاشتراكات",
+          "أكواد الخصم",
+          "الإشعارات",
+          "الإعدادات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "إدارة كل الطلاب المسجلين في الأكاديمية",
+          "الكل",
+          "الاسم",
+          "كود الطالب",
+          "الإيميل",
+          "الصف",
+          "المجموعة",
+          "الاشتراك",
+          "الحالة",
+          "6 شهور"
+        ],
+        "attrTotal": 11,
+        "arabicAttrCount": 4,
+        "arabicAttrSample": [
+          {
+            "kind": "placeholder",
+            "text": "بحث بالاسم أو الإيميل..."
+          },
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          }
+        ]
+      },
+      "admin:admin-teachers": {
+        "dir": "rtl",
+        "lang": "ar",
+        "totalTextNodes": 41,
+        "arabicTextCount": 18,
+        "arabicSample": [
+          "الطلاب",
+          "المعلمون",
+          "المجموعات",
+          "الكورسات",
+          "المدفوعات",
+          "الاشتراكات",
+          "أكواد الخصم",
+          "الإشعارات",
+          "الإعدادات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "إدارة فريق المعلمين والمجموعات بتاعتهم",
+          "الاسم",
+          "الإيميل",
+          "الحالة"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 3,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          }
+        ]
+      },
+      "admin:admin-groups": {
+        "dir": "rtl",
+        "lang": "ar",
+        "totalTextNodes": 38,
+        "arabicTextCount": 17,
+        "arabicSample": [
+          "الطلاب",
+          "المعلمون",
+          "المجموعات",
+          "الكورسات",
+          "المدفوعات",
+          "الاشتراكات",
+          "أكواد الخصم",
+          "الإشعارات",
+          "الإعدادات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "كل المجموعات الدراسية",
+          "البرمجة والذكاء الاصطناعي",
+          "السبت و الثلاثاء — 6:00 م"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 3,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          }
+        ]
+      },
+      "admin:admin-courses": {
+        "dir": "rtl",
+        "lang": "ar",
+        "totalTextNodes": 41,
+        "arabicTextCount": 18,
+        "arabicSample": [
+          "الطلاب",
+          "المعلمون",
+          "المجموعات",
+          "الكورسات",
+          "المدفوعات",
+          "الاشتراكات",
+          "أكواد الخصم",
+          "الإشعارات",
+          "الإعدادات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "استعراض الـCurriculum الشامل",
+          "استعادة المنهج",
+          "البرمجة والذكاء الاصطناعي",
+          "كورس Programming & AI لطلاب الصف الثاني الثانوي.",
+          "فتح الـCurriculum"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 3,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          }
+        ]
+      },
+      "admin:admin-question-bank": {
+        "dir": "rtl",
+        "lang": "ar",
+        "totalTextNodes": 81,
+        "arabicTextCount": 23,
+        "arabicSample": [
+          "الطلاب",
+          "المعلمون",
+          "المجموعات",
+          "الكورسات",
+          "المدفوعات",
+          "الاشتراكات",
+          "أكواد الخصم",
+          "الإشعارات",
+          "الإعدادات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "كل الأسئلة المتاحة في النظام",
+          "كل الصعوبات",
+          "كل الأنواع",
+          "إيه من دول يعتبر تهديد للأمن السيبراني؟",
+          "اختبار الـLesson الأولى",
+          "· إيه هي الـIT؟",
+          "المواطنة الرقمية تعني الاستخدام المسؤول للتكنولوجيا.",
+          "إيه معنى IT؟"
+        ],
+        "attrTotal": 11,
+        "arabicAttrCount": 4,
+        "arabicAttrSample": [
+          {
+            "kind": "placeholder",
+            "text": "بحث في نص السؤال..."
+          },
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          }
+        ]
+      },
+      "admin:admin-payments": {
+        "dir": "rtl",
+        "lang": "ar",
+        "totalTextNodes": 33,
+        "arabicTextCount": 17,
+        "arabicSample": [
+          "الطلاب",
+          "المعلمون",
+          "المجموعات",
+          "الكورسات",
+          "المدفوعات",
+          "الاشتراكات",
+          "أكواد الخصم",
+          "الإشعارات",
+          "الإعدادات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "مراجعة وتأكيد دفعات الطلاب",
+          "استيراد xlsx",
+          "كل الحالات",
+          "مفيش مدفوعات لسه."
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 3,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          }
+        ]
+      },
+      "admin:admin-subscriptions": {
+        "dir": "rtl",
+        "lang": "ar",
+        "totalTextNodes": 44,
+        "arabicTextCount": 22,
+        "arabicSample": [
+          "الطلاب",
+          "المعلمون",
+          "المجموعات",
+          "الكورسات",
+          "المدفوعات",
+          "الاشتراكات",
+          "أكواد الخصم",
+          "الإشعارات",
+          "الإعدادات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "كل اشتراكات الطلاب",
+          "كل الحالات",
+          "الطالب",
+          "الباقة",
+          "السعر",
+          "البداية",
+          "النهاية",
+          "الحالة",
+          "6 شهور"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 3,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          }
+        ]
+      },
+      "admin:admin-coupons": {
+        "dir": "rtl",
+        "lang": "ar",
+        "totalTextNodes": 32,
+        "arabicTextCount": 17,
+        "arabicSample": [
+          "الطلاب",
+          "المعلمون",
+          "المجموعات",
+          "الكورسات",
+          "المدفوعات",
+          "الاشتراكات",
+          "أكواد الخصم",
+          "الإشعارات",
+          "الإعدادات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "إدارة أكواد الخصم والـCoupons",
+          "كود جديد",
+          "مفيش أكواد خصم لسه",
+          "اضغط \"كود جديد\" عشان تعمل أول كود"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 3,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          }
+        ]
+      },
+      "admin:admin-notifications": {
+        "dir": "rtl",
+        "lang": "ar",
+        "totalTextNodes": 118,
+        "arabicTextCount": 38,
+        "arabicSample": [
+          "الطلاب",
+          "المعلمون",
+          "المجموعات",
+          "الكورسات",
+          "المدفوعات",
+          "الاشتراكات",
+          "أكواد الخصم",
+          "الإشعارات",
+          "الإعدادات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "إرسال إشعارات للمستخدمين ومتابعة الأحدث",
+          "تنبيه: غياب ابنك",
+          "ابنك غاب في آخر حصة. تواصل معاه عشان يعوض الدرس.",
+          "التقرير الشهري جاهز",
+          "تقرير شهر أحمد الشهري جاهز دلوقتي، تقدر تتابع مستواه.",
+          "حصة لايف بكرة",
+          "لايف سشن بكرة الساعة 6:00 مساءً. متنساش تتواصل!",
+          "Lesson جديدة اتضاف",
+          "اتضافت Lesson جديدة في Part One — Information Technology and Society.",
+          "اختر الجمهور واكتب الرسالة",
+          "الجمهور",
+          "كل المستخدمين",
+          "النوع",
+          "العنوان"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 3,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          }
+        ]
+      },
+      "admin:admin-settings": {
+        "dir": "rtl",
+        "lang": "ar",
+        "totalTextNodes": 47,
+        "arabicTextCount": 19,
+        "arabicSample": [
+          "الطلاب",
+          "المعلمون",
+          "المجموعات",
+          "الكورسات",
+          "المدفوعات",
+          "الاشتراكات",
+          "أكواد الخصم",
+          "الإشعارات",
+          "الإعدادات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "إدارة بيانات الـBrand والأسعار والإعدادات العامة",
+          "بيانات الأكاديمية والتواصل",
+          "اسم الأكاديمية",
+          "أسعار الباقات بالـEGP",
+          "ملاحظة: تغيير الأسعار بيأثر على الباقات الجديدة بس، اللي موجود بالفعل مش بيتغيّر.",
+          "حفظ الإعدادات"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 3,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          }
+        ]
+      },
+      "teacher:teacher-dashboard": {
+        "dir": "rtl",
+        "lang": "ar",
+        "totalTextNodes": 114,
+        "arabicTextCount": 45,
+        "arabicSample": [
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "الجمعة، ٤ سبتمبر ٢٠٢٦",
+          "أهلاً يا",
+          "Session الأسبوع ده",
+          "Quiz جديد",
+          "المجموعات",
+          "Sessions الأسبوع",
+          "في الـ7 أيام الجاية",
+          "Homework منتظر",
+          "محتاج تصحيح",
+          "متوسط المجموعات",
+          "المجموعات بتاعتي",
+          "نظرة سريعة على كل Group",
+          "البرمجة والذكاء الاصطناعي",
+          "السبت و الثلاثاء — 6:00 م",
+          "السعة",
+          "الـSession الجاية",
+          "مقدمة عن الـIT — حصة لايف",
+          "الأحد، ٦ سبتمبر",
+          "٠٤:٥٩ م",
+          "Sessions الأسبوع الجاي",
+          "٦",
+          "انضم",
+          "أحدث نشاط"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 3,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          }
+        ]
+      },
+      "teacher:teacher-attendance": {
+        "dir": "rtl",
+        "lang": "ar",
+        "totalTextNodes": 60,
+        "arabicTextCount": 18,
+        "arabicSample": [
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "تسجيل Attendance",
+          "اختار Group و Session وسجّل حضور الطلاب",
+          "الثلاثاء، ١ سبتمبر",
+          "ترحيب وتعريف بالكورس",
+          "حاضر",
+          "غايب",
+          "متأخر",
+          "بعذر",
+          "اتسجّل",
+          "من",
+          "طالب · السجل بيتحدّت تلقائيًا",
+          "احفظ الـAttendance"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 3,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          }
+        ]
+      },
+      "teacher:teacher-quizzes": {
+        "dir": "rtl",
+        "lang": "ar",
+        "totalTextNodes": 52,
+        "arabicTextCount": 18,
+        "arabicSample": [
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "الـQuizzes",
+          "اعمل Quiz جديد أو راجع نتائج الطلاب",
+          "اعمل Quiz جديد",
+          "تصفية:",
+          "كل المجموعات",
+          "اختبار الـLesson الأولى",
+          "إيه هي الـIT؟",
+          "· البرمجة والذكاء الاصطناعي",
+          "محاولة",
+          "الأسئلة",
+          "المجموع",
+          "درجة",
+          "المتوسط",
+          "اختبار سريع على أساسيات الـIT.",
+          "نجح",
+          "تفاصيل"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 3,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          }
+        ]
+      },
+      "teacher:teacher-homework": {
+        "dir": "rtl",
+        "lang": "ar",
+        "totalTextNodes": 45,
+        "arabicTextCount": 16,
+        "arabicSample": [
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "الـHomework",
+          "راجع submissions الطلاب و صححها",
+          "تصفية:",
+          "كل المجموعات",
+          "تعبير عن الـLesson",
+          "إيه هي الـIT؟",
+          "· البرمجة والذكاء الاصطناعي",
+          "الجمعة، ١١ سبتمبر",
+          "درجات",
+          "منتظر",
+          "اتسلم",
+          "اتصحح",
+          "اكتب فقرة قصيرة عن أهمية الـIT في حياتك اليومية (100 كلمة على الأقل).",
+          "اعرض الطلاب"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 3,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          }
+        ]
+      },
+      "teacher:teacher-templates": {
+        "error": "locator.click: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('aside nav button[data-view=\"teacher-templates\"]').first()\n"
+      },
+      "teacher:teacher-analytics": {
+        "error": "locator.click: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('aside nav button[data-view=\"teacher-analytics\"]').first()\n"
+      },
+      "student:student-dashboard": {
+        "dir": "rtl",
+        "lang": "ar",
+        "totalTextNodes": 164,
+        "arabicTextCount": 79,
+        "arabicSample": [
+          "الكورس",
+          "تقدمي",
+          "الشهادة",
+          "الواجبات",
+          "الإشعارات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "طالب",
+          "أهلاً يا",
+          "الجمعة، ٤ سبتمبر",
+          "كود الطالب:",
+          "نسخ",
+          "6 شهور",
+          "كمل اللي سيبته",
+          "كل الكورس",
+          "الجزء الأول",
+          "تكنولوجيا المعلومات والمجتمع",
+          "مقدمة عن تكنولوجيا المعلومات",
+          "إيه هي الـIT؟",
+          "اتخلصت ✅",
+          "يكمل",
+          "من",
+          "اتخلص",
+          "الحصة الجاية",
+          "بعد 1 يوم"
+        ],
+        "attrTotal": 22,
+        "arabicAttrCount": 12,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          },
+          {
+            "kind": "title",
+            "text": "خلصت أول Lesson ليك في الكورس."
+          },
+          {
+            "kind": "title",
+            "text": "خلصت 5 Lessons."
+          },
+          {
+            "kind": "title",
+            "text": "حليت أول Quiz ليك."
+          },
+          {
+            "kind": "title",
+            "text": "نجحت في 5 Quizzes."
+          },
+          {
+            "kind": "title",
+            "text": "جبت 100% في Quiz."
+          },
+          {
+            "kind": "title",
+            "text": "سلّمت 3 واجبات."
+          },
+          {
+            "kind": "title",
+            "text": "حضرت 5 Sessions."
+          },
+          {
+            "kind": "title",
+            "text": "اتابع 7 أيام ورا بعض."
+          },
+          {
+            "kind": "title",
+            "text": "اتابع 30 يوم ورا بعض."
+          }
+        ]
+      },
+      "student:student-course": {
+        "dir": "rtl",
+        "lang": "ar",
+        "totalTextNodes": 155,
+        "arabicTextCount": 54,
+        "arabicSample": [
+          "الكورس",
+          "تقدمي",
+          "الشهادة",
+          "الواجبات",
+          "الإشعارات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "طالب",
+          "رجوع",
+          "البرمجة والذكاء الاصطناعي",
+          "كورس Programming & AI لطلاب الصف الثاني الثانوي.",
+          "اتخلصت",
+          "الحالي",
+          "متاح",
+          "مقفول",
+          "الجزء الأول",
+          "الأساسيات والمفاهيم المتعلقة بالـInformation Technology والـCybersecurity والـWeb Applications.",
+          "تكنولوجيا المعلومات والمجتمع",
+          "مقدمة عن تكنولوجيا المعلومات",
+          "إيه هي الـIT؟",
+          "دقيقة",
+          "المواطنة الرقمية",
+          "المجتمع والتكنولوجيا",
+          "تأثير التكنولوجيا على المجتمع",
+          "أخلاقيات الـIT"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 3,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          }
+        ]
+      },
+      "student:student-exam": {
+        "dir": "rtl",
+        "lang": "ar",
+        "totalTextNodes": 43,
+        "arabicTextCount": 19,
+        "arabicSample": [
+          "الكورس",
+          "تقدمي",
+          "الشهادة",
+          "الواجبات",
+          "الإشعارات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "طالب",
+          "رجوع للـDashboard",
+          "امتحان تجريبي بأسئلة عشوائية من الـQuestion Bank — مع مؤقت وتصحيص فوري",
+          "اختار عدد الأسئلة",
+          "أسئلة",
+          "حسب الصعوبة",
+          "سهل",
+          "متوسط",
+          "صعب",
+          "الأسئلة بتتجاب بشكل عشوائي من كل الـLessons. كل امتحان بيختلف عن اللي قبله. المؤقت بيبدأ أول ما تضغط، والنتيجة بتتحفظ تلقائيًا."
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 3,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          }
+        ]
+      },
+      "student:student-bookmarks": {
+        "dir": "rtl",
+        "lang": "ar",
+        "totalTextNodes": 34,
+        "arabicTextCount": 13,
+        "arabicSample": [
+          "الكورس",
+          "تقدمي",
+          "الشهادة",
+          "الواجبات",
+          "الإشعارات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "طالب",
+          "رجوع",
+          "الـLessons اللي حفظتها لمراجعة سريعة",
+          "مفيش Bookmarks لسه",
+          "افتح أي Lesson واضغط على علامة Bookmark عشان تحفظها هنا.",
+          "تصفح الكورس"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 3,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          }
+        ]
+      },
+      "student:student-scheduler": {
+        "dir": "rtl",
+        "lang": "ar",
+        "totalTextNodes": 72,
+        "arabicTextCount": 20,
+        "arabicSample": [
+          "الكورس",
+          "تقدمي",
+          "الشهادة",
+          "الواجبات",
+          "الإشعارات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "طالب",
+          "رجوع",
+          "خطط أيام دراستك وتابع التزامك",
+          "سبتمبر",
+          "الأحد",
+          "الإثنين",
+          "الثلاثاء",
+          "الأربعاء",
+          "الخميس",
+          "الجمعة",
+          "السبت",
+          "خلصت",
+          "مستنية"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 3,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          }
+        ]
+      },
+      "student:student-referral": {
+        "dir": "rtl",
+        "lang": "ar",
+        "totalTextNodes": 56,
+        "arabicTextCount": 26,
+        "arabicSample": [
+          "الكورس",
+          "تقدمي",
+          "الشهادة",
+          "الواجبات",
+          "الإشعارات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "طالب",
+          "رجوع",
+          "ادعي أصحابك واكسب 50 XP + كود خصم 10% لكل واحد يسجل بإحالتك",
+          "كود الإحالة بتاعك",
+          "نسخ",
+          "شارك اللينك",
+          "إجمالي الإحالات",
+          "خلصت",
+          "مستنية",
+          "XP المكسوب",
+          "الإحالات بتاعتك",
+          "كل اللي سجلوا بإحالتك",
+          "مفيش إحالات لسه",
+          "شارك كود الإحالة مع أصحابك، وأول ما حد يسجل هتلاقيه هنا.",
+          "إزاي بيشتغل؟",
+          "انسخ كود الإحالة أو شارك اللينك مع أصحابك",
+          "أول ما يسجلوا بحساب جديد، الإحالة تتحسب",
+          "تاخد 50 XP فورًا + كود خصم 10% لتجديد اشتراكك 🎁"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 3,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          }
+        ]
+      },
+      "student:student-progress": {
+        "dir": "rtl",
+        "lang": "ar",
+        "totalTextNodes": 49,
+        "arabicTextCount": 16,
+        "arabicSample": [
+          "الكورس",
+          "تقدمي",
+          "الشهادة",
+          "الواجبات",
+          "الإشعارات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "طالب",
+          "رجوع",
+          "اتخلص",
+          "من",
+          "حصة",
+          "اتخلصت",
+          "إجمالي"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 3,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          }
+        ]
+      },
+      "student:student-leaderboard": {
+        "dir": "rtl",
+        "lang": "ar",
+        "totalTextNodes": 59,
+        "arabicTextCount": 18,
+        "arabicSample": [
+          "الكورس",
+          "تقدمي",
+          "الشهادة",
+          "الواجبات",
+          "الإشعارات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "طالب",
+          "رجوع",
+          "أكتر الطلاب نشاطًا في الأكاديمية — ترتيبك الحالي: #",
+          "أنت —",
+          "متمكن",
+          "عايز تطلع فوق؟ 🔥",
+          "خلّص Lessons، حل Quizzes، وامشي في الـStreak بتاعك كل يوم عشان تجمع XP أكتر وتطلع في الـLeaderboard.",
+          "كمّل دراسة",
+          "حصلت على Badge جديدة: بطل Quizzes 🏆",
+          "حصلت على Badge جديدة: باديء Quizzes ✏️",
+          "حصلت على Badge جديدة: أول خطوة 🎯"
+        ],
+        "attrTotal": 13,
+        "arabicAttrCount": 3,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          }
+        ]
+      },
+      "student:student-achievements": {
+        "dir": "rtl",
+        "lang": "ar",
+        "totalTextNodes": 109,
+        "arabicTextCount": 47,
+        "arabicSample": [
+          "الكورس",
+          "تقدمي",
+          "الشهادة",
+          "الواجبات",
+          "الإشعارات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "طالب",
+          "رجوع",
+          "من",
+          "شارة مفتوحة (",
+          "متمكن",
+          "Badges المفتوحة (",
+          "أول خطوة",
+          "خلصت أول Lesson ليك في الكورس.",
+          "مفتوحة",
+          "باديء Quizzes",
+          "حليت أول Quiz ليك.",
+          "بطل Quizzes",
+          "نجحت في 5 Quizzes.",
+          "Badges المقفولة (",
+          "مستكشف الدروس",
+          "خلصت 5 Lessons.",
+          "مقفولة",
+          "الدرجة الكاملة"
+        ],
+        "attrTotal": 13,
+        "arabicAttrCount": 3,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          }
+        ]
+      },
+      "student:student-certificate": {
+        "dir": "rtl",
+        "lang": "ar",
+        "totalTextNodes": 41,
+        "arabicTextCount": 19,
+        "arabicSample": [
+          "الكورس",
+          "تقدمي",
+          "الشهادة",
+          "الواجبات",
+          "الإشعارات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "طالب",
+          "رجوع للـDashboard",
+          "لسه مش مؤهل للشهادة",
+          "لازم تخلص 80% على الأقل من Lessons الكورس عشان تقدر تحصل على شهادة الإتمام.",
+          "تقدمك الحالي",
+          "باقي",
+          "% للشهادة",
+          "كمّل الـLessons",
+          "حصلت على Badge جديدة: بطل Quizzes 🏆",
+          "حصلت على Badge جديدة: باديء Quizzes ✏️",
+          "حصلت على Badge جديدة: أول خطوة 🎯"
+        ],
+        "attrTotal": 13,
+        "arabicAttrCount": 3,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          }
+        ]
+      },
+      "student:student-homework": {
+        "dir": "rtl",
+        "lang": "ar",
+        "totalTextNodes": 45,
+        "arabicTextCount": 18,
+        "arabicSample": [
+          "الكورس",
+          "تقدمي",
+          "الشهادة",
+          "الواجبات",
+          "الإشعارات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "طالب",
+          "رجوع",
+          "الواجبات عليك",
+          "شوف كل واجباتك ومواعيدها وتقدر تفتح الـLesson بتاعتها.",
+          "تعبير عن الـLesson",
+          "إيه هي الـIT؟",
+          "الدرجة:",
+          "شغل ممتاز يا أحمد! التعبير واضح ومنظم. خليك على ده المستوى.",
+          "بعد 7 يوم",
+          "افتح"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 3,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          }
+        ]
+      },
+      "student:student-notifications": {
+        "dir": "rtl",
+        "lang": "ar",
+        "totalTextNodes": 37,
+        "arabicTextCount": 18,
+        "arabicSample": [
+          "الكورس",
+          "تقدمي",
+          "الشهادة",
+          "الواجبات",
+          "الإشعارات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "طالب",
+          "رجوع",
+          "علم الكل كمقروء",
+          "حصة لايف بكرة",
+          "لايف سشن بكرة الساعة 6:00 مساءً. متنساش تتواصل!",
+          "من 21 دقيقة",
+          "Lesson جديدة اتضاف",
+          "اتضافت Lesson جديدة في Part One — Information Technology and Society."
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 3,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          }
+        ]
+      },
+      "parent:parent-dashboard": {
+        "dir": "rtl",
+        "lang": "ar",
+        "totalTextNodes": 160,
+        "arabicTextCount": 67,
+        "arabicSample": [
+          "التقارير",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "ولي أمر",
+          "أهلاً يا",
+          "تابع مستوى ابنك في الـCourse خطوة بخطوة.",
+          "الإشعارات",
+          "ربط طالب",
+          "البرمجة والذكاء الاصطناعي",
+          "· كود الطالب: CM-SFZ6KR",
+          "اتمم",
+          "لسه في البداية 🌱",
+          "من",
+          "حصة",
+          "آخر 6 شهور",
+          "نجح",
+          "محتاج مراجعة",
+          "اتسلم:",
+          "مستني:",
+          "جاهز قريبًا",
+          "الامتحان الشهري هيتم إعلانه قريبًا، ونتيجته هتظهر هنا أول ما تطلع.",
+          "6 شهور",
+          "فاضل 120 يوم",
+          "شهر",
+          "· أعلى/أقل 3"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 3,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          }
+        ]
+      },
+      "parent:parent-report": {
+        "dir": "rtl",
+        "lang": "ar",
+        "totalTextNodes": 160,
+        "arabicTextCount": 68,
+        "arabicSample": [
+          "التقارير",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "ولي أمر",
+          "أهلاً يا",
+          "تابع مستوى ابنك في الـCourse خطوة بخطوة.",
+          "الإشعارات",
+          "ربط طالب",
+          "البرمجة والذكاء الاصطناعي",
+          "· كود الطالب: CM-SFZ6KR",
+          "اتمم",
+          "لسه في البداية 🌱",
+          "من",
+          "حصة",
+          "آخر 6 شهور",
+          "نجح",
+          "محتاج مراجعة",
+          "اتسلم:",
+          "مستني:",
+          "جاهز قريبًا",
+          "الامتحان الشهري هيتم إعلانه قريبًا، ونتيجته هتظهر هنا أول ما تطلع.",
+          "6 شهور",
+          "فاضل 120 يوم",
+          "شهر",
+          "· أعلى/أقل 3"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 3,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          }
+        ]
+      }
+    },
+    "en": {
+      "landing": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 231,
+        "arabicTextCount": 117,
+        "arabicSample": [
+          "عربي",
+          "منصة تعليمية للأبطال - Programming & AI",
+          "اتعلم",
+          "بطريقة مختلفة.",
+          "Live Classes، Practice، Quizzes، ومتابعة مستواك خطوة بخطوة. منصة متكاملة تأخدك من أول درس لحد ما تبقى جاهز للامتحان — وأهلك تقدر تتابعوا معاك.",
+          "طالب",
+          "تقييم",
+          "آخر Quiz",
+          "بكرة 6:00 م",
+          "Lesson جديدة",
+          "ليه CodeMind؟",
+          "اللي يخلّي CodeMind مختلفة",
+          "مش مجرد فيديوهات. دي تجربة تعليمية متكاملة معمولة بقلب وعقل.",
+          "Live Classes حقيقية",
+          "حصتين في الأسبوع، تفاعل مباشر مع الـTeacher، وتسجيلات متاحة بعد كل حصة.",
+          "Programming & AI من الصفر",
+          "منهج رسمي للثانوية العامة يبنيك خطوة بخطوة لحد ما توصل للـMachine Learning.",
+          "متابعة الأهل",
+          "Dashboard مخصص لكل أب/أم يعرف مستوى ابنه، حضوره، وواجباته بشكل دوري.",
+          "تتبع التقدم",
+          "شوف إنت فين في كل وحدة، تحل Quiz وتشوف نتيجتك فورًا، وتعرف نقاط قوتك وضعفك.",
+          "Groups صغيرة",
+          "مجموعات منظمة بـTeacher مختص عشان كل طالب ياخد حقه في المتابعة.",
+          "Notifications ذكية",
+          "تنبيهات قبل الحصص، عند إضافة واجب، أو لما تقرب مدة الاشتراك على الانتهاء."
+        ],
+        "attrTotal": 9,
+        "arabicAttrCount": 3,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "التبديل إلى العربية"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "landingScrolled": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 231,
+        "arabicTextCount": 117,
+        "arabicSample": [
+          "عربي",
+          "منصة تعليمية للأبطال - Programming & AI",
+          "اتعلم",
+          "بطريقة مختلفة.",
+          "Live Classes، Practice، Quizzes، ومتابعة مستواك خطوة بخطوة. منصة متكاملة تأخدك من أول درس لحد ما تبقى جاهز للامتحان — وأهلك تقدر تتابعوا معاك.",
+          "طالب",
+          "تقييم",
+          "آخر Quiz",
+          "بكرة 6:00 م",
+          "Lesson جديدة",
+          "ليه CodeMind؟",
+          "اللي يخلّي CodeMind مختلفة",
+          "مش مجرد فيديوهات. دي تجربة تعليمية متكاملة معمولة بقلب وعقل.",
+          "Live Classes حقيقية",
+          "حصتين في الأسبوع، تفاعل مباشر مع الـTeacher، وتسجيلات متاحة بعد كل حصة.",
+          "Programming & AI من الصفر",
+          "منهج رسمي للثانوية العامة يبنيك خطوة بخطوة لحد ما توصل للـMachine Learning.",
+          "متابعة الأهل",
+          "Dashboard مخصص لكل أب/أم يعرف مستوى ابنه، حضوره، وواجباته بشكل دوري.",
+          "تتبع التقدم",
+          "شوف إنت فين في كل وحدة، تحل Quiz وتشوف نتيجتك فورًا، وتعرف نقاط قوتك وضعفك.",
+          "Groups صغيرة",
+          "مجموعات منظمة بـTeacher مختص عشان كل طالب ياخد حقه في المتابعة.",
+          "Notifications ذكية",
+          "تنبيهات قبل الحصص، عند إضافة واجب، أو لما تقرب مدة الاشتراك على الانتهاء."
+        ],
+        "attrTotal": 9,
+        "arabicAttrCount": 3,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "التبديل إلى العربية"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "login": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 43,
+        "arabicTextCount": 16,
+        "arabicSample": [
+          "عربي",
+          "اتعلم Programming & AI",
+          "من مكان واحد.",
+          "Live Classes · Quizzes · Homework · PDFs · Reports · Parent Dashboard. كل اللي محتاجه عشان تنجح.",
+          "منهج Programming & AI كامل",
+          "تقارير شهرية ومتابعة الأهل",
+          "Quizzes أوتوماتيك التصحيح",
+          "منصة تعليمية متخصصة في Programming & AI لطلاب الثانوية العامة - الصف الثاني.",
+          "المنصة",
+          "تسجيل الدخول",
+          "إنشاء حساب",
+          "الأسعار",
+          "المنهج",
+          "تواصل معانا",
+          "اسأل الـTeacher",
+          ". كل الحقوق محفوظة."
+        ],
+        "attrTotal": 12,
+        "arabicAttrCount": 3,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "التبديل إلى العربية"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "register": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 64,
+        "arabicTextCount": 20,
+        "arabicSample": [
+          "عربي",
+          "طالب",
+          "ولي أمر",
+          "معلم",
+          "اختار نوع المدرسة",
+          "اتعلم Programming & AI",
+          "من مكان واحد.",
+          "Live Classes · Quizzes · Homework · PDFs · Reports · Parent Dashboard. كل اللي محتاجه عشان تنجح.",
+          "منهج Programming & AI كامل",
+          "تقارير شهرية ومتابعة الأهل",
+          "Quizzes أوتوماتيك التصحيح",
+          "منصة تعليمية متخصصة في Programming & AI لطلاب الثانوية العامة - الصف الثاني.",
+          "المنصة",
+          "تسجيل الدخول",
+          "إنشاء حساب",
+          "الأسعار",
+          "المنهج",
+          "تواصل معانا",
+          "اسأل الـTeacher",
+          ". كل الحقوق محفوظة."
+        ],
+        "attrTotal": 17,
+        "arabicAttrCount": 6,
+        "arabicAttrSample": [
+          {
+            "kind": "placeholder",
+            "text": "مثال: أحمد محمد حسن"
+          },
+          {
+            "kind": "placeholder",
+            "text": "14 رقم"
+          },
+          {
+            "kind": "placeholder",
+            "text": "اسم المدرسة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "التبديل إلى العربية"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "admin:admin-overview": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 173,
+        "arabicTextCount": 52,
+        "arabicSample": [
+          "الطلاب",
+          "المعلمون",
+          "المجموعات",
+          "الكورسات",
+          "المدفوعات",
+          "الاشتراكات",
+          "أكواد الخصم",
+          "الإشعارات",
+          "الإعدادات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "عربي",
+          "Revenue (هذا الشهر)",
+          "آخر 6 شهور",
+          "حسب الكورس",
+          "تحليل تفصيلي للإيرادات والمدفوعات",
+          "مقارنة بالشهر اللي فات —",
+          "دفعة مستنية المراجعة",
+          "آخر 6 شهور — بالـBar Chart",
+          "أبريل",
+          "مايو",
+          "يونيو",
+          "يوليو",
+          "أغسطس",
+          "سبتمبر"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 5,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "التبديل إلى العربية"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "admin:admin-students": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 46,
+        "arabicTextCount": 24,
+        "arabicSample": [
+          "الطلاب",
+          "المعلمون",
+          "المجموعات",
+          "الكورسات",
+          "المدفوعات",
+          "الاشتراكات",
+          "أكواد الخصم",
+          "الإشعارات",
+          "الإعدادات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "عربي",
+          "إدارة كل الطلاب المسجلين في الأكاديمية",
+          "الكل",
+          "الاسم",
+          "كود الطالب",
+          "الإيميل",
+          "الصف",
+          "المجموعة",
+          "الاشتراك",
+          "الحالة",
+          "6 شهور"
+        ],
+        "attrTotal": 11,
+        "arabicAttrCount": 6,
+        "arabicAttrSample": [
+          {
+            "kind": "placeholder",
+            "text": "بحث بالاسم أو الإيميل..."
+          },
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "التبديل إلى العربية"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "admin:admin-teachers": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 41,
+        "arabicTextCount": 19,
+        "arabicSample": [
+          "الطلاب",
+          "المعلمون",
+          "المجموعات",
+          "الكورسات",
+          "المدفوعات",
+          "الاشتراكات",
+          "أكواد الخصم",
+          "الإشعارات",
+          "الإعدادات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "عربي",
+          "إدارة فريق المعلمين والمجموعات بتاعتهم",
+          "الاسم",
+          "الإيميل",
+          "الحالة"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 5,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "التبديل إلى العربية"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "admin:admin-groups": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 38,
+        "arabicTextCount": 18,
+        "arabicSample": [
+          "الطلاب",
+          "المعلمون",
+          "المجموعات",
+          "الكورسات",
+          "المدفوعات",
+          "الاشتراكات",
+          "أكواد الخصم",
+          "الإشعارات",
+          "الإعدادات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "عربي",
+          "كل المجموعات الدراسية",
+          "البرمجة والذكاء الاصطناعي",
+          "السبت و الثلاثاء — 6:00 م"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 5,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "التبديل إلى العربية"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "admin:admin-courses": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 41,
+        "arabicTextCount": 19,
+        "arabicSample": [
+          "الطلاب",
+          "المعلمون",
+          "المجموعات",
+          "الكورسات",
+          "المدفوعات",
+          "الاشتراكات",
+          "أكواد الخصم",
+          "الإشعارات",
+          "الإعدادات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "عربي",
+          "استعراض الـCurriculum الشامل",
+          "استعادة المنهج",
+          "البرمجة والذكاء الاصطناعي",
+          "كورس Programming & AI لطلاب الصف الثاني الثانوي.",
+          "فتح الـCurriculum"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 5,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "التبديل إلى العربية"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "admin:admin-question-bank": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 81,
+        "arabicTextCount": 24,
+        "arabicSample": [
+          "الطلاب",
+          "المعلمون",
+          "المجموعات",
+          "الكورسات",
+          "المدفوعات",
+          "الاشتراكات",
+          "أكواد الخصم",
+          "الإشعارات",
+          "الإعدادات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "عربي",
+          "كل الأسئلة المتاحة في النظام",
+          "كل الصعوبات",
+          "كل الأنواع",
+          "إيه من دول يعتبر تهديد للأمن السيبراني؟",
+          "اختبار الـLesson الأولى",
+          "· إيه هي الـIT؟",
+          "المواطنة الرقمية تعني الاستخدام المسؤول للتكنولوجيا.",
+          "إيه معنى IT؟"
+        ],
+        "attrTotal": 11,
+        "arabicAttrCount": 6,
+        "arabicAttrSample": [
+          {
+            "kind": "placeholder",
+            "text": "بحث في نص السؤال..."
+          },
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "التبديل إلى العربية"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "admin:admin-payments": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 33,
+        "arabicTextCount": 18,
+        "arabicSample": [
+          "الطلاب",
+          "المعلمون",
+          "المجموعات",
+          "الكورسات",
+          "المدفوعات",
+          "الاشتراكات",
+          "أكواد الخصم",
+          "الإشعارات",
+          "الإعدادات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "عربي",
+          "مراجعة وتأكيد دفعات الطلاب",
+          "استيراد xlsx",
+          "كل الحالات",
+          "مفيش مدفوعات لسه."
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 5,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "التبديل إلى العربية"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "admin:admin-subscriptions": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 44,
+        "arabicTextCount": 23,
+        "arabicSample": [
+          "الطلاب",
+          "المعلمون",
+          "المجموعات",
+          "الكورسات",
+          "المدفوعات",
+          "الاشتراكات",
+          "أكواد الخصم",
+          "الإشعارات",
+          "الإعدادات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "عربي",
+          "كل اشتراكات الطلاب",
+          "كل الحالات",
+          "الطالب",
+          "الباقة",
+          "السعر",
+          "البداية",
+          "النهاية",
+          "الحالة",
+          "6 شهور"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 5,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "التبديل إلى العربية"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "admin:admin-coupons": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 32,
+        "arabicTextCount": 18,
+        "arabicSample": [
+          "الطلاب",
+          "المعلمون",
+          "المجموعات",
+          "الكورسات",
+          "المدفوعات",
+          "الاشتراكات",
+          "أكواد الخصم",
+          "الإشعارات",
+          "الإعدادات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "عربي",
+          "إدارة أكواد الخصم والـCoupons",
+          "كود جديد",
+          "مفيش أكواد خصم لسه",
+          "اضغط \"كود جديد\" عشان تعمل أول كود"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 5,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "التبديل إلى العربية"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "admin:admin-notifications": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 118,
+        "arabicTextCount": 39,
+        "arabicSample": [
+          "الطلاب",
+          "المعلمون",
+          "المجموعات",
+          "الكورسات",
+          "المدفوعات",
+          "الاشتراكات",
+          "أكواد الخصم",
+          "الإشعارات",
+          "الإعدادات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "عربي",
+          "إرسال إشعارات للمستخدمين ومتابعة الأحدث",
+          "تنبيه: غياب ابنك",
+          "ابنك غاب في آخر حصة. تواصل معاه عشان يعوض الدرس.",
+          "التقرير الشهري جاهز",
+          "تقرير شهر أحمد الشهري جاهز دلوقتي، تقدر تتابع مستواه.",
+          "حصة لايف بكرة",
+          "لايف سشن بكرة الساعة 6:00 مساءً. متنساش تتواصل!",
+          "Lesson جديدة اتضاف",
+          "اتضافت Lesson جديدة في Part One — Information Technology and Society.",
+          "اختر الجمهور واكتب الرسالة",
+          "الجمهور",
+          "كل المستخدمين",
+          "النوع"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 5,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "التبديل إلى العربية"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "admin:admin-settings": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 47,
+        "arabicTextCount": 20,
+        "arabicSample": [
+          "الطلاب",
+          "المعلمون",
+          "المجموعات",
+          "الكورسات",
+          "المدفوعات",
+          "الاشتراكات",
+          "أكواد الخصم",
+          "الإشعارات",
+          "الإعدادات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "عربي",
+          "إدارة بيانات الـBrand والأسعار والإعدادات العامة",
+          "بيانات الأكاديمية والتواصل",
+          "اسم الأكاديمية",
+          "أسعار الباقات بالـEGP",
+          "ملاحظة: تغيير الأسعار بيأثر على الباقات الجديدة بس، اللي موجود بالفعل مش بيتغيّر.",
+          "حفظ الإعدادات"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 5,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "التبديل إلى العربية"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "teacher:teacher-dashboard": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 114,
+        "arabicTextCount": 46,
+        "arabicSample": [
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "عربي",
+          "الجمعة، ٤ سبتمبر ٢٠٢٦",
+          "أهلاً يا",
+          "Session الأسبوع ده",
+          "Quiz جديد",
+          "المجموعات",
+          "Sessions الأسبوع",
+          "في الـ7 أيام الجاية",
+          "Homework منتظر",
+          "محتاج تصحيح",
+          "متوسط المجموعات",
+          "المجموعات بتاعتي",
+          "نظرة سريعة على كل Group",
+          "البرمجة والذكاء الاصطناعي",
+          "السبت و الثلاثاء — 6:00 م",
+          "السعة",
+          "الـSession الجاية",
+          "مقدمة عن الـIT — حصة لايف",
+          "الأحد، ٦ سبتمبر",
+          "٠٤:٥٩ م",
+          "Sessions الأسبوع الجاي",
+          "٦",
+          "انضم"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 5,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "التبديل إلى العربية"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "teacher:teacher-attendance": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 60,
+        "arabicTextCount": 19,
+        "arabicSample": [
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "عربي",
+          "تسجيل Attendance",
+          "اختار Group و Session وسجّل حضور الطلاب",
+          "الثلاثاء، ١ سبتمبر",
+          "ترحيب وتعريف بالكورس",
+          "حاضر",
+          "غايب",
+          "متأخر",
+          "بعذر",
+          "اتسجّل",
+          "من",
+          "طالب · السجل بيتحدّت تلقائيًا",
+          "احفظ الـAttendance"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 5,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "التبديل إلى العربية"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "teacher:teacher-quizzes": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 52,
+        "arabicTextCount": 19,
+        "arabicSample": [
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "عربي",
+          "الـQuizzes",
+          "اعمل Quiz جديد أو راجع نتائج الطلاب",
+          "اعمل Quiz جديد",
+          "تصفية:",
+          "كل المجموعات",
+          "اختبار الـLesson الأولى",
+          "إيه هي الـIT؟",
+          "· البرمجة والذكاء الاصطناعي",
+          "محاولة",
+          "الأسئلة",
+          "المجموع",
+          "درجة",
+          "المتوسط",
+          "اختبار سريع على أساسيات الـIT.",
+          "نجح",
+          "تفاصيل"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 5,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "التبديل إلى العربية"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "teacher:teacher-homework": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 45,
+        "arabicTextCount": 17,
+        "arabicSample": [
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "عربي",
+          "الـHomework",
+          "راجع submissions الطلاب و صححها",
+          "تصفية:",
+          "كل المجموعات",
+          "تعبير عن الـLesson",
+          "إيه هي الـIT؟",
+          "· البرمجة والذكاء الاصطناعي",
+          "الجمعة، ١١ سبتمبر",
+          "درجات",
+          "منتظر",
+          "اتسلم",
+          "اتصحح",
+          "اكتب فقرة قصيرة عن أهمية الـIT في حياتك اليومية (100 كلمة على الأقل).",
+          "اعرض الطلاب"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 5,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "التبديل إلى العربية"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "teacher:teacher-templates": {
+        "error": "locator.click: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('aside nav button[data-view=\"teacher-templates\"]').first()\n"
+      },
+      "teacher:teacher-analytics": {
+        "error": "locator.click: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('aside nav button[data-view=\"teacher-analytics\"]').first()\n"
+      },
+      "student:student-dashboard": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 164,
+        "arabicTextCount": 80,
+        "arabicSample": [
+          "الكورس",
+          "تقدمي",
+          "الشهادة",
+          "الواجبات",
+          "الإشعارات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "طالب",
+          "عربي",
+          "أهلاً يا",
+          "الجمعة، ٤ سبتمبر",
+          "كود الطالب:",
+          "نسخ",
+          "6 شهور",
+          "كمل اللي سيبته",
+          "كل الكورس",
+          "الجزء الأول",
+          "تكنولوجيا المعلومات والمجتمع",
+          "مقدمة عن تكنولوجيا المعلومات",
+          "إيه هي الـIT؟",
+          "اتخلصت ✅",
+          "يكمل",
+          "من",
+          "اتخلص",
+          "الحصة الجاية"
+        ],
+        "attrTotal": 22,
+        "arabicAttrCount": 14,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "التبديل إلى العربية"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          },
+          {
+            "kind": "title",
+            "text": "خلصت أول Lesson ليك في الكورس."
+          },
+          {
+            "kind": "title",
+            "text": "خلصت 5 Lessons."
+          },
+          {
+            "kind": "title",
+            "text": "حليت أول Quiz ليك."
+          },
+          {
+            "kind": "title",
+            "text": "نجحت في 5 Quizzes."
+          },
+          {
+            "kind": "title",
+            "text": "جبت 100% في Quiz."
+          },
+          {
+            "kind": "title",
+            "text": "سلّمت 3 واجبات."
+          },
+          {
+            "kind": "title",
+            "text": "حضرت 5 Sessions."
+          },
+          {
+            "kind": "title",
+            "text": "اتابع 7 أيام ورا بعض."
+          },
+          {
+            "kind": "title",
+            "text": "اتابع 30 يوم ورا بعض."
+          }
+        ]
+      },
+      "student:student-course": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 155,
+        "arabicTextCount": 55,
+        "arabicSample": [
+          "الكورس",
+          "تقدمي",
+          "الشهادة",
+          "الواجبات",
+          "الإشعارات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "طالب",
+          "عربي",
+          "رجوع",
+          "البرمجة والذكاء الاصطناعي",
+          "كورس Programming & AI لطلاب الصف الثاني الثانوي.",
+          "اتخلصت",
+          "الحالي",
+          "متاح",
+          "مقفول",
+          "الجزء الأول",
+          "الأساسيات والمفاهيم المتعلقة بالـInformation Technology والـCybersecurity والـWeb Applications.",
+          "تكنولوجيا المعلومات والمجتمع",
+          "مقدمة عن تكنولوجيا المعلومات",
+          "إيه هي الـIT؟",
+          "دقيقة",
+          "المواطنة الرقمية",
+          "المجتمع والتكنولوجيا",
+          "تأثير التكنولوجيا على المجتمع"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 5,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "التبديل إلى العربية"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "student:student-exam": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 43,
+        "arabicTextCount": 20,
+        "arabicSample": [
+          "الكورس",
+          "تقدمي",
+          "الشهادة",
+          "الواجبات",
+          "الإشعارات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "طالب",
+          "عربي",
+          "رجوع للـDashboard",
+          "امتحان تجريبي بأسئلة عشوائية من الـQuestion Bank — مع مؤقت وتصحيص فوري",
+          "اختار عدد الأسئلة",
+          "أسئلة",
+          "حسب الصعوبة",
+          "سهل",
+          "متوسط",
+          "صعب",
+          "الأسئلة بتتجاب بشكل عشوائي من كل الـLessons. كل امتحان بيختلف عن اللي قبله. المؤقت بيبدأ أول ما تضغط، والنتيجة بتتحفظ تلقائيًا."
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 5,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "التبديل إلى العربية"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "student:student-bookmarks": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 34,
+        "arabicTextCount": 14,
+        "arabicSample": [
+          "الكورس",
+          "تقدمي",
+          "الشهادة",
+          "الواجبات",
+          "الإشعارات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "طالب",
+          "عربي",
+          "رجوع",
+          "الـLessons اللي حفظتها لمراجعة سريعة",
+          "مفيش Bookmarks لسه",
+          "افتح أي Lesson واضغط على علامة Bookmark عشان تحفظها هنا.",
+          "تصفح الكورس"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 5,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "التبديل إلى العربية"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "student:student-scheduler": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 72,
+        "arabicTextCount": 21,
+        "arabicSample": [
+          "الكورس",
+          "تقدمي",
+          "الشهادة",
+          "الواجبات",
+          "الإشعارات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "طالب",
+          "عربي",
+          "رجوع",
+          "خطط أيام دراستك وتابع التزامك",
+          "سبتمبر",
+          "الأحد",
+          "الإثنين",
+          "الثلاثاء",
+          "الأربعاء",
+          "الخميس",
+          "الجمعة",
+          "السبت",
+          "خلصت",
+          "مستنية"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 5,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "التبديل إلى العربية"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "student:student-referral": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 56,
+        "arabicTextCount": 27,
+        "arabicSample": [
+          "الكورس",
+          "تقدمي",
+          "الشهادة",
+          "الواجبات",
+          "الإشعارات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "طالب",
+          "عربي",
+          "رجوع",
+          "ادعي أصحابك واكسب 50 XP + كود خصم 10% لكل واحد يسجل بإحالتك",
+          "كود الإحالة بتاعك",
+          "نسخ",
+          "شارك اللينك",
+          "إجمالي الإحالات",
+          "خلصت",
+          "مستنية",
+          "XP المكسوب",
+          "الإحالات بتاعتك",
+          "كل اللي سجلوا بإحالتك",
+          "مفيش إحالات لسه",
+          "شارك كود الإحالة مع أصحابك، وأول ما حد يسجل هتلاقيه هنا.",
+          "إزاي بيشتغل؟",
+          "انسخ كود الإحالة أو شارك اللينك مع أصحابك",
+          "أول ما يسجلوا بحساب جديد، الإحالة تتحسب"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 5,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "التبديل إلى العربية"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "student:student-progress": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 49,
+        "arabicTextCount": 17,
+        "arabicSample": [
+          "الكورس",
+          "تقدمي",
+          "الشهادة",
+          "الواجبات",
+          "الإشعارات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "طالب",
+          "عربي",
+          "رجوع",
+          "اتخلص",
+          "من",
+          "حصة",
+          "اتخلصت",
+          "إجمالي"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 5,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "التبديل إلى العربية"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "student:student-leaderboard": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 59,
+        "arabicTextCount": 19,
+        "arabicSample": [
+          "الكورس",
+          "تقدمي",
+          "الشهادة",
+          "الواجبات",
+          "الإشعارات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "طالب",
+          "عربي",
+          "رجوع",
+          "أكتر الطلاب نشاطًا في الأكاديمية — ترتيبك الحالي: #",
+          "أنت —",
+          "متمكن",
+          "عايز تطلع فوق؟ 🔥",
+          "خلّص Lessons، حل Quizzes، وامشي في الـStreak بتاعك كل يوم عشان تجمع XP أكتر وتطلع في الـLeaderboard.",
+          "كمّل دراسة",
+          "حصلت على Badge جديدة: بطل Quizzes 🏆",
+          "حصلت على Badge جديدة: باديء Quizzes ✏️",
+          "حصلت على Badge جديدة: أول خطوة 🎯"
+        ],
+        "attrTotal": 13,
+        "arabicAttrCount": 5,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "التبديل إلى العربية"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "student:student-achievements": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 109,
+        "arabicTextCount": 48,
+        "arabicSample": [
+          "الكورس",
+          "تقدمي",
+          "الشهادة",
+          "الواجبات",
+          "الإشعارات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "طالب",
+          "عربي",
+          "رجوع",
+          "من",
+          "شارة مفتوحة (",
+          "متمكن",
+          "Badges المفتوحة (",
+          "أول خطوة",
+          "خلصت أول Lesson ليك في الكورس.",
+          "مفتوحة",
+          "باديء Quizzes",
+          "حليت أول Quiz ليك.",
+          "بطل Quizzes",
+          "نجحت في 5 Quizzes.",
+          "Badges المقفولة (",
+          "مستكشف الدروس",
+          "خلصت 5 Lessons.",
+          "مقفولة"
+        ],
+        "attrTotal": 13,
+        "arabicAttrCount": 5,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "التبديل إلى العربية"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "student:student-certificate": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 41,
+        "arabicTextCount": 20,
+        "arabicSample": [
+          "الكورس",
+          "تقدمي",
+          "الشهادة",
+          "الواجبات",
+          "الإشعارات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "طالب",
+          "عربي",
+          "رجوع للـDashboard",
+          "لسه مش مؤهل للشهادة",
+          "لازم تخلص 80% على الأقل من Lessons الكورس عشان تقدر تحصل على شهادة الإتمام.",
+          "تقدمك الحالي",
+          "باقي",
+          "% للشهادة",
+          "كمّل الـLessons",
+          "حصلت على Badge جديدة: بطل Quizzes 🏆",
+          "حصلت على Badge جديدة: باديء Quizzes ✏️",
+          "حصلت على Badge جديدة: أول خطوة 🎯"
+        ],
+        "attrTotal": 13,
+        "arabicAttrCount": 5,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "التبديل إلى العربية"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "student:student-homework": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 45,
+        "arabicTextCount": 19,
+        "arabicSample": [
+          "الكورس",
+          "تقدمي",
+          "الشهادة",
+          "الواجبات",
+          "الإشعارات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "طالب",
+          "عربي",
+          "رجوع",
+          "الواجبات عليك",
+          "شوف كل واجباتك ومواعيدها وتقدر تفتح الـLesson بتاعتها.",
+          "تعبير عن الـLesson",
+          "إيه هي الـIT؟",
+          "الدرجة:",
+          "شغل ممتاز يا أحمد! التعبير واضح ومنظم. خليك على ده المستوى.",
+          "بعد 7 يوم",
+          "افتح"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 5,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "التبديل إلى العربية"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "student:student-notifications": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 37,
+        "arabicTextCount": 19,
+        "arabicSample": [
+          "الكورس",
+          "تقدمي",
+          "الشهادة",
+          "الواجبات",
+          "الإشعارات",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "طالب",
+          "عربي",
+          "رجوع",
+          "علم الكل كمقروء",
+          "حصة لايف بكرة",
+          "لايف سشن بكرة الساعة 6:00 مساءً. متنساش تتواصل!",
+          "من 24 دقيقة",
+          "Lesson جديدة اتضاف",
+          "اتضافت Lesson جديدة في Part One — Information Technology and Society."
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 5,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "التبديل إلى العربية"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "parent:parent-dashboard": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 160,
+        "arabicTextCount": 68,
+        "arabicSample": [
+          "التقارير",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "ولي أمر",
+          "عربي",
+          "أهلاً يا",
+          "تابع مستوى ابنك في الـCourse خطوة بخطوة.",
+          "الإشعارات",
+          "ربط طالب",
+          "البرمجة والذكاء الاصطناعي",
+          "· كود الطالب: CM-SFZ6KR",
+          "اتمم",
+          "لسه في البداية 🌱",
+          "من",
+          "حصة",
+          "آخر 6 شهور",
+          "نجح",
+          "محتاج مراجعة",
+          "اتسلم:",
+          "مستني:",
+          "جاهز قريبًا",
+          "الامتحان الشهري هيتم إعلانه قريبًا، ونتيجته هتظهر هنا أول ما تطلع.",
+          "6 شهور",
+          "فاضل 120 يوم",
+          "شهر"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 5,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "التبديل إلى العربية"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "parent:parent-report": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 160,
+        "arabicTextCount": 69,
+        "arabicSample": [
+          "التقارير",
+          "محتاج مساعدة؟",
+          "تواصل معانا على WhatsApp.",
+          "ولي أمر",
+          "عربي",
+          "أهلاً يا",
+          "تابع مستوى ابنك في الـCourse خطوة بخطوة.",
+          "الإشعارات",
+          "ربط طالب",
+          "البرمجة والذكاء الاصطناعي",
+          "· كود الطالب: CM-SFZ6KR",
+          "اتمم",
+          "لسه في البداية 🌱",
+          "من",
+          "حصة",
+          "آخر 6 شهور",
+          "نجح",
+          "محتاج مراجعة",
+          "اتسلم:",
+          "مستني:",
+          "جاهز قريبًا",
+          "الامتحان الشهري هيتم إعلانه قريبًا، ونتيجته هتظهر هنا أول ما تطلع.",
+          "6 شهور",
+          "فاضل 120 يوم",
+          "شهر"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 5,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "فتح القائمة"
+          },
+          {
+            "kind": "aria-label",
+            "text": "التبديل إلى العربية"
+          },
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "aria-label",
+            "text": "الإشعارات"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      }
+    }
+  },
+  "console": {
+    "ar": [
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+      }
+    ],
+    "en": [
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+      }
+    ]
+  }
+}

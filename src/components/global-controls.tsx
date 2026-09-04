@@ -4,7 +4,7 @@ import * as React from "react";
 import { useTheme } from "next-themes";
 import { Moon, Sun, Languages } from "lucide-react";
 import { useApp } from "@/lib/store";
-import { applyLocale, type Locale } from "@/lib/i18n";
+import { applyLocale, type Locale , useT, pickAuto } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 /**
@@ -31,6 +31,7 @@ function useMounted() {
 }
 
 export function ThemeToggleButton() {
+  const t = useT();
   const { theme, setTheme, resolvedTheme } = useTheme();
   const storeTheme = useApp((s) => s.theme);
   const toggleStore = useApp((s) => s.toggleTheme);
@@ -62,7 +63,7 @@ export function ThemeToggleButton() {
   return (
     <button
       onClick={onClick}
-      aria-label="تبديل الوضع / Toggle theme"
+      aria-label={t("app.007")}
       title={isDark ? "Light mode" : "Dark mode"}
       className="p-2 rounded-md hover:bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
     >
@@ -72,6 +73,7 @@ export function ThemeToggleButton() {
 }
 
 export function LanguageToggle() {
+  const t = useT();
   const locale = useApp((s) => s.locale);
   const setLocale = useApp((s) => s.setLocale);
   const mounted = useMounted();
@@ -92,7 +94,7 @@ export function LanguageToggle() {
   if (!mounted) {
     return (
       <button
-        aria-label="Language / اللغة"
+        aria-label={t("app.008")}
         className="p-2 rounded-md hover:bg-muted transition-colors"
       >
         <Languages className="w-4 h-4" />
@@ -107,12 +109,12 @@ export function LanguageToggle() {
         setLocale(next);
         applyLocale(next);
       }}
-      aria-label={locale === "ar" ? "Switch to English" : "التبديل إلى العربية"}
-      title={locale === "ar" ? "English" : "العربية"}
+      aria-label={locale === "ar" ? "Switch to English" : t("app.009")}
+      title={locale === "ar" ? "English" : t("app.010")}
       className="h-8 px-2.5 rounded-md hover:bg-muted transition-colors flex items-center gap-1.5 text-xs font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
     >
       <Languages className="w-4 h-4" />
-      <span className="hidden sm:inline">{locale === "ar" ? "EN" : "عربي"}</span>
+      <span className="hidden sm:inline">{locale === "ar" ? "EN" : t("app.011")}</span>
     </button>
   );
 }

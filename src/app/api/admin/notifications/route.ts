@@ -1,3 +1,4 @@
+import { getServerT } from "@/lib/i18n-server";
 // POST /api/admin/notifications — send notification to a user, a group's students, or everyone
 // GET /api/admin/notifications — recent notifications (admin view)
 import { NextRequest } from "next/server";
@@ -36,6 +37,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const tApi = await getServerT();
   const { user, error } = await requireRole("ADMIN");
   if (error) return error;
   if (!user) return err("Unauthorized", 401);
@@ -46,7 +48,7 @@ export async function POST(req: NextRequest) {
   const type = (VALID_TYPES.includes(body.type) ? body.type : "ANNOUNCEMENT") as NotificationType;
   const link = body.link ? String(body.link) : null;
 
-  if (!title || !message) return err("العنوان والرسالة مطلوبين", 400);
+  if (!title || !message) return err(tApi("api.023"), 400);
 
   const target = body.target || "all";
   const userIds: string[] = [];
@@ -76,7 +78,7 @@ export async function POST(req: NextRequest) {
     userIds.push(...users.map((u) => u.id));
   }
 
-  if (userIds.length === 0) return err("مفيش مستخدمين للإرسال ليهم", 400);
+  if (userIds.length === 0) return err(tApi("api.024"), 400);
 
   await db.notification.createMany({
     data: userIds.map((uid) => ({

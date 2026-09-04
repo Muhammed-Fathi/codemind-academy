@@ -1,4 +1,5 @@
 "use client";
+import { useT, translate , pickAuto } from "@/lib/i18n";
 
 // ============================================================
 // CodeMind Academy — Teacher Dashboard (Task 4)
@@ -104,42 +105,47 @@ import {
 // ============================================================
 // Date helpers
 // ============================================================
-const arDateFmt = new Intl.DateTimeFormat("ar-EG", {
-  weekday: "long",
-  day: "numeric",
-  month: "long",
-  year: "numeric",
-});
-const arDateShortFmt = new Intl.DateTimeFormat("ar-EG", {
-  weekday: "short",
-  day: "numeric",
-  month: "short",
-});
-const arTimeFmt = new Intl.DateTimeFormat("ar-EG", {
-  hour: "2-digit",
-  minute: "2-digit",
-});
+const curLocale = () => (useApp.getState().locale === "en" ? "en" : "ar");
+const dtLocale = () => (curLocale() === "en" ? "en-GB" : "ar-EG");
+const arDateFmt = () =>
+  new Intl.DateTimeFormat(dtLocale(), {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+const arDateShortFmt = () =>
+  new Intl.DateTimeFormat(dtLocale(), {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  });
+const arTimeFmt = () =>
+  new Intl.DateTimeFormat(dtLocale(), {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 
 function fmtDate(d: string | Date) {
-  return arDateFmt.format(new Date(d));
+  return arDateFmt().format(new Date(d));
 }
 function fmtDateShort(d: string | Date) {
-  return arDateShortFmt.format(new Date(d));
+  return arDateShortFmt().format(new Date(d));
 }
 function fmtTime(d: string | Date) {
-  return arTimeFmt.format(new Date(d));
+  return arTimeFmt().format(new Date(d));
 }
 function timeAgo(d: string | Date) {
   const t = new Date(d).getTime();
   const diff = Date.now() - t;
   const m = Math.floor(diff / 60000);
-  if (m < 1) return "دلوقتي";
-  if (m < 60) return `من ${m} دقيقة`;
+  if (m < 1) return translate(curLocale(), "teacher.001");
+  if (m < 60) return translate(curLocale(), "teacher.002");
   const h = Math.floor(m / 60);
-  if (h < 24) return `من ${h} ساعة`;
+  if (h < 24) return translate(curLocale(), "teacher.003");
   const days = Math.floor(h / 24);
-  if (days < 7) return `من ${days} يوم`;
-  return arDateShortFmt.format(new Date(d));
+  if (days < 7) return translate(curLocale(), "teacher.004");
+  return arDateShortFmt().format(new Date(d));
 }
 
 // ============================================================
@@ -478,6 +484,7 @@ function SectionHeader({
 }
 
 function ErrorState({ onRetry }: { onRetry?: () => void }) {
+  const tr = useT();
   return (
     <Card className="p-8 border-destructive/30">
       <div className="flex flex-col items-center text-center gap-3">
@@ -485,13 +492,11 @@ function ErrorState({ onRetry }: { onRetry?: () => void }) {
           <AlertTriangle className="w-6 h-6" />
         </div>
         <p className="text-sm font-medium">
-          حصلت مشكلة وإحنا بنجيب البيانات. حاول تاني.
-        </p>
+          {tr("teacher.005")}</p>
         {onRetry && (
           <Button size="sm" variant="outline" onClick={onRetry}>
-            <RefreshCw className="w-3.5 h-3.5 ml-1.5" />
-            إعادة المحاولة
-          </Button>
+            <RefreshCw className="w-3.5 h-3.5 ms-1.5" />
+            {tr("teacher.006")}</Button>
         )}
       </div>
     </Card>
@@ -522,6 +527,7 @@ function EmptyState({
 // OVERVIEW TAB
 // ============================================================
 function OverviewView() {
+  const tr = useT();
   const setView = useApp((s) => s.setView);
   const { data, isLoading, isError, refetch } = useQuery<DashboardPayload>({
     queryKey: ["teacher-dashboard"],
@@ -553,23 +559,22 @@ function OverviewView() {
         animate={{ opacity: 1, y: 0 }}
         className="relative overflow-hidden rounded-2xl p-6 bg-mesh glass-strong"
       >
-        <div className="absolute -top-12 -left-12 w-48 h-48 rounded-full bg-primary/10 blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-12 -right-12 w-48 h-48 rounded-full bg-amber-400/10 blur-3xl pointer-events-none" />
+        <div className="absolute -top-12 -start-12 w-48 h-48 rounded-full bg-primary/10 blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-12 -end-12 w-48 h-48 rounded-full bg-amber-400/10 blur-3xl pointer-events-none" />
         <div className="relative flex items-start justify-between gap-4 flex-wrap">
           <div className="space-y-1">
             <div className="text-xs text-muted-foreground">
-              {arDateFmt.format(new Date())} · {brand.academicYear}
+              {arDateFmt().format(new Date())} · {brand.academicYear}
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-              أهلاً يا <span className="text-gradient">{firstName}</span> 👋
+              {tr("teacher.007")}<span className="text-gradient">{firstName}</span> 👋
             </h1>
             <p className="text-sm text-muted-foreground">
               {data.teacher.specialty
                 ? `${data.teacher.specialty} · `
                 : ""}
               {data.groups.length} Group · {data.upcomingSessions.length}{" "}
-              Session الأسبوع ده
-            </p>
+              {tr("teacher.008")}</p>
           </div>
           <div className="flex items-center gap-2">
             <Button
@@ -577,16 +582,15 @@ function OverviewView() {
               variant="outline"
               onClick={() => setView("teacher-attendance")}
             >
-              <CalendarDays className="w-4 h-4 ml-1.5" />
+              <CalendarDays className="w-4 h-4 ms-1.5" />
               Attendance
             </Button>
             <Button
               size="sm"
               onClick={() => setView("teacher-quizzes")}
             >
-              <Plus className="w-4 h-4 ml-1.5" />
-              Quiz جديد
-            </Button>
+              <Plus className="w-4 h-4 ms-1.5" />
+              {tr("teacher.009")}</Button>
           </div>
         </div>
       </motion.div>
@@ -595,7 +599,7 @@ function OverviewView() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <StatCard
           icon={Users}
-          label="المجموعات"
+          label={tr("teacher.010")}
           value={String(data.groups.length)}
           accent="emerald"
           hint={`${data.groups.reduce(
@@ -605,17 +609,17 @@ function OverviewView() {
         />
         <StatCard
           icon={CalendarDays}
-          label="Sessions الأسبوع"
+          label={tr("teacher.011")}
           value={String(data.upcomingSessions.length)}
           accent="teal"
-          hint="في الـ7 أيام الجاية"
+          hint={tr("teacher.012")}
         />
         <StatCard
           icon={ClipboardList}
-          label="Homework منتظر"
+          label={tr("teacher.013")}
           value={String(data.pendingHomeworkCount)}
           accent="amber"
-          hint="محتاج تصحيح"
+          hint={tr("teacher.014")}
         />
         <StatCard
           icon={TrendingUp}
@@ -629,23 +633,23 @@ function OverviewView() {
               : 0
           }%`}
           accent="emerald"
-          hint="متوسط المجموعات"
+          hint={tr("teacher.015")}
         />
       </div>
 
       {/* My Groups grid */}
       <div className="space-y-3">
         <SectionHeader
-          title="المجموعات بتاعتي"
-          subtitle="نظرة سريعة على كل Group"
+          title={tr("teacher.016")}
+          subtitle={tr("teacher.017")}
           icon={Users}
         />
         {data.groups.length === 0 ? (
           <Card className="p-6">
             <EmptyState
-              message="مفيش مجموعات ليك دلوقتي"
+              message={tr("teacher.018")}
               emoji="👥"
-              hint="تواصل مع الـAdmin يربطك بمجموعة."
+              hint={tr("teacher.019")}
             />
           </Card>
         ) : (
@@ -670,17 +674,16 @@ function OverviewView() {
           <CardHeader className="px-0 pt-0">
             <CardTitle className="flex items-center gap-2 text-base">
               <CalendarDays className="w-4 h-4 text-primary" />
-              Sessions الأسبوع الجاي
-            </CardTitle>
+              {tr("teacher.020")}</CardTitle>
           </CardHeader>
           <CardContent className="px-0">
             {data.upcomingSessions.length === 0 ? (
               <EmptyState
-                message="مفيش Sessions مجدولة الأسبوع ده"
+                message={tr("teacher.021")}
                 emoji="🗓️"
               />
             ) : (
-              <div className="space-y-2 max-h-96 overflow-y-auto pl-1">
+              <div className="space-y-2 max-h-96 overflow-y-auto ps-1">
                 {data.upcomingSessions.map((s) => (
                   <div
                     key={s.id}
@@ -712,12 +715,10 @@ function OverviewView() {
                         rel="noreferrer"
                         className="text-xs font-bold text-primary hover:underline shrink-0"
                       >
-                        انضم
-                      </a>
+                        {tr("teacher.022")}</a>
                     ) : (
                       <Badge variant="outline" className="text-[10px]">
-                        هتقريبًا
-                      </Badge>
+                        {tr("teacher.023")}</Badge>
                     )}
                   </div>
                 ))}
@@ -730,17 +731,16 @@ function OverviewView() {
           <CardHeader className="px-0 pt-0">
             <CardTitle className="flex items-center gap-2 text-base">
               <Activity className="w-4 h-4 text-primary" />
-              أحدث نشاط
-            </CardTitle>
+              {tr("teacher.024")}</CardTitle>
           </CardHeader>
           <CardContent className="px-0">
             {data.recentActivity.length === 0 ? (
               <EmptyState
-                message="مفيش نشاط لسه — جرّب تاني بعدين"
+                message={tr("teacher.025")}
                 emoji="📈"
               />
             ) : (
-              <div className="space-y-2 max-h-96 overflow-y-auto pl-1">
+              <div className="space-y-2 max-h-96 overflow-y-auto ps-1">
                 {data.recentActivity.map((a, i) => (
                   <ActivityRow key={i} item={a} />
                 ))}
@@ -800,6 +800,7 @@ function StatCard({
 }
 
 function GroupCard({ group }: { group: GroupInfo }) {
+  const tr = useT();
   const capacityPct =
     group.capacity > 0
       ? Math.min(100, Math.round((group.studentsCount / group.capacity) * 100))
@@ -816,7 +817,7 @@ function GroupCard({ group }: { group: GroupInfo }) {
             <h3 className="font-bold text-base truncate">{group.name}</h3>
           </div>
           <p className="text-xs text-muted-foreground mt-1">
-            {group.course?.nameAr || group.course?.name || "كورس"}
+            {pickAuto(group.course?.nameAr, group.course?.name) || tr("teacher.026")}
           </p>
         </div>
         <Badge
@@ -836,7 +837,7 @@ function GroupCard({ group }: { group: GroupInfo }) {
       {/* Capacity progress */}
       <div className="mt-3">
         <div className="flex justify-between text-[10px] text-muted-foreground mb-1">
-          <span>السعة</span>
+          <span>{tr("teacher.027")}</span>
           <span>{capacityPct}%</span>
         </div>
         <Progress value={capacityPct} className="h-1.5" />
@@ -867,7 +868,7 @@ function GroupCard({ group }: { group: GroupInfo }) {
       {/* Next session */}
       {group.nextSession && (
         <div className="mt-3 p-2.5 rounded-lg bg-primary/5 border border-primary/10">
-          <div className="text-[10px] text-muted-foreground">الـSession الجاية</div>
+          <div className="text-[10px] text-muted-foreground">{tr("teacher.028")}</div>
           <div className="text-xs font-semibold mt-0.5 truncate">
             {group.nextSession.title}
           </div>
@@ -938,6 +939,7 @@ function OverviewSkeleton() {
 // ATTENDANCE TAB
 // ============================================================
 function AttendanceView() {
+  const tr = useT();
   const queryClient = useQueryClient();
 
   // 1. Get dashboard just for the groups list (so we don't duplicate call)
@@ -1053,14 +1055,14 @@ function AttendanceView() {
     },
     onSuccess: (data) => {
       toast.success(
-        `اتحفظ الـAttendance! ✅ حاضر: ${data.summary.present} · غايب: ${data.summary.absent} · متأخر: ${data.summary.late}`
+        tr("teacher.029", { p1: data.summary.present, p2: data.summary.absent, p3: data.summary.late })
       );
       queryClient.invalidateQueries({ queryKey: ["teacher-attendance-group", groupId] });
       queryClient.invalidateQueries({ queryKey: ["teacher-attendance-session", groupId, sessionId] });
       queryClient.invalidateQueries({ queryKey: ["teacher-dashboard"] });
     },
     onError: (e: Error) => {
-      toast.error(e.message || "حصلت مشكلة. حاول تاني.");
+      toast.error(e.message || tr("teacher.030"));
     },
   });
 
@@ -1095,9 +1097,9 @@ function AttendanceView() {
     return (
       <Card className="p-6">
         <EmptyState
-          message="مفيش مجموعات ليك دلوقتي"
+          message={tr("teacher.018")}
           emoji="👥"
-          hint="تواصل مع الـAdmin يربطك بمجموعة."
+          hint={tr("teacher.019")}
         />
       </Card>
     );
@@ -1105,8 +1107,8 @@ function AttendanceView() {
   return (
     <div className="space-y-4">
       <SectionHeader
-        title="تسجيل Attendance"
-        subtitle="اختار Group و Session وسجّل حضور الطلاب"
+        title={tr("teacher.033")}
+        subtitle={tr("teacher.034")}
         icon={CalendarDays}
       />
 
@@ -1117,7 +1119,7 @@ function AttendanceView() {
             <Label className="text-xs text-muted-foreground">Group</Label>
             <Select value={groupId} onValueChange={setGroupId}>
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="اختار Group" />
+                <SelectValue placeholder={tr("teacher.035")} />
               </SelectTrigger>
               <SelectContent>
                 {groups.map((g) => (
@@ -1136,7 +1138,7 @@ function AttendanceView() {
               disabled={!groupQuery.data && !sessionAttQuery.data}
             >
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="اختار Session" />
+                <SelectValue placeholder={tr("teacher.036")} />
               </SelectTrigger>
               <SelectContent>
                 {(groupQuery.data?.sessions ?? sessionAttQuery.data?.sessions ?? []).map((s) => (
@@ -1154,7 +1156,7 @@ function AttendanceView() {
       {!sessionId ? (
         <Card className="p-6">
           <EmptyState
-            message="اختار Session عشان تسجّل Attendance"
+            message={tr("teacher.037")}
             emoji="📅"
           />
         </Card>
@@ -1171,9 +1173,9 @@ function AttendanceView() {
             !sessionAttQuery.data)) ? (
         <Card className="p-6">
           <EmptyState
-            message="مفيش Students في الـGroup ده"
+            message={tr("teacher.038")}
             emoji="👥"
-            hint="ضيف Students من الـAdmin Panel."
+            hint={tr("teacher.039")}
           />
         </Card>
       ) : (
@@ -1182,25 +1184,25 @@ function AttendanceView() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <SummaryPill
               icon={CheckCircle2}
-              label="حاضر"
+              label={tr("teacher.040")}
               value={summary.present}
               color="bg-primary/10 text-primary"
             />
             <SummaryPill
               icon={X}
-              label="غايب"
+              label={tr("teacher.041")}
               value={summary.absent}
               color="bg-destructive/10 text-destructive"
             />
             <SummaryPill
               icon={Clock}
-              label="متأخر"
+              label={tr("teacher.042")}
               value={summary.late}
               color="bg-amber-500/10 text-amber-600 dark:text-amber-400"
             />
             <SummaryPill
               icon={CircleAlert}
-              label="بعذر"
+              label={tr("teacher.043")}
               value={summary.excused}
               color="bg-teal-500/10 text-teal-600 dark:text-teal-400"
             />
@@ -1213,17 +1215,13 @@ function AttendanceView() {
                 <TableRow className="bg-muted/40 hover:bg-muted/40">
                   <TableHead>Student</TableHead>
                   <TableHead className="text-center w-[120px] sm:w-[160px]">
-                    حاضر
-                  </TableHead>
+                    {tr("teacher.040")}</TableHead>
                   <TableHead className="text-center w-[120px] sm:w-[160px]">
-                    غايب
-                  </TableHead>
+                    {tr("teacher.041")}</TableHead>
                   <TableHead className="text-center w-[120px] sm:w-[160px]">
-                    متأخر
-                  </TableHead>
+                    {tr("teacher.042")}</TableHead>
                   <TableHead className="text-center w-[120px] sm:w-[160px]">
-                    بعذر
-                  </TableHead>
+                    {tr("teacher.043")}</TableHead>
                   <TableHead className="text-center w-[80px] hidden md:table-cell">
                     %
                   </TableHead>
@@ -1245,7 +1243,7 @@ function AttendanceView() {
                             <div className="text-sm font-semibold truncate">
                               {s.name}
                               {(s as any).studentCode && (
-                                <code className="ml-2 text-[10px] font-mono font-bold text-primary" dir="ltr">
+                                <code className="ms-2 text-[10px] font-mono font-bold text-primary" dir="ltr">
                                   {(s as any).studentCode}
                                 </code>
                               )}
@@ -1306,23 +1304,19 @@ function AttendanceView() {
 
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="text-xs text-muted-foreground">
-              اتسجّل {summary.total} من {(sessionAttQuery.data?.students.length ?? groupQuery.data?.students.length ?? 0)} طالب ·
-              السجل بيتحدّت تلقائيًا
-            </div>
+              {tr("teacher.048")}{summary.total} {tr("teacher.049")}{(sessionAttQuery.data?.students.length ?? groupQuery.data?.students.length ?? 0)} {tr("teacher.050")}</div>
             <Button
               onClick={() => saveMutation.mutate()}
               disabled={saveMutation.isPending || summary.total === 0}
             >
               {saveMutation.isPending ? (
                 <>
-                  <RefreshCw className="w-4 h-4 ml-2 animate-spin" />
-                  بيحفظ…
-                </>
+                  <RefreshCw className="w-4 h-4 ms-2 animate-spin" />
+                  {tr("teacher.051")}</>
               ) : (
                 <>
-                  <Save className="w-4 h-4 ml-2" />
-                  احفظ الـAttendance
-                </>
+                  <Save className="w-4 h-4 ms-2" />
+                  {tr("teacher.052")}</>
               )}
             </Button>
           </div>
@@ -1408,6 +1402,7 @@ function AttendanceSkeleton() {
 // QUIZZES TAB
 // ============================================================
 function QuizzesView() {
+  const tr = useT();
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = React.useState(false);
   const [filterGroupId, setFilterGroupId] = React.useState<string>("");
@@ -1464,12 +1459,12 @@ function QuizzesView() {
       return r.json();
     },
     onSuccess: () => {
-      toast.success("اتعمل الـQuiz بنجاح! 🎉");
+      toast.success(tr("teacher.053"));
       queryClient.invalidateQueries({ queryKey: ["teacher-quizzes"] });
       setDialogOpen(false);
     },
     onError: (e: Error) => {
-      toast.error(e.message || "حصلت مشكلة. حاول تاني.");
+      toast.error(e.message || tr("teacher.030"));
     },
   });
 
@@ -1485,9 +1480,9 @@ function QuizzesView() {
     return (
       <Card className="p-6">
         <EmptyState
-          message="مفيش مجموعات ليك دلوقتي"
+          message={tr("teacher.018")}
           emoji="👥"
-          hint="تواصل مع الـAdmin يربطك بمجموعة."
+          hint={tr("teacher.019")}
         />
       </Card>
     );
@@ -1495,29 +1490,28 @@ function QuizzesView() {
   return (
     <div className="space-y-4">
       <SectionHeader
-        title="الـQuizzes"
-        subtitle="اعمل Quiz جديد أو راجع نتائج الطلاب"
+        title={tr("teacher.057")}
+        subtitle={tr("teacher.058")}
         icon={Trophy}
         action={
           <Button onClick={() => setDialogOpen(true)}>
-            <Plus className="w-4 h-4 ml-2" />
-            اعمل Quiz جديد
-          </Button>
+            <Plus className="w-4 h-4 ms-2" />
+            {tr("teacher.059")}</Button>
         }
       />
 
       {/* Filter */}
       <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-xs text-muted-foreground">تصفية:</span>
+        <span className="text-xs text-muted-foreground">{tr("teacher.060")}</span>
         <Select
           value={filterGroupId || "__all__"}
           onValueChange={(v) => setFilterGroupId(v === "__all__" ? "" : v)}
         >
           <SelectTrigger className="h-8 w-48 text-xs">
-            <SelectValue placeholder="كل المجموعات" />
+            <SelectValue placeholder={tr("teacher.061")} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="__all__">كل المجموعات</SelectItem>
+            <SelectItem value="__all__">{tr("teacher.061")}</SelectItem>
             {groups.map((g) => (
               <SelectItem key={g.id} value={g.id}>
                 {g.name}
@@ -1543,9 +1537,9 @@ function QuizzesView() {
       ) : quizzesQuery.data.quizzes.length === 0 ? (
         <Card className="p-6">
           <EmptyState
-            message="مفيش Quizzes لسه"
+            message={tr("teacher.063")}
             emoji="📝"
-            hint="اضغط «اعمل Quiz جديد» عشان تبدأ."
+            hint={tr("teacher.064")}
           />
         </Card>
       ) : (
@@ -1569,11 +1563,9 @@ function QuizzesView() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Plus className="w-5 h-5 text-primary" />
-              اعمل Quiz جديد
-            </DialogTitle>
+              {tr("teacher.059")}</DialogTitle>
             <DialogDescription>
-              اكتب بيانات الـQuiz والأسئلة. كل سؤال لازم يكون له إجابة صحيحة.
-            </DialogDescription>
+              {tr("teacher.066")}</DialogDescription>
           </DialogHeader>
           <QuizEditor
             lessons={lessonsQuery.data?.grouped ?? []}
@@ -1588,6 +1580,7 @@ function QuizzesView() {
 }
 
 function QuizCard({ quiz }: { quiz: QuizListItem }) {
+  const tr = useT();
   const [expanded, setExpanded] = React.useState(false);
   return (
     <Card className="card-hover p-5">
@@ -1606,21 +1599,20 @@ function QuizCard({ quiz }: { quiz: QuizListItem }) {
           variant="secondary"
           className="bg-primary/10 text-primary border-0 shrink-0"
         >
-          {quiz.attemptsCount} محاولة
-        </Badge>
+          {quiz.attemptsCount} {tr("teacher.067")}</Badge>
       </div>
 
       <div className="mt-3 grid grid-cols-3 gap-2 text-center">
         <div className="rounded-lg bg-muted/50 p-2">
-          <div className="text-[10px] text-muted-foreground">الأسئلة</div>
+          <div className="text-[10px] text-muted-foreground">{tr("teacher.068")}</div>
           <div className="text-sm font-bold">{quiz.questionCount}</div>
         </div>
         <div className="rounded-lg bg-muted/50 p-2">
-          <div className="text-[10px] text-muted-foreground">المجموع</div>
-          <div className="text-sm font-bold">{quiz.totalMarks} درجة</div>
+          <div className="text-[10px] text-muted-foreground">{tr("teacher.069")}</div>
+          <div className="text-sm font-bold">{quiz.totalMarks} {tr("teacher.070")}</div>
         </div>
         <div className="rounded-lg bg-muted/50 p-2">
-          <div className="text-[10px] text-muted-foreground">المتوسط</div>
+          <div className="text-[10px] text-muted-foreground">{tr("teacher.071")}</div>
           <div
             className={`text-sm font-bold ${
               quiz.avgScore >= quiz.passMark
@@ -1643,7 +1635,7 @@ function QuizCard({ quiz }: { quiz: QuizListItem }) {
         <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
           <Award className="w-3 h-3" />
           <span>
-            نجح {quiz.passedCount} / {quiz.attemptsCount} · Pass {quiz.passMark}%
+            {tr("teacher.072")}{quiz.passedCount} / {quiz.attemptsCount} · Pass {quiz.passMark}%
           </span>
         </div>
         <Button
@@ -1652,9 +1644,9 @@ function QuizCard({ quiz }: { quiz: QuizListItem }) {
           className="text-xs"
           onClick={() => setExpanded((v) => !v)}
         >
-          {expanded ? "إخفاء" : "تفاصيل"}
+          {expanded ? tr("teacher.073") : tr("teacher.074")}
           <ChevronDown
-            className={`w-3.5 h-3.5 mr-1 transition-transform ${
+            className={`w-3.5 h-3.5 me-1 transition-transform ${
               expanded ? "rotate-180" : ""
             }`}
           />
@@ -1678,7 +1670,7 @@ function QuizCard({ quiz }: { quiz: QuizListItem }) {
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Time Limit</span>
                 <span className="font-semibold">
-                  {quiz.timeLimit ? `${quiz.timeLimit} دقيقة` : "—"}
+                  {quiz.timeLimit ? tr("teacher.075", { p1: quiz.timeLimit }) : "—"}
                 </span>
               </div>
               <div className="flex justify-between">
@@ -1711,6 +1703,7 @@ function QuizEditor({
   }) => void;
   submitting: boolean;
 }) {
+  const tr = useT();
   const [lessonId, setLessonId] = React.useState("");
   const [title, setTitle] = React.useState("");
   const [titleAr, setTitleAr] = React.useState("");
@@ -1755,15 +1748,15 @@ function QuizEditor({
 
   const handleSubmit = () => {
     if (!lessonId) {
-      toast.error("اختار Lesson الأول");
+      toast.error(tr("teacher.076"));
       return;
     }
     if (!title.trim()) {
-      toast.error("اكتب عنوان الـQuiz");
+      toast.error(tr("teacher.077"));
       return;
     }
     if (questions.length === 0) {
-      toast.error("ضيف سؤال واحد على الأقل");
+      toast.error(tr("teacher.078"));
       return;
     }
     // Normalize TRUE_FALSE questions to have options ["True","False"]
@@ -1785,11 +1778,11 @@ function QuizEditor({
     for (let i = 0; i < normalized.length; i++) {
       const q = normalized[i];
       if (!q.prompt.trim()) {
-        toast.error(`اكتب نص السؤال رقم ${i + 1}`);
+        toast.error(tr("teacher.079", { p1: i + 1 }));
         return;
       }
       if (q.type === "MCQ" && q.options.length < 2) {
-        toast.error(`السؤال رقم ${i + 1} لازم اختيارين على الأقل`);
+        toast.error(tr("teacher.080", { p1: i + 1 }));
         return;
       }
     }
@@ -1815,7 +1808,7 @@ function QuizEditor({
         ) : (
           <Select value={lessonId} onValueChange={setLessonId}>
             <SelectTrigger className="w-full">
-              <SelectValue placeholder="اختار Lesson" />
+              <SelectValue placeholder={tr("teacher.081")} />
             </SelectTrigger>
             <SelectContent>
               {lessons.map((c) => (
@@ -1825,7 +1818,7 @@ function QuizEditor({
                   </SelectLabel>
                   {c.parts.map((p) => (
                     <SelectGroup key={p.id}>
-                      <SelectLabel className="text-xs pl-3 opacity-80">
+                      <SelectLabel className="text-xs ps-3 opacity-80">
                         {p.title}
                       </SelectLabel>
                       {p.units.map((u) =>
@@ -1863,22 +1856,22 @@ function QuizEditor({
           />
         </div>
         <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">العنوان (عربي)</Label>
+          <Label className="text-xs text-muted-foreground">{tr("teacher.082")}</Label>
           <Input
             value={titleAr}
             onChange={(e) => setTitleAr(e.target.value)}
-            placeholder="اختبار الـLesson 2"
+            placeholder={tr("teacher.083")}
             dir="rtl"
           />
         </div>
       </div>
 
       <div className="space-y-1.5">
-        <Label className="text-xs text-muted-foreground">الوصف</Label>
+        <Label className="text-xs text-muted-foreground">{tr("teacher.084")}</Label>
         <Textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder="نبذة قصيرة عن الـQuiz"
+          placeholder={tr("teacher.085")}
           rows={2}
         />
       </div>
@@ -1900,15 +1893,14 @@ function QuizEditor({
       <div className="space-y-3 pt-3 border-t border-border">
         <div className="flex items-center justify-between">
           <Label className="text-sm font-bold">
-            الأسئلة ({questions.length})
+            {tr("teacher.086")}{questions.length})
           </Label>
           <Button size="sm" variant="outline" onClick={addQuestion}>
-            <Plus className="w-3.5 h-3.5 ml-1.5" />
-            سؤال جديد
-          </Button>
+            <Plus className="w-3.5 h-3.5 ms-1.5" />
+            {tr("teacher.087")}</Button>
         </div>
 
-        <div className="space-y-3 max-h-[40vh] overflow-y-auto pl-1">
+        <div className="space-y-3 max-h-[40vh] overflow-y-auto ps-1">
           {questions.map((q, idx) => (
             <QuestionEditor
               key={idx}
@@ -1926,14 +1918,12 @@ function QuizEditor({
         <Button onClick={handleSubmit} disabled={submitting}>
           {submitting ? (
             <>
-              <RefreshCw className="w-4 h-4 ml-2 animate-spin" />
-              بيحفظ…
-            </>
+              <RefreshCw className="w-4 h-4 ms-2 animate-spin" />
+              {tr("teacher.051")}</>
           ) : (
             <>
-              <Save className="w-4 h-4 ml-2" />
-              احفظ الـQuiz
-            </>
+              <Save className="w-4 h-4 ms-2" />
+              {tr("teacher.089")}</>
           )}
         </Button>
       </DialogFooter>
@@ -1954,6 +1944,7 @@ function QuestionEditor({
   onRemove: () => void;
   canRemove: boolean;
 }) {
+  const tr = useT();
   const setOption = (i: number, val: string) => {
     const next = [...question.options];
     next[i] = val;
@@ -1976,7 +1967,7 @@ function QuestionEditor({
     <div className="rounded-xl border border-border p-3 space-y-3 bg-muted/20">
       <div className="flex items-center justify-between gap-2">
         <div className="text-xs font-bold text-muted-foreground">
-          سؤال {index + 1}
+          {tr("teacher.090")}{index + 1}
         </div>
         <div className="flex items-center gap-2">
           <Select
@@ -1994,8 +1985,8 @@ function QuestionEditor({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="MCQ">اختيارات (MCQ)</SelectItem>
-              <SelectItem value="TRUE_FALSE">صح / خطأ</SelectItem>
+              <SelectItem value="MCQ">{tr("teacher.091")}</SelectItem>
+              <SelectItem value="TRUE_FALSE">{tr("teacher.092")}</SelectItem>
             </SelectContent>
           </Select>
           {canRemove && (
@@ -2004,7 +1995,7 @@ function QuestionEditor({
               size="icon"
               className="w-7 h-7 text-destructive hover:text-destructive"
               onClick={onRemove}
-              aria-label="حذف السؤال"
+              aria-label={tr("teacher.093")}
             >
               <Trash2 className="w-3.5 h-3.5" />
             </Button>
@@ -2014,7 +2005,7 @@ function QuestionEditor({
 
       <div className="space-y-1.5">
         <Label className="text-[10px] text-muted-foreground">
-          نص السؤال (EN) <span className="text-destructive">*</span>
+          {tr("teacher.094")}<span className="text-destructive">*</span>
         </Label>
         <Textarea
           value={question.prompt}
@@ -2027,12 +2018,11 @@ function QuestionEditor({
 
       <div className="space-y-1.5">
         <Label className="text-[10px] text-muted-foreground">
-          نص السؤال (عربي)
-        </Label>
+          {tr("teacher.095")}</Label>
         <Textarea
           value={question.promptAr}
           onChange={(e) => onChange({ promptAr: e.target.value })}
-          placeholder="إيه معنى CPU؟"
+          placeholder={tr("teacher.096")}
           rows={2}
           dir="rtl"
           className="text-sm"
@@ -2043,8 +2033,7 @@ function QuestionEditor({
       {question.type === "MCQ" && (
         <div className="space-y-1.5">
           <Label className="text-[10px] text-muted-foreground">
-            الاختيارات (دوّر على الإجابة الصحيحة)
-          </Label>
+            {tr("teacher.097")}</Label>
           <RadioGroupLike>
             {question.options.map((opt, i) => (
               <div
@@ -2059,7 +2048,7 @@ function QuestionEditor({
                       ? "border-primary bg-primary text-primary-foreground"
                       : "border-input bg-transparent hover:border-primary/50"
                   }`}
-                  aria-label={`اختيار كإجابة صحيحة ${i + 1}`}
+                  aria-label={tr("teacher.098", { p1: i + 1 })}
                 >
                   {question.answer === String(i) && (
                     <span className="w-2 h-2 rounded-full bg-primary-foreground" />
@@ -2068,7 +2057,7 @@ function QuestionEditor({
                 <Input
                   value={opt}
                   onChange={(e) => setOption(i, e.target.value)}
-                  placeholder={`اختيار ${i + 1}`}
+                  placeholder={tr("teacher.099", { p1: i + 1 })}
                   className="text-sm h-8"
                 />
                 <button
@@ -2076,7 +2065,7 @@ function QuestionEditor({
                   onClick={() => removeOption(i)}
                   disabled={question.options.length <= 2}
                   className="text-muted-foreground hover:text-destructive disabled:opacity-30 shrink-0 p-1"
-                  aria-label="حذف اختيار"
+                  aria-label={tr("teacher.100")}
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -2089,17 +2078,15 @@ function QuestionEditor({
             className="text-xs h-7"
             onClick={addOption}
           >
-            <Plus className="w-3 h-3 ml-1" />
-            اختيار جديد
-          </Button>
+            <Plus className="w-3 h-3 ms-1" />
+            {tr("teacher.101")}</Button>
         </div>
       )}
 
       {question.type === "TRUE_FALSE" && (
         <div className="space-y-1.5">
           <Label className="text-[10px] text-muted-foreground">
-            الإجابة الصحيحة
-          </Label>
+            {tr("teacher.102")}</Label>
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -2140,9 +2127,9 @@ function QuestionEditor({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="EASY">سهل</SelectItem>
-              <SelectItem value="MEDIUM">متوسط</SelectItem>
-              <SelectItem value="HARD">صعب</SelectItem>
+              <SelectItem value="EASY">{tr("teacher.103")}</SelectItem>
+              <SelectItem value="MEDIUM">{tr("teacher.104")}</SelectItem>
+              <SelectItem value="HARD">{tr("teacher.105")}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -2168,12 +2155,11 @@ function QuestionEditor({
 
       <div className="space-y-1.5">
         <Label className="text-[10px] text-muted-foreground">
-          شرح الإجابة (اختياري)
-        </Label>
+          {tr("teacher.106")}</Label>
         <Textarea
           value={question.explanation}
           onChange={(e) => onChange({ explanation: e.target.value })}
-          placeholder="ليه الإجابة دي صحيحة؟"
+          placeholder={tr("teacher.107")}
           rows={2}
           dir="rtl"
           className="text-sm"
@@ -2196,6 +2182,7 @@ function RadioGroupLike({
 // HOMEWORK TAB
 // ============================================================
 function HomeworkView() {
+  const tr = useT();
   const queryClient = useQueryClient();
   const [filterGroupId, setFilterGroupId] = React.useState<string>("");
   const [gradingFor, setGradingFor] = React.useState<{
@@ -2253,12 +2240,12 @@ function HomeworkView() {
       return r.json();
     },
     onSuccess: () => {
-      toast.success("اتصحح الـHomework بنجاح! ✅");
+      toast.success(tr("teacher.108"));
       queryClient.invalidateQueries({ queryKey: ["teacher-homework"] });
       setGradingFor(null);
     },
     onError: (e: Error) => {
-      toast.error(e.message || "حصلت مشكلة. حاول تاني.");
+      toast.error(e.message || tr("teacher.030"));
     },
   });
 
@@ -2274,9 +2261,9 @@ function HomeworkView() {
     return (
       <Card className="p-6">
         <EmptyState
-          message="مفيش مجموعات ليك دلوقتي"
+          message={tr("teacher.018")}
           emoji="👥"
-          hint="تواصل مع الـAdmin يربطك بمجموعة."
+          hint={tr("teacher.019")}
         />
       </Card>
     );
@@ -2284,23 +2271,23 @@ function HomeworkView() {
   return (
     <div className="space-y-4">
       <SectionHeader
-        title="الـHomework"
-        subtitle="راجع submissions الطلاب و صححها"
+        title={tr("teacher.112")}
+        subtitle={tr("teacher.113")}
         icon={ClipboardList}
       />
 
       {/* Filter */}
       <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-xs text-muted-foreground">تصفية:</span>
+        <span className="text-xs text-muted-foreground">{tr("teacher.060")}</span>
         <Select
           value={filterGroupId || "__all__"}
           onValueChange={(v) => setFilterGroupId(v === "__all__" ? "" : v)}
         >
           <SelectTrigger className="h-8 w-48 text-xs">
-            <SelectValue placeholder="كل المجموعات" />
+            <SelectValue placeholder={tr("teacher.061")} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="__all__">كل المجموعات</SelectItem>
+            <SelectItem value="__all__">{tr("teacher.061")}</SelectItem>
             {groups.map((g) => (
               <SelectItem key={g.id} value={g.id}>
                 {g.name}
@@ -2326,8 +2313,8 @@ function HomeworkView() {
       ) : homeworkQuery.data.homework.length === 0 ? (
         <Card className="p-6">
           <EmptyState
-            message="مفيش واجبات لسه 🎉"
-            hint="لما تتعمل Homeworks هتظهر هنا."
+            message={tr("teacher.117")}
+            hint={tr("teacher.118")}
           />
         </Card>
       ) : (
@@ -2364,8 +2351,7 @@ function HomeworkView() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <ClipboardCheck className="w-5 h-5 text-primary" />
-              تصحيح الـHomework
-            </DialogTitle>
+              {tr("teacher.119")}</DialogTitle>
             <DialogDescription>
               {gradingFor?.homeworkTitle}
               {gradingFor?.submission ? (
@@ -2412,6 +2398,7 @@ function HomeworkCard({
   hw: HomeworkListItem;
   onGrade: (sub: HomeworkSubmission) => void;
 }) {
+  const tr = useT();
   const [expanded, setExpanded] = React.useState(false);
   const deadline = new Date(hw.deadline);
   const isOverdue = deadline.getTime() < Date.now();
@@ -2441,31 +2428,30 @@ function HomeworkCard({
                 : "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-0"
             }`}
           >
-            <Clock className="w-3 h-3 ml-1" />
+            <Clock className="w-3 h-3 ms-1" />
             {fmtDateShort(deadline)}
           </Badge>
           <span className="text-[10px] text-muted-foreground">
-            {hw.maxMarks} درجات
-          </span>
+            {hw.maxMarks} {tr("teacher.120")}</span>
         </div>
       </div>
 
       {/* Stats */}
       <div className="mt-3 grid grid-cols-3 gap-2 text-center">
         <div className="rounded-lg bg-amber-500/5 p-2">
-          <div className="text-[10px] text-muted-foreground">منتظر</div>
+          <div className="text-[10px] text-muted-foreground">{tr("teacher.121")}</div>
           <div className="text-sm font-bold text-amber-600 dark:text-amber-400">
             {pendingCount}
           </div>
         </div>
         <div className="rounded-lg bg-primary/5 p-2">
-          <div className="text-[10px] text-muted-foreground">اتسلم</div>
+          <div className="text-[10px] text-muted-foreground">{tr("teacher.122")}</div>
           <div className="text-sm font-bold text-primary">
             {submittedCount}
           </div>
         </div>
         <div className="rounded-lg bg-teal-500/5 p-2">
-          <div className="text-[10px] text-muted-foreground">اتصحح</div>
+          <div className="text-[10px] text-muted-foreground">{tr("teacher.123")}</div>
           <div className="text-sm font-bold text-teal-600 dark:text-teal-400">
             {gradedCount}
           </div>
@@ -2490,9 +2476,9 @@ function HomeworkCard({
           className="text-xs"
           onClick={() => setExpanded((v) => !v)}
         >
-          {expanded ? "إخفاء" : "اعرض الطلاب"}
+          {expanded ? tr("teacher.073") : tr("teacher.125")}
           <ChevronDown
-            className={`w-3.5 h-3.5 mr-1 transition-transform ${
+            className={`w-3.5 h-3.5 me-1 transition-transform ${
               expanded ? "rotate-180" : ""
             }`}
           />
@@ -2508,11 +2494,10 @@ function HomeworkCard({
             transition={{ duration: 0.2 }}
             className="overflow-hidden"
           >
-            <div className="mt-3 pt-3 border-t border-border space-y-2 max-h-64 overflow-y-auto pl-1">
+            <div className="mt-3 pt-3 border-t border-border space-y-2 max-h-64 overflow-y-auto ps-1">
               {hw.submissions.length === 0 ? (
                 <p className="text-xs text-muted-foreground text-center py-3">
-                  مفيش Submissions لسه
-                </p>
+                  {tr("teacher.126")}</p>
               ) : (
                 hw.submissions.map((sub) => (
                   <SubmissionRow
@@ -2540,6 +2525,7 @@ function SubmissionRow({
   maxMarks: number;
   onGrade: () => void;
 }) {
+  const tr = useT();
   const badge = statusBadge(sub.status);
   return (
     <div className="flex items-center gap-2 p-2 rounded-lg hover:bg-muted/40 transition-colors">
@@ -2553,7 +2539,7 @@ function SubmissionRow({
           {sub.student.name}
         </div>
         <div className="text-[10px] text-muted-foreground">
-          {sub.submittedAt ? timeAgo(sub.submittedAt) : "لسه ماتسلمش"}
+          {sub.submittedAt ? timeAgo(sub.submittedAt) : tr("teacher.127")}
         </div>
       </div>
       <Badge
@@ -2579,7 +2565,7 @@ function SubmissionRow({
               <Pencil className="w-3.5 h-3.5" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent side="top">صحح</TooltipContent>
+          <TooltipContent side="top">{tr("teacher.128")}</TooltipContent>
         </Tooltip>
       </TooltipProvider>
     </div>
@@ -2589,13 +2575,13 @@ function SubmissionRow({
 function statusBadge(status: string): { label: string; cls: string } {
   switch (status) {
     case "PENDING":
-      return { label: "منتظر", cls: "bg-amber-500/15 text-amber-700 dark:text-amber-300" };
+      return { label: translate(curLocale(), "teacher.121"), cls: "bg-amber-500/15 text-amber-700 dark:text-amber-300" };
     case "SUBMITTED":
-      return { label: "اتسلم", cls: "bg-primary/15 text-primary" };
+      return { label: translate(curLocale(), "teacher.122"), cls: "bg-primary/15 text-primary" };
     case "GRADED":
-      return { label: "اتصحح", cls: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" };
+      return { label: translate(curLocale(), "teacher.123"), cls: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" };
     case "LATE":
-      return { label: "متأخر", cls: "bg-destructive/15 text-destructive" };
+      return { label: translate(curLocale(), "teacher.042"), cls: "bg-destructive/15 text-destructive" };
     default:
       return { label: status, cls: "bg-muted text-muted-foreground" };
   }
@@ -2620,6 +2606,7 @@ function GradeForm({
   submitting: boolean;
   onSubmit: (grade: number, feedback: string) => void;
 }) {
+  const tr = useT();
   const [grade, setGrade] = React.useState<string>(
     initialGrade !== null ? String(initialGrade) : ""
   );
@@ -2633,11 +2620,11 @@ function GradeForm({
   const handleSubmit = () => {
     const g = Number(grade);
     if (Number.isNaN(g)) {
-      toast.error("الدرجة لازم تكون رقم");
+      toast.error(tr("teacher.133"));
       return;
     }
     if (g < 0 || g > maxMarks) {
-      toast.error(`الدرجة لازم تكون بين 0 و ${maxMarks}`);
+      toast.error(tr("teacher.134", { p1: maxMarks }));
       return;
     }
     onSubmit(g, feedback.trim());
@@ -2650,7 +2637,7 @@ function GradeForm({
         <div className="rounded-lg bg-muted/40 p-3 space-y-1">
           <div className="text-xs font-semibold text-muted-foreground">
             {studentName} ·{" "}
-            {submittedAt ? `اتسلم ${timeAgo(submittedAt)}` : "لسه ماتسلمش"}
+            {submittedAt ? tr("teacher.135", { p1: timeAgo(submittedAt) }) : tr("teacher.127")}
           </div>
           <p className="text-sm leading-relaxed whitespace-pre-wrap">
             {content}
@@ -2661,7 +2648,7 @@ function GradeForm({
       <div className="grid sm:grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label className="text-xs text-muted-foreground">
-            الدرجة (من {maxMarks}) <span className="text-destructive">*</span>
+            {tr("teacher.137")}{maxMarks}) <span className="text-destructive">*</span>
           </Label>
           <Input
             type="number"
@@ -2675,11 +2662,11 @@ function GradeForm({
       </div>
 
       <div className="space-y-1.5">
-        <Label className="text-xs text-muted-foreground">ملاحظات / Feedback</Label>
+        <Label className="text-xs text-muted-foreground">{tr("teacher.138")}</Label>
         <Textarea
           value={feedback}
           onChange={(e) => setFeedback(e.target.value)}
-          placeholder="اكتب ملاحظاتك للطالب…"
+          placeholder={tr("teacher.139")}
           rows={4}
           dir="rtl"
         />
@@ -2689,14 +2676,12 @@ function GradeForm({
         <Button onClick={handleSubmit} disabled={submitting}>
           {submitting ? (
             <>
-              <RefreshCw className="w-4 h-4 ml-2 animate-spin" />
-              بيحفظ…
-            </>
+              <RefreshCw className="w-4 h-4 ms-2 animate-spin" />
+              {tr("teacher.051")}</>
           ) : (
             <>
-              <Save className="w-4 h-4 ml-2" />
-              احفظ التصحيح
-            </>
+              <Save className="w-4 h-4 ms-2" />
+              {tr("teacher.141")}</>
           )}
         </Button>
       </DialogFooter>
@@ -2708,6 +2693,7 @@ function GradeForm({
 // Templates View — Lesson Plan Templates
 // ============================================================
 function TemplatesView() {
+  const tr = useT();
   const [templates, setTemplates] = React.useState<any[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [showCreate, setShowCreate] = React.useState(false);
@@ -2727,9 +2713,9 @@ function TemplatesView() {
   }, [reload]);
 
   const del = async (id: string) => {
-    if (!confirm("متأكد تمسح التمبلت ده؟")) return;
+    if (!confirm(tr("teacher.142"))) return;
     await fetch(`/api/teacher/templates/${id}`, { method: "DELETE" });
-    toast.success("اتمسح التمبلت");
+    toast.success(tr("teacher.143"));
     reload();
   };
 
@@ -2739,13 +2725,11 @@ function TemplatesView() {
         <div>
           <h2 className="text-xl font-bold">Lesson Plan Templates</h2>
           <p className="text-xs text-muted-foreground">
-            خطط دروس جاهزة تقدر تستخدمها أو تعدلها
-          </p>
+            {tr("teacher.144")}</p>
         </div>
         <Button onClick={() => setShowCreate((s) => !s)}>
-          <Plus className="w-4 h-4 ml-2" />
-          تمبلت جديد
-        </Button>
+          <Plus className="w-4 h-4 ms-2" />
+          {tr("teacher.145")}</Button>
       </div>
 
       {showCreate && (
@@ -2767,7 +2751,7 @@ function TemplatesView() {
         <Card>
           <CardContent className="py-10 text-center">
             <FileText className="w-10 h-10 text-muted-foreground/40 mx-auto mb-2" />
-            <p className="text-sm text-muted-foreground">مفيش templates لسه</p>
+            <p className="text-sm text-muted-foreground">{tr("teacher.146")}</p>
           </CardContent>
         </Card>
       ) : (
@@ -2790,10 +2774,9 @@ function TemplatesView() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <h3 className="font-bold text-base">{t.titleAr}</h3>
+                        <h3 className="font-bold text-base">{pickAuto(t.titleAr, t.title)}</h3>
                         <Badge variant="outline" className="text-[10px]">
-                          {t.duration} دقيقة
-                        </Badge>
+                          {t.duration} {tr("teacher.147")}</Badge>
                       </div>
                       <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
                         {t.description}
@@ -2821,8 +2804,7 @@ function TemplatesView() {
                           <div>
                             <div className="text-xs font-bold mb-1.5 flex items-center gap-1.5">
                               <Target className="w-3.5 h-3.5 text-primary" />
-                              أهداف الدرس
-                            </div>
+                              {tr("teacher.148")}</div>
                             <ul className="space-y-1">
                               {t.objectives.map((o: string, i: number) => (
                                 <li key={i} className="text-xs text-muted-foreground flex items-start gap-1.5">
@@ -2839,8 +2821,7 @@ function TemplatesView() {
                           <div>
                             <div className="text-xs font-bold mb-1.5 flex items-center gap-1.5">
                               <Clock className="w-3.5 h-3.5 text-amber-500" />
-                              الأنشطة
-                            </div>
+                              {tr("teacher.149")}</div>
                             <div className="space-y-1.5">
                               {t.activities.map((a: any, i: number) => (
                                 <div key={i} className="flex items-start gap-2 p-2 rounded-lg bg-muted/30">
@@ -2852,8 +2833,7 @@ function TemplatesView() {
                                     <div className="text-xs text-muted-foreground">{a.description}</div>
                                   </div>
                                   <Badge variant="outline" className="text-[10px]">
-                                    {a.duration} د
-                                  </Badge>
+                                    {a.duration} {tr("teacher.150")}</Badge>
                                 </div>
                               ))}
                             </div>
@@ -2865,8 +2845,7 @@ function TemplatesView() {
                           <div>
                             <div className="text-xs font-bold mb-1 flex items-center gap-1.5">
                               <ClipboardList className="w-3.5 h-3.5 text-amber-500" />
-                              الواجب المقترح
-                            </div>
+                              {tr("teacher.151")}</div>
                             <p className="text-xs text-muted-foreground p-2 rounded-lg bg-muted/30">
                               {t.homework}
                             </p>
@@ -2880,9 +2859,8 @@ function TemplatesView() {
                             className="text-destructive hover:text-destructive"
                             onClick={() => del(t.id)}
                           >
-                            <Trash2 className="w-3.5 h-3.5 ml-1" />
-                            مسح
-                          </Button>
+                            <Trash2 className="w-3.5 h-3.5 ms-1" />
+                            {tr("teacher.152")}</Button>
                         </div>
                       </div>
                     </motion.div>
@@ -2898,6 +2876,7 @@ function TemplatesView() {
 }
 
 function CreateTemplateForm({ onDone }: { onDone: () => void }) {
+  const tr = useT();
   const [title, setTitle] = React.useState("");
   const [titleAr, setTitleAr] = React.useState("");
   const [description, setDescription] = React.useState("");
@@ -2908,7 +2887,7 @@ function CreateTemplateForm({ onDone }: { onDone: () => void }) {
 
   const save = async () => {
     if (!titleAr.trim()) {
-      toast.error("العنوان مطلوب");
+      toast.error(tr("teacher.153"));
       return;
     }
     setSaving(true);
@@ -2928,10 +2907,10 @@ function CreateTemplateForm({ onDone }: { onDone: () => void }) {
         }),
       });
       if (!r.ok) {
-        toast.error("فشل الحفظ");
+        toast.error(tr("teacher.154"));
         return;
       }
-      toast.success("اتحفظ التمبلت ✅");
+      toast.success(tr("teacher.155"));
       onDone();
     } finally {
       setSaving(false);
@@ -2946,30 +2925,30 @@ function CreateTemplateForm({ onDone }: { onDone: () => void }) {
     >
       <Card className="glass border-primary/20">
         <CardHeader>
-          <CardTitle className="text-base">تمبلت جديد</CardTitle>
+          <CardTitle className="text-base">{tr("teacher.145")}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <div>
-            <Label className="text-xs">عنوان الدرس</Label>
+            <Label className="text-xs">{tr("teacher.157")}</Label>
             <Input
               value={titleAr}
               onChange={(e) => setTitleAr(e.target.value)}
-              placeholder="مثال: مقدمة في Python"
+              placeholder={tr("teacher.158")}
               className="mt-1"
             />
           </div>
           <div>
-            <Label className="text-xs">وصف مختصر</Label>
+            <Label className="text-xs">{tr("teacher.159")}</Label>
             <Input
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="نبذة عن محتوى الدرس"
+              placeholder={tr("teacher.160")}
               className="mt-1"
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label className="text-xs">المدة (دقيقة)</Label>
+              <Label className="text-xs">{tr("teacher.161")}</Label>
               <Input
                 type="number"
                 value={duration}
@@ -2979,30 +2958,29 @@ function CreateTemplateForm({ onDone }: { onDone: () => void }) {
             </div>
           </div>
           <div>
-            <Label className="text-xs">أهداف الدرس (كل هدف في سطر)</Label>
+            <Label className="text-xs">{tr("teacher.162")}</Label>
             <Textarea
               value={objectives}
               onChange={(e) => setObjectives(e.target.value)}
-              placeholder={"يفهم الطالب الـvariables\nيتعلم الـif/else"}
+              placeholder={tr("teacher.163")}
               className="mt-1 min-h-[80px]"
             />
           </div>
           <div>
-            <Label className="text-xs">الواجب المقترح</Label>
+            <Label className="text-xs">{tr("teacher.151")}</Label>
             <Input
               value={homework}
               onChange={(e) => setHomework(e.target.value)}
-              placeholder="اكتب برنامج يحسب..."
+              placeholder={tr("teacher.165")}
               className="mt-1"
             />
           </div>
           <div className="flex items-center gap-2">
             <Button onClick={save} disabled={saving}>
-              {saving ? "جارٍ الحفظ..." : "احفظ التمبلت"}
+              {saving ? tr("teacher.166") : tr("teacher.167")}
             </Button>
             <Button variant="ghost" onClick={onDone}>
-              إلغاء
-            </Button>
+              {tr("teacher.168")}</Button>
           </div>
         </CardContent>
       </Card>
@@ -3014,6 +2992,7 @@ function CreateTemplateForm({ onDone }: { onDone: () => void }) {
 // Analytics View — Teacher Performance Dashboard
 // ============================================================
 function AnalyticsView() {
+  const tr = useT();
   const [data, setData] = React.useState<any>(null);
   const [loading, setLoading] = React.useState(true);
 
@@ -3022,7 +3001,7 @@ function AnalyticsView() {
     fetch("/api/teacher/analytics")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => setData(d))
-      .catch(() => toast.error("حصلت مشكلة في تحميل التحليلات"))
+      .catch(() => toast.error(tr("teacher.169")))
       .finally(() => setLoading(false));
   }, []);
 
@@ -3052,8 +3031,7 @@ function AnalyticsView() {
           Analytics
         </h2>
         <p className="text-xs text-muted-foreground mt-1">
-          تحليل أداء الطلاب والمجموعات
-        </p>
+          {tr("teacher.170")}</p>
       </div>
 
       {/* Overview stats */}
@@ -3098,8 +3076,7 @@ function AnalyticsView() {
                 <div>
                   <CardTitle className="text-base">{g.groupName}</CardTitle>
                   <CardDescription className="text-xs">
-                    {g.courseName} · {g.totalStudents} طالب
-                  </CardDescription>
+                    {g.courseName} · {g.totalStudents} {tr("teacher.171")}</CardDescription>
                 </div>
                 <Badge variant="outline" className="bg-primary/5">
                   {g.totalStudents} students
@@ -3154,8 +3131,7 @@ function AnalyticsView() {
                 <div>
                   <div className="text-xs font-bold mb-2 flex items-center gap-1.5 text-amber-600">
                     <AlertTriangle className="w-3.5 h-3.5" />
-                    محتاجين متابعة
-                  </div>
+                    {tr("teacher.172")}</div>
                   <div className="space-y-1.5">
                     {g.strugglingStudents.map((s: any) => (
                       <div
@@ -3188,7 +3164,7 @@ function AnalyticsView() {
         <Card>
           <CardContent className="py-10 text-center">
             <BarChart3 className="w-10 h-10 text-muted-foreground/40 mx-auto mb-2" />
-            <p className="text-sm text-muted-foreground">مفيش مجموعات ليك دلوقتي</p>
+            <p className="text-sm text-muted-foreground">{tr("teacher.018")}</p>
           </CardContent>
         </Card>
       )}

@@ -110,6 +110,8 @@ export const useApp = create<AppState>()(
           document.documentElement.dir = locale === "ar" ? "rtl" : "ltr";
           try {
             localStorage.setItem("cm-locale", locale);
+            // Mirror to a cookie so API routes can localize server-side too.
+            document.cookie = `cm-locale=${locale}; path=/; max-age=31536000; samesite=lax`;
           } catch {}
         }
       },

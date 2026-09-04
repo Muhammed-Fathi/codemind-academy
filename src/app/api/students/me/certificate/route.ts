@@ -1,3 +1,4 @@
+import { getServerT } from "@/lib/i18n-server";
 // CodeMind Academy — Course Certificate Eligibility API
 // Returns certificate data if student completed >= 80% of course lessons.
 import { NextResponse } from "next/server";
@@ -6,9 +7,10 @@ import { db } from "@/lib/db";
 import { brand } from "@/lib/brand";
 
 export async function GET() {
+  const tApi = await getServerT();
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
-  if (user.role !== "STUDENT") return err("الشهادات متاحة للطلاب فقط", 403);
+  if (user.role !== "STUDENT") return err(tApi("api.122"), 403);
 
   const student = await db.student.findUnique({
     where: { userId: user.id },
@@ -16,8 +18,8 @@ export async function GET() {
       group: { include: { course: true } },
     },
   });
-  if (!student) return err("ملف الطالب غير موجود", 404);
-  if (!student.group?.course) return err("أنت مش مشترك في كورس", 400);
+  if (!student) return err(tApi("api.123"), 404);
+  if (!student.group?.course) return err(tApi("api.124"), 400);
 
   const course = student.group.course;
 

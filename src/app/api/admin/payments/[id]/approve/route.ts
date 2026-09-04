@@ -1,3 +1,4 @@
+import { getServerT } from "@/lib/i18n-server";
 // POST /api/admin/payments/[id]/approve — set APPROVED, activate linked subscription
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
@@ -8,6 +9,7 @@ export async function POST(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const tApi = await getServerT();
   const { user, error } = await requireRole("ADMIN");
   if (error) return error;
   if (!user) return err("Unauthorized", 401);
@@ -17,8 +19,8 @@ export async function POST(
     where: { id },
     include: { subscription: { include: { plan: true } } },
   });
-  if (!payment) return err("الدفعة غير موجودة", 404);
-  if (payment.status === "APPROVED") return err("الدفعة دي معمول approve بالفعل", 400);
+  if (!payment) return err(tApi("api.025"), 404);
+  if (payment.status === "APPROVED") return err(tApi("api.026"), 400);
 
   await db.payment.update({ where: { id }, data: { status: "APPROVED" } });
 
@@ -40,8 +42,8 @@ export async function POST(
     await createNotificationIfAllowed({
       userId: payment.userId,
       type: "PAYMENT_APPROVED",
-      title: "تم تأكيد الدفع",
-      message: `تمام! تم تأكيد دفعتك بقيمة ${payment.amount} EGP واتفعّل اشتراكك.`,
+      title: tApi("api.027"),
+      message: tApi("api.028", { p1: payment.amount }),
       link: "dashboard",
     });
   }

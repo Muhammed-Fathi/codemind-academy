@@ -1,3 +1,4 @@
+import { getServerT } from "@/lib/i18n-server";
 // GET  /api/teacher/quizzes — returns quizzes (filter by teacher's groups' course lessons)
 //   For MVP: returns all quizzes for the teacher's courses with question count,
 //   attempt count + average score.
@@ -104,6 +105,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const tApi = await getServerT();
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
   if (user.role !== "TEACHER") return err("Forbidden", 403);
@@ -129,10 +131,10 @@ export async function POST(req: NextRequest) {
     marks?: number;
   }> = Array.isArray(body.questions) ? body.questions : [];
 
-  if (!lessonId) return err("lessonId مطلوب", 400);
-  if (!title) return err("عنوان الـQuiz مطلوب", 400);
+  if (!lessonId) return err(tApi("api.176"), 400);
+  if (!title) return err(tApi("api.177"), 400);
   if (questions.length === 0)
-    return err("الـQuiz لازم يكون فيه سؤال واحد على الأقل", 400);
+    return err(tApi("api.178"), 400);
 
   // Verify the lesson belongs to one of the teacher's courses
   const lesson = await db.lesson.findUnique({
@@ -143,29 +145,29 @@ export async function POST(req: NextRequest) {
       },
     },
   });
-  if (!lesson) return err("الـLesson مش موجود", 404);
+  if (!lesson) return err(tApi("api.179"), 404);
   const teacherCourseIds = teacher.groups.map((g) => g.courseId);
   if (!teacherCourseIds.includes(lesson.topic.unit.part.courseId)) {
-    return err("الـLesson مش بتاع الكورسات بتاعتك", 403);
+    return err(tApi("api.180"), 403);
   }
 
   // Validate each question
   for (let i = 0; i < questions.length; i++) {
     const q = questions[i];
     if (!q.prompt || !q.prompt.trim()) {
-      return err(`السؤال رقم ${i + 1} مفيهوش نص`, 400);
+      return err(tApi("api.181", { p1: i + 1 }), 400);
     }
     if (q.type === "TRUE_FALSE") {
       // OK — we set options to ["True","False"] automatically
     } else if (q.type === "MCQ" || !q.type) {
       if (!Array.isArray(q.options) || q.options.length < 2) {
-        return err(`السؤال رقم ${i + 1} لازم يكون فيه اختيارين على الأقل`, 400);
+        return err(tApi("api.182", { p1: i + 1 }), 400);
       }
       if (q.answer === undefined || q.answer === "") {
-        return err(`السؤال رقم ${i + 1} محتاج إجابة صحيحة`, 400);
+        return err(tApi("api.183", { p1: i + 1 }), 400);
       }
     } else {
-      return err(`نوع سؤال غير معروف: ${q.type}`, 400);
+      return err(tApi("api.184", { p1: q.type }), 400);
     }
   }
 

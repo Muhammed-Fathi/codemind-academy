@@ -51,6 +51,7 @@ function GlobalUiHydration() {
           : useApp.getState().locale || "ar";
       document.documentElement.lang = locale === "ar" ? "ar" : "en";
       document.documentElement.dir = locale === "ar" ? "rtl" : "ltr";
+      document.cookie = `cm-locale=${locale}; path=/; max-age=31536000; samesite=lax`;
       if (locale !== useApp.getState().locale) {
         useApp.getState().setLocale(locale as "ar" | "en");
       }

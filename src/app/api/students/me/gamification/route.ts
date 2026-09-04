@@ -1,3 +1,4 @@
+import { getServerT } from "@/lib/i18n-server";
 // CodeMind Academy — Gamification API
 // Returns XP, level, streak, badges for the current student.
 import { NextResponse } from "next/server";
@@ -12,12 +13,13 @@ import {
 } from "@/lib/gamification";
 
 export async function GET() {
+  const tApi = await getServerT();
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
-  if (user.role !== "STUDENT") return err("Gamification متاحة للطلاب فقط", 403);
+  if (user.role !== "STUDENT") return err(tApi("api.134"), 403);
 
   const student = await db.student.findUnique({ where: { userId: user.id } });
-  if (!student) return err("ملف الطالب غير موجود", 404);
+  if (!student) return err(tApi("api.135"), 404);
 
   const stats = await buildStats(student.id);
   const xp = computeXp(stats);

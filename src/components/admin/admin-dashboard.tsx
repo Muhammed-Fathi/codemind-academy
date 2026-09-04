@@ -1,4 +1,5 @@
 "use client";
+import { useT , pickAuto } from "@/lib/i18n";
 
 // ============================================================
 // CodeMind Academy — Admin Dashboard
@@ -127,7 +128,7 @@ function useApi<T>(url: string | null, deps: any[] = []) {
         setData(d);
         setError(null);
       })
-      .catch(() => setError("حصلت مشكلة. حاول تاني."))
+      .catch(() => setError("admin.001"))
       .finally(() => setLoading(false));
   }, [url]);
   React.useEffect(() => {
@@ -169,14 +170,14 @@ function LoadingBlock({ rows = 4 }: { rows?: number }) {
 }
 
 function ErrorBlock({ message, onRetry }: { message: string; onRetry?: () => void }) {
+  const tr = useT();
   return (
     <div className="flex flex-col items-center justify-center py-10 text-center gap-3">
       <XCircle className="w-8 h-8 text-destructive" />
       <p className="text-sm text-muted-foreground">{message}</p>
       {onRetry && (
         <Button size="sm" variant="outline" onClick={onRetry}>
-          حاول تاني
-        </Button>
+          {tr("admin.002")}</Button>
       )}
     </div>
   );
@@ -299,6 +300,7 @@ type OverviewData = {
 };
 
 function OverviewView() {
+  const tr = useT();
   const { data, loading, error, reload } = useApi<OverviewData>("/api/admin/overview");
 
   if (loading) {
@@ -315,7 +317,7 @@ function OverviewView() {
     );
   }
   if (error || !data) {
-    return <ErrorBlock message={error || "حصلت مشكلة"} onRetry={reload} />;
+    return <ErrorBlock message={tr(error || "admin.003")} onRetry={reload} />;
   }
 
   const t = data.totals;
@@ -357,11 +359,10 @@ function OverviewView() {
         <Card className="p-4">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
-            Revenue (هذا الشهر)
-          </div>
+            {tr("admin.004")}</div>
           <div className="text-2xl font-bold mt-2">
             <AnimatedCounter value={t.revenueThisMonth} />
-            <span className="text-sm text-muted-foreground mr-1">EGP</span>
+            <span className="text-sm text-muted-foreground me-1">EGP</span>
           </div>
         </Card>
         <Card className="p-4">
@@ -371,7 +372,7 @@ function OverviewView() {
           </div>
           <div className="text-2xl font-bold mt-2">
             <AnimatedCounter value={t.attendanceRate} />
-            <span className="text-sm text-muted-foreground mr-1">%</span>
+            <span className="text-sm text-muted-foreground me-1">%</span>
           </div>
           <Progress value={t.attendanceRate} className="mt-2 h-1.5" />
         </Card>
@@ -382,7 +383,7 @@ function OverviewView() {
           </div>
           <div className="text-2xl font-bold mt-2">
             <AnimatedCounter value={t.avgQuizScore} />
-            <span className="text-sm text-muted-foreground mr-1">%</span>
+            <span className="text-sm text-muted-foreground me-1">%</span>
           </div>
         </Card>
       </div>
@@ -392,7 +393,7 @@ function OverviewView() {
         <Card className="lg:col-span-2 p-4">
           <CardHeader className="px-0 pt-0">
             <CardTitle className="text-base">Revenue Trend</CardTitle>
-            <CardDescription>آخر 6 شهور</CardDescription>
+            <CardDescription>{tr("admin.005")}</CardDescription>
           </CardHeader>
           <CardContent className="px-0">
             <div dir="ltr" className="w-full h-64">
@@ -425,12 +426,12 @@ function OverviewView() {
         <Card className="p-4">
           <CardHeader className="px-0 pt-0">
             <CardTitle className="text-base">Group Distribution</CardTitle>
-            <CardDescription>حسب الكورس</CardDescription>
+            <CardDescription>{tr("admin.006")}</CardDescription>
           </CardHeader>
           <CardContent className="px-0">
             <div dir="ltr" className="w-full h-64">
               {data.groupDistribution.length === 0 ? (
-                <EmptyBlock message="مفيش مجموعات لسه" />
+                <EmptyBlock message={tr("admin.007")} />
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
@@ -474,11 +475,11 @@ function OverviewView() {
             <CalendarDays className="w-4 h-4 text-emerald-500" />
             Upcoming Sessions
           </CardTitle>
-          <CardDescription>السبعة أيام الجايين</CardDescription>
+          <CardDescription>{tr("admin.008")}</CardDescription>
         </CardHeader>
         <CardContent className="px-0">
           {data.upcomingSessions.length === 0 ? (
-            <EmptyBlock message="مفيش Sessions مجدولة دلوقتي" />
+            <EmptyBlock message={tr("admin.009")} />
           ) : (
             <ScrollArea className="max-h-96">
               <div className="space-y-2">
@@ -527,15 +528,16 @@ type StudentRow = {
   parentPhone?: string | null;
   studentCode?: string | null;
   enrolledAt: string;
-  group: { id: string; name: string; course: { nameAr: string } } | null;
+  group: { id: string; name: string; course: { nameAr: string; name?: string } } | null;
   subscription: {
     status: string;
     endDate: string | null;
-    plan: { nameAr: string };
+    plan: { nameAr: string; name?: string };
   } | null;
 };
 
 function StudentsView() {
+  const tr = useT();
   const [search, setSearch] = React.useState("");
   const [status, setStatus] = React.useState("all");
   const [openAdd, setOpenAdd] = React.useState(false);
@@ -554,8 +556,8 @@ function StudentsView() {
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
       <div className="flex flex-wrap items-center gap-3 justify-between">
         <div>
-          <h2 className="text-xl font-bold">الطلاب</h2>
-          <p className="text-xs text-muted-foreground">إدارة كل الطلاب المسجلين في الأكاديمية</p>
+          <h2 className="text-xl font-bold">{tr("admin.010")}</h2>
+          <p className="text-xs text-muted-foreground">{tr("admin.011")}</p>
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -565,7 +567,7 @@ function StudentsView() {
               try {
                 const r = await fetch("/api/admin/export-progress");
                 if (!r.ok) {
-                  toast.error("فشل التصدير");
+                  toast.error(tr("admin.012"));
                   return;
                 }
                 const blob = await r.blob();
@@ -575,17 +577,17 @@ function StudentsView() {
                 a.download = `students-progress-${new Date().toISOString().slice(0, 10)}.csv`;
                 a.click();
                 URL.revokeObjectURL(url);
-                toast.success("اتنزّل ملف التقدم ✅");
+                toast.success(tr("admin.013"));
               } catch {
-                toast.error("حصلت مشكلة في التصدير");
+                toast.error(tr("admin.014"));
               }
             }}
           >
-            <Download className="w-4 h-4 ml-2" />
+            <Download className="w-4 h-4 ms-2" />
             Export CSV
           </Button>
           <Button onClick={() => setOpenAdd(true)}>
-            <Plus className="w-4 h-4 ml-2" />
+            <Plus className="w-4 h-4 ms-2" />
             Add Student
           </Button>
         </div>
@@ -594,20 +596,20 @@ function StudentsView() {
       <Card className="p-4">
         <div className="flex flex-wrap gap-3 mb-4">
           <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Search className="absolute end-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="بحث بالاسم أو الإيميل..."
-              className="pr-9"
+              placeholder={tr("admin.015")}
+              className="pe-9"
             />
           </div>
           <Select value={status} onValueChange={setStatus}>
             <SelectTrigger className="w-40">
-              <SelectValue placeholder="الكل" />
+              <SelectValue placeholder={tr("admin.016")} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">الكل</SelectItem>
+              <SelectItem value="all">{tr("admin.016")}</SelectItem>
               <SelectItem value="active">Active</SelectItem>
               <SelectItem value="inactive">Inactive</SelectItem>
             </SelectContent>
@@ -619,19 +621,19 @@ function StudentsView() {
         ) : error ? (
           <ErrorBlock message={error} onRetry={reload} />
         ) : !data || data.students.length === 0 ? (
-          <EmptyBlock message="مفيش طلاب لسه. ابدأ بإضافة طالب جديد." />
+          <EmptyBlock message={tr("admin.018")} />
         ) : (
           <div className="max-h-[60vh] overflow-auto">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>الاسم</TableHead>
-                  <TableHead>كود الطالب</TableHead>
-                  <TableHead>الإيميل</TableHead>
-                  <TableHead>الصف</TableHead>
-                  <TableHead>المجموعة</TableHead>
-                  <TableHead>الاشتراك</TableHead>
-                  <TableHead>الحالة</TableHead>
+                  <TableHead>{tr("admin.019")}</TableHead>
+                  <TableHead>{tr("admin.020")}</TableHead>
+                  <TableHead>{tr("admin.021")}</TableHead>
+                  <TableHead>{tr("admin.022")}</TableHead>
+                  <TableHead>{tr("admin.023")}</TableHead>
+                  <TableHead>{tr("admin.024")}</TableHead>
+                  <TableHead>{tr("admin.025")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -657,7 +659,7 @@ function StudentsView() {
                     <TableCell>
                       {s.subscription ? (
                         <span className="text-xs">
-                          {s.subscription.plan?.nameAr}
+                          {pickAuto(s.subscription.plan?.nameAr, s.subscription.plan?.name)}
                         </span>
                       ) : (
                         <span className="text-xs text-muted-foreground">—</span>
@@ -698,6 +700,7 @@ function AddStudentDialog({
   onOpenChange: (v: boolean) => void;
   onCreated: () => void;
 }) {
+  const tr = useT();
   const [form, setForm] = React.useState({
     name: "",
     email: "",
@@ -710,7 +713,7 @@ function AddStudentDialog({
 
   const submit = async () => {
     if (!form.name || !form.email || !form.password) {
-      toast.error("الاسم والإيميل والباسورد مطلوبين");
+      toast.error(tr("admin.026"));
       return;
     }
     setSaving(true);
@@ -721,13 +724,13 @@ function AddStudentDialog({
         body: JSON.stringify(form),
       });
       const j = await res.json();
-      if (!res.ok) throw new Error(j.error || "حصلت مشكلة");
-      toast.success("اتضاف الطالب بنجاح");
+      if (!res.ok) throw new Error(j.error || tr("admin.003"));
+      toast.success(tr("admin.028"));
       onCreated();
       onOpenChange(false);
       setForm({ name: "", email: "", password: "", phone: "", grade: "2nd Secondary", schoolName: "" });
     } catch (e: any) {
-      toast.error(e.message || "حصلت مشكلة. حاول تاني.");
+      toast.error(e.message || tr("admin.001"));
     } finally {
       setSaving(false);
     }
@@ -737,41 +740,41 @@ function AddStudentDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>إضافة طالب جديد</DialogTitle>
-          <DialogDescription>اتسجل بيانات الطالب وهيحصل له User و Student تلقائياً.</DialogDescription>
+          <DialogTitle>{tr("admin.030")}</DialogTitle>
+          <DialogDescription>{tr("admin.031")}</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div>
-            <Label>الاسم</Label>
+            <Label>{tr("admin.019")}</Label>
             <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           </div>
           <div>
-            <Label>الإيميل</Label>
+            <Label>{tr("admin.021")}</Label>
             <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
           </div>
           <div>
-            <Label>كلمة السر</Label>
+            <Label>{tr("admin.034")}</Label>
             <PasswordInput value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="••••••••" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label>التليفون</Label>
+              <Label>{tr("admin.035")}</Label>
               <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
             </div>
             <div>
-              <Label>الصف</Label>
+              <Label>{tr("admin.022")}</Label>
               <Input value={form.grade} onChange={(e) => setForm({ ...form, grade: e.target.value })} />
             </div>
           </div>
           <div>
-            <Label>المدرسة</Label>
+            <Label>{tr("admin.037")}</Label>
             <Input value={form.schoolName} onChange={(e) => setForm({ ...form, schoolName: e.target.value })} />
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>إلغاء</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>{tr("admin.038")}</Button>
           <Button onClick={submit} disabled={saving}>
-            {saving ? "جارٍ الحفظ..." : "حفظ"}
+            {saving ? tr("admin.039") : tr("admin.040")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -788,6 +791,7 @@ function StudentProfileDrawer({
   onClose: () => void;
   onUpdated: () => void;
 }) {
+  const tr = useT();
   const [groups, setGroups] = React.useState<{ id: string; name: string }[]>([]);
   const [groupId, setGroupId] = React.useState<string | undefined>(undefined);
   const [saving, setSaving] = React.useState(false);
@@ -812,11 +816,11 @@ function StudentProfileDrawer({
         body: JSON.stringify({ isActive: !student.isActive }),
       });
       if (!res.ok) throw new Error("err");
-      toast.success(student.isActive ? "اتوقف الطالب" : "اتفعّل الطالب");
+      toast.success(student.isActive ? tr("admin.041") : tr("admin.042"));
       onUpdated();
       onClose();
     } catch {
-      toast.error("حصلت مشكلة. حاول تاني.");
+      toast.error(tr("admin.001"));
     } finally {
       setSaving(false);
     }
@@ -832,11 +836,11 @@ function StudentProfileDrawer({
         body: JSON.stringify({ groupId: groupId || null }),
       });
       if (!res.ok) throw new Error("err");
-      toast.success("اتحدّثت المجموعة");
+      toast.success(tr("admin.044"));
       onUpdated();
       onClose();
     } catch {
-      toast.error("حصلت مشكلة. حاول تاني.");
+      toast.error(tr("admin.001"));
     } finally {
       setSaving(false);
     }
@@ -844,7 +848,7 @@ function StudentProfileDrawer({
 
   return (
     <Drawer open={!!student} onOpenChange={(v) => !v && onClose()} direction="right">
-      <DrawerContent className="w-full sm:max-w-md ml-auto h-full max-h-screen flex flex-col">
+      <DrawerContent className="w-full sm:max-w-md ms-auto h-full max-h-screen flex flex-col">
         {student && (
           <>
             <DrawerHeader className="shrink-0 border-b border-border/60 pb-3">
@@ -855,7 +859,7 @@ function StudentProfileDrawer({
               {student.studentCode && (
                 <div className="rounded-xl border border-primary/30 bg-primary/5 p-3 flex items-center justify-between">
                   <div>
-                    <div className="text-xs text-muted-foreground">كود الطالب</div>
+                    <div className="text-xs text-muted-foreground">{tr("admin.020")}</div>
                     <code className="text-lg font-black font-mono tracking-widest text-primary" dir="ltr">
                       {student.studentCode}
                     </code>
@@ -866,71 +870,70 @@ function StudentProfileDrawer({
                     onClick={() => {
                       try {
                         navigator.clipboard.writeText(student.studentCode || "");
-                        toast.success("اتنسخ الكود ✅");
+                        toast.success(tr("admin.047"));
                       } catch {
-                        toast.error("انسخ الكود يدويًا");
+                        toast.error(tr("admin.048"));
                       }
                     }}
                   >
-                    نسخ
-                  </Button>
+                    {tr("admin.049")}</Button>
                 </div>
               )}
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div className="rounded-lg border p-3">
-                  <div className="text-xs text-muted-foreground">التليفون</div>
+                  <div className="text-xs text-muted-foreground">{tr("admin.035")}</div>
                   <div className="font-medium mt-1">{student.phone || "—"}</div>
                 </div>
                 <div className="rounded-lg border p-3">
-                  <div className="text-xs text-muted-foreground">تليفون ولي الأمر</div>
+                  <div className="text-xs text-muted-foreground">{tr("admin.051")}</div>
                   <div className="font-medium mt-1" dir="ltr">{student.parentPhone || "—"}</div>
                 </div>
                 <div className="rounded-lg border p-3">
-                  <div className="text-xs text-muted-foreground">الرقم القومي</div>
+                  <div className="text-xs text-muted-foreground">{tr("admin.052")}</div>
                   <div className="font-medium mt-1 font-mono" dir="ltr">{student.nationalId || "—"}</div>
                 </div>
                 <div className="rounded-lg border p-3">
-                  <div className="text-xs text-muted-foreground">الصف</div>
+                  <div className="text-xs text-muted-foreground">{tr("admin.022")}</div>
                   <div className="font-medium mt-1">{student.grade}</div>
                 </div>
                 <div className="rounded-lg border p-3">
-                  <div className="text-xs text-muted-foreground">المدرسة</div>
+                  <div className="text-xs text-muted-foreground">{tr("admin.037")}</div>
                   <div className="font-medium mt-1">{student.schoolName || "—"}</div>
                 </div>
                 <div className="rounded-lg border p-3">
-                  <div className="text-xs text-muted-foreground">نوع المدرسة</div>
+                  <div className="text-xs text-muted-foreground">{tr("admin.055")}</div>
                   <div className="font-medium mt-1">
-                    {student.schoolType === "LANGUAGE" ? "لغات" : student.schoolType === "ARABIC" ? "عربي" : "—"}
+                    {student.schoolType === "LANGUAGE" ? tr("admin.056") : student.schoolType === "ARABIC" ? tr("admin.057") : "—"}
                   </div>
                 </div>
                 <div className="rounded-lg border p-3 col-span-2">
-                  <div className="text-xs text-muted-foreground">تاريخ التسجيل</div>
+                  <div className="text-xs text-muted-foreground">{tr("admin.058")}</div>
                   <div className="font-medium mt-1">{fmtDate(student.enrolledAt)}</div>
                 </div>
               </div>
 
               <div className="rounded-lg border p-3 space-y-2">
-                <div className="text-xs text-muted-foreground">الاشتراك</div>
+                <div className="text-xs text-muted-foreground">{tr("admin.024")}</div>
                 {student.subscription ? (
                   <>
                     <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium">{student.subscription.plan?.nameAr}</span>
+                      <span className="text-sm font-medium">{pickAuto(student.subscription.plan?.nameAr, student.subscription.plan?.name)}</span>
                       {statusBadge(student.subscription.status)}
                     </div>
                     <div className="text-xs text-muted-foreground">
-                      ينتهي: {fmtDate(student.subscription.endDate)}
+                      {tr("admin.060")}{fmtDate(student.subscription.endDate)}
                     </div>
                   </>
                 ) : (
-                  <div className="text-sm text-muted-foreground">مفيش اشتراك</div>
+                  <div className="text-sm text-muted-foreground">{tr("admin.061")}</div>
                 )}
               </div>
 
               <div className="rounded-lg border p-3 space-y-2">
-                <div className="text-xs text-muted-foreground">المجموعة</div>
+                <div className="text-xs text-muted-foreground">{tr("admin.023")}</div>
                 <Select value={groupId} onValueChange={setGroupId}>
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder="اختر مجموعة" />
+                    <SelectValue placeholder={tr("admin.063")} />
                   </SelectTrigger>
                   <SelectContent>
                     {groups.map((g) => (
@@ -941,8 +944,7 @@ function StudentProfileDrawer({
                   </SelectContent>
                 </Select>
                 <Button size="sm" variant="outline" onClick={assignGroup} disabled={saving} className="w-full">
-                  حفظ المجموعة
-                </Button>
+                  {tr("admin.064")}</Button>
               </div>
 
               <Button
@@ -953,14 +955,12 @@ function StudentProfileDrawer({
               >
                 {student.isActive ? (
                   <>
-                    <UserX className="w-4 h-4 ml-2" />
-                    إيقاف الطالب
-                  </>
+                    <UserX className="w-4 h-4 ms-2" />
+                    {tr("admin.065")}</>
                 ) : (
                   <>
-                    <UserCheck className="w-4 h-4 ml-2" />
-                    تفعيل الطالب
-                  </>
+                    <UserCheck className="w-4 h-4 ms-2" />
+                    {tr("admin.066")}</>
                 )}
               </Button>
             </div>
@@ -988,6 +988,7 @@ type TeacherRow = {
 };
 
 function TeachersView() {
+  const tr = useT();
   const [openAdd, setOpenAdd] = React.useState(false);
   const { data, loading, error, reload } = useApi<{ teachers: TeacherRow[] }>("/api/admin/teachers");
 
@@ -995,11 +996,11 @@ function TeachersView() {
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold">المعلمون</h2>
-          <p className="text-xs text-muted-foreground">إدارة فريق المعلمين والمجموعات بتاعتهم</p>
+          <h2 className="text-xl font-bold">{tr("admin.067")}</h2>
+          <p className="text-xs text-muted-foreground">{tr("admin.068")}</p>
         </div>
         <Button onClick={() => setOpenAdd(true)}>
-          <Plus className="w-4 h-4 ml-2" />
+          <Plus className="w-4 h-4 ms-2" />
           Add Teacher
         </Button>
       </div>
@@ -1010,17 +1011,17 @@ function TeachersView() {
         ) : error ? (
           <ErrorBlock message={error} onRetry={reload} />
         ) : !data || data.teachers.length === 0 ? (
-          <EmptyBlock message="مفيش معلمين لسه." />
+          <EmptyBlock message={tr("admin.069")} />
         ) : (
           <div className="max-h-[70vh] overflow-auto">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>الاسم</TableHead>
-                  <TableHead>الإيميل</TableHead>
+                  <TableHead>{tr("admin.019")}</TableHead>
+                  <TableHead>{tr("admin.021")}</TableHead>
                   <TableHead>Specialty</TableHead>
-                  <TableHead>المجموعات</TableHead>
-                  <TableHead>الحالة</TableHead>
+                  <TableHead>{tr("admin.072")}</TableHead>
+                  <TableHead>{tr("admin.025")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1072,6 +1073,7 @@ function AddTeacherDialog({
   onOpenChange: (v: boolean) => void;
   onCreated: () => void;
 }) {
+  const tr = useT();
   const [form, setForm] = React.useState({
     name: "",
     email: "",
@@ -1084,7 +1086,7 @@ function AddTeacherDialog({
 
   const submit = async () => {
     if (!form.name || !form.email || !form.password) {
-      toast.error("الاسم والإيميل والباسورد مطلوبين");
+      toast.error(tr("admin.026"));
       return;
     }
     setSaving(true);
@@ -1096,12 +1098,12 @@ function AddTeacherDialog({
       });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || "err");
-      toast.success("اتضاف المعلم بنجاح");
+      toast.success(tr("admin.075"));
       onCreated();
       onOpenChange(false);
       setForm({ name: "", email: "", password: "", phone: "", specialty: "", bio: "" });
     } catch (e: any) {
-      toast.error(e.message || "حصلت مشكلة. حاول تاني.");
+      toast.error(e.message || tr("admin.001"));
     } finally {
       setSaving(false);
     }
@@ -1111,25 +1113,25 @@ function AddTeacherDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>إضافة معلم جديد</DialogTitle>
-          <DialogDescription>هيحصل User بالـ TEACHER role.</DialogDescription>
+          <DialogTitle>{tr("admin.077")}</DialogTitle>
+          <DialogDescription>{tr("admin.078")}</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div>
-            <Label>الاسم</Label>
+            <Label>{tr("admin.019")}</Label>
             <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           </div>
           <div>
-            <Label>الإيميل</Label>
+            <Label>{tr("admin.021")}</Label>
             <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
           </div>
           <div>
-            <Label>كلمة السر</Label>
+            <Label>{tr("admin.034")}</Label>
             <PasswordInput value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="••••••••" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label>التليفون</Label>
+              <Label>{tr("admin.035")}</Label>
               <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
             </div>
             <div>
@@ -1143,9 +1145,9 @@ function AddTeacherDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>إلغاء</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>{tr("admin.038")}</Button>
           <Button onClick={submit} disabled={saving}>
-            {saving ? "جارٍ الحفظ..." : "حفظ"}
+            {saving ? tr("admin.039") : tr("admin.040")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1171,6 +1173,7 @@ type GroupRow = {
 };
 
 function GroupsView() {
+  const tr = useT();
   const [openAdd, setOpenAdd] = React.useState(false);
   const [selected, setSelected] = React.useState<GroupRow | null>(null);
   const { data, loading, error, reload } = useApi<{ groups: GroupRow[] }>("/api/admin/groups");
@@ -1179,11 +1182,11 @@ function GroupsView() {
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold">المجموعات</h2>
-          <p className="text-xs text-muted-foreground">كل المجموعات الدراسية</p>
+          <h2 className="text-xl font-bold">{tr("admin.072")}</h2>
+          <p className="text-xs text-muted-foreground">{tr("admin.087")}</p>
         </div>
         <Button onClick={() => setOpenAdd(true)}>
-          <Plus className="w-4 h-4 ml-2" />
+          <Plus className="w-4 h-4 ms-2" />
           Create Group
         </Button>
       </div>
@@ -1198,7 +1201,7 @@ function GroupsView() {
         <ErrorBlock message={error} onRetry={reload} />
       ) : !data || data.groups.length === 0 ? (
         <Card className="p-4">
-          <EmptyBlock message="مفيش مجموعات لسه. ابدأ بإنشاء مجموعة جديدة." />
+          <EmptyBlock message={tr("admin.088")} />
         </Card>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 stagger-in">
@@ -1225,7 +1228,7 @@ function GroupsView() {
                 <div className="mt-3 space-y-1.5">
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <Briefcase className="w-3.5 h-3.5" />
-                    {g.teacherName || "مفيش معلم"}
+                    {g.teacherName || tr("admin.089")}
                   </div>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <CalendarDays className="w-3.5 h-3.5" />
@@ -1234,7 +1237,7 @@ function GroupsView() {
                 </div>
                 <div className="mt-4">
                   <div className="flex items-center justify-between text-xs mb-1">
-                    <span className="text-muted-foreground">الطلاب</span>
+                    <span className="text-muted-foreground">{tr("admin.010")}</span>
                     <span className="font-medium">
                       {g.studentsCount} / {g.capacity}
                     </span>
@@ -1262,14 +1265,15 @@ function CreateGroupDialog({
   onOpenChange: (v: boolean) => void;
   onCreated: () => void;
 }) {
+  const tr = useT();
   const [form, setForm] = React.useState({
     name: "",
     courseId: "",
     teacherId: "",
     capacity: 20,
-    schedule: "السبت و الثلاثاء — 6:00 م",
+    schedule: tr("admin.091"),
   });
-  const [courses, setCourses] = React.useState<{ id: string; nameAr: string }[]>([]);
+  const [courses, setCourses] = React.useState<{ id: string; nameAr: string; name?: string }[]>([]);
   const [teachers, setTeachers] = React.useState<{ id: string; name: string }[]>([]);
   const [saving, setSaving] = React.useState(false);
 
@@ -1282,7 +1286,7 @@ function CreateGroupDialog({
 
   const submit = async () => {
     if (!form.name || !form.courseId) {
-      toast.error("الاسم والكورس مطلوبين");
+      toast.error(tr("admin.092"));
       return;
     }
     setSaving(true);
@@ -1294,12 +1298,12 @@ function CreateGroupDialog({
       });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || "err");
-      toast.success("اتعملت المجموعة بنجاح");
+      toast.success(tr("admin.093"));
       onCreated();
       onOpenChange(false);
-      setForm({ name: "", courseId: "", teacherId: "", capacity: 20, schedule: "السبت و الثلاثاء — 6:00 م" });
+      setForm({ name: "", courseId: "", teacherId: "", capacity: 20, schedule: tr("admin.091") });
     } catch (e: any) {
-      toast.error(e.message || "حصلت مشكلة. حاول تاني.");
+      toast.error(e.message || tr("admin.001"));
     } finally {
       setSaving(false);
     }
@@ -1309,32 +1313,32 @@ function CreateGroupDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>إنشاء مجموعة جديدة</DialogTitle>
-          <DialogDescription>المجموعة هيتم ربطها بالكورس والمعلم.</DialogDescription>
+          <DialogTitle>{tr("admin.096")}</DialogTitle>
+          <DialogDescription>{tr("admin.097")}</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div>
-            <Label>اسم المجموعة</Label>
+            <Label>{tr("admin.098")}</Label>
             <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           </div>
           <div>
-            <Label>الكورس</Label>
+            <Label>{tr("admin.099")}</Label>
             <Select value={form.courseId} onValueChange={(v) => setForm({ ...form, courseId: v })}>
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="اختر الكورس" />
+                <SelectValue placeholder={tr("admin.100")} />
               </SelectTrigger>
               <SelectContent>
                 {courses.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>{c.nameAr}</SelectItem>
+                  <SelectItem key={c.id} value={c.id}>{pickAuto(c.nameAr, c.name)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
           <div>
-            <Label>المعلم</Label>
+            <Label>{tr("admin.101")}</Label>
             <Select value={form.teacherId} onValueChange={(v) => setForm({ ...form, teacherId: v })}>
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="اختر المعلم" />
+                <SelectValue placeholder={tr("admin.102")} />
               </SelectTrigger>
               <SelectContent>
                 {teachers.map((t) => (
@@ -1345,7 +1349,7 @@ function CreateGroupDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label>السعة</Label>
+              <Label>{tr("admin.103")}</Label>
               <Input
                 type="number"
                 value={form.capacity}
@@ -1353,15 +1357,15 @@ function CreateGroupDialog({
               />
             </div>
             <div>
-              <Label>الميعاد</Label>
+              <Label>{tr("admin.104")}</Label>
               <Input value={form.schedule} onChange={(e) => setForm({ ...form, schedule: e.target.value })} />
             </div>
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>إلغاء</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>{tr("admin.038")}</Button>
           <Button onClick={submit} disabled={saving}>
-            {saving ? "جارٍ الحفظ..." : "حفظ"}
+            {saving ? tr("admin.039") : tr("admin.040")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1378,6 +1382,7 @@ function ManageGroupDialog({
   onClose: () => void;
   onUpdated: () => void;
 }) {
+  const tr = useT();
   const [teachers, setTeachers] = React.useState<{ id: string; name: string }[]>([]);
   const [teacherId, setTeacherId] = React.useState<string | undefined>();
   const [capacity, setCapacity] = React.useState(20);
@@ -1408,11 +1413,11 @@ function ManageGroupDialog({
         body: JSON.stringify({ teacherId: teacherId || null, capacity, schedule }),
       });
       if (!res.ok) throw new Error("err");
-      toast.success("اتحدّثت المجموعة");
+      toast.success(tr("admin.044"));
       onUpdated();
       onClose();
     } catch {
-      toast.error("حصلت مشكلة. حاول تاني.");
+      toast.error(tr("admin.001"));
     } finally {
       setSaving(false);
     }
@@ -1422,16 +1427,16 @@ function ManageGroupDialog({
     <Dialog open={!!group} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>إدارة المجموعة</DialogTitle>
+          <DialogTitle>{tr("admin.110")}</DialogTitle>
           <DialogDescription>{group?.name}</DialogDescription>
         </DialogHeader>
         {group && (
           <div className="space-y-3">
             <div>
-              <Label>المعلم</Label>
+              <Label>{tr("admin.101")}</Label>
               <Select value={teacherId} onValueChange={setTeacherId}>
                 <SelectTrigger className="w-full">
-                  <SelectValue placeholder="اختر المعلم" />
+                  <SelectValue placeholder={tr("admin.102")} />
                 </SelectTrigger>
                 <SelectContent>
                   {teachers.map((t) => (
@@ -1442,19 +1447,19 @@ function ManageGroupDialog({
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>السعة</Label>
+                <Label>{tr("admin.103")}</Label>
                 <Input type="number" value={capacity} onChange={(e) => setCapacity(Number(e.target.value))} />
               </div>
               <div>
-                <Label>الميعاد</Label>
+                <Label>{tr("admin.104")}</Label>
                 <Input value={schedule} onChange={(e) => setSchedule(e.target.value)} />
               </div>
             </div>
             <div>
-              <Label>الطلاب المسجلين ({students.length})</Label>
+              <Label>{tr("admin.115")}{students.length})</Label>
               <div className="max-h-40 overflow-y-auto rounded-lg border p-2 space-y-1">
                 {students.length === 0 ? (
-                  <div className="text-xs text-muted-foreground text-center py-3">مفيش طلاب</div>
+                  <div className="text-xs text-muted-foreground text-center py-3">{tr("admin.116")}</div>
                 ) : (
                   students.map((s) => (
                     <div key={s.id} className="flex items-center justify-between text-xs px-2 py-1.5 rounded hover:bg-muted">
@@ -1468,9 +1473,9 @@ function ManageGroupDialog({
           </div>
         )}
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>إغلاق</Button>
+          <Button variant="outline" onClick={onClose}>{tr("admin.117")}</Button>
           <Button onClick={save} disabled={saving}>
-            {saving ? "جارٍ الحفظ..." : "حفظ التغييرات"}
+            {saving ? tr("admin.039") : tr("admin.119")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1496,22 +1501,27 @@ type CourseRow = {
 type CourseTree = {
   id: string;
   nameAr: string;
+  name?: string;
   parts: {
     id: string;
     titleAr: string;
+    title?: string;
     units: {
       id: string;
       titleAr: string;
+      title?: string;
       topics: {
         id: string;
         titleAr: string;
-        lessons: { id: string; titleAr: string }[];
+        title?: string;
+        lessons: { id: string; titleAr: string; title?: string }[];
       }[];
     }[];
   }[];
 };
 
 function CoursesView() {
+  const tr = useT();
   const { data, loading, error, reload } = useApi<{ courses: CourseRow[] }>("/api/admin/courses");
   const [tree, setTree] = React.useState<CourseTree | null>(null);
   const [treeLoading, setTreeLoading] = React.useState(false);
@@ -1525,7 +1535,7 @@ function CoursesView() {
       const j = await res.json();
       setTree(j.course || null);
     } catch {
-      toast.error("حصلت مشكلة. حاول تاني.");
+      toast.error(tr("admin.001"));
     } finally {
       setTreeLoading(false);
     }
@@ -1540,11 +1550,11 @@ function CoursesView() {
         body: JSON.stringify({ action: "seed" }),
       });
       const j = await res.json();
-      if (!res.ok) throw new Error(j.error || "فشل استعادة المنهج");
-      toast.success(j.created ? "اتستعاد المنهج بنجاح ✅" : "المنهج موجود بالفعل ✅");
+      if (!res.ok) throw new Error(j.error || tr("admin.121"));
+      toast.success(j.created ? tr("admin.122") : tr("admin.123"));
       reload();
     } catch (e: any) {
-      toast.error(e.message || "حصلت مشكلة. حاول تاني.");
+      toast.error(e.message || tr("admin.001"));
     } finally {
       setSeeding(false);
     }
@@ -1554,16 +1564,16 @@ function CoursesView() {
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
       <div className="flex flex-wrap items-center gap-3 justify-between">
         <div>
-          <h2 className="text-xl font-bold">الكورسات</h2>
-          <p className="text-xs text-muted-foreground">استعراض الـCurriculum الشامل</p>
+          <h2 className="text-xl font-bold">{tr("admin.125")}</h2>
+          <p className="text-xs text-muted-foreground">{tr("admin.126")}</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={seedNow} disabled={seeding}>
-            {seeding ? <Loader2 className="w-4 h-4 ml-2 animate-spin" /> : <Download className="w-4 h-4 ml-2" />}
-            {seeding ? "جارٍ الاستعادة…" : "استعادة المنهج"}
+            {seeding ? <Loader2 className="w-4 h-4 ms-2 animate-spin" /> : <Download className="w-4 h-4 ms-2" />}
+            {seeding ? tr("admin.127") : tr("admin.128")}
           </Button>
           <Button size="sm" onClick={() => setOpenAdd(true)}>
-            <Plus className="w-4 h-4 ml-2" />
+            <Plus className="w-4 h-4 ms-2" />
             Add Course
           </Button>
         </div>
@@ -1576,10 +1586,10 @@ function CoursesView() {
         <ErrorBlock message={error} onRetry={reload} />
       ) : !data || data.courses.length === 0 ? (
         <Card className="p-6 text-center">
-          <EmptyBlock message="مفيش كورسات لسه. دوس «استعادة المنهج» عشان نرجّع بيانات curriculum.ts." />
+          <EmptyBlock message={tr("admin.129")} />
           <Button className="mt-4" onClick={seedNow} disabled={seeding}>
-            {seeding ? <Loader2 className="w-4 h-4 ml-2 animate-spin" /> : <Download className="w-4 h-4 ml-2" />}
-            {seeding ? "جارٍ الاستعادة…" : "استعادة المنهج من curriculum.ts"}
+            {seeding ? <Loader2 className="w-4 h-4 ms-2 animate-spin" /> : <Download className="w-4 h-4 ms-2" />}
+            {seeding ? tr("admin.127") : tr("admin.131")}
           </Button>
         </Card>
       ) : (
@@ -1594,7 +1604,7 @@ function CoursesView() {
                   <BookOpen className="w-5 h-5" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-base font-bold truncate">{c.nameAr}</div>
+                  <div className="text-base font-bold truncate">{pickAuto(c.nameAr, c.name)}</div>
                   <div className="text-xs text-muted-foreground">{c.name}</div>
                   <div className="text-xs text-muted-foreground mt-1 line-clamp-2">{c.description}</div>
                 </div>
@@ -1618,9 +1628,8 @@ function CoursesView() {
                 className="w-full mt-4"
                 onClick={() => openTree(c.id)}
               >
-                <BookOpen className="w-4 h-4 ml-2" />
-                فتح الـCurriculum
-                <ChevronLeft className="w-3.5 h-3.5 mr-1 flip-rtl" />
+                <BookOpen className="w-4 h-4 ms-2" />
+                {tr("admin.132")}<ChevronLeft className="w-3.5 h-3.5 me-1 flip-rtl" />
               </Button>
             </Card>
           ))}
@@ -1630,37 +1639,37 @@ function CoursesView() {
       <Dialog open={!!tree} onOpenChange={(v) => !v && setTree(null)}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{tree?.nameAr}</DialogTitle>
-            <DialogDescription>شجرة الـCurriculum — Parts → Units → Topics → Lessons</DialogDescription>
+            <DialogTitle>{pickAuto(tree?.nameAr, tree?.name)}</DialogTitle>
+            <DialogDescription>{tr("admin.133")}</DialogDescription>
           </DialogHeader>
           {treeLoading ? (
             <LoadingBlock rows={4} />
           ) : tree ? (
-            <ScrollArea className="max-h-[60vh] pr-2">
+            <ScrollArea className="max-h-[60vh] pe-2">
               <div className="space-y-3">
                 {tree.parts.map((p) => (
                   <details key={p.id} className="rounded-lg border" open>
                     <summary className="px-3 py-2 text-sm font-bold cursor-pointer hover:bg-muted/50 rounded-lg">
-                      {p.titleAr}
+                      {pickAuto(p.titleAr, p.title)}
                     </summary>
                     <div className="px-3 pb-3 space-y-2">
                       {p.units.map((u) => (
                         <details key={u.id} className="rounded-md border bg-muted/30">
                           <summary className="px-3 py-2 text-xs font-semibold cursor-pointer">
-                            {u.titleAr}
+                            {pickAuto(u.titleAr, u.title)}
                           </summary>
                           <div className="px-3 pb-2 space-y-1.5">
                             {u.topics.map((t) => (
                               <div key={t.id} className="rounded-md border bg-card p-2">
-                                <div className="text-xs font-medium mb-1">{t.titleAr}</div>
+                                <div className="text-xs font-medium mb-1">{pickAuto(t.titleAr, t.title)}</div>
                                 <div className="flex flex-wrap gap-1">
                                   {t.lessons.map((l) => (
                                     <Badge key={l.id} variant="outline" className="text-[10px]">
-                                      {l.titleAr}
+                                      {pickAuto(l.titleAr, l.title)}
                                     </Badge>
                                   ))}
                                   {t.lessons.length === 0 && (
-                                    <span className="text-[10px] text-muted-foreground">مفيش Lessons</span>
+                                    <span className="text-[10px] text-muted-foreground">{tr("admin.134")}</span>
                                   )}
                                 </div>
                               </div>
@@ -1674,7 +1683,7 @@ function CoursesView() {
               </div>
             </ScrollArea>
           ) : (
-            <EmptyBlock message="مفيش بيانات" />
+            <EmptyBlock message={tr("admin.135")} />
           )}
         </DialogContent>
       </Dialog>
@@ -1691,6 +1700,7 @@ function AddCourseDialog({
   onOpenChange: (v: boolean) => void;
   onCreated: () => void;
 }) {
+  const tr = useT();
   const [form, setForm] = React.useState({
     name: "",
     nameAr: "",
@@ -1701,7 +1711,7 @@ function AddCourseDialog({
 
   const submit = async () => {
     if (!form.name.trim() || !form.nameAr.trim()) {
-      toast.error("اسم الكورس (عربي + إنجليزي) مطلوب");
+      toast.error(tr("admin.136"));
       return;
     }
     setSaving(true);
@@ -1712,13 +1722,13 @@ function AddCourseDialog({
         body: JSON.stringify(form),
       });
       const j = await res.json();
-      if (!res.ok) throw new Error(j.error || "حصلت مشكلة");
-      toast.success("اتضاف الكورس بنجاح ✅");
+      if (!res.ok) throw new Error(j.error || tr("admin.003"));
+      toast.success(tr("admin.138"));
       onCreated();
       onOpenChange(false);
       setForm({ name: "", nameAr: "", description: "", color: "#10b981" });
     } catch (e: any) {
-      toast.error(e.message || "حصلت مشكلة. حاول تاني.");
+      toast.error(e.message || tr("admin.001"));
     } finally {
       setSaving(false);
     }
@@ -1728,12 +1738,12 @@ function AddCourseDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>إضافة كورس جديد</DialogTitle>
-          <DialogDescription>ادخل بيانات الكورس الأساسية.</DialogDescription>
+          <DialogTitle>{tr("admin.140")}</DialogTitle>
+          <DialogDescription>{tr("admin.141")}</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div>
-            <Label>الاسم بالإنجليزية</Label>
+            <Label>{tr("admin.142")}</Label>
             <Input
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
@@ -1741,23 +1751,23 @@ function AddCourseDialog({
             />
           </div>
           <div>
-            <Label>الاسم بالعربية</Label>
+            <Label>{tr("admin.143")}</Label>
             <Input
               value={form.nameAr}
               onChange={(e) => setForm({ ...form, nameAr: e.target.value })}
-              placeholder="البرمجة والذكاء الاصطناعي"
+              placeholder={tr("admin.144")}
             />
           </div>
           <div>
-            <Label>الوصف</Label>
+            <Label>{tr("admin.145")}</Label>
             <Textarea
               value={form.description}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
-              placeholder="وصف مختصر للكورس"
+              placeholder={tr("admin.146")}
             />
           </div>
           <div>
-            <Label>اللون</Label>
+            <Label>{tr("admin.147")}</Label>
             <Input
               type="color"
               value={form.color}
@@ -1768,10 +1778,9 @@ function AddCourseDialog({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            إلغاء
-          </Button>
+            {tr("admin.038")}</Button>
           <Button onClick={submit} disabled={saving}>
-            {saving ? "جارٍ الحفظ..." : "حفظ"}
+            {saving ? tr("admin.039") : tr("admin.040")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1792,10 +1801,11 @@ type QuestionRow = {
   explanation: string | null;
   difficulty: "EASY" | "MEDIUM" | "HARD";
   marks: number;
-  quiz: { title: string; titleAr: string | null; lesson: { titleAr: string } | null } | null;
+  quiz: { title: string; titleAr: string | null; lesson: { titleAr: string; title?: string } | null } | null;
 };
 
 function QuestionBankView() {
+  const tr = useT();
   const [search, setSearch] = React.useState("");
   const [difficulty, setDifficulty] = React.useState("all");
   const [type, setType] = React.useState("all");
@@ -1820,7 +1830,7 @@ function QuestionBankView() {
                 for (const l of t.lessons || []) {
                   all.push({
                     id: l.id,
-                    title: `${l.titleAr || l.title} — ${u.titleAr || u.title}`,
+                    title: `${pickAuto(l.titleAr, l.title)} — ${pickAuto(u.titleAr, u.title)}`,
                   });
                 }
               }
@@ -1834,7 +1844,7 @@ function QuestionBankView() {
 
   const generateAi = async () => {
     if (!aiLesson) {
-      toast.error("اختار Lesson الأول");
+      toast.error(tr("admin.151"));
       return;
     }
     setAiGenerating(true);
@@ -1850,14 +1860,14 @@ function QuestionBankView() {
       });
       const d = await r.json();
       if (!r.ok) {
-        toast.error(d.error || "فشل توليد الأسئلة");
+        toast.error(d.error || tr("admin.152"));
         return;
       }
-      toast.success(`اتولّدت ${d.generated} أسئلة بالـAI 🤖`);
+      toast.success(tr("admin.153", { p1: d.generated }));
       setShowAiGen(false);
       reload();
     } catch {
-      toast.error("حصلت مشكلة في الاتصال بالـAI");
+      toast.error(tr("admin.154"));
     } finally {
       setAiGenerating(false);
     }
@@ -1878,7 +1888,7 @@ function QuestionBankView() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold">Question Bank</h2>
-          <p className="text-xs text-muted-foreground">كل الأسئلة المتاحة في النظام</p>
+          <p className="text-xs text-muted-foreground">{tr("admin.155")}</p>
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -1886,11 +1896,11 @@ function QuestionBankView() {
             onClick={() => setShowAiGen((s) => !s)}
             className="border-primary/30 text-primary hover:bg-primary/5"
           >
-            <Sparkles className="w-4 h-4 ml-2" />
+            <Sparkles className="w-4 h-4 ms-2" />
             AI Generate
           </Button>
           <Button onClick={() => setOpenAdd(true)}>
-            <Plus className="w-4 h-4 ml-2" />
+            <Plus className="w-4 h-4 ms-2" />
             Add Question
           </Button>
         </div>
@@ -1912,15 +1922,14 @@ function QuestionBankView() {
                   AI Quiz Generation
                 </CardTitle>
                 <CardDescription className="text-xs">
-                  خلّي الـAI يولّد أسئلة من محتوى أي Lesson — بيستخدم z-ai-web-dev-sdk
-                </CardDescription>
+                  {tr("admin.156")}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div>
-                  <Label className="text-xs">اختار Lesson</Label>
+                  <Label className="text-xs">{tr("admin.157")}</Label>
                   <Select value={aiLesson} onValueChange={setAiLesson}>
                     <SelectTrigger className="mt-1">
-                      <SelectValue placeholder="اختار Lesson..." />
+                      <SelectValue placeholder={tr("admin.158")} />
                     </SelectTrigger>
                     <SelectContent className="max-h-60">
                       {lessons.map((l) => (
@@ -1933,30 +1942,30 @@ function QuestionBankView() {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <Label className="text-xs">عدد الأسئلة</Label>
+                    <Label className="text-xs">{tr("admin.159")}</Label>
                     <Select value={aiCount} onValueChange={setAiCount}>
                       <SelectTrigger className="mt-1">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="3">3 أسئلة</SelectItem>
-                        <SelectItem value="5">5 أسئلة</SelectItem>
-                        <SelectItem value="7">7 أسئلة</SelectItem>
-                        <SelectItem value="10">10 أسئلة</SelectItem>
+                        <SelectItem value="3">{tr("admin.160")}</SelectItem>
+                        <SelectItem value="5">{tr("admin.161")}</SelectItem>
+                        <SelectItem value="7">{tr("admin.162")}</SelectItem>
+                        <SelectItem value="10">{tr("admin.163")}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div>
-                    <Label className="text-xs">الصعوبة</Label>
+                    <Label className="text-xs">{tr("admin.164")}</Label>
                     <Select value={aiDifficulty} onValueChange={setAiDifficulty}>
                       <SelectTrigger className="mt-1">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="MIXED">متنوعة</SelectItem>
-                        <SelectItem value="EASY">سهل</SelectItem>
-                        <SelectItem value="MEDIUM">متوسط</SelectItem>
-                        <SelectItem value="HARD">صعب</SelectItem>
+                        <SelectItem value="MIXED">{tr("admin.165")}</SelectItem>
+                        <SelectItem value="EASY">{tr("admin.166")}</SelectItem>
+                        <SelectItem value="MEDIUM">{tr("admin.167")}</SelectItem>
+                        <SelectItem value="HARD">{tr("admin.168")}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -1969,25 +1978,20 @@ function QuestionBankView() {
                   >
                     {aiGenerating ? (
                       <>
-                        <Loader2 className="w-4 h-4 ml-2 animate-spin" />
-                        جارٍ التوليد... (30 ثانية)
-                      </>
+                        <Loader2 className="w-4 h-4 ms-2 animate-spin" />
+                        {tr("admin.169")}</>
                     ) : (
                       <>
-                        <Sparkles className="w-4 h-4 ml-2" />
-                        ولّد الأسئلة
-                      </>
+                        <Sparkles className="w-4 h-4 ms-2" />
+                        {tr("admin.170")}</>
                     )}
                   </Button>
                   <Button variant="ghost" onClick={() => setShowAiGen(false)}>
-                    إلغاء
-                  </Button>
+                    {tr("admin.038")}</Button>
                 </div>
                 {aiGenerating && (
                   <div className="rounded-lg bg-primary/5 border border-primary/20 p-3 text-xs text-muted-foreground">
-                    💡 الـAI بيدرس محتوى الـLesson وبيولّد أسئلة متنوعة مع شروحات.
-                    ده ممكن ياخد حوالي 30 ثانية.
-                  </div>
+                    {tr("admin.172")}</div>
                 )}
               </CardContent>
             </Card>
@@ -1998,20 +2002,20 @@ function QuestionBankView() {
       <Card className="p-4">
         <div className="flex flex-wrap gap-3 mb-4">
           <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Search className="absolute end-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="بحث في نص السؤال..."
-              className="pr-9"
+              placeholder={tr("admin.173")}
+              className="pe-9"
             />
           </div>
           <Select value={difficulty} onValueChange={setDifficulty}>
             <SelectTrigger className="w-36">
-              <SelectValue placeholder="الكل" />
+              <SelectValue placeholder={tr("admin.016")} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">كل الصعوبات</SelectItem>
+              <SelectItem value="all">{tr("admin.175")}</SelectItem>
               <SelectItem value="EASY">Easy</SelectItem>
               <SelectItem value="MEDIUM">Medium</SelectItem>
               <SelectItem value="HARD">Hard</SelectItem>
@@ -2019,10 +2023,10 @@ function QuestionBankView() {
           </Select>
           <Select value={type} onValueChange={setType}>
             <SelectTrigger className="w-36">
-              <SelectValue placeholder="الكل" />
+              <SelectValue placeholder={tr("admin.016")} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">كل الأنواع</SelectItem>
+              <SelectItem value="all">{tr("admin.177")}</SelectItem>
               <SelectItem value="MCQ">MCQ</SelectItem>
               <SelectItem value="TRUE_FALSE">True / False</SelectItem>
             </SelectContent>
@@ -2034,7 +2038,7 @@ function QuestionBankView() {
         ) : error ? (
           <ErrorBlock message={error} onRetry={reload} />
         ) : !data || data.questions.length === 0 ? (
-          <EmptyBlock message="مفيش أسئلة لسه. ابدأ بإضافة سؤال جديد." />
+          <EmptyBlock message={tr("admin.178")} />
         ) : (
           <ScrollArea className="max-h-[60vh]">
             <div className="space-y-2">
@@ -2047,7 +2051,7 @@ function QuestionBankView() {
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-medium">
-                          {q.promptAr || q.prompt}
+                          {pickAuto(q.promptAr, q.prompt)}
                         </div>
                         {q.promptAr && (
                           <div className="text-xs text-muted-foreground mt-0.5">{q.prompt}</div>
@@ -2077,8 +2081,8 @@ function QuestionBankView() {
                     {q.quiz && (
                       <div className="text-[10px] text-muted-foreground mt-2 flex items-center gap-1">
                         <Library className="w-3 h-3" />
-                        {q.quiz.titleAr || q.quiz.title}
-                        {q.quiz.lesson && ` · ${q.quiz.lesson.titleAr}`}
+                        {pickAuto(q.quiz.titleAr, q.quiz.title)}
+                        {q.quiz.lesson && ` · ${pickAuto(q.quiz.lesson.titleAr, q.quiz.lesson.title)}`}
                       </div>
                     )}
                   </div>
@@ -2103,6 +2107,7 @@ function AddQuestionDialog({
   onOpenChange: (v: boolean) => void;
   onCreated: () => void;
 }) {
+  const tr = useT();
   const [form, setForm] = React.useState({
     prompt: "",
     promptAr: "",
@@ -2123,11 +2128,11 @@ function AddQuestionDialog({
 
   const submit = async () => {
     if (!form.prompt) {
-      toast.error("نص السؤال مطلوب");
+      toast.error(tr("admin.179"));
       return;
     }
     if (form.type === "MCQ" && form.options.filter((o) => o.trim()).length < 2) {
-      toast.error("لازم على الأقل خيارين للسؤال");
+      toast.error(tr("admin.180"));
       return;
     }
     setSaving(true);
@@ -2153,7 +2158,7 @@ function AddQuestionDialog({
       });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || "err");
-      toast.success("اتضاف السؤال بنجاح");
+      toast.success(tr("admin.181"));
       onCreated();
       onOpenChange(false);
       setForm({
@@ -2167,7 +2172,7 @@ function AddQuestionDialog({
         marks: 1,
       });
     } catch (e: any) {
-      toast.error(e.message || "حصلت مشكلة. حاول تاني.");
+      toast.error(e.message || tr("admin.001"));
     } finally {
       setSaving(false);
     }
@@ -2177,21 +2182,21 @@ function AddQuestionDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>إضافة سؤال جديد</DialogTitle>
-          <DialogDescription>السؤال هيكون متاح في الـQuestion Bank.</DialogDescription>
+          <DialogTitle>{tr("admin.183")}</DialogTitle>
+          <DialogDescription>{tr("admin.184")}</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div>
-            <Label>نص السؤال (English)</Label>
+            <Label>{tr("admin.185")}</Label>
             <Textarea value={form.prompt} onChange={(e) => setForm({ ...form, prompt: e.target.value })} rows={2} />
           </div>
           <div>
-            <Label>نص السؤال (عربي)</Label>
+            <Label>{tr("admin.186")}</Label>
             <Textarea value={form.promptAr} onChange={(e) => setForm({ ...form, promptAr: e.target.value })} rows={2} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label>النوع</Label>
+              <Label>{tr("admin.187")}</Label>
               <Select value={form.type} onValueChange={(v) => setForm({ ...form, type: v })}>
                 <SelectTrigger className="w-full">
                   <SelectValue />
@@ -2203,7 +2208,7 @@ function AddQuestionDialog({
               </Select>
             </div>
             <div>
-              <Label>الصعوبة</Label>
+              <Label>{tr("admin.164")}</Label>
               <Select value={form.difficulty} onValueChange={(v) => setForm({ ...form, difficulty: v })}>
                 <SelectTrigger className="w-full">
                   <SelectValue />
@@ -2218,7 +2223,7 @@ function AddQuestionDialog({
           </div>
           {form.type === "MCQ" ? (
             <div>
-              <Label>الخيارات (الإجابة الصحيحة محددة)</Label>
+              <Label>{tr("admin.189")}</Label>
               <div className="space-y-2">
                 {form.options.map((opt, i) => (
                   <div key={i} className="flex items-center gap-2">
@@ -2240,7 +2245,7 @@ function AddQuestionDialog({
             </div>
           ) : (
             <div>
-              <Label>الإجابة الصحيحة</Label>
+              <Label>{tr("admin.190")}</Label>
               <Select value={form.answer} onValueChange={(v) => setForm({ ...form, answer: v })}>
                 <SelectTrigger className="w-full">
                   <SelectValue />
@@ -2253,14 +2258,14 @@ function AddQuestionDialog({
             </div>
           )}
           <div>
-            <Label>الشرح (اختياري)</Label>
+            <Label>{tr("admin.191")}</Label>
             <Textarea value={form.explanation} onChange={(e) => setForm({ ...form, explanation: e.target.value })} rows={2} />
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>إلغاء</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>{tr("admin.038")}</Button>
           <Button onClick={submit} disabled={saving}>
-            {saving ? "جارٍ الحفظ..." : "حفظ"}
+            {saving ? tr("admin.039") : tr("admin.040")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -2286,6 +2291,7 @@ type PaymentRow = {
 };
 
 function PaymentsView() {
+  const tr = useT();
   const [status, setStatus] = React.useState("all");
   const [showImport, setShowImport] = React.useState(false);
   const [importing, setImporting] = React.useState(false);
@@ -2310,14 +2316,14 @@ function PaymentsView() {
       });
       const d = await r.json();
       if (!r.ok) {
-        toast.error(d.error || "فشل الاستيراد");
+        toast.error(d.error || tr("admin.195"));
         return;
       }
       setImportResult(d);
-      toast.success(`اتاستورد ${d.created} دفعة بنجاح 📊`);
+      toast.success(tr("admin.196", { p1: d.created }));
       reload();
     } catch {
-      toast.error("حصلت مشكلة في قراءة الملف");
+      toast.error(tr("admin.197"));
     } finally {
       setImporting(false);
     }
@@ -2341,10 +2347,10 @@ function PaymentsView() {
         const j = await res.json();
         throw new Error(j.error || "err");
       }
-      toast.success("اتعمل Approve للدفعة");
+      toast.success(tr("admin.198"));
       reload();
     } catch (e: any) {
-      toast.error(e.message || "حصلت مشكلة. حاول تاني.");
+      toast.error(e.message || tr("admin.001"));
     }
   };
 
@@ -2355,10 +2361,10 @@ function PaymentsView() {
         const j = await res.json();
         throw new Error(j.error || "err");
       }
-      toast.success("اترفضت الدفعة");
+      toast.success(tr("admin.200"));
       reload();
     } catch (e: any) {
-      toast.error(e.message || "حصلت مشكلة. حاول تاني.");
+      toast.error(e.message || tr("admin.001"));
     }
   };
 
@@ -2366,8 +2372,8 @@ function PaymentsView() {
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-bold">المدفوعات</h2>
-          <p className="text-xs text-muted-foreground">مراجعة وتأكيد دفعات الطلاب</p>
+          <h2 className="text-xl font-bold">{tr("admin.202")}</h2>
+          <p className="text-xs text-muted-foreground">{tr("admin.203")}</p>
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -2376,15 +2382,14 @@ function PaymentsView() {
             onClick={() => setShowImport((s) => !s)}
             className="border-primary/30 text-primary hover:bg-primary/5"
           >
-            <Upload className="w-4 h-4 ml-2" />
-            استيراد xlsx
-          </Button>
+            <Upload className="w-4 h-4 ms-2" />
+            {tr("admin.204")}</Button>
           <Select value={status} onValueChange={setStatus}>
             <SelectTrigger className="w-40">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">كل الحالات</SelectItem>
+              <SelectItem value="all">{tr("admin.205")}</SelectItem>
               <SelectItem value="PENDING">Pending</SelectItem>
               <SelectItem value="APPROVED">Approved</SelectItem>
               <SelectItem value="REJECTED">Rejected</SelectItem>
@@ -2406,11 +2411,9 @@ function PaymentsView() {
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
                   <Upload className="w-5 h-5 text-primary" />
-                  استيراد مدفوعات بالجملة (xlsx)
-                </CardTitle>
+                  {tr("admin.206")}</CardTitle>
                 <CardDescription className="text-xs">
-                  ارفع ملف Excel بالمدفوعات. الأعمدة: userEmail, amount, method, reference, status, notes
-                </CardDescription>
+                  {tr("admin.207")}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="flex items-center gap-3">
@@ -2431,23 +2434,19 @@ function PaymentsView() {
                   >
                     {importing ? (
                       <>
-                        <Loader2 className="w-4 h-4 ml-2 animate-spin" />
-                        جارٍ الاستيراد...
-                      </>
+                        <Loader2 className="w-4 h-4 ms-2 animate-spin" />
+                        {tr("admin.208")}</>
                     ) : (
                       <>
-                        <Upload className="w-4 h-4 ml-2" />
-                        اختار ملف Excel
-                      </>
+                        <Upload className="w-4 h-4 ms-2" />
+                        {tr("admin.209")}</>
                     )}
                   </Button>
                   <Button variant="outline" onClick={downloadTemplate}>
-                    <Download className="w-4 h-4 ml-2" />
-                    تحميل Template
-                  </Button>
+                    <Download className="w-4 h-4 ms-2" />
+                    {tr("admin.210")}</Button>
                   <Button variant="ghost" onClick={() => setShowImport(false)}>
-                    إلغاء
-                  </Button>
+                    {tr("admin.038")}</Button>
                 </div>
 
                 {importResult && (
@@ -2459,27 +2458,26 @@ function PaymentsView() {
                     <div className="flex items-center gap-2 mb-2">
                       <CheckCircle2 className="w-5 h-5 text-emerald-500" />
                       <span className="font-bold text-emerald-700 dark:text-emerald-400">
-                        نتائج الاستيراد
-                      </span>
+                        {tr("admin.212")}</span>
                     </div>
                     <div className="grid grid-cols-3 gap-3 text-sm">
                       <div>
                         <div className="text-2xl font-bold text-emerald-600">
                           {importResult.created}
                         </div>
-                        <div className="text-xs text-muted-foreground">اتاستوردت</div>
+                        <div className="text-xs text-muted-foreground">{tr("admin.213")}</div>
                       </div>
                       <div>
                         <div className="text-2xl font-bold text-amber-600">
                           {importResult.failed}
                         </div>
-                        <div className="text-xs text-muted-foreground">فشلت</div>
+                        <div className="text-xs text-muted-foreground">{tr("admin.214")}</div>
                       </div>
                       <div>
                         <div className="text-2xl font-bold text-muted-foreground">
                           {importResult.total}
                         </div>
-                        <div className="text-xs text-muted-foreground">إجمالي الصفوف</div>
+                        <div className="text-xs text-muted-foreground">{tr("admin.215")}</div>
                       </div>
                     </div>
                     {importResult.results?.some((r: any) => r.status === "failed") && (
@@ -2488,7 +2486,7 @@ function PaymentsView() {
                           .filter((r: any) => r.status === "failed")
                           .map((r: any, i: number) => (
                             <div key={i} className="text-xs text-destructive">
-                              صف {r.row}: {r.userEmail} — {r.error}
+                              {tr("admin.216")}{r.row}: {r.userEmail} — {r.error}
                             </div>
                           ))}
                       </div>
@@ -2507,19 +2505,19 @@ function PaymentsView() {
         ) : error ? (
           <ErrorBlock message={error} onRetry={reload} />
         ) : !data || data.payments.length === 0 ? (
-          <EmptyBlock message="مفيش مدفوعات لسه." />
+          <EmptyBlock message={tr("admin.217")} />
         ) : (
           <div className="max-h-[70vh] overflow-auto">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>المستخدم</TableHead>
-                  <TableHead>المبلغ</TableHead>
-                  <TableHead>الطريقة</TableHead>
-                  <TableHead>المرجع</TableHead>
-                  <TableHead>التاريخ</TableHead>
-                  <TableHead>الحالة</TableHead>
-                  <TableHead>إجراءات</TableHead>
+                  <TableHead>{tr("admin.218")}</TableHead>
+                  <TableHead>{tr("admin.219")}</TableHead>
+                  <TableHead>{tr("admin.220")}</TableHead>
+                  <TableHead>{tr("admin.221")}</TableHead>
+                  <TableHead>{tr("admin.222")}</TableHead>
+                  <TableHead>{tr("admin.025")}</TableHead>
+                  <TableHead>{tr("admin.224")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -2612,6 +2610,7 @@ type SubscriptionRow = {
 };
 
 function SubscriptionsView() {
+  const tr = useT();
   const [status, setStatus] = React.useState("all");
   const query = React.useMemo(() => {
     const params = new URLSearchParams();
@@ -2624,15 +2623,15 @@ function SubscriptionsView() {
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-bold">الاشتراكات</h2>
-          <p className="text-xs text-muted-foreground">كل اشتراكات الطلاب</p>
+          <h2 className="text-xl font-bold">{tr("admin.225")}</h2>
+          <p className="text-xs text-muted-foreground">{tr("admin.226")}</p>
         </div>
         <Select value={status} onValueChange={setStatus}>
           <SelectTrigger className="w-40">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">كل الحالات</SelectItem>
+            <SelectItem value="all">{tr("admin.205")}</SelectItem>
             <SelectItem value="PENDING">Pending</SelectItem>
             <SelectItem value="ACTIVE">Active</SelectItem>
             <SelectItem value="EXPIRED">Expired</SelectItem>
@@ -2647,18 +2646,18 @@ function SubscriptionsView() {
         ) : error ? (
           <ErrorBlock message={error} onRetry={reload} />
         ) : !data || data.subscriptions.length === 0 ? (
-          <EmptyBlock message="مفيش اشتراكات لسه." />
+          <EmptyBlock message={tr("admin.228")} />
         ) : (
           <div className="max-h-[70vh] overflow-auto">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>الطالب</TableHead>
-                  <TableHead>الباقة</TableHead>
-                  <TableHead>السعر</TableHead>
-                  <TableHead>البداية</TableHead>
-                  <TableHead>النهاية</TableHead>
-                  <TableHead>الحالة</TableHead>
+                  <TableHead>{tr("admin.229")}</TableHead>
+                  <TableHead>{tr("admin.230")}</TableHead>
+                  <TableHead>{tr("admin.231")}</TableHead>
+                  <TableHead>{tr("admin.232")}</TableHead>
+                  <TableHead>{tr("admin.233")}</TableHead>
+                  <TableHead>{tr("admin.025")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -2668,7 +2667,7 @@ function SubscriptionsView() {
                       <div className="text-sm font-medium">{s.studentName || "—"}</div>
                       <div className="text-xs text-muted-foreground">{s.studentEmail}</div>
                     </TableCell>
-                    <TableCell>{s.plan?.nameAr || "—"}</TableCell>
+                    <TableCell>{pickAuto(s.plan?.nameAr, s.plan?.name) || "—"}</TableCell>
                     <TableCell>
                       <span className="font-bold text-primary">
                         {s.plan?.price?.toLocaleString("en-US")} EGP
@@ -2703,6 +2702,7 @@ type NotifRow = {
 };
 
 function NotificationsView() {
+  const tr = useT();
   const { data, loading, error, reload } = useApi<{ notifications: NotifRow[] }>("/api/admin/notifications?limit=30");
 
   const [form, setForm] = React.useState({
@@ -2722,7 +2722,7 @@ function NotificationsView() {
 
   const submit = async () => {
     if (!form.title || !form.message) {
-      toast.error("العنوان والرسالة مطلوبين");
+      toast.error(tr("admin.235"));
       return;
     }
     setSending(true);
@@ -2734,11 +2734,11 @@ function NotificationsView() {
       });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || "err");
-      toast.success(`اترسل الإشعار لـ ${j.sent} مستخدم`);
+      toast.success(tr("admin.236", { p1: j.sent }));
       setForm({ ...form, title: "", message: "" });
       reload();
     } catch (e: any) {
-      toast.error(e.message || "حصلت مشكلة. حاول تاني.");
+      toast.error(e.message || tr("admin.001"));
     } finally {
       setSending(false);
     }
@@ -2747,8 +2747,8 @@ function NotificationsView() {
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
       <div>
-        <h2 className="text-xl font-bold">الإشعارات</h2>
-        <p className="text-xs text-muted-foreground">إرسال إشعارات للمستخدمين ومتابعة الأحدث</p>
+        <h2 className="text-xl font-bold">{tr("admin.238")}</h2>
+        <p className="text-xs text-muted-foreground">{tr("admin.239")}</p>
       </div>
 
       {/* Notification Center Stats */}
@@ -2762,31 +2762,31 @@ function NotificationsView() {
               <Send className="w-4 h-4 text-emerald-500" />
               Send Notification
             </CardTitle>
-            <CardDescription>اختر الجمهور واكتب الرسالة</CardDescription>
+            <CardDescription>{tr("admin.240")}</CardDescription>
           </CardHeader>
           <CardContent className="px-0 space-y-3">
             <div>
-              <Label>الجمهور</Label>
+              <Label>{tr("admin.241")}</Label>
               <Select value={form.target} onValueChange={(v) => setForm({ ...form, target: v })}>
                 <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">كل المستخدمين</SelectItem>
-                  <SelectItem value="students">الطلاب</SelectItem>
-                  <SelectItem value="parents">أولياء الأمور</SelectItem>
-                  <SelectItem value="teachers">المعلمون</SelectItem>
-                  <SelectItem value="group">مجموعة محددة</SelectItem>
-                  <SelectItem value="user">مستخدم محدد</SelectItem>
+                  <SelectItem value="all">{tr("admin.242")}</SelectItem>
+                  <SelectItem value="students">{tr("admin.010")}</SelectItem>
+                  <SelectItem value="parents">{tr("admin.244")}</SelectItem>
+                  <SelectItem value="teachers">{tr("admin.067")}</SelectItem>
+                  <SelectItem value="group">{tr("admin.246")}</SelectItem>
+                  <SelectItem value="user">{tr("admin.247")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             {form.target === "group" && (
               <div>
-                <Label>المجموعة</Label>
+                <Label>{tr("admin.023")}</Label>
                 <Select value={form.groupId} onValueChange={(v) => setForm({ ...form, groupId: v })}>
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder="اختر المجموعة" />
+                    <SelectValue placeholder={tr("admin.249")} />
                   </SelectTrigger>
                   <SelectContent>
                     {groups.map((g) => (
@@ -2807,7 +2807,7 @@ function NotificationsView() {
               </div>
             )}
             <div>
-              <Label>النوع</Label>
+              <Label>{tr("admin.187")}</Label>
               <Select value={form.type} onValueChange={(v) => setForm({ ...form, type: v })}>
                 <SelectTrigger className="w-full">
                   <SelectValue />
@@ -2822,15 +2822,15 @@ function NotificationsView() {
               </Select>
             </div>
             <div>
-              <Label>العنوان</Label>
+              <Label>{tr("admin.251")}</Label>
               <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
             </div>
             <div>
-              <Label>الرسالة</Label>
+              <Label>{tr("admin.252")}</Label>
               <Textarea value={form.message} onChange={(e) => setForm({ ...form, message: e.target.value })} rows={3} />
             </div>
             <Button onClick={submit} disabled={sending} className="w-full">
-              {sending ? "جارٍ الإرسال..." : "إرسال"}
+              {sending ? tr("admin.253") : tr("admin.254")}
             </Button>
           </CardContent>
         </Card>
@@ -2842,7 +2842,7 @@ function NotificationsView() {
               <Bell className="w-4 h-4 text-amber-500" />
               Recent Notifications
             </CardTitle>
-            <CardDescription>آخر 30 إشعار اتبعتوا</CardDescription>
+            <CardDescription>{tr("admin.255")}</CardDescription>
           </CardHeader>
           <CardContent className="px-0">
             {loading ? (
@@ -2850,7 +2850,7 @@ function NotificationsView() {
             ) : error ? (
               <ErrorBlock message={error} onRetry={reload} />
             ) : !data || data.notifications.length === 0 ? (
-              <EmptyBlock message="مفيش إشعارات لسه." />
+              <EmptyBlock message={tr("admin.256")} />
             ) : (
               <ScrollArea className="max-h-[60vh]">
                 <div className="space-y-2">
@@ -2881,7 +2881,7 @@ function NotificationsView() {
 // 10. Settings
 // ============================================================
 const SETTING_KEYS = [
-  { key: "brand_name", label: "اسم الأكاديمية", type: "text" },
+  { key: "brand_name", label: "admin.257", type: "text" },
   { key: "brand_tagline", label: "Tagline", type: "text" },
   { key: "whatsapp_teacher", label: "WhatsApp — Teacher", type: "text" },
   { key: "whatsapp_technical", label: "WhatsApp — Technical", type: "text" },
@@ -2896,6 +2896,7 @@ const SETTING_KEYS = [
 ];
 
 function SettingsView() {
+  const tr = useT();
   const { data, loading, error, reload } = useApi<{ settings: Record<string, string> }>("/api/admin/settings");
   const [values, setValues] = React.useState<Record<string, string>>({});
   const [saving, setSaving] = React.useState(false);
@@ -2917,10 +2918,10 @@ function SettingsView() {
         body: JSON.stringify({ settings: items }),
       });
       if (!res.ok) throw new Error("err");
-      toast.success("اتحفظت الإعدادات");
+      toast.success(tr("admin.258"));
       reload();
     } catch {
-      toast.error("حصلت مشكلة. حاول تاني.");
+      toast.error(tr("admin.001"));
     } finally {
       setSaving(false);
     }
@@ -2934,21 +2935,20 @@ function SettingsView() {
       <div>
         <h2 className="text-xl font-bold flex items-center gap-2">
           <Settings className="w-5 h-5 text-emerald-500" />
-          الإعدادات
-        </h2>
-        <p className="text-xs text-muted-foreground">إدارة بيانات الـBrand والأسعار والإعدادات العامة</p>
+          {tr("admin.260")}</h2>
+        <p className="text-xs text-muted-foreground">{tr("admin.261")}</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card className="p-4">
           <CardHeader className="px-0 pt-0">
             <CardTitle className="text-base">Brand Settings</CardTitle>
-            <CardDescription>بيانات الأكاديمية والتواصل</CardDescription>
+            <CardDescription>{tr("admin.262")}</CardDescription>
           </CardHeader>
           <CardContent className="px-0 space-y-3">
             {SETTING_KEYS.filter((k) => k.type === "text").map((k) => (
               <div key={k.key}>
-                <Label>{k.label}</Label>
+                <Label>{tr(k.label)}</Label>
                 <Input
                   value={values[k.key] ?? ""}
                   onChange={(e) => setValues({ ...values, [k.key]: e.target.value })}
@@ -2961,12 +2961,12 @@ function SettingsView() {
         <Card className="p-4">
           <CardHeader className="px-0 pt-0">
             <CardTitle className="text-base">Subscription Prices</CardTitle>
-            <CardDescription>أسعار الباقات بالـEGP</CardDescription>
+            <CardDescription>{tr("admin.263")}</CardDescription>
           </CardHeader>
           <CardContent className="px-0 space-y-3">
             {SETTING_KEYS.filter((k) => k.type === "number").map((k) => (
               <div key={k.key}>
-                <Label>{k.label}</Label>
+                <Label>{tr(k.label)}</Label>
                 <Input
                   type="number"
                   value={values[k.key] ?? ""}
@@ -2975,16 +2975,15 @@ function SettingsView() {
               </div>
             ))}
             <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3 text-xs text-muted-foreground">
-              ملاحظة: تغيير الأسعار بيأثر على الباقات الجديدة بس، اللي موجود بالفعل مش بيتغيّر.
-            </div>
+              {tr("admin.264")}</div>
           </CardContent>
         </Card>
       </div>
 
       <div className="flex justify-end">
         <Button onClick={save} disabled={saving} size="lg">
-          <Save className="w-4 h-4 ml-2" />
-          {saving ? "جارٍ الحفظ..." : "حفظ الإعدادات"}
+          <Save className="w-4 h-4 ms-2" />
+          {saving ? tr("admin.039") : tr("admin.266")}
         </Button>
       </div>
     </motion.div>
@@ -2995,6 +2994,7 @@ function SettingsView() {
 // Coupons View — manage discount codes
 // ============================================================
 function CouponsView() {
+  const tr = useT();
   const { data, loading, reload } = useApi<{ coupons: any[] }>("/api/admin/coupons");
   const [showCreate, setShowCreate] = React.useState(false);
   const [createForm, setCreateForm] = React.useState({
@@ -3024,10 +3024,10 @@ function CouponsView() {
       });
       const d = await r.json();
       if (!r.ok) {
-        toast.error(d.error || "فشل إنشاء الكود");
+        toast.error(d.error || tr("admin.267"));
         return;
       }
-      toast.success("اتعمل الكود بنجاح 🎉");
+      toast.success(tr("admin.268"));
       setShowCreate(false);
       setCreateForm({ code: "", type: "PERCENTAGE", value: "", maxUses: "100", validUntil: "", description: "" });
       reload();
@@ -3042,14 +3042,14 @@ function CouponsView() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ isActive: !current }),
     });
-    toast.success(!current ? "اتفعل الكود" : "اتوقف الكود");
+    toast.success(!current ? tr("admin.269") : tr("admin.270"));
     reload();
   };
 
   const del = async (id: string) => {
-    if (!confirm("متأكد تمسح الكود ده؟")) return;
+    if (!confirm(tr("admin.271"))) return;
     await fetch(`/api/admin/coupons/${id}`, { method: "DELETE" });
-    toast.success("اتمسح الكود");
+    toast.success(tr("admin.272"));
     reload();
   };
 
@@ -3057,15 +3057,13 @@ function CouponsView() {
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold">أكواد الخصم</h2>
+          <h2 className="text-2xl font-bold">{tr("admin.273")}</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            إدارة أكواد الخصم والـCoupons
-          </p>
+            {tr("admin.274")}</p>
         </div>
         <Button onClick={() => setShowCreate((s) => !s)} className="font-bold">
-          <Plus className="w-4 h-4 ml-2" />
-          كود جديد
-        </Button>
+          <Plus className="w-4 h-4 ms-2" />
+          {tr("admin.275")}</Button>
       </div>
 
       {showCreate && (
@@ -3075,12 +3073,12 @@ function CouponsView() {
         >
           <Card className="glass">
             <CardHeader>
-              <CardTitle className="text-base">إنشاء كود خصم جديد</CardTitle>
+              <CardTitle className="text-base">{tr("admin.276")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label className="text-xs">الكود</Label>
+                  <Label className="text-xs">{tr("admin.277")}</Label>
                   <Input
                     value={createForm.code}
                     onChange={(e) => setCreateForm({ ...createForm, code: e.target.value.toUpperCase() })}
@@ -3089,7 +3087,7 @@ function CouponsView() {
                   />
                 </div>
                 <div>
-                  <Label className="text-xs">النوع</Label>
+                  <Label className="text-xs">{tr("admin.187")}</Label>
                   <Select
                     value={createForm.type}
                     onValueChange={(v) => setCreateForm({ ...createForm, type: v })}
@@ -3098,13 +3096,13 @@ function CouponsView() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="PERCENTAGE">نسبة مئوية %</SelectItem>
-                      <SelectItem value="FIXED">مبلغ ثابت EGP</SelectItem>
+                      <SelectItem value="PERCENTAGE">{tr("admin.279")}</SelectItem>
+                      <SelectItem value="FIXED">{tr("admin.280")}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div>
-                  <Label className="text-xs">{createForm.type === "PERCENTAGE" ? "النسبة (%)" : "المبلغ (EGP)"}</Label>
+                  <Label className="text-xs">{createForm.type === "PERCENTAGE" ? tr("admin.281") : tr("admin.282")}</Label>
                   <Input
                     type="number"
                     value={createForm.value}
@@ -3114,7 +3112,7 @@ function CouponsView() {
                   />
                 </div>
                 <div>
-                  <Label className="text-xs">أقصى استخدام</Label>
+                  <Label className="text-xs">{tr("admin.283")}</Label>
                   <Input
                     type="number"
                     value={createForm.maxUses}
@@ -3124,21 +3122,20 @@ function CouponsView() {
                 </div>
               </div>
               <div>
-                <Label className="text-xs">وصف (اختياري)</Label>
+                <Label className="text-xs">{tr("admin.284")}</Label>
                 <Input
                   value={createForm.description}
                   onChange={(e) => setCreateForm({ ...createForm, description: e.target.value })}
-                  placeholder="خصم الترحيب بالطلاب الجدد"
+                  placeholder={tr("admin.285")}
                   className="mt-1"
                 />
               </div>
               <div className="flex items-center gap-2">
                 <Button onClick={create} disabled={creating || !createForm.code || !createForm.value}>
-                  {creating ? "جارٍ..." : "احفظ الكود"}
+                  {creating ? tr("admin.286") : tr("admin.287")}
                 </Button>
                 <Button variant="ghost" onClick={() => setShowCreate(false)}>
-                  إلغاء
-                </Button>
+                  {tr("admin.038")}</Button>
               </div>
             </CardContent>
           </Card>
@@ -3155,10 +3152,9 @@ function CouponsView() {
         <Card>
           <CardContent className="py-10 text-center">
             <Ticket className="w-10 h-10 text-muted-foreground/40 mx-auto mb-2" />
-            <p className="text-sm text-muted-foreground">مفيش أكواد خصم لسه</p>
+            <p className="text-sm text-muted-foreground">{tr("admin.289")}</p>
             <p className="text-xs text-muted-foreground mt-1">
-              اضغط "كود جديد" عشان تعمل أول كود
-            </p>
+              {tr("admin.290")}</p>
           </CardContent>
         </Card>
       ) : (
@@ -3181,16 +3177,14 @@ function CouponsView() {
                       <Badge variant="outline" className={
                         c.isActive ? "border-emerald-400/40 text-emerald-600" : "border-muted text-muted-foreground"
                       }>
-                        {c.isActive ? "شغال" : "متوقف"}
+                        {c.isActive ? tr("admin.291") : tr("admin.292")}
                       </Badge>
                     </div>
                     <div className="text-xs text-muted-foreground mt-0.5">
-                      {c.type === "PERCENTAGE" ? `${c.value}% خصم` : `${c.value} EGP خصم`}
+                      {c.type === "PERCENTAGE" ? tr("admin.293", { p1: c.value }) : tr("admin.294", { p1: c.value })}
                       {" · "}
-                      استُخدم {c.usedCount}/{c.maxUses} مرة
-                      {" · "}
-                      {c.redemptionsCount} طالب استخدمه
-                    </div>
+                      {tr("admin.295")}{c.usedCount}/{c.maxUses} {tr("admin.296")}{" · "}
+                      {c.redemptionsCount} {tr("admin.297")}</div>
                     {c.description && (
                       <div className="text-xs text-muted-foreground mt-0.5">{c.description}</div>
                     )}
@@ -3201,7 +3195,7 @@ function CouponsView() {
                       variant="ghost"
                       onClick={() => toggleActive(c.id, c.isActive)}
                     >
-                      {c.isActive ? "إيقاف" : "تفعيل"}
+                      {c.isActive ? tr("admin.298") : tr("admin.299")}
                     </Button>
                     <Button
                       size="sm"
@@ -3226,6 +3220,7 @@ function CouponsView() {
 // Revenue Analytics Section — detailed revenue breakdown
 // ============================================================
 function RevenueAnalyticsSection() {
+  const tr = useT();
   const { data, loading } = useApi<any>("/api/admin/revenue-analytics?months=6");
 
   if (loading || !data) {
@@ -3256,8 +3251,7 @@ function RevenueAnalyticsSection() {
           Revenue Analytics
         </h3>
         <p className="text-xs text-muted-foreground mt-0.5">
-          تحليل تفصيلي للإيرادات والمدفوعات
-        </p>
+          {tr("admin.300")}</p>
       </div>
 
       {/* Revenue stats grid */}
@@ -3308,8 +3302,7 @@ function RevenueAnalyticsSection() {
             Revenue Growth: {growthPositive ? "+" : ""}{ov.revenueGrowth}%
           </div>
           <p className="text-xs text-muted-foreground">
-            مقارنة بالشهر اللي فات — {ov.pendingPayments} دفعة مستنية المراجعة
-          </p>
+            {tr("admin.301")}{ov.pendingPayments} {tr("admin.302")}</p>
         </div>
         <Badge variant="outline" className={
           growthPositive
@@ -3325,7 +3318,7 @@ function RevenueAnalyticsSection() {
         <Card className="lg:col-span-2 p-4">
           <CardHeader className="px-0 pt-0">
             <CardTitle className="text-base">Revenue by Month</CardTitle>
-            <CardDescription>آخر 6 شهور — بالـBar Chart</CardDescription>
+            <CardDescription>{tr("admin.303")}</CardDescription>
           </CardHeader>
           <CardContent className="px-0">
             <div dir="ltr" className="w-full h-64">
@@ -3359,7 +3352,7 @@ function RevenueAnalyticsSection() {
         <Card className="p-4">
           <CardHeader className="px-0 pt-0">
             <CardTitle className="text-base">Payment Methods</CardTitle>
-            <CardDescription>توزيع طرق الدفع</CardDescription>
+            <CardDescription>{tr("admin.304")}</CardDescription>
           </CardHeader>
           <CardContent className="px-0 space-y-3">
             {[
@@ -3373,7 +3366,7 @@ function RevenueAnalyticsSection() {
                 <div key={m.key}>
                   <div className="flex items-center justify-between text-xs mb-1">
                     <span className="font-semibold">{m.label}</span>
-                    <span className="text-muted-foreground">{m.count} دفعة · {m.revenue} EGP</span>
+                    <span className="text-muted-foreground">{m.count} {tr("admin.305")}{m.revenue} EGP</span>
                   </div>
                   <div className="h-2.5 bg-muted rounded-full overflow-hidden">
                     <motion.div
@@ -3417,7 +3410,7 @@ function RevStatCard({
         </div>
         <div className="text-xl font-extrabold number-counter">
           {value}
-          {unit && <span className="text-xs text-muted-foreground mr-1"> {unit}</span>}
+          {unit && <span className="text-xs text-muted-foreground me-1"> {unit}</span>}
         </div>
         <div className="text-xs text-muted-foreground mt-0.5">{label}</div>
       </CardContent>
@@ -3429,6 +3422,7 @@ function RevStatCard({
 // Notification Center Stats — overview of all notifications
 // ============================================================
 function NotificationCenterStats() {
+  const tr = useT();
   const [data, setData] = React.useState<any>(null);
   const [loading, setLoading] = React.useState(true);
   const [filter, setFilter] = React.useState("");
@@ -3524,7 +3518,7 @@ function NotificationCenterStats() {
                   }`}
                 >
                   {t.type.replace(/_/g, " ")}
-                  <Badge variant="outline" className="text-[10px] ml-1">
+                  <Badge variant="outline" className="text-[10px] ms-1">
                     {t.count}
                   </Badge>
                 </button>
@@ -3544,7 +3538,7 @@ function NotificationCenterStats() {
         </CardHeader>
         <CardContent>
           {data.notifications.length === 0 ? (
-            <EmptyBlock message="مفيش إشعارات لسه" />
+            <EmptyBlock message={tr("admin.306")} />
           ) : (
             <ScrollArea className="max-h-80">
               <div className="space-y-2">
@@ -3594,6 +3588,7 @@ function NotificationCenterStats() {
 // Revenue Forecast Section — predictive analytics
 // ============================================================
 function RevenueForecastSection() {
+  const tr = useT();
   const { data, loading } = useApi<any>("/api/admin/revenue-forecast");
 
   if (loading || !data) {
@@ -3631,8 +3626,7 @@ function RevenueForecastSection() {
           Revenue Forecast
         </h3>
         <p className="text-xs text-muted-foreground mt-0.5">
-          توقعات الإيرادات للـ3 شهور الجاية بناءً على الاتجاه الحالي
-        </p>
+          {tr("admin.307")}</p>
       </div>
 
       {/* Trend indicator */}
@@ -3652,11 +3646,11 @@ function RevenueForecastSection() {
         </div>
         <div className="flex-1">
           <div className="text-sm font-bold">
-            الاتجاه: {trendUp ? "نامي ↑" : trendNeutral ? "مستقر →" : "تنازلي ↓"}
+            {tr("admin.308")}{trendUp ? tr("admin.309") : trendNeutral ? tr("admin.310") : tr("admin.311")}
             {m.trendPercentage !== 0 && ` (${m.trendPercentage > 0 ? "+" : ""}${m.trendPercentage}%)`}
           </div>
           <p className="text-xs text-muted-foreground">
-            متوسط الإيراد الشهري: {m.avgMonthlyRevenue} EGP · نمو الشهر ده: {m.monthOverMonthGrowth > 0 ? "+" : ""}{m.monthOverMonthGrowth}%
+            {tr("admin.312")}{m.avgMonthlyRevenue} {tr("admin.313")}{m.monthOverMonthGrowth > 0 ? "+" : ""}{m.monthOverMonthGrowth}%
           </p>
         </div>
       </div>
@@ -3705,7 +3699,7 @@ function RevenueForecastSection() {
               <div className="text-2xl font-extrabold text-gradient number-counter">
                 {m.projectedQuarterRevenue}
               </div>
-              <div className="text-xs text-muted-foreground mt-0.5">EGP (3 شهور قادمة)</div>
+              <div className="text-xs text-muted-foreground mt-0.5">{tr("admin.314")}</div>
             </CardContent>
           </Card>
 
@@ -3722,11 +3716,11 @@ function RevenueForecastSection() {
                         f.confidence === "medium" ? "border-amber-400/30 text-amber-600" :
                         "border-rose-400/30 text-rose-600"
                       }`}>
-                        {f.confidence === "high" ? "ثقة عالية" : f.confidence === "medium" ? "ثقة متوسطة" : "ثقة منخفضة"}
+                        {f.confidence === "high" ? tr("admin.315") : f.confidence === "medium" ? tr("admin.316") : tr("admin.317")}
                       </Badge>
                     </div>
                   </div>
-                  <div className="text-left">
+                  <div className="text-start">
                     <div className="text-lg font-bold text-amber-600">{f.predicted}</div>
                     <div className="text-[10px] text-muted-foreground">EGP</div>
                   </div>

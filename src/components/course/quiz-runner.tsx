@@ -1,4 +1,5 @@
 "use client";
+import { useT , pickAuto } from "@/lib/i18n";
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -94,6 +95,7 @@ type SubmitResult = {
 // Main
 // ============================================================
 export function QuizRunner() {
+  const t = useT();
   const setView = useApp((s) => s.setView);
   const setNavParam = useApp((s) => s.setNavParam);
   const navParam = useApp((s) => s.navParam);
@@ -110,7 +112,7 @@ export function QuizRunner() {
 
   const load = React.useCallback(() => {
     if (!navParam) {
-      setError("مفيش Quiz محدد. ارجع للكورس واختار واحدة.");
+      setError(t("course.001"));
       setLoading(false);
       return;
     }
@@ -126,7 +128,7 @@ export function QuizRunner() {
         setResult(null);
       })
       .catch(() => {
-        setError("حصلت مشكلة وإحنا بنجيب الـQuiz. حاول تاني.");
+        setError(t("course.002"));
       })
       .finally(() => setLoading(false));
   }, [navParam]);
@@ -140,15 +142,14 @@ export function QuizRunner() {
     return (
       <Card className="glass">
         <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-          <p className="text-base font-semibold mb-1">{error || "مفيش بيانات"}</p>
+          <p className="text-base font-semibold mb-1">{error || t("course.003")}</p>
           <Button
             variant="outline"
             className="mt-3"
             onClick={() => setView("student-course")}
           >
-            <ArrowRight className="w-4 h-4 ml-1.5 flip-rtl" />
-            ارجع للكورس
-          </Button>
+            <ArrowRight className="w-4 h-4 ms-1.5 flip-rtl" />
+            {t("course.004")}</Button>
         </CardContent>
       </Card>
     );
@@ -188,7 +189,7 @@ export function QuizRunner() {
   const submit = async () => {
     if (answeredCount < total) {
       const ok = confirm(
-        `لسه مجاوبتش على ${total - answeredCount} سؤال. تكمّل وتسابمت؟`
+        t("course.005", { p1: total - answeredCount })
       );
       if (!ok) return;
     }
@@ -212,11 +213,11 @@ export function QuizRunner() {
       setSubmitted(true);
       toast.success(
         r.passed
-          ? `نجحت! ${r.percentage}% 🎉`
-          : `حصلت ${r.percentage}% — حاول تاني`
+          ? t("course.006", { p1: r.percentage })
+          : t("course.007", { p1: r.percentage })
       );
     } catch {
-      toast.error("حصلت مشكلة في تسجيل الإجابات. حاول تاني.");
+      toast.error(t("course.008"));
     } finally {
       setSubmitting(false);
     }
@@ -242,14 +243,13 @@ export function QuizRunner() {
                 if (quiz.lesson?.courseSlug) setNavParam(quiz.lesson.courseSlug);
               }}
             >
-              <ArrowRight className="w-3.5 h-3.5 ml-1 flip-rtl" />
-              رجوع للكورس
-            </Button>
+              <ArrowRight className="w-3.5 h-3.5 ms-1 flip-rtl" />
+              {t("course.009")}</Button>
             <span>›</span>
             <span>Quiz</span>
           </div>
           <h1 className="text-2xl font-bold text-gradient">
-            {quiz.quiz.titleAr || quiz.quiz.title}
+            {pickAuto(quiz.quiz.titleAr, quiz.quiz.title)}
           </h1>
           {quiz.quiz.description && (
             <p className="text-sm text-muted-foreground mt-1">
@@ -261,7 +261,7 @@ export function QuizRunner() {
           variant="outline"
           className="bg-primary/5 border-primary/20 text-primary"
         >
-          <Trophy className="w-3.5 h-3.5 ml-1" />
+          <Trophy className="w-3.5 h-3.5 ms-1" />
           Pass: {quiz.quiz.passMark}%
         </Badge>
       </motion.div>
@@ -270,10 +270,10 @@ export function QuizRunner() {
       <div className="space-y-2">
         <div className="flex items-center justify-between text-xs">
           <span className="text-muted-foreground">
-            السؤال {current + 1} من {total}
+            {t("course.010")}{current + 1} {t("course.011")}{total}
           </span>
           <span className="font-semibold">
-            اتجاوب {answeredCount}/{total}
+            {t("course.012")}{answeredCount}/{total}
           </span>
         </div>
         <Progress value={((current + 1) / total) * 100} />
@@ -302,18 +302,18 @@ export function QuizRunner() {
                   }
                 >
                   {q.difficulty === "EASY"
-                    ? "سهل"
+                    ? t("course.013")
                     : q.difficulty === "MEDIUM"
-                    ? "متوسط"
-                    : "صعب"}
+                    ? t("course.014")
+                    : t("course.015")}
                 </Badge>
                 <span className="text-xs text-muted-foreground flex items-center gap-1">
                   <Sparkles className="w-3 h-3" />
-                  {q.marks} {q.marks === 1 ? "درجة" : "درجات"}
+                  {q.marks} {q.marks === 1 ? t("course.016") : t("course.017")}
                 </span>
               </div>
               <CardTitle className="text-lg leading-snug pt-2">
-                {q.promptAr || q.prompt}
+                {pickAuto(q.promptAr, q.prompt)}
               </CardTitle>
               {q.promptAr && q.prompt !== q.promptAr && (
                 <CardDescription className="text-xs italic">
@@ -332,7 +332,7 @@ export function QuizRunner() {
                     onClick={() =>
                       setAnswers((prev) => ({ ...prev, [q.id]: value }))
                     }
-                    className={`w-full flex items-center gap-3 p-3.5 rounded-xl border-2 text-right transition-all ${
+                    className={`w-full flex items-center gap-3 p-3.5 rounded-xl border-2 text-end transition-all ${
                       selected
                         ? "border-primary bg-primary/10 shadow-sm"
                         : "border-border hover:border-primary/40 hover:bg-muted/40"
@@ -362,9 +362,8 @@ export function QuizRunner() {
       {/* Nav */}
       <div className="flex items-center justify-between gap-2">
         <Button variant="outline" onClick={goPrev} disabled={current === 0}>
-          <ArrowRight className="w-4 h-4 ml-1.5 flip-rtl" />
-          السابق
-        </Button>
+          <ArrowRight className="w-4 h-4 ms-1.5 flip-rtl" />
+          {t("course.018")}</Button>
 
         <div className="flex items-center gap-1.5">
           {quiz.questions.map((qq, i) => {
@@ -381,7 +380,7 @@ export function QuizRunner() {
                     ? "bg-primary/50"
                     : "bg-muted-foreground/30"
                 }`}
-                aria-label={`اذهب للسؤال ${i + 1}`}
+                aria-label={t("course.019", { p1: i + 1 })}
               />
             );
           })}
@@ -389,8 +388,7 @@ export function QuizRunner() {
 
         {current < total - 1 ? (
           <Button onClick={goNext} disabled={!answered}>
-            التالي
-            <ArrowLeft className="w-4 h-4 ml-1.5 flip-rtl" />
+            {t("course.020")}<ArrowLeft className="w-4 h-4 ms-1.5 flip-rtl" />
           </Button>
         ) : (
           <Button
@@ -398,8 +396,8 @@ export function QuizRunner() {
             disabled={submitting}
             className="bg-gradient-to-l from-primary to-amber-500 text-white"
           >
-            {submitting ? "بيسجل..." : "تسليم"}
-            {!submitting && <CheckCircle2 className="w-4 h-4 ml-1.5" />}
+            {submitting ? t("course.021") : t("course.022")}
+            {!submitting && <CheckCircle2 className="w-4 h-4 ms-1.5" />}
           </Button>
         )}
       </div>
@@ -421,6 +419,7 @@ function ResultScreen({
   onRetry: () => void;
   onBackToCourse: () => void;
 }) {
+  const t = useT();
   const passed = result.passed;
   return (
     <div className="max-w-3xl mx-auto space-y-5">
@@ -459,8 +458,7 @@ function ResultScreen({
               {result.percentage}%
             </div>
             <div className="text-sm text-muted-foreground mb-3">
-              {result.score} من {result.totalMarks} درجة
-            </div>
+              {result.score} {t("course.011")}{result.totalMarks} {t("course.016")}</div>
             <Badge
               variant="outline"
               className={`text-sm px-3 py-1 ${
@@ -470,22 +468,20 @@ function ResultScreen({
               }`}
             >
               {passed
-                ? "نجحت 🎉 — أحسنت!"
-                : `مكملة — محتاج ${quiz.quiz.passMark}% عشان تنجح`}
+                ? t("course.025")
+                : t("course.026", { p1: quiz.quiz.passMark })}
             </Badge>
 
             <div className="flex flex-col sm:flex-row gap-2 mt-5 justify-center">
               <Button variant="outline" onClick={onBackToCourse}>
-                <ArrowRight className="w-4 h-4 ml-1.5 flip-rtl" />
-                رجوع للكورس
-              </Button>
+                <ArrowRight className="w-4 h-4 ms-1.5 flip-rtl" />
+                {t("course.009")}</Button>
               <Button
                 onClick={onRetry}
                 className="bg-gradient-to-l from-primary to-amber-500 text-white"
               >
-                <RotateCw className="w-4 h-4 ml-1.5" />
-                حاول تاني
-              </Button>
+                <RotateCw className="w-4 h-4 ms-1.5" />
+                {t("course.028")}</Button>
             </div>
           </CardContent>
         </Card>
@@ -495,11 +491,9 @@ function ResultScreen({
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <ListChecks className="w-5 h-5 text-primary" />
-            مراجعة الإجابات
-          </CardTitle>
+            {t("course.029")}</CardTitle>
           <CardDescription>
-            شوف كل سؤال وإجابته الصحيحة والشرح.
-          </CardDescription>
+            {t("course.030")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           {result.answers.map((a, i) => (
@@ -518,10 +512,11 @@ function AnswerRow({
   index: number;
   answer: GradedAnswer;
 }) {
+  const t = useT();
   const selectedIdx = parseInt(answer.selected, 10);
   const correctIdx = parseInt(answer.correctAnswer, 10);
   const selectedLabel = Number.isNaN(selectedIdx)
-    ? "محلوش"
+    ? t("course.031")
     : `${String.fromCharCode(65 + selectedIdx)} — ${answer.options[selectedIdx]}`;
   const correctLabel = Number.isNaN(correctIdx)
     ? "—"
@@ -554,7 +549,7 @@ function AnswerRow({
         </div>
         <div className="flex-1 min-w-0">
           <div className="text-sm font-semibold leading-snug mb-1.5">
-            {index + 1}. {answer.promptAr || answer.prompt}
+            {index + 1}. {pickAuto(answer.promptAr, answer.prompt)}
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
             <div
@@ -564,14 +559,13 @@ function AnswerRow({
                   : "bg-amber-400/10 text-amber-700"
               }`}
             >
-              <div className="text-[10px] opacity-70 mb-0.5">إجابتك</div>
+              <div className="text-[10px] opacity-70 mb-0.5">{t("course.032")}</div>
               <div className="font-medium">{selectedLabel}</div>
             </div>
             {!answer.isCorrect && (
               <div className="rounded-md p-2 bg-primary/10 text-primary">
                 <div className="text-[10px] opacity-70 mb-0.5">
-                  الإجابة الصحيحة
-                </div>
+                  {t("course.033")}</div>
                 <div className="font-medium">{correctLabel}</div>
               </div>
             )}

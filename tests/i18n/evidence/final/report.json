@@ -1,0 +1,787 @@
+{
+  "label": "final",
+  "generatedAt": "2026-09-04T18:19:05.699Z",
+  "base": "http://localhost:3000",
+  "locales": {
+    "en": {
+      "landing": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 225,
+        "arabicTextCount": 2,
+        "arabicSample": [
+          "عربي",
+          "منصة تعليمية متخصصة في Programming & AI لطلاب الثانوية العامة - الصف الثاني."
+        ],
+        "attrTotal": 9,
+        "arabicAttrCount": 2,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "landingScrolled": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 225,
+        "arabicTextCount": 2,
+        "arabicSample": [
+          "عربي",
+          "منصة تعليمية متخصصة في Programming & AI لطلاب الثانوية العامة - الصف الثاني."
+        ],
+        "attrTotal": 9,
+        "arabicAttrCount": 2,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "login": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 43,
+        "arabicTextCount": 2,
+        "arabicSample": [
+          "عربي",
+          "منصة تعليمية متخصصة في Programming & AI لطلاب الثانوية العامة - الصف الثاني."
+        ],
+        "attrTotal": 12,
+        "arabicAttrCount": 2,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "register": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 64,
+        "arabicTextCount": 2,
+        "arabicSample": [
+          "عربي",
+          "منصة تعليمية متخصصة في Programming & AI لطلاب الثانوية العامة - الصف الثاني."
+        ],
+        "attrTotal": 17,
+        "arabicAttrCount": 2,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "admin:admin-overview": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 173,
+        "arabicTextCount": 14,
+        "arabicSample": [
+          "عربي",
+          "أبريل",
+          "مايو",
+          "يونيو",
+          "يوليو",
+          "أغسطس",
+          "سبتمبر",
+          "أكتوبر",
+          "نوفمبر",
+          "ديسمبر",
+          "مقدمة عن الـIT — حصة لايف"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 2,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "admin:admin-students": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 46,
+        "arabicTextCount": 2,
+        "arabicSample": [
+          "عربي",
+          "6 شهور"
+        ],
+        "attrTotal": 11,
+        "arabicAttrCount": 2,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "admin:admin-teachers": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 41,
+        "arabicTextCount": 1,
+        "arabicSample": [
+          "عربي"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 2,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "admin:admin-groups": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 38,
+        "arabicTextCount": 3,
+        "arabicSample": [
+          "عربي",
+          "البرمجة والذكاء الاصطناعي",
+          "السبت و الثلاثاء — 6:00 م"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 2,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "admin:admin-courses": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 41,
+        "arabicTextCount": 2,
+        "arabicSample": [
+          "عربي",
+          "كورس Programming & AI لطلاب الصف الثاني الثانوي."
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 2,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "admin:admin-question-bank": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 81,
+        "arabicTextCount": 4,
+        "arabicSample": [
+          "عربي",
+          "· إيه هي الـIT؟"
+        ],
+        "attrTotal": 11,
+        "arabicAttrCount": 2,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "admin:admin-payments": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 33,
+        "arabicTextCount": 1,
+        "arabicSample": [
+          "عربي"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 2,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "admin:admin-subscriptions": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 44,
+        "arabicTextCount": 1,
+        "arabicSample": [
+          "عربي"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 2,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "admin:admin-coupons": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 32,
+        "arabicTextCount": 1,
+        "arabicSample": [
+          "عربي"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 2,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "admin:admin-notifications": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 118,
+        "arabicTextCount": 17,
+        "arabicSample": [
+          "عربي",
+          "تنبيه: غياب ابنك",
+          "ابنك غاب في آخر حصة. تواصل معاه عشان يعوض الدرس.",
+          "التقرير الشهري جاهز",
+          "تقرير شهر أحمد الشهري جاهز دلوقتي، تقدر تتابع مستواه.",
+          "حصة لايف بكرة",
+          "لايف سشن بكرة الساعة 6:00 مساءً. متنساش تتواصل!",
+          "Lesson جديدة اتضاف",
+          "اتضافت Lesson جديدة في Part One — Information Technology and Society."
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 2,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "admin:admin-settings": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 47,
+        "arabicTextCount": 1,
+        "arabicSample": [
+          "عربي"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 2,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "teacher:teacher-dashboard": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 114,
+        "arabicTextCount": 10,
+        "arabicSample": [
+          "عربي",
+          "السبت و الثلاثاء — 6:00 م",
+          "مقدمة عن الـIT — حصة لايف",
+          "Homework: تعبير عن الـLesson",
+          "Quiz: اختبار الـLesson الأولى"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 2,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "teacher:teacher-attendance": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 60,
+        "arabicTextCount": 2,
+        "arabicSample": [
+          "عربي",
+          "ترحيب وتعريف بالكورس"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 2,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "teacher:teacher-quizzes": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 52,
+        "arabicTextCount": 5,
+        "arabicSample": [
+          "عربي",
+          "اختبار الـLesson الأولى",
+          "إيه هي الـIT؟",
+          "· البرمجة والذكاء الاصطناعي",
+          "اختبار سريع على أساسيات الـIT."
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 2,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "teacher:teacher-homework": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 45,
+        "arabicTextCount": 5,
+        "arabicSample": [
+          "عربي",
+          "تعبير عن الـLesson",
+          "إيه هي الـIT؟",
+          "· البرمجة والذكاء الاصطناعي",
+          "اكتب فقرة قصيرة عن أهمية الـIT في حياتك اليومية (100 كلمة على الأقل)."
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 2,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "teacher:teacher-templates": {
+        "error": "locator.click: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('aside nav button[data-view=\"teacher-templates\"]').first()\n"
+      },
+      "teacher:teacher-analytics": {
+        "error": "locator.click: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('aside nav button[data-view=\"teacher-analytics\"]').first()\n"
+      },
+      "student:student-dashboard": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 164,
+        "arabicTextCount": 2,
+        "arabicSample": [
+          "عربي",
+          "6 شهور"
+        ],
+        "attrTotal": 22,
+        "arabicAttrCount": 2,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "student:student-course": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 155,
+        "arabicTextCount": 4,
+        "arabicSample": [
+          "عربي",
+          "كورس Programming & AI لطلاب الصف الثاني الثانوي.",
+          "الأساسيات والمفاهيم المتعلقة بالـInformation Technology والـCybersecurity والـWeb Applications.",
+          "الـData Science والـMachine Learning والـArtificial Intelligence."
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 2,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "student:student-exam": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 43,
+        "arabicTextCount": 1,
+        "arabicSample": [
+          "عربي"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 2,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "student:student-bookmarks": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 34,
+        "arabicTextCount": 1,
+        "arabicSample": [
+          "عربي"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 2,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "student:student-scheduler": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 72,
+        "arabicTextCount": 1,
+        "arabicSample": [
+          "عربي"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 2,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "student:student-referral": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 56,
+        "arabicTextCount": 1,
+        "arabicSample": [
+          "عربي"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 2,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "student:student-progress": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 49,
+        "arabicTextCount": 1,
+        "arabicSample": [
+          "عربي"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 2,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "student:student-leaderboard": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 59,
+        "arabicTextCount": 2,
+        "arabicSample": [
+          "عربي",
+          "متمكن"
+        ],
+        "attrTotal": 13,
+        "arabicAttrCount": 2,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "student:student-achievements": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 109,
+        "arabicTextCount": 2,
+        "arabicSample": [
+          "عربي",
+          "محترف"
+        ],
+        "attrTotal": 13,
+        "arabicAttrCount": 2,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "student:student-certificate": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 41,
+        "arabicTextCount": 1,
+        "arabicSample": [
+          "عربي"
+        ],
+        "attrTotal": 13,
+        "arabicAttrCount": 2,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "student:student-homework": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 45,
+        "arabicTextCount": 4,
+        "arabicSample": [
+          "عربي",
+          "تعبير عن الـLesson",
+          "إيه هي الـIT؟",
+          "شغل ممتاز يا أحمد! التعبير واضح ومنظم. خليك على ده المستوى."
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 2,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "student:student-notifications": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 37,
+        "arabicTextCount": 5,
+        "arabicSample": [
+          "عربي",
+          "حصة لايف بكرة",
+          "لايف سشن بكرة الساعة 6:00 مساءً. متنساش تتواصل!",
+          "Lesson جديدة اتضاف",
+          "اتضافت Lesson جديدة في Part One — Information Technology and Society."
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 2,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "parent:parent-dashboard": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 160,
+        "arabicTextCount": 14,
+        "arabicSample": [
+          "عربي",
+          "6 شهور",
+          "مقدمة عن تكنولوجيا المعلومات",
+          "أحمد طالب متميز. شغوف في الـProgramming ومشارك قوي في الحصص. يستاهل التقدير.",
+          "محتاج يراجع درس الـCybersecurity تاني. كويز النهاردة كان أقل من مستواه المعتاد.",
+          "اتميز في حل الـHomework الأخير. اتقدم بشكل ملحوظ في فهم الـData Structures.",
+          "Homework: تعبير عن الـLesson",
+          "Live Session: ترحيب وتعريف بالكورس",
+          "Quiz: اختبار الـLesson الأولى",
+          "Live Session: [Parent Demo] حصة لايف"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 2,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      },
+      "parent:parent-report": {
+        "dir": "ltr",
+        "lang": "en",
+        "totalTextNodes": 160,
+        "arabicTextCount": 14,
+        "arabicSample": [
+          "عربي",
+          "6 شهور",
+          "مقدمة عن تكنولوجيا المعلومات",
+          "أحمد طالب متميز. شغوف في الـProgramming ومشارك قوي في الحصص. يستاهل التقدير.",
+          "محتاج يراجع درس الـCybersecurity تاني. كويز النهاردة كان أقل من مستواه المعتاد.",
+          "اتميز في حل الـHomework الأخير. اتقدم بشكل ملحوظ في فهم الـData Structures.",
+          "Homework: تعبير عن الـLesson",
+          "Live Session: ترحيب وتعريف بالكورس",
+          "Quiz: اختبار الـLesson الأولى",
+          "Live Session: [Parent Demo] حصة لايف"
+        ],
+        "attrTotal": 10,
+        "arabicAttrCount": 2,
+        "arabicAttrSample": [
+          {
+            "kind": "aria-label",
+            "text": "تبديل الوضع / Toggle theme"
+          },
+          {
+            "kind": "title",
+            "text": "العربية"
+          }
+        ]
+      }
+    }
+  },
+  "console": {
+    "en": [
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+      }
+    ]
+  }
+}
