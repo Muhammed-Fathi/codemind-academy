@@ -31,6 +31,10 @@ model Student {
   userId            String               @unique
   grade             String               @default("2nd Secondary")
   schoolName        String?
+  schoolType        String?
+  nationalId        String?              @unique
+  parentPhone       String?
+  studentCode       String?              @unique
   groupId           String?
   enrolledAt        DateTime             @default(now())
   createdAt         DateTime             @default(now())

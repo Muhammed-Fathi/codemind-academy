@@ -1,7 +1,48 @@
-// GET /api/admin/courses — list courses with curriculum stats
+// /api/admin/courses — list + create courses; seed curriculum from file.
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireRole } from "@/lib/api";
+import { seedCurriculumFromFile } from "@/lib/curriculum-seed";
+
+export async function POST(req: NextRequest) {
+  const { error } = await requireRole("ADMIN");
+  if (error) return error;
+
+  const body = await req.json().catch(() => ({}));
+
+  // Seed action: restore curriculum.ts data into the DB.
+  if (body.action === "seed") {
+    try {
+      const result = await seedCurriculumFromFile();
+      return ok({ ok: true, ...result });
+    } catch (e: any) {
+      return err(e?.message || "فشل استعادة المنهج", 500);
+    }
+  }
+
+  const name = String(body.name || "").trim();
+  const nameAr = String(body.nameAr || "").trim();
+  const description = String(body.description || "").trim();
+  const color = String(body.color || "#10b981").trim();
+  if (!name || !nameAr) return err("اسم الكورس (عربي + إنجليزي) مطلوب", 400);
+
+  const slugBase = (body.slug ? String(body.slug) : name)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60) || `course-${Date.now()}`;
+  let slug = slugBase;
+  for (let i = 2; i < 10; i++) {
+    const taken = await db.course.findUnique({ where: { slug } }).catch(() => null);
+    if (!taken) break;
+    slug = `${slugBase}-${i}`;
+  }
+
+  const course = await db.course.create({
+    data: { slug, name, nameAr, description, color },
+  });
+  return ok({ ok: true, course });
+}
 
 export async function GET(req: NextRequest) {
   const { error } = await requireRole("ADMIN");

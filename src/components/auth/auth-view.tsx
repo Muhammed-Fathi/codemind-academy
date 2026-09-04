@@ -1,13 +1,21 @@
 "use client";
 
 import * as React from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import { useApp } from "@/lib/store";
+import { getStrings } from "@/lib/i18n";
 import { CodeMindLogo } from "@/components/logo";
+import { GlobalControls } from "@/components/global-controls";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent } from "@/components/ui/card";
+import { PasswordInput } from "@/components/ui/password-input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
 import {
   ChevronRight,
@@ -18,22 +26,34 @@ import {
   GraduationCap,
   Heart,
   Briefcase,
-  Shield,
   Rocket,
   CheckCircle2,
+  IdCard,
+  School,
+  Hash,
+  Copy,
 } from "lucide-react";
 import { brand } from "@/lib/brand";
+import {
+  isValidArabicThreePartName,
+  isValidEgyptianPhone,
+  isValidNationalId,
+  isValidStudentCode,
+  isValidThreePartName,
+} from "@/lib/registration";
 
 type Role = "STUDENT" | "PARENT" | "TEACHER" | "ADMIN";
 
 export function AuthView() {
   const view = useApp((s) => s.view);
-  const setUser = useApp((s) => s.setUser);
+  const locale = useApp((s) => s.locale);
+  const t = getStrings(locale);
   const setView = useApp((s) => s.setView);
 
   const [mode, setMode] = React.useState<"login" | "register">(
     view === "register" ? "register" : "login"
   );
+  const [role, setRole] = React.useState<Role>("STUDENT");
   React.useEffect(() => {
     setMode(view === "register" ? "register" : "login");
   }, [view]);
@@ -44,67 +64,67 @@ export function AuthView() {
         {/* Left: form */}
         <div className="flex items-center justify-center p-6 sm:p-10">
           <div className="w-full max-w-md">
-            <button
-              onClick={() => setView("landing")}
-              className="text-sm text-muted-foreground hover:text-foreground mb-6 inline-flex items-center gap-1"
-            >
-              <ChevronRight className="w-4 h-4" />
-              رجوع للرئيسية
-            </button>
+            <div className="flex items-center justify-between mb-6">
+              <button
+                onClick={() => setView("landing")}
+                className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+              >
+                <ChevronRight className="w-4 h-4" />
+                {t.nav.backHome}
+              </button>
+              {/* Theme + language — available pre-login (public pages) */}
+              <GlobalControls />
+            </div>
 
             <div className="mb-6">
               <CodeMindLogo withWordmark size={40} />
             </div>
 
             <h1 className="text-2xl font-extrabold mb-1">
-              {mode === "login" ? "أهلاً بعودتك 👋" : "اخلق حسابك"}
+              {mode === "login" ? t.auth.welcomeBack : t.auth.createAccount}
             </h1>
             <p className="text-sm text-muted-foreground mb-6">
-              {mode === "login"
-                ? "ادخل بياناتك عشان تكمّل من حيث ما وقفت."
-                : "اختار نوع الحساب وادخل بياناتك عشان تبدأ."}
+              {mode === "login" ? t.auth.loginHint : t.auth.registerHint}
             </p>
 
-            {mode === "register" && <RolePicker />}
+            {mode === "register" && <RolePicker role={role} onChange={setRole} />}
 
-            <AuthForm mode={mode} />
+            <AuthForm mode={mode} role={role} />
 
             <div className="mt-6 text-center text-sm text-muted-foreground">
               {mode === "login" ? (
                 <>
-                  ماعندكش حساب؟{" "}
+                  {t.auth.noAccount}{" "}
                   <button
                     onClick={() => setMode("register")}
                     className="text-primary font-semibold hover:underline"
                   >
-                    اعمل واحد
+                    {t.auth.makeOne}
                   </button>
                 </>
               ) : (
                 <>
-                  عندك حساب بالفعل؟{" "}
+                  {t.auth.haveAccount}{" "}
                   <button
                     onClick={() => setMode("login")}
                     className="text-primary font-semibold hover:underline"
                   >
-                    ادخل
+                    {t.auth.doLogin}
                   </button>
                 </>
               )}
             </div>
 
-            {/* Demo accounts helper */}
-            <div className="mt-6 rounded-xl bg-muted/40 border border-border/40 p-3 text-xs">
-              <div className="font-semibold mb-1.5">حسابات تجريبية:</div>
-              <div className="space-y-1 text-muted-foreground">
-                <DemoAccount label="Student" email="student@codemind.academy" />
-                <DemoAccount label="Parent" email="parent@codemind.academy" />
-                <DemoAccount label="Teacher" email="teacher@codemind.academy" />
-                <DemoAccount label="Admin" email="admin@codemind.academy" />
-              </div>
-              <div className="mt-1.5 text-[10px] text-muted-foreground">
-                (كلمة السر لكل الحسابات: اسم الحساب + 123)
-              </div>
+            {/* Support / contact line (public) */}
+            <div className="mt-6 rounded-xl bg-muted/40 border border-border/40 p-3 text-xs text-center text-muted-foreground">
+              {t.auth.contactSupport}:{" "}
+              <a
+                href={`tel:${brand.contact.phone.replace(/[^+0-9]/g, "")}`}
+                className="font-bold text-foreground hover:text-primary transition-colors"
+                dir="ltr"
+              >
+                {brand.contact.phone}
+              </a>
             </div>
           </div>
         </div>
@@ -113,36 +133,6 @@ export function AuthView() {
         <AuthAside />
       </div>
     </div>
-  );
-}
-
-function DemoAccount({ label, email }: { label: string; email: string }) {
-  const setUser = useApp((s) => s.setUser);
-  const setView = useApp((s) => s.setView);
-  return (
-    <button
-      className="block w-full text-right hover:text-foreground transition-colors"
-      onClick={async () => {
-        const password =
-          (email.split("@")[0] || "user") + "123";
-        const r = await fetch("/api/auth/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password }),
-        });
-        const data = await r.json();
-        if (!r.ok) {
-          toast.error(data.error || "فشل تسجيل الدخول");
-          return;
-        }
-        toast.success("تم تسجيل الدخول بنجاح");
-        setUser(data.user);
-        setView(homeFor(data.user.role));
-      }}
-    >
-      → <span className="font-mono">{email}</span>{" "}
-      <span className="opacity-60">({label})</span>
-    </button>
   );
 }
 
@@ -159,13 +149,7 @@ function homeFor(role: Role) {
   }
 }
 
-function RolePicker() {
-  const [role, setRole] = React.useState<Role>("STUDENT");
-  // Expose via window for the form to read
-  React.useEffect(() => {
-    (window as any).__cm_role = role;
-  }, [role]);
-
+function RolePicker({ role, onChange }: { role: Role; onChange: (r: Role) => void }) {
   const roles: { key: Role; label: string; icon: any; desc: string }[] = [
     { key: "STUDENT", label: "Student", icon: GraduationCap, desc: "طالب" },
     { key: "PARENT", label: "Parent", icon: Heart, desc: "ولي أمر" },
@@ -177,7 +161,7 @@ function RolePicker() {
         <button
           key={r.key}
           type="button"
-          onClick={() => setRole(r.key)}
+          onClick={() => onChange(r.key)}
           className={`rounded-xl border-2 px-3 py-3 text-center transition-all ${
             role === r.key
               ? "border-primary bg-primary/5 shadow-sm"
@@ -197,39 +181,127 @@ function RolePicker() {
   );
 }
 
-function AuthForm({ mode }: { mode: "login" | "register" }) {
+function AuthForm({ mode, role }: { mode: "login" | "register"; role: Role }) {
   const setUser = useApp((s) => s.setUser);
   const setView = useApp((s) => s.setView);
+  const locale = useApp((s) => s.locale);
+  const t = getStrings(locale);
   const [loading, setLoading] = React.useState(false);
+  const [schoolType, setSchoolType] = React.useState("");
+  const [createdCode, setCreatedCode] = React.useState<string | null>(null);
 
   const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
-    const payload: any = {
-      email: fd.get("email"),
-      password: fd.get("password"),
-    };
-    if (mode === "register") {
-      payload.name = fd.get("name");
-      payload.phone = fd.get("phone");
-      payload.role = (window as any).__cm_role || "STUDENT";
-    }
-    setLoading(true);
-    try {
-      const r = await fetch(
-        mode === "login" ? "/api/auth/login" : "/api/auth/register",
-        {
+    const email = String(fd.get("email") || "").trim();
+    const password = String(fd.get("password") || "");
+
+    if (mode === "login") {
+      if (!email || !password) {
+        toast.error(locale === "ar" ? "اكتب الإيميل وكلمة السر" : "Enter email and password");
+        return;
+      }
+      setLoading(true);
+      try {
+        const r = await fetch("/api/auth/login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
+          body: JSON.stringify({ email, password }),
+        });
+        const data = await r.json();
+        if (!r.ok) {
+          toast.error(data.error || "حصلت مشكلة. حاول تاني.");
+          return;
         }
-      );
+        toast.success(locale === "ar" ? "أهلاً بعودتك!" : "Welcome back!");
+        setUser(data.user);
+        setView(homeFor(data.user.role));
+      } catch {
+        toast.error("حصلت مشكلة في الاتصال. حاول تاني.");
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    // ---------- register ----------
+    const name = String(fd.get("name") || "").trim();
+    const payload: any = { email, password, name, role };
+
+    if (role === "STUDENT") {
+      const studentPhone = String(fd.get("studentPhone") || "").trim();
+      const parentPhone = String(fd.get("parentPhone") || "").trim();
+      const nationalId = String(fd.get("nationalId") || "").trim();
+      const schoolName = String(fd.get("schoolName") || "").trim();
+      if (!isValidArabicThreePartName(name)) {
+        toast.error("الاسم الكامل لازم يكون ثلاثي باللغة العربية (مطابق للبطاقة)");
+        return;
+      }
+      if (!isValidEgyptianPhone(studentPhone)) {
+        toast.error("رقم تليفون الطالب غير صالح (مثال: 01147422177)");
+        return;
+      }
+      if (!isValidEgyptianPhone(parentPhone)) {
+        toast.error("رقم تليفون ولي الأمر غير صالح (مثال: 01147422177)");
+        return;
+      }
+      if (!isValidNationalId(nationalId)) {
+        toast.error("الرقم القومي لازم يكون 14 رقم");
+        return;
+      }
+      if (!schoolName) {
+        toast.error("اسم المدرسة مطلوب");
+        return;
+      }
+      if (schoolType !== "LANGUAGE" && schoolType !== "ARABIC") {
+        toast.error("اختار نوع المدرسة: لغات أو عربي");
+        return;
+      }
+      Object.assign(payload, { studentPhone, parentPhone, nationalId, schoolName, schoolType });
+    } else if (role === "PARENT") {
+      const parentPhone = String(fd.get("parentPhone") || "").trim();
+      const studentNationalId = String(fd.get("studentNationalId") || "").trim();
+      const studentCode = String(fd.get("studentCode") || "").trim().toUpperCase();
+      if (!isValidThreePartName(name)) {
+        toast.error("الاسم الكامل لازم يكون ثلاثي");
+        return;
+      }
+      if (!isValidEgyptianPhone(parentPhone)) {
+        toast.error("رقم تليفون ولي الأمر غير صالح (مثال: 01147422177)");
+        return;
+      }
+      if (!isValidNationalId(studentNationalId)) {
+        toast.error("الرقم القومي للطالب لازم يكون 14 رقم");
+        return;
+      }
+      if (!isValidStudentCode(studentCode)) {
+        toast.error("كود الطالب غير صالح (مثال: CM-ABC123)");
+        return;
+      }
+      Object.assign(payload, { parentPhone, studentNationalId, studentCode });
+    } else {
+      const phone = String(fd.get("phone") || "").trim();
+      if (!name) {
+        toast.error("الاسم مطلوب");
+        return;
+      }
+      if (phone) payload.phone = phone;
+    }
+
+    setLoading(true);
+    try {
+      const r = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
       const data = await r.json();
       if (!r.ok) {
         toast.error(data.error || "حصلت مشكلة. حاول تاني.");
         return;
       }
-      toast.success(mode === "login" ? "أهلاً بعودتك!" : "تم إنشاء حسابك 🎉");
+      if (data.user?.studentCode) setCreatedCode(data.user.studentCode);
+      toast.success(locale === "ar" ? "تم إنشاء حسابك 🎉" : "Account created 🎉");
       setUser(data.user);
       setView(homeFor(data.user.role));
     } catch {
@@ -240,58 +312,220 @@ function AuthForm({ mode }: { mode: "login" | "register" }) {
   };
 
   return (
-    <form onSubmit={onSubmit} className="space-y-3">
-      {mode === "register" && (
+    <>
+      {createdCode && (
+        <StudentCodeBanner code={createdCode} onDismiss={() => setCreatedCode(null)} />
+      )}
+      <form onSubmit={onSubmit} className="space-y-3">
+        {mode === "register" && role === "STUDENT" && (
+          <>
+            <Field
+              name="name"
+              label={t.auth.fullNameAr}
+              icon={<UserIcon className="w-4 h-4" />}
+              placeholder="مثال: أحمد محمد حسن"
+              required
+            />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Field
+                name="studentPhone"
+                label={t.auth.studentPhone}
+                icon={<Phone className="w-4 h-4" />}
+                placeholder="01147422177"
+                dir="ltr"
+                required
+              />
+              <Field
+                name="parentPhone"
+                label={t.auth.parentPhone}
+                icon={<Phone className="w-4 h-4" />}
+                placeholder="01147422177"
+                dir="ltr"
+                required
+              />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Field
+                name="nationalId"
+                label={t.auth.nationalId}
+                icon={<IdCard className="w-4 h-4" />}
+                placeholder="14 رقم"
+                dir="ltr"
+                required
+              />
+              <Field
+                name="schoolName"
+                label={t.auth.schoolName}
+                icon={<School className="w-4 h-4" />}
+                placeholder="اسم المدرسة"
+                required
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">{t.auth.schoolType} *</Label>
+              <Select value={schoolType} onValueChange={setSchoolType}>
+                <SelectTrigger className="h-11">
+                  <SelectValue placeholder="اختار نوع المدرسة" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="LANGUAGE">{t.auth.schoolTypeLang} (Language)</SelectItem>
+                  <SelectItem value="ARABIC">{t.auth.schoolTypeAr} (Arabic)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </>
+        )}
+
+        {mode === "register" && role === "PARENT" && (
+          <>
+            <Field
+              name="name"
+              label={t.auth.fullName}
+              icon={<UserIcon className="w-4 h-4" />}
+              placeholder="الاسم الكامل (ثلاثي)"
+              required
+            />
+            <Field
+              name="parentPhone"
+              label={t.auth.parentPhone}
+              icon={<Phone className="w-4 h-4" />}
+              placeholder="01147422177"
+              dir="ltr"
+              required
+            />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Field
+                name="studentNationalId"
+                label={t.auth.studentNationalId}
+                icon={<IdCard className="w-4 h-4" />}
+                placeholder="14 رقم"
+                dir="ltr"
+                required
+              />
+              <Field
+                name="studentCode"
+                label={t.auth.studentCode}
+                icon={<Hash className="w-4 h-4" />}
+                placeholder="CM-XXXXXX"
+                dir="ltr"
+                required
+              />
+            </div>
+            <p className="text-[11px] text-muted-foreground leading-relaxed">
+              بنتحقق من حسابك بمطابقة رقم تليفون ولي الأمر + الرقم القومي للطالب مع البيانات
+              المسجلة وقت تسجيل الطالب، بالإضافة لكود الطالب.
+            </p>
+          </>
+        )}
+
+        {mode === "register" && role === "TEACHER" && (
+          <>
+            <Field
+              name="name"
+              label={t.auth.fullName}
+              icon={<UserIcon className="w-4 h-4" />}
+              placeholder="الاسم الكامل"
+              required
+            />
+            <Field
+              name="phone"
+              label={t.auth.studentPhone}
+              icon={<Phone className="w-4 h-4" />}
+              placeholder="01xxxxxxxxx"
+              dir="ltr"
+            />
+          </>
+        )}
+
         <Field
-          name="name"
-          label="الاسم"
-          icon={<UserIcon className="w-4 h-4" />}
-          placeholder="الاسم الكامل"
+          name="email"
+          type="email"
+          label={t.auth.email}
+          icon={<Mail className="w-4 h-4" />}
+          placeholder="you@example.com"
+          dir="ltr"
           required
         />
-      )}
-      <Field
-        name="email"
-        type="email"
-        label="البريد الإلكتروني"
-        icon={<Mail className="w-4 h-4" />}
-        placeholder="you@example.com"
-        required
-      />
-      {mode === "register" && (
-        <Field
-          name="phone"
-          label="رقم التليفون"
-          icon={<Phone className="w-4 h-4" />}
-          placeholder="+20 100 000 0000"
-        />
-      )}
-      <Field
-        name="password"
-        type="password"
-        label="كلمة السر"
-        icon={<Lock className="w-4 h-4" />}
-        placeholder="••••••••"
-        required
-      />
+        <PasswordField label={t.auth.password} />
 
-      <Button
-        type="submit"
-        disabled={loading}
-        className="w-full h-11 font-bold mt-2"
-      >
-        {loading ? (
-          <span className="inline-flex items-center gap-2">
-            <span className="w-4 h-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
-            استنى شوية…
-          </span>
-        ) : mode === "login" ? (
-          "ادخل"
-        ) : (
-          "اعمل حسابي"
-        )}
-      </Button>
-    </form>
+        <Button
+          type="submit"
+          disabled={loading}
+          className="w-full h-11 font-bold mt-2"
+        >
+          {loading ? (
+            <span className="inline-flex items-center gap-2">
+              <span className="w-4 h-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+              {t.auth.loading}
+            </span>
+          ) : mode === "login" ? (
+            t.auth.enter
+          ) : (
+            t.auth.create
+          )}
+        </Button>
+      </form>
+    </>
+  );
+}
+
+function StudentCodeBanner({ code, onDismiss }: { code: string; onDismiss: () => void }) {
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      toast.success("اتنسخ الكود ✅");
+    } catch {
+      toast.error("انسخ الكود يدويًا");
+    }
+  };
+  return (
+    <div className="mb-4 rounded-xl border border-primary/30 bg-primary/5 p-4">
+      <div className="flex items-center gap-2 text-sm font-bold text-primary">
+        <CheckCircle2 className="w-4 h-4" />
+        كود الطالب الخاص بيك
+      </div>
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <code className="text-xl font-black tracking-widest font-mono" dir="ltr">
+          {code}
+        </code>
+        <Button type="button" size="sm" variant="outline" onClick={copy}>
+          <Copy className="w-3.5 h-3.5 ml-1" />
+          نسخ
+        </Button>
+      </div>
+      <p className="mt-1.5 text-[11px] text-muted-foreground">
+        احتفظ بالكود ده — ولي الأمر هيحتاجه عشان يربط حسابه بيك. هتلاقيه دايمًا في بروفايلك.
+      </p>
+      <button onClick={onDismiss} className="mt-1 text-[11px] text-muted-foreground hover:text-foreground">
+        إخفاء
+      </button>
+    </div>
+  );
+}
+
+function PasswordField({ label }: { label: string }) {
+  const locale = useApp((s) => s.locale);
+  const t = getStrings(locale);
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor="password" className="text-xs font-semibold">
+        {label}
+      </Label>
+      <div className="relative">
+        <div className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none">
+          <Lock className="w-4 h-4" />
+        </div>
+        <PasswordInput
+          id="password"
+          name="password"
+          placeholder="••••••••"
+          required
+          showLabel={t.auth.showPassword}
+          hideLabel={t.auth.hidePassword}
+          className="h-11 pr-10"
+        />
+      </div>
+    </div>
   );
 }
 
@@ -302,6 +536,7 @@ function Field({
   type = "text",
   placeholder,
   required,
+  dir,
 }: {
   name: string;
   label: string;
@@ -309,14 +544,19 @@ function Field({
   type?: string;
   placeholder?: string;
   required?: boolean;
+  dir?: "ltr" | "rtl";
 }) {
+  if (type === "password") {
+    return <PasswordField label={label} />;
+  }
   return (
     <div className="space-y-1.5">
       <Label htmlFor={name} className="text-xs font-semibold">
         {label}
+        {required ? " *" : ""}
       </Label>
       <div className="relative">
-        <div className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+        <div className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none">
           {icon}
         </div>
         <Input
@@ -325,6 +565,7 @@ function Field({
           type={type}
           placeholder={placeholder}
           required={required}
+          dir={dir}
           className="h-11 pr-10"
         />
       </div>

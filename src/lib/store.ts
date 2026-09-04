@@ -67,6 +67,8 @@ type AppState = {
   setSidebar: (v: boolean) => void;
   theme: "light" | "dark";
   toggleTheme: () => void;
+  locale: "ar" | "en";
+  setLocale: (v: "ar" | "en") => void;
 
   // landing nav
   scrollTo: (id: string) => void;
@@ -95,6 +97,20 @@ export const useApp = create<AppState>()(
         set({ theme: next });
         if (typeof document !== "undefined") {
           document.documentElement.classList.toggle("dark", next === "dark");
+          try {
+            localStorage.setItem("cm-theme", next);
+          } catch {}
+        }
+      },
+      locale: "ar",
+      setLocale: (locale) => {
+        set({ locale });
+        if (typeof document !== "undefined") {
+          document.documentElement.lang = locale === "ar" ? "ar" : "en";
+          document.documentElement.dir = locale === "ar" ? "rtl" : "ltr";
+          try {
+            localStorage.setItem("cm-locale", locale);
+          } catch {}
         }
       },
 
@@ -106,7 +122,7 @@ export const useApp = create<AppState>()(
     }),
     {
       name: "cm-app",
-      partialize: (s) => ({ theme: s.theme }),
+      partialize: (s) => ({ theme: s.theme, locale: s.locale } as any),
     }
   )
 );

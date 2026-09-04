@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireRole } from "@/lib/api";
 import { hashPassword } from "@/lib/auth";
+import { createStudentWithCode } from "@/lib/curriculum-seed";
 
 export async function GET(req: NextRequest) {
   const { error } = await requireRole("ADMIN");
@@ -21,6 +22,8 @@ export async function GET(req: NextRequest) {
       { user: { name: { contains: search } } },
       { user: { email: { contains: search } } },
       { user: { phone: { contains: search } } },
+      { studentCode: { contains: search } },
+      { nationalId: { contains: search } },
     ];
   }
   if (status === "active") where.user = { isActive: true };
@@ -48,7 +51,7 @@ export async function GET(req: NextRequest) {
   ]);
 
   return ok({
-    students: students.map((s) => ({
+    students: students.map((s: any) => ({
       id: s.id,
       userId: s.userId,
       name: s.user.name,
@@ -57,6 +60,10 @@ export async function GET(req: NextRequest) {
       isActive: s.user.isActive,
       grade: s.grade,
       schoolName: s.schoolName,
+      schoolType: s.schoolType || null,
+      nationalId: s.nationalId || null,
+      parentPhone: s.parentPhone || null,
+      studentCode: s.studentCode || null,
       enrolledAt: s.enrolledAt,
       group: s.group,
       subscription: s.subscription,
@@ -83,6 +90,9 @@ export async function POST(req: NextRequest) {
   const phone = body.phone ? String(body.phone) : null;
   const grade = body.grade ? String(body.grade) : "2nd Secondary";
   const schoolName = body.schoolName ? String(body.schoolName) : null;
+  const schoolType = body.schoolType ? String(body.schoolType).toUpperCase() : null;
+  const nationalId = body.nationalId ? String(body.nationalId).trim() : null;
+  const parentPhone = body.parentPhone ? String(body.parentPhone).trim() : null;
   const groupId = body.groupId ? String(body.groupId) : null;
 
   if (!name || !email || !password)
@@ -101,10 +111,21 @@ export async function POST(req: NextRequest) {
       role: "STUDENT",
     },
   });
-  const student = await db.student.create({
-    data: { userId: newUser.id, grade, schoolName, groupId },
-    include: { user: true, group: { select: { name: true } } },
-  });
+  // Unique readable student code (CM-XXXXXX), P2002-safe under concurrency.
+  const student = await createStudentWithCode(db, {
+    userId: newUser.id,
+    grade,
+    schoolName,
+    schoolType,
+    nationalId: nationalId || null,
+    parentPhone: parentPhone || null,
+    groupId,
+  }).then((s: any) =>
+    (db as any).student.findUnique({
+      where: { id: s.id },
+      include: { user: true, group: { select: { name: true } } },
+    })
+  );
 
   return ok({
     student: {
@@ -114,6 +135,7 @@ export async function POST(req: NextRequest) {
       phone: student.user.phone,
       grade: student.grade,
       schoolName: student.schoolName,
+      studentCode: student.studentCode,
       group: student.group,
     },
   });

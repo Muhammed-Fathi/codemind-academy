@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { brand, whatsappLink } from "@/lib/brand";
+import { GlobalControls } from "@/components/global-controls";
 import {
   LayoutDashboard,
   BookOpen,
@@ -33,8 +34,6 @@ import {
   Settings,
   LogOut,
   Menu,
-  Moon,
-  Sun,
   ChevronLeft,
   HelpCircle,
   HeartHandshake,
@@ -160,9 +159,16 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
               <HeartHandshake className="w-4 h-4 text-primary" />
               <div className="text-xs font-bold">محتاج مساعدة؟</div>
             </div>
-            <p className="text-[11px] text-muted-foreground mb-3 leading-relaxed">
+            <p className="text-[11px] text-muted-foreground mb-1 leading-relaxed">
               تواصل معانا على WhatsApp.
             </p>
+            <a
+              href={`tel:${brand.contact.phone.replace(/[^+0-9]/g, "")}`}
+              className="block text-center text-xs font-black mb-3 hover:text-primary transition-colors"
+              dir="ltr"
+            >
+              {brand.contact.phone}
+            </a>
             <a
               href={whatsappLink(brand.whatsapp.technical, "السلام عليكم، محتاج مساعدة")}
               target="_blank"
@@ -255,7 +261,8 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
             <div className="text-sm font-bold">{pageTitle(view, role)}</div>
           </div>
 
-          <ThemeToggle />
+          {/* Global theme + language — same controls as public pages */}
+          <GlobalControls />
 
           <NotificationsBell />
 
@@ -290,29 +297,6 @@ function roleLabel(role: string) {
 function pageTitle(view: string, role: string) {
   const all = NAV_BY_ROLE[role] || [];
   return all.find((i) => i.key === view)?.label || "Dashboard";
-}
-
-function ThemeToggle() {
-  const theme = useApp((s) => s.theme);
-  const toggle = useApp((s) => s.toggleTheme);
-  React.useEffect(() => {
-    if (typeof document !== "undefined") {
-      document.documentElement.classList.toggle("dark", theme === "dark");
-    }
-  }, [theme]);
-  return (
-    <button
-      onClick={toggle}
-      className="p-2 rounded-md hover:bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-      aria-label="تبديل الوضع"
-    >
-      {theme === "dark" ? (
-        <Sun className="w-4 h-4" />
-      ) : (
-        <Moon className="w-4 h-4" />
-      )}
-    </button>
-  );
 }
 
 function NotificationsBell() {

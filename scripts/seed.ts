@@ -8,12 +8,13 @@ async function main() {
   console.log("🌱 Seeding CodeMind Academy...");
 
   // 1. Settings / branding
+  // Unified support line across the platform: +20 1147422177
   const settings = [
     ["brand_name", "CodeMind Academy"],
     ["brand_tagline", "Learn. Build. Think."],
-    ["whatsapp_teacher", "+201000000000"],
-    ["whatsapp_technical", "+201000000001"],
-    ["whatsapp_subscription", "+201000000002"],
+    ["whatsapp_teacher", "+201147422177"],
+    ["whatsapp_technical", "+201147422177"],
+    ["whatsapp_subscription", "+201147422177"],
     ["academic_year", "2024 / 2025"],
     ["price_monthly", "200"],
     ["price_3months", "550"],
@@ -86,11 +87,30 @@ async function main() {
     },
   });
 
-  let student = await db.student.findUnique({ where: { userId: studentUser.id } });
+  const { generateStudentCode } = await import("../src/lib/registration");
+  let student = await (db as any).student.findUnique({ where: { userId: studentUser.id } });
   if (!student) {
-    student = await db.student.create({
-      data: { userId: studentUser.id, grade: "2nd Secondary", schoolName: "STEM Cairo" },
+    student = await (db as any).student.create({
+      data: {
+        userId: studentUser.id,
+        grade: "2nd Secondary",
+        schoolName: "STEM Cairo",
+        schoolType: "LANGUAGE",
+        nationalId: "29901010101010",
+        parentPhone: "+201000000006",
+        studentCode: generateStudentCode(),
+      },
     });
+  } else {
+    // Backfill new registration fields for the demo student (idempotent).
+    const patch: any = {};
+    if (!student.studentCode) patch.studentCode = generateStudentCode();
+    if (!student.nationalId) patch.nationalId = "29901010101010";
+    if (!student.parentPhone) patch.parentPhone = "+201000000006";
+    if (!student.schoolType) patch.schoolType = "LANGUAGE";
+    if (Object.keys(patch).length) {
+      student = await (db as any).student.update({ where: { id: student.id }, data: patch });
+    }
   }
 
   let parent = await db.parent.findUnique({ where: { userId: parentUser.id } });

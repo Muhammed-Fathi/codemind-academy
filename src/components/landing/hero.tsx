@@ -4,6 +4,8 @@ import * as React from "react";
 import { motion } from "framer-motion";
 import { CodeMindLogo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
+import { GlobalControls } from "@/components/global-controls";
+import { getStrings } from "@/lib/i18n";
 import { useApp } from "@/lib/store";
 import {
   Rocket,
@@ -18,6 +20,8 @@ import {
 export function LandingHero() {
   const setView = useApp((s) => s.setView);
   const scrollTo = useApp((s) => s.scrollTo);
+  const locale = useApp((s) => s.locale);
+  const t = getStrings(locale);
 
   return (
     <section className="relative overflow-hidden bg-mesh">
@@ -79,7 +83,7 @@ export function LandingHero() {
                 className="group h-12 px-6 text-base font-bold shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/40 transition-all glow-pulse shine-on-hover"
               >
                 <Rocket className="w-4 h-4 ml-2 group-hover:rotate-12 transition-transform" />
-                ابدأ رحلتك
+                {t.nav.startJourney}
               </Button>
               <Button
                 size="lg"
@@ -87,7 +91,7 @@ export function LandingHero() {
                 onClick={() => scrollTo("curriculum")}
                 className="h-12 px-6 text-base font-semibold bg-background/60 backdrop-blur-sm shine-on-hover"
               >
-                شوف المنهج
+                {t.nav.seeCurriculum}
                 <ChevronLeft className="w-4 h-4 mr-2" />
               </Button>
             </motion.div>
@@ -249,34 +253,38 @@ function HeroVisual() {
 function LandingNav() {
   const setView = useApp((s) => s.setView);
   const scrollTo = useApp((s) => s.scrollTo);
+  const locale = useApp((s) => s.locale);
+  const t = getStrings(locale);
 
   return (
     <header className="absolute top-0 left-0 right-0 z-30">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-20">
+        <div className="flex items-center justify-between h-20 gap-2">
           <CodeMindLogo withWordmark size={36} />
 
           <nav className="hidden md:flex items-center gap-1 text-sm">
-            <NavBtn onClick={() => scrollTo("why")}>ليه CodeMind؟</NavBtn>
-            <NavBtn onClick={() => scrollTo("curriculum")}>المنهج</NavBtn>
-            <NavBtn onClick={() => scrollTo("features")}>المميزات</NavBtn>
-            <NavBtn onClick={() => scrollTo("pricing")}>الأسعار</NavBtn>
-            <NavBtn onClick={() => scrollTo("faq")}>الأسئلة</NavBtn>
+            <NavBtn onClick={() => scrollTo("why")}>{t.nav.why}</NavBtn>
+            <NavBtn onClick={() => scrollTo("curriculum")}>{t.nav.curriculum}</NavBtn>
+            <NavBtn onClick={() => scrollTo("features")}>{t.nav.features}</NavBtn>
+            <NavBtn onClick={() => scrollTo("pricing")}>{t.nav.pricing}</NavBtn>
+            <NavBtn onClick={() => scrollTo("faq")}>{t.nav.faq}</NavBtn>
           </nav>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
+            {/* Global theme + language toggles — functional pre-login */}
+            <GlobalControls />
             <Button
               variant="ghost"
               size="sm"
               className="px-2 sm:px-3"
               onClick={() => setView("login")}
-              aria-label="تسجيل الدخول"
+              aria-label={t.nav.login}
             >
-              <span className="hidden sm:inline">تسجيل الدخول</span>
+              <span className="hidden sm:inline">{t.nav.login}</span>
               <LogIn className="w-4 h-4 sm:hidden" />
             </Button>
             <Button size="sm" className="font-bold" onClick={() => setView("register")}>
-              ابدأ مجاناً
+              {t.nav.startFree}
             </Button>
           </div>
         </div>

@@ -19,6 +19,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -521,6 +522,10 @@ type StudentRow = {
   isActive: boolean;
   grade: string;
   schoolName: string | null;
+  schoolType?: string | null;
+  nationalId?: string | null;
+  parentPhone?: string | null;
+  studentCode?: string | null;
   enrolledAt: string;
   group: { id: string; name: string; course: { nameAr: string } } | null;
   subscription: {
@@ -621,6 +626,7 @@ function StudentsView() {
               <TableHeader>
                 <TableRow>
                   <TableHead>الاسم</TableHead>
+                  <TableHead>كود الطالب</TableHead>
                   <TableHead>الإيميل</TableHead>
                   <TableHead>الصف</TableHead>
                   <TableHead>المجموعة</TableHead>
@@ -636,6 +642,15 @@ function StudentsView() {
                     onClick={() => setSelected(s)}
                   >
                     <TableCell className="font-medium">{s.name}</TableCell>
+                    <TableCell>
+                      {s.studentCode ? (
+                        <code className="text-xs font-mono font-bold text-primary" dir="ltr">
+                          {s.studentCode}
+                        </code>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-xs text-muted-foreground">{s.email}</TableCell>
                     <TableCell>{s.grade}</TableCell>
                     <TableCell>{s.group?.name || "—"}</TableCell>
@@ -736,7 +751,7 @@ function AddStudentDialog({
           </div>
           <div>
             <Label>كلمة السر</Label>
-            <Input type="text" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+            <PasswordInput value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="••••••••" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -837,10 +852,42 @@ function StudentProfileDrawer({
               <DrawerDescription>{student.email}</DrawerDescription>
             </DrawerHeader>
             <div className="px-4 pb-6 space-y-4">
+              {student.studentCode && (
+                <div className="rounded-xl border border-primary/30 bg-primary/5 p-3 flex items-center justify-between">
+                  <div>
+                    <div className="text-xs text-muted-foreground">كود الطالب</div>
+                    <code className="text-lg font-black font-mono tracking-widest text-primary" dir="ltr">
+                      {student.studentCode}
+                    </code>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      try {
+                        navigator.clipboard.writeText(student.studentCode || "");
+                        toast.success("اتنسخ الكود ✅");
+                      } catch {
+                        toast.error("انسخ الكود يدويًا");
+                      }
+                    }}
+                  >
+                    نسخ
+                  </Button>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div className="rounded-lg border p-3">
                   <div className="text-xs text-muted-foreground">التليفون</div>
                   <div className="font-medium mt-1">{student.phone || "—"}</div>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <div className="text-xs text-muted-foreground">تليفون ولي الأمر</div>
+                  <div className="font-medium mt-1" dir="ltr">{student.parentPhone || "—"}</div>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <div className="text-xs text-muted-foreground">الرقم القومي</div>
+                  <div className="font-medium mt-1 font-mono" dir="ltr">{student.nationalId || "—"}</div>
                 </div>
                 <div className="rounded-lg border p-3">
                   <div className="text-xs text-muted-foreground">الصف</div>
@@ -851,6 +898,12 @@ function StudentProfileDrawer({
                   <div className="font-medium mt-1">{student.schoolName || "—"}</div>
                 </div>
                 <div className="rounded-lg border p-3">
+                  <div className="text-xs text-muted-foreground">نوع المدرسة</div>
+                  <div className="font-medium mt-1">
+                    {student.schoolType === "LANGUAGE" ? "لغات" : student.schoolType === "ARABIC" ? "عربي" : "—"}
+                  </div>
+                </div>
+                <div className="rounded-lg border p-3 col-span-2">
                   <div className="text-xs text-muted-foreground">تاريخ التسجيل</div>
                   <div className="font-medium mt-1">{fmtDate(student.enrolledAt)}</div>
                 </div>
@@ -1072,7 +1125,7 @@ function AddTeacherDialog({
           </div>
           <div>
             <Label>كلمة السر</Label>
-            <Input type="text" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+            <PasswordInput value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="••••••••" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -1462,6 +1515,8 @@ function CoursesView() {
   const { data, loading, error, reload } = useApi<{ courses: CourseRow[] }>("/api/admin/courses");
   const [tree, setTree] = React.useState<CourseTree | null>(null);
   const [treeLoading, setTreeLoading] = React.useState(false);
+  const [seeding, setSeeding] = React.useState(false);
+  const [openAdd, setOpenAdd] = React.useState(false);
 
   const openTree = async (id: string) => {
     setTreeLoading(true);
@@ -1476,20 +1531,56 @@ function CoursesView() {
     }
   };
 
+  const seedNow = async () => {
+    setSeeding(true);
+    try {
+      const res = await fetch("/api/admin/courses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "seed" }),
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || "فشل استعادة المنهج");
+      toast.success(j.created ? "اتستعاد المنهج بنجاح ✅" : "المنهج موجود بالفعل ✅");
+      reload();
+    } catch (e: any) {
+      toast.error(e.message || "حصلت مشكلة. حاول تاني.");
+    } finally {
+      setSeeding(false);
+    }
+  };
+
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
-      <div>
-        <h2 className="text-xl font-bold">الكورسات</h2>
-        <p className="text-xs text-muted-foreground">استعراض الـCurriculum الشامل</p>
+      <div className="flex flex-wrap items-center gap-3 justify-between">
+        <div>
+          <h2 className="text-xl font-bold">الكورسات</h2>
+          <p className="text-xs text-muted-foreground">استعراض الـCurriculum الشامل</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={seedNow} disabled={seeding}>
+            {seeding ? <Loader2 className="w-4 h-4 ml-2 animate-spin" /> : <Download className="w-4 h-4 ml-2" />}
+            {seeding ? "جارٍ الاستعادة…" : "استعادة المنهج"}
+          </Button>
+          <Button size="sm" onClick={() => setOpenAdd(true)}>
+            <Plus className="w-4 h-4 ml-2" />
+            Add Course
+          </Button>
+        </div>
       </div>
+      <AddCourseDialog open={openAdd} onOpenChange={setOpenAdd} onCreated={reload} />
 
       {loading ? (
         <LoadingBlock rows={3} />
       ) : error ? (
         <ErrorBlock message={error} onRetry={reload} />
       ) : !data || data.courses.length === 0 ? (
-        <Card className="p-4">
-          <EmptyBlock message="مفيش كورسات لسه." />
+        <Card className="p-6 text-center">
+          <EmptyBlock message="مفيش كورسات لسه. دوس «استعادة المنهج» عشان نرجّع بيانات curriculum.ts." />
+          <Button className="mt-4" onClick={seedNow} disabled={seeding}>
+            {seeding ? <Loader2 className="w-4 h-4 ml-2 animate-spin" /> : <Download className="w-4 h-4 ml-2" />}
+            {seeding ? "جارٍ الاستعادة…" : "استعادة المنهج من curriculum.ts"}
+          </Button>
         </Card>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 stagger-in">
@@ -1591,6 +1682,103 @@ function CoursesView() {
   );
 }
 
+function AddCourseDialog({
+  open,
+  onOpenChange,
+  onCreated,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  onCreated: () => void;
+}) {
+  const [form, setForm] = React.useState({
+    name: "",
+    nameAr: "",
+    description: "",
+    color: "#10b981",
+  });
+  const [saving, setSaving] = React.useState(false);
+
+  const submit = async () => {
+    if (!form.name.trim() || !form.nameAr.trim()) {
+      toast.error("اسم الكورس (عربي + إنجليزي) مطلوب");
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/courses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || "حصلت مشكلة");
+      toast.success("اتضاف الكورس بنجاح ✅");
+      onCreated();
+      onOpenChange(false);
+      setForm({ name: "", nameAr: "", description: "", color: "#10b981" });
+    } catch (e: any) {
+      toast.error(e.message || "حصلت مشكلة. حاول تاني.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>إضافة كورس جديد</DialogTitle>
+          <DialogDescription>ادخل بيانات الكورس الأساسية.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <Label>الاسم بالإنجليزية</Label>
+            <Input
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              placeholder="Programming & AI"
+            />
+          </div>
+          <div>
+            <Label>الاسم بالعربية</Label>
+            <Input
+              value={form.nameAr}
+              onChange={(e) => setForm({ ...form, nameAr: e.target.value })}
+              placeholder="البرمجة والذكاء الاصطناعي"
+            />
+          </div>
+          <div>
+            <Label>الوصف</Label>
+            <Textarea
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              placeholder="وصف مختصر للكورس"
+            />
+          </div>
+          <div>
+            <Label>اللون</Label>
+            <Input
+              type="color"
+              value={form.color}
+              onChange={(e) => setForm({ ...form, color: e.target.value })}
+              className="h-10 w-20 p-1"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            إلغاء
+          </Button>
+          <Button onClick={submit} disabled={saving}>
+            {saving ? "جارٍ الحفظ..." : "حفظ"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ============================================================
 // 6. Question Bank
 // ============================================================
@@ -1620,7 +1808,8 @@ function QuestionBankView() {
   const [lessons, setLessons] = React.useState<any[]>([]);
 
   React.useEffect(() => {
-    fetch("/api/admin/courses")
+    // NOTE: tree=1 is required — without it the API omits parts/units/topics/lessons.
+    fetch("/api/admin/courses?tree=1")
       .then((r) => r.json())
       .then((d) => {
         const all: any[] = [];

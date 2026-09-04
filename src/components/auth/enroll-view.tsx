@@ -56,9 +56,30 @@ type Plan = {
 };
 
 const METHODS = [
-  { key: "INSTAPAY", label: "InstaPay", color: "from-rose-500 to-pink-500", desc: "تحويل عبر InstaPay" },
-  { key: "VODAFONE_CASH", label: "Vodafone Cash", color: "from-red-500 to-rose-500", desc: "محفظة Vodafone" },
-  { key: "ETISALAT_CASH", label: "e& Cash", color: "from-emerald-500 to-teal-500", desc: "محفظة Etisalat" },
+  {
+    key: "INSTAPAY",
+    label: "InstaPay",
+    color: "from-rose-500 to-pink-500",
+    desc: "تحويل عبر InstaPay",
+    number: brand.payments.instapay,
+    disabled: false,
+  },
+  {
+    key: "VODAFONE_CASH",
+    label: "Vodafone Cash",
+    color: "from-red-500 to-rose-500",
+    desc: "محفظة Vodafone",
+    number: null,
+    disabled: true,
+  },
+  {
+    key: "ETISALAT_CASH",
+    label: "e& Cash",
+    color: "from-emerald-500 to-teal-500",
+    desc: "محفظة Etisalat",
+    number: brand.payments.eCash,
+    disabled: false,
+  },
 ];
 
 export function EnrollView() {
@@ -483,7 +504,7 @@ function PlanPicker({
             }`}
           >
             {p.isPromo && (
-              <Badge className="absolute -top-2 right-3 bg-amber-500 text-white hover:bg-amber-500">
+              <Badge className="absolute top-3 right-3 bg-amber-500 text-white hover:bg-amber-500 shadow-md">
                 <Trophy className="w-3 h-3 ml-1" />
                 Limited
               </Badge>
@@ -541,7 +562,8 @@ function PaymentPicker({
     <div>
       <h2 className="text-lg font-bold mb-1">اختار طريقة الدفع</h2>
       <p className="text-sm text-muted-foreground mb-5">
-        حوّل المبلغ على إحدى المحافظ دي وادخل الـReference Number.
+        حوّل المبلغ على <strong dir="ltr">{brand.payments.instapay}</strong> (InstaPay أو e&
+        Cash) وادخل الـReference Number. Vodafone Cash قريبًا.
       </p>
 
       {/* Coupon section */}
@@ -600,27 +622,43 @@ function PaymentPicker({
       </div>
 
       <div className="grid sm:grid-cols-3 gap-3 mb-6">
-        {METHODS.map((m) => (
-          <button
-            key={m.key}
-            onClick={() => setMethod(m.key)}
-            className={`text-center rounded-2xl p-4 border-2 transition-all ${
-              method === m.key
-                ? "border-primary bg-primary/5 shadow-sm"
-                : "border-border hover:border-primary/40"
-            }`}
-          >
-            <div
-              className={`w-12 h-12 mx-auto rounded-xl bg-gradient-to-br ${m.color} flex items-center justify-center text-white mb-2`}
+        {METHODS.map((m) => {
+          const disabled = (m as any).disabled;
+          return (
+            <button
+              key={m.key}
+              disabled={disabled}
+              onClick={() => !disabled && setMethod(m.key)}
+              className={`relative text-center rounded-2xl p-4 border-2 transition-all overflow-hidden ${
+                disabled
+                  ? "border-border bg-muted/40 opacity-60 grayscale cursor-not-allowed"
+                  : method === m.key
+                  ? "border-primary bg-primary/5 shadow-sm"
+                  : "border-border hover:border-primary/40"
+              }`}
             >
-              <Wallet className="w-5 h-5" />
-            </div>
-            <div className="text-sm font-bold">{m.label}</div>
-            <div className="text-[10px] text-muted-foreground mt-1">
-              {m.desc}
-            </div>
-          </button>
-        ))}
+              {disabled && (
+                <Badge className="absolute top-2 left-2 bg-amber-500 hover:bg-amber-500 text-white text-[10px]">
+                  Coming Soon
+                </Badge>
+              )}
+              <div
+                className={`w-12 h-12 mx-auto rounded-xl bg-gradient-to-br ${m.color} flex items-center justify-center text-white mb-2`}
+              >
+                <Wallet className="w-5 h-5" />
+              </div>
+              <div className="text-sm font-bold">{m.label}</div>
+              <div className="text-[10px] text-muted-foreground mt-1">
+                {m.desc}
+              </div>
+              {(m as any).number && (
+                <div className="mt-1.5 text-[11px] font-bold font-mono" dir="ltr">
+                  {(m as any).number}
+                </div>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       <div className="rounded-xl bg-muted/40 border border-border/60 p-4">
@@ -688,7 +726,16 @@ function ConfirmCard({
         <CardContent className="p-5 space-y-3 text-sm">
           <Row label="الكورس" value="Programming & AI" />
           <Row label="المجموعة" value="Group A" />
-          <Row label="طريقة الدفع" value={method || "-"} />
+          <Row
+            label="طريقة الدفع"
+            value={
+              method === "INSTAPAY"
+                ? `InstaPay (${brand.payments.instapay})`
+                : method === "ETISALAT_CASH"
+                ? `e& Cash (${brand.payments.eCash})`
+                : method || "-"
+            }
+          />
           <Row label="Reference" value={reference || "—"} />
           {hasCoupon && (
             <Row

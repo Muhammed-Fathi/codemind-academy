@@ -202,7 +202,11 @@ export async function GET(_req: NextRequest) {
       firstName: student.user.name.split(" ")[0],
       email: student.user.email,
       grade: student.grade,
-      schoolName: student.schoolName,
+      schoolName: (student as any).schoolName ?? null,
+      schoolType: (student as any).schoolType ?? null,
+      nationalId: (student as any).nationalId ?? null,
+      parentPhone: (student as any).parentPhone ?? null,
+      studentCode: (student as any).studentCode ?? null,
     },
     group: student.group
       ? {

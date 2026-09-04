@@ -1,6 +1,11 @@
 // CodeMind Academy — Central Brand Configuration
 // Change anything here to rebrand the entire platform.
 
+// Primary support / contact line used across the whole platform
+// (contact sections, WhatsApp support, and manual payment gateways).
+export const SUPPORT_PHONE_DISPLAY = "+20 1147422177";
+export const SUPPORT_PHONE_INTL = "+201147422177";
+
 export const brand = {
   name: "CodeMind Academy",
   shortName: "CodeMind",
@@ -13,13 +18,19 @@ export const brand = {
   secondaryColor: "#f59e0b", // amber-500
   accentColor: "#14b8a6", // teal-500
   whatsapp: {
-    teacher: "+201000000000",
-    technical: "+201000000001",
-    subscription: "+201000000002",
+    teacher: SUPPORT_PHONE_INTL,
+    technical: SUPPORT_PHONE_INTL,
+    subscription: SUPPORT_PHONE_INTL,
+  },
+  payments: {
+    instapay: SUPPORT_PHONE_DISPLAY,
+    eCash: SUPPORT_PHONE_DISPLAY,
+    // Vodafone Cash is temporarily disabled (Coming Soon).
+    vodafoneCash: null as string | null,
   },
   contact: {
     email: "hello@codemind.academy",
-    phone: "+20 100 000 0000",
+    phone: SUPPORT_PHONE_DISPLAY,
     address: "Cairo, Egypt",
   },
   social: {
