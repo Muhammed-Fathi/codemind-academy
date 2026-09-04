@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { CodeMindLogo } from "@/components/logo";
 import { brand } from "@/lib/brand";
+import { formatSubscriptionStatus } from "@/lib/monthly-report";
 import { toast } from "sonner";
 import {
   X,
@@ -35,7 +36,9 @@ type ReportData = {
   attendance: { pct: number; present: number; total: number };
   quizzes: { average: number; taken: number; passed: number; failed: number };
   homework: { submitted: number; graded: number; completionPct: number };
-  subscription: { status: string; planName: string; daysLeft: number };
+  // API returns subscription: null when the student has no subscription
+  // (and daysLeft: null when the subscription row has no endDate).
+  subscription: { status: string; planName: string; daysLeft: number | null } | null;
   strongTopics: { title: string; avgPct: number }[];
   weakTopics: { title: string; avgPct: number }[];
   recentQuizzes: { title: string; percentage: number; passed: boolean; date: string }[];
@@ -117,6 +120,10 @@ export function MonthlyReportView({ onClose }: { onClose: () => void }) {
     );
   }
 
+  // Null-safe view model — `data.subscription` is null when the student
+  // has no subscription and must not crash the report.
+  const subscriptionView = formatSubscriptionStatus(data.subscription);
+
   return (
     <>
       {/* Print-specific styles */}
@@ -193,13 +200,13 @@ export function MonthlyReportView({ onClose }: { onClose: () => void }) {
                 <div>
                   <div className="text-xs text-gray-500">Subscription Status</div>
                   <div className="text-sm font-bold mt-1">
-                    {data.subscription.status === "ACTIVE" ? "Active" : data.subscription.status}
-                    {data.subscription.planName && ` · ${data.subscription.planName}`}
+                    {subscriptionView.statusLabel}
+                    {subscriptionView.planName && ` · ${subscriptionView.planName}`}
                   </div>
                 </div>
                 <div className="text-left">
                   <div className="text-xs text-gray-500">الأيام المتبقية</div>
-                  <div className="text-lg font-bold text-emerald-600">{data.subscription.daysLeft}</div>
+                  <div className="text-lg font-bold text-emerald-600">{subscriptionView.daysLeftLabel}</div>
                 </div>
               </div>
             </div>
