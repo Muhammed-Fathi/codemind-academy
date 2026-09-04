@@ -1,5 +1,5 @@
 // CodeMind Academy — Migration SQL safety simulation (offline).
-// Applies prisma/migrations/20260905_add_student_identity_fields/migration.sql
+// Applies prisma/migrations/20260904090608_add_student_identity_fields/migration.sql
 // to a SCRATCH SQLite database (in the OS temp dir — never the real DB) that
 // mimics the pre-migration production schema + data, then verifies:
 //   1. The SQL contains zero destructive statements.
@@ -65,7 +65,7 @@ const before = {
 
 // ---- 2. Migration file must contain zero destructive keywords ----
 const sql = fs.readFileSync(
-  path.join(REPO, "prisma/migrations/20260905_add_student_identity_fields/migration.sql"),
+  path.join(REPO, "prisma/migrations/20260904090608_add_student_identity_fields/migration.sql"),
   "utf8"
 );
 ok(

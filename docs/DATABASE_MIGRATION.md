@@ -61,8 +61,8 @@ sqlite3 db/custom.db "PRAGMA table_info(Student);"
 # If studentCode/nationalId/parentPhone/schoolType are already listed, STOP —
 # the migration is already applied.
 
-# 1) Apply (file: prisma/migrations/20260905_add_student_identity_fields/migration.sql):
-sqlite3 db/custom.db < prisma/migrations/20260905_add_student_identity_fields/migration.sql
+# 1) Apply (file: prisma/migrations/20260904090608_add_student_identity_fields/migration.sql):
+sqlite3 db/custom.db < prisma/migrations/20260904090608_add_student_identity_fields/migration.sql
 
 # 2) Confirm:
 sqlite3 db/custom.db "PRAGMA table_info(Student); PRAGMA index_list(Student);"
@@ -79,7 +79,7 @@ const cols=db.prepare('PRAGMA table_info(Student)').all().map(c=>c.name);
 if(['studentCode','nationalId','parentPhone','schoolType'].every(c=>cols.includes(c))){
   console.log('Migration already applied — nothing to do.');process.exit(0);
 }
-const sql=fs.readFileSync('prisma/migrations/20260905_add_student_identity_fields/migration.sql','utf8')
+const sql=fs.readFileSync('prisma/migrations/20260904090608_add_student_identity_fields/migration.sql','utf8')
   .split('\n').filter(l=>!l.trim().startsWith('--')).join('\n');
 for(const s of sql.split(';').map(s=>s.trim()).filter(Boolean)) db.exec(s);
 console.log('Migration applied.');
