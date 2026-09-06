@@ -66,25 +66,55 @@ export async function POST(
     totalMarks > 0 ? Math.round((score / totalMarks) * 100) : 0;
   const passed = percentage >= quiz.passMark;
 
-  const attempt = await db.quizAttempt.create({
-    data: {
-      quizId: id,
-      studentId: s.id,
-      score,
-      totalMarks,
-      percentage,
-      passed,
-      finishedAt: new Date(),
-      answers: {
-        create: gradedAnswers.map((a) => ({
-          questionId: a.questionId,
-          selected: a.selected,
-          isCorrect: a.isCorrect,
-        })),
-      },
-    },
-    include: { answers: true },
+  // If /start already opened an attempt (it does whenever the quiz UI runs the
+  // camera monitor), finalise THAT row so any evidence captured during the
+  // attempt stays attached to the graded result. Otherwise create a fresh one.
+  const open = await db.quizAttempt.findFirst({
+    where: { quizId: id, studentId: s.id, finishedAt: null },
+    orderBy: { startedAt: "desc" },
+    select: { id: true },
   });
+
+  const attemptData = {
+    score,
+    totalMarks,
+    percentage,
+    passed,
+    finishedAt: new Date(),
+  };
+
+  const attempt = open
+    ? await db.quizAttempt.update({
+        where: { id: open.id },
+        data: {
+          ...attemptData,
+          // Replace any partial answers from an interrupted run.
+          answers: {
+            deleteMany: {},
+            create: gradedAnswers.map((a) => ({
+              questionId: a.questionId,
+              selected: a.selected,
+              isCorrect: a.isCorrect,
+            })),
+          },
+        },
+        include: { answers: true },
+      })
+    : await db.quizAttempt.create({
+        data: {
+          quizId: id,
+          studentId: s.id,
+          ...attemptData,
+          answers: {
+            create: gradedAnswers.map((a) => ({
+              questionId: a.questionId,
+              selected: a.selected,
+              isCorrect: a.isCorrect,
+            })),
+          },
+        },
+        include: { answers: true },
+      });
 
   return ok({
     attemptId: attempt.id,

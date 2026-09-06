@@ -71,6 +71,7 @@ const NAV_BY_ROLE: Record<string, NavItem[]> = {
   STUDENT: [
     { key: "student-dashboard", label: "Dashboard", icon: LayoutDashboard },
     { key: "student-course", label: "shell.001", icon: BookOpen },
+    { key: "student-session-videos", label: "admin.204", icon: Video },
     { key: "student-exam", label: "Mock Exams", icon: Timer },
     { key: "student-bookmarks", label: "Bookmarks", icon: Bookmark },
     { key: "student-scheduler", label: "Study Plan", icon: CalendarDays },

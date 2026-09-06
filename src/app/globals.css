@@ -1206,6 +1206,13 @@
     inset-inline-end: auto;
     inset-inline-start: 0.75rem;
   }
+  /* Buttons inside the field (e.g. the password reveal toggle) must stay
+     clickable, unlike decorative icons. */
+  .field-with-icon > button.field-icon,
+  .field-with-icon > .field-icon[data-interactive="true"] {
+    pointer-events: auto;
+    cursor: pointer;
+  }
   .field-with-icon > input,
   .field-with-icon > textarea {
     padding-inline-end: 2.5rem;

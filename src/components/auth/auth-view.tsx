@@ -41,16 +41,19 @@ import {
   isValidStudentCode,
   isValidThreePartName,
 } from "@/lib/registration";
+import { ForgotPasswordForm } from "@/components/auth/forgot-password-form";
 
 type Role = "STUDENT" | "PARENT" | "TEACHER" | "ADMIN";
 
 export function AuthView() {
+  const tr = useT();
   const view = useApp((s) => s.view);
   const locale = useApp((s) => s.locale);
   const t = getStrings(locale);
   const setView = useApp((s) => s.setView);
 
-  const [mode, setMode] = React.useState<"login" | "register">(
+  // "forgot" is a third client-side mode reusing the same auth shell.
+  const [mode, setMode] = React.useState<"login" | "register" | "forgot">(
     view === "register" ? "register" : "login"
   );
   const [role, setRole] = React.useState<Role>("STUDENT");
@@ -81,18 +84,41 @@ export function AuthView() {
             </div>
 
             <h1 className="text-2xl font-extrabold mb-1">
-              {mode === "login" ? t.auth.welcomeBack : t.auth.createAccount}
+              {mode === "forgot"
+                ? tr("auth.201")
+                : mode === "login"
+                  ? t.auth.welcomeBack
+                  : t.auth.createAccount}
             </h1>
             <p className="text-sm text-muted-foreground mb-6">
-              {mode === "login" ? t.auth.loginHint : t.auth.registerHint}
+              {mode === "forgot"
+                ? tr("auth.202")
+                : mode === "login"
+                  ? t.auth.loginHint
+                  : t.auth.registerHint}
             </p>
 
             {mode === "register" && <RolePicker role={role} onChange={setRole} />}
 
-            <AuthForm mode={mode} role={role} />
+            {mode === "forgot" ? (
+              <ForgotPasswordForm onBackToLogin={() => setMode("login")} />
+            ) : (
+              <>
+                <AuthForm mode={mode} role={role} />
+                {mode === "login" && (
+                  <button
+                    type="button"
+                    onClick={() => setMode("forgot")}
+                    className="mt-3 w-full text-center text-xs font-semibold text-primary hover:underline"
+                  >
+                    {tr("auth.200")}
+                  </button>
+                )}
+              </>
+            )}
 
             <div className="mt-6 text-center text-sm text-muted-foreground">
-              {mode === "login" ? (
+              {mode === "forgot" ? null : mode === "login" ? (
                 <>
                   {t.auth.noAccount}{" "}
                   <button

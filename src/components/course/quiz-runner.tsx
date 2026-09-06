@@ -27,6 +27,10 @@ import {
   Lightbulb,
   ListChecks,
 } from "lucide-react";
+import {
+  QuizCameraConsent,
+  QuizCameraMonitor,
+} from "@/components/course/quiz-camera-monitor";
 
 // ============================================================
 // Types
@@ -110,6 +114,38 @@ export function QuizRunner() {
   const [submitting, setSubmitting] = React.useState(false);
   const [result, setResult] = React.useState<SubmitResult | null>(null);
 
+  // --- Proctoring ------------------------------------------------------
+  // The quiz body is gated behind an explicit consent screen. `cameraAllowed`
+  // is null until the student decides; declining is allowed and simply runs
+  // the quiz with no camera at all.
+  const [cameraAllowed, setCameraAllowed] = React.useState<boolean | null>(null);
+  const [attemptId, setAttemptId] = React.useState<string | null>(null);
+  const [startingAttempt, setStartingAttempt] = React.useState(false);
+
+  const beginAttempt = React.useCallback(
+    async (allow: boolean) => {
+      if (!navParam) return;
+      setStartingAttempt(true);
+      try {
+        const r = await fetch(`/api/quizzes/${encodeURIComponent(navParam)}/start`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cameraStatus: allow ? "NOT_REQUESTED" : "DECLINED" }),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (r.ok && d.attemptId) setAttemptId(d.attemptId);
+        // A failed attempt-open must not block the student from taking the
+        // quiz; it only means no evidence can be linked.
+      } catch {
+        /* ignore — quiz still runs */
+      } finally {
+        setCameraAllowed(allow);
+        setStartingAttempt(false);
+      }
+    },
+    [navParam]
+  );
+
   const load = React.useCallback(() => {
     if (!navParam) {
       setError(t("course.001"));
@@ -126,6 +162,8 @@ export function QuizRunner() {
         setAnswers({});
         setSubmitted(false);
         setResult(null);
+        setCameraAllowed(null);
+        setAttemptId(null);
       })
       .catch(() => {
         setError(t("course.002"));
@@ -266,6 +304,24 @@ export function QuizRunner() {
         </Badge>
       </motion.div>
 
+      {/* Consent gate — nothing is captured, and the questions are not shown,
+          until the student has made an explicit choice. */}
+      {cameraAllowed === null ? (
+        <QuizCameraConsent onDecision={beginAttempt} starting={startingAttempt} />
+      ) : (
+        <>
+      {/* Live camera indicator. Rendered only when the student opted in and an
+          attempt row exists to attach the snapshots to. */}
+      {cameraAllowed && attemptId && navParam && (
+        <div className="flex justify-end">
+          <QuizCameraMonitor
+            quizId={navParam}
+            attemptId={attemptId}
+            enabled
+          />
+        </div>
+      )}
+
       {/* Progress bar */}
       <div className="space-y-2">
         <div className="flex items-center justify-between text-xs">
@@ -401,6 +457,8 @@ export function QuizRunner() {
           </Button>
         )}
       </div>
+        </>
+      )}
     </div>
   );
 }
