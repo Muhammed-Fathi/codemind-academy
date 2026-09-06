@@ -415,7 +415,13 @@ function PublishVideoCard({
         </div>
 
         {method === "URL" ? (
-          <div>
+          // Each method renders its OWN subtree. The wrapper divs carry stable
+          // keys so that switching URL <-> UPLOAD unmounts/mounts a fresh input
+          // instead of React reusing the SAME <input> element and morphing it
+          // between a controlled (value=) text input and an uncontrolled file
+          // input — which otherwise fires the "controlled input is becoming
+          // uncontrolled / vice-versa" console warnings.
+          <div key="sv-url-field">
             <Label htmlFor="sv-url">{tr("admin.209")}</Label>
             <Input
               id="sv-url"
@@ -427,7 +433,7 @@ function PublishVideoCard({
             />
           </div>
         ) : (
-          <div>
+          <div key="sv-file-field">
             <Label htmlFor="sv-file">{tr("admin.208")}</Label>
             <Input
               id="sv-file"

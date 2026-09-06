@@ -453,9 +453,12 @@ function AuthForm({ mode, role }: { mode: "login" | "register"; role: Role }) {
               placeholder={tr("auth.029")}
               required
             />
+            {/* Teacher's own contact phone. Stored on User.phone (see the
+                TEACHER/ADMIN branch of /api/auth/register). Label is the
+                teacher's phone — NOT the student/parent phone strings. */}
             <Field
               name="phone"
-              label={t.auth.studentPhone}
+              label={t.auth.phone}
               icon={<Phone className="w-4 h-4" />}
               placeholder="01xxxxxxxxx"
               dir="ltr"

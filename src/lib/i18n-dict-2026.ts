@@ -102,6 +102,13 @@ export const DICT_2026: Record<string, DictEntry> = {
   "quiz.210": { ar: "ابدأ من غير كاميرا", en: "Continue without camera" },
   "quiz.211": { ar: "حالة الكاميرا", en: "Camera status" },
   "quiz.212": { ar: "أدلة المراجعة", en: "Review evidence" },
+  // Shown as the page subtitle of the ADMIN quiz camera review portal. It
+  // describes what the reviewer does here WITHOUT repeating the privacy
+  // notice (quiz.202), which is displayed exactly once in the amber callout.
+  "quiz.213": {
+    ar: "راجع لقطات الكاميرا المرفوعة مع محاولات الطلاب واتأكد بنفسك من سلامة الإجابة.",
+    en: "Review the camera snapshots attached to students' quiz attempts and check integrity yourself.",
+  },
 
   // ---------------- Admin: students / batches / videos / exams ----------------
   "admin.200": { ar: "مدارس عربي", en: "Arabic School" },
@@ -162,4 +169,80 @@ export const DICT_2026: Record<string, DictEntry> = {
   "parent.202": { ar: "فيديوهات اتشافت الشهر ده", en: "Videos watched this month" },
   "parent.203": { ar: "دقايق المشاهدة", en: "Minutes watched" },
   "teacher.200": { ar: "تقدم الفيديوهات للطلاب", en: "Student video progress" },
+
+  // ---------------- Admin portal page subtitles ----------------
+  // The Payments and Subscriptions portals never had dedicated header keys, so
+  // their view headers mistakenly reused unrelated keys (school-type labels in
+  // Payments, device/session-action labels in Subscriptions). These dedicated
+  // keys fix that; the page <h2> reuses shell.011 / shell.012 (same words the
+  // navigation and the top-bar page title already use).
+  "admin.payments.subtitle": {
+    ar: "راجع مدفوعات الطلاب واعتمدها أو ارفضها، أو استوردها بالجملة من ملف Excel.",
+    en: "Review student payments — approve or reject them, or bulk-import them from an Excel file.",
+  },
+  "admin.subscriptions.subtitle": {
+    ar: "تابع اشتراكات الطلاب وخططهم وحالتهم وتواريخ انتهائهم.",
+    en: "Track students' subscriptions, their plans, statuses, and expiry dates.",
+  },
+
+  // ---------------- Admin: Payments portal ------------------
+  // The older Payments portal used numeric admin.* keys (admin.200-224) whose
+  // meanings the 2026 upgrade reassigned to Session-Videos / Mock-Exams /
+  // School-type features, so those labels rendered wrong/unrelated text. These
+  // dedicated keys are owned solely by the Payments portal.
+  "pay.importBtn": { ar: "استيراد xlsx", en: "Import xlsx" },
+  "pay.importTitle": { ar: "استيراد مدفوعات بالجملة (xlsx)", en: "Bulk import payments (xlsx)" },
+  "pay.importDesc": {
+    ar: "ارفع ملف Excel بالمدفوعات. الأعمدة: userEmail, amount, method, reference, status, notes",
+    en: "Upload an Excel file with the payments. Columns: userEmail, amount, method, reference, status, notes",
+  },
+  "pay.importing": { ar: "جارٍ الاستيراد...", en: "Importing..." },
+  "pay.chooseFile": { ar: "اختار ملف Excel", en: "Choose an Excel file" },
+  "pay.downloadTemplate": { ar: "تحميل Template", en: "Download template" },
+  "pay.importResults": { ar: "نتائج الاستيراد", en: "Import results" },
+  "pay.imported": { ar: "اتاستوردت", en: "Imported" },
+  "pay.failed": { ar: "فشلت", en: "Failed" },
+  "pay.totalRows": { ar: "إجمالي الصفوف", en: "Total rows" },
+  "pay.row": { ar: "صف", en: "row" },
+  "pay.empty": { ar: "مفيش مدفوعات لسه.", en: "No payments yet." },
+  "pay.colUser": { ar: "المستخدم", en: "User" },
+  "pay.colAmount": { ar: "المبلغ", en: "Amount" },
+  "pay.colMethod": { ar: "الطريقة", en: "Method" },
+  "pay.colReference": { ar: "المرجع", en: "Reference" },
+  "pay.colDate": { ar: "التاريخ", en: "Date" },
+  "pay.colActions": { ar: "إجراءات", en: "Actions" },
+  "pay.rejectedToast": { ar: "اترفضت الدفعة", en: "Payment rejected" },
+
+  // ---------------- Admin: Subscriptions portal ------------------
+  // Same class of bug as Payments — the Subscription table previously reused
+  // admin.228-233 (reassigned to batch/exam/school-type strings). Dedicated
+  // keys below are owned solely by the Subscriptions portal.
+  "sub.empty": { ar: "مفيش اشتراكات لسه.", en: "No subscriptions yet." },
+  "sub.colStudent": { ar: "الطالب", en: "Student" },
+  "sub.colPlan": { ar: "الباقة", en: "Plan" },
+  "sub.colPrice": { ar: "السعر", en: "Price" },
+  "sub.colStart": { ar: "البداية", en: "Start" },
+  "sub.colEnd": { ar: "النهاية", en: "End" },
+
+  // ---------------- Admin: Notifications portal ------------------
+  // The legacy Notifications view reused admin.235-249, all of which the 2026
+  // upgrade reassigned to Session-Videos / Mock-Exams / Quiz-camera / Batch
+  // strings, so its labels and toasts rendered wrong text. Dedicated keys:
+  "notif.title": { ar: "الإشعارات", en: "Notifications" },
+  "notif.subtitle": {
+    ar: "إرسال إشعارات للمستخدمين ومتابعة الأحدث",
+    en: "Send notifications to users and follow the latest",
+  },
+  "notif.sendDesc": { ar: "اختر الجمهور واكتب الرسالة", en: "Pick the audience and write the message" },
+  "notif.audience": { ar: "الجمهور", en: "Audience" },
+  "notif.allUsers": { ar: "كل المستخدمين", en: "All users" },
+  "notif.parents": { ar: "أولياء الأمور", en: "Parents" },
+  "notif.group": { ar: "مجموعة محددة", en: "Specific group" },
+  "notif.user": { ar: "مستخدم محدد", en: "Specific user" },
+  "notif.chooseGroup": { ar: "اختر المجموعة", en: "Choose the group" },
+  "notif.titleMessageRequired": {
+    ar: "العنوان والرسالة مطلوبين",
+    en: "Title and message are required",
+  },
+  "notif.sent": { ar: "اترسل الإشعار لـ {p1} مستخدم", en: "Notification sent to {p1} users" },
 };
