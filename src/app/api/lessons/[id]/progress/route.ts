@@ -1,6 +1,9 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireUser, getStudentProfile } from "@/lib/api";
+import { VIDEO_COMPLETION_THRESHOLD } from "@/lib/progress";
+import { canAccessLesson } from "@/lib/session-progress";
+import { getServerT } from "@/lib/i18n-server";
 
 // POST /api/lessons/[id]/progress
 // Body: { progress?: number, completed?: boolean }
@@ -19,6 +22,15 @@ export async function POST(
 
   const lesson = await db.lesson.findUnique({ where: { id } });
   if (!lesson) return err("Lesson not found", 404);
+
+  // Backend authorization: enrollment + session progression are enforced here,
+  // not only hidden in the UI.
+  const tApi = await getServerT();
+  const access = await canAccessLesson(s.id, id);
+  if (!access.allowed) {
+    if (access.reason === "NOT_ENROLLED") return err(tApi("api.208"), 403);
+    return err(tApi("api.209"), 403);
+  }
 
   const body = await req.json().catch(() => ({}));
   const progressValue =
@@ -39,9 +51,25 @@ export async function POST(
     if (progressValue >= 100) data.isCompleted = true;
   }
   if (completedFlag !== undefined) {
-    data.isCompleted = completedFlag;
-    if (completedFlag && progressValue === undefined) {
-      data.progress = 100;
+    if (completedFlag) {
+      // A lesson that HAS a video can only be marked complete once the
+      // server-tracked watch time reached the 95% threshold. This closes the
+      // trivial "click Mark as complete" bypass.
+      const existing = await db.lessonProgress.findUnique({
+        where: { studentId_lessonId: { studentId: s.id, lessonId: id } },
+        select: { videoCompleted: true, videoPercent: true },
+      });
+      const videoSatisfied =
+        !lesson.videoUrl ||
+        !!existing?.videoCompleted ||
+        (existing?.videoPercent ?? 0) >= VIDEO_COMPLETION_THRESHOLD;
+      if (!videoSatisfied) {
+        return err(tApi("api.209"), 403);
+      }
+      data.isCompleted = true;
+      if (progressValue === undefined) data.progress = 100;
+    } else {
+      data.isCompleted = false;
     }
   }
 

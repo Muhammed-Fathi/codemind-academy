@@ -41,7 +41,7 @@ export const brand = {
   },
   currency: "EGP",
   defaultPrice: 200,
-  academicYear: "2024 / 2025",
+  academicYear: "2026 / 2027",
 } as const;
 
 export type Brand = typeof brand;

@@ -15,7 +15,7 @@ async function main() {
     ["whatsapp_teacher", "+201147422177"],
     ["whatsapp_technical", "+201147422177"],
     ["whatsapp_subscription", "+201147422177"],
-    ["academic_year", "2024 / 2025"],
+    ["academic_year", "2026 / 2027"],
     ["price_monthly", "200"],
     ["price_3months", "550"],
     ["price_6months", "1000"],

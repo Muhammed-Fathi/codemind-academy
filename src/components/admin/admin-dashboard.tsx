@@ -109,6 +109,9 @@ import {
   LineChart,
   Line,
 } from "recharts";
+import { SessionVideosView } from "@/components/admin/session-videos-view";
+import { MockExamsView } from "@/components/admin/mock-exams-view";
+import { QuizReviewView } from "@/components/admin/quiz-review-view";
 
 const BRAND_COLORS = ["#10b981", "#14b8a6", "#f59e0b", "#0d9488", "#84cc16"];
 
@@ -264,6 +267,9 @@ export function AdminDashboard() {
       {view === "admin-groups" && <GroupsView />}
       {view === "admin-courses" && <CoursesView />}
       {view === "admin-question-bank" && <QuestionBankView />}
+      {view === "admin-session-videos" && <SessionVideosView />}
+      {view === "admin-mock-exams" && <MockExamsView />}
+      {view === "admin-quiz-review" && <QuizReviewView />}
       {view === "admin-payments" && <PaymentsView />}
       {view === "admin-subscriptions" && <SubscriptionsView />}
       {view === "admin-notifications" && <NotificationsView />}
@@ -534,23 +540,73 @@ type StudentRow = {
     endDate: string | null;
     plan: { nameAr: string; name?: string };
   } | null;
+  accountStatus?: string | null;
+  videoProgress?: {
+    totalVideos: number;
+    completedVideos: number;
+    averagePercent: number;
+    completionPercent: number;
+  } | null;
 };
+
+type StudentsResponse = {
+  students: StudentRow[];
+  counts: { ARABIC: number; LANGUAGE: number; UNSPECIFIED: number };
+  pagination: { page: number; totalPages: number; total: number; hasMore: boolean };
+};
+
+/**
+ * School-type views (Arabic school / Language school).
+ * The value is sent to the API and filtered in SQL against the real
+ * `Student.schoolType` column — the classification is never hardcoded here.
+ */
+const STUDENT_TABS = [
+  { value: "ARABIC", labelKey: "admin.200" },
+  { value: "LANGUAGE", labelKey: "admin.201" },
+  { value: "UNSPECIFIED", labelKey: "admin.202" },
+] as const;
 
 function StudentsView() {
   const tr = useT();
   const [search, setSearch] = React.useState("");
   const [status, setStatus] = React.useState("all");
+  const [schoolType, setSchoolType] = React.useState<string>("ARABIC");
+  const [page, setPage] = React.useState(1);
   const [openAdd, setOpenAdd] = React.useState(false);
   const [selected, setSelected] = React.useState<StudentRow | null>(null);
+
+  // Reset to the first page whenever the view or a filter changes.
+  React.useEffect(() => {
+    setPage(1);
+  }, [search, status, schoolType]);
 
   const query = React.useMemo(() => {
     const params = new URLSearchParams();
     if (search) params.set("search", search);
     if (status !== "all") params.set("status", status);
+    // "UNSPECIFIED" means students with no school type recorded yet; the API
+    // ignores an unrecognised value and returns every student.
+    if (schoolType === "ARABIC" || schoolType === "LANGUAGE")
+      params.set("schoolType", schoolType);
+    params.set("page", String(page));
+    params.set("withProgress", "1");
     return `/api/admin/students?${params.toString()}`;
-  }, [search, status]);
+  }, [search, status, schoolType, page]);
 
-  const { data, loading, error, reload } = useApi<{ students: StudentRow[] }>(query, [search, status]);
+  const { data, loading, error, reload } = useApi<StudentsResponse>(query, [
+    search,
+    status,
+    schoolType,
+    page,
+  ]);
+
+  // The "unspecified" view is derived on the client only for DISPLAY, from
+  // rows the server already returned; the two real views are server-filtered.
+  const rows = React.useMemo(() => {
+    const all = data?.students || [];
+    if (schoolType === "UNSPECIFIED") return all.filter((s) => !s.schoolType);
+    return all;
+  }, [data, schoolType]);
 
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
@@ -594,14 +650,53 @@ function StudentsView() {
       </div>
 
       <Card className="p-4">
+        {/* School-type views. Uses logical spacing so the tab order follows
+            the document direction in both Arabic (RTL) and English (LTR). */}
+        <div
+          role="tablist"
+          aria-label={tr("admin.203")}
+          className="flex flex-wrap items-center gap-2 mb-4 border-b border-border/60 pb-3"
+        >
+          {STUDENT_TABS.map((tab) => {
+            const active = schoolType === tab.value;
+            const count = data?.counts?.[tab.value as keyof StudentsResponse["counts"]];
+            return (
+              <button
+                key={tab.value}
+                role="tab"
+                type="button"
+                aria-selected={active}
+                onClick={() => setSchoolType(tab.value)}
+                className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
+                  active
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "bg-muted/50 text-muted-foreground hover:bg-muted"
+                }`}
+              >
+                <span>{tr(tab.labelKey)}</span>
+                {typeof count === "number" && (
+                  <span
+                    className={`rounded-full px-1.5 py-0.5 text-[10px] tabular-nums ${
+                      active ? "bg-primary-foreground/20" : "bg-background"
+                    }`}
+                  >
+                    {count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
         <div className="flex flex-wrap gap-3 mb-4">
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute end-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <div className="field-with-icon relative flex-1 min-w-[200px]">
+            <span className="field-icon">
+              <Search className="w-4 h-4" />
+            </span>
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={tr("admin.015")}
-              className="pe-9"
             />
           </div>
           <Select value={status} onValueChange={setStatus}>
@@ -612,6 +707,7 @@ function StudentsView() {
               <SelectItem value="all">{tr("admin.016")}</SelectItem>
               <SelectItem value="active">Active</SelectItem>
               <SelectItem value="inactive">Inactive</SelectItem>
+              <SelectItem value="suspended">{tr("admin.227")}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -620,7 +716,7 @@ function StudentsView() {
           <LoadingBlock rows={5} />
         ) : error ? (
           <ErrorBlock message={error} onRetry={reload} />
-        ) : !data || data.students.length === 0 ? (
+        ) : rows.length === 0 ? (
           <EmptyBlock message={tr("admin.018")} />
         ) : (
           <div className="max-h-[60vh] overflow-auto">
@@ -632,12 +728,13 @@ function StudentsView() {
                   <TableHead>{tr("admin.021")}</TableHead>
                   <TableHead>{tr("admin.022")}</TableHead>
                   <TableHead>{tr("admin.023")}</TableHead>
+                  <TableHead>{tr("admin.220")}</TableHead>
                   <TableHead>{tr("admin.024")}</TableHead>
                   <TableHead>{tr("admin.025")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {data.students.map((s) => (
+                {rows.map((s) => (
                   <TableRow
                     key={s.id}
                     className="cursor-pointer"
@@ -657,6 +754,21 @@ function StudentsView() {
                     <TableCell>{s.grade}</TableCell>
                     <TableCell>{s.group?.name || "—"}</TableCell>
                     <TableCell>
+                      {s.videoProgress && s.videoProgress.totalVideos > 0 ? (
+                        <div className="flex items-center gap-2 min-w-[120px]">
+                          <Progress
+                            value={s.videoProgress.completionPercent}
+                            className="h-1.5 flex-1"
+                          />
+                          <span className="text-[11px] tabular-nums text-muted-foreground">
+                            {s.videoProgress.completedVideos}/{s.videoProgress.totalVideos}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
                       {s.subscription ? (
                         <span className="text-xs">
                           {pickAuto(s.subscription.plan?.nameAr, s.subscription.plan?.name)}
@@ -666,7 +778,11 @@ function StudentsView() {
                       )}
                     </TableCell>
                     <TableCell>
-                      {s.isActive ? (
+                      {s.accountStatus === "SUSPENDED_MULTI_DEVICE" ? (
+                        <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30">
+                          {tr("admin.227")}
+                        </Badge>
+                      ) : s.isActive ? (
                         <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30">Active</Badge>
                       ) : (
                         <Badge variant="secondary">Inactive</Badge>
@@ -676,6 +792,30 @@ function StudentsView() {
                 ))}
               </TableBody>
             </Table>
+          </div>
+        )}
+
+        {data?.pagination && data.pagination.totalPages > 1 && (
+          <div className="flex items-center justify-between gap-2 pt-3">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              {tr("admin.232")}
+            </Button>
+            <span className="text-xs text-muted-foreground tabular-nums">
+              {page} / {data.pagination.totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!data.pagination.hasMore}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              {tr("admin.233")}
+            </Button>
           </div>
         )}
       </Card>
@@ -1805,14 +1945,28 @@ type QuestionRow = {
   explanation: string | null;
   difficulty: "EASY" | "MEDIUM" | "HARD";
   marks: number;
+  schoolType?: "ARABIC" | "LANGUAGE" | null;
   quiz: { title: string; titleAr: string | null; lesson: { titleAr: string; title?: string } | null } | null;
 };
+
+/**
+ * Question-bank views. A bank shows its own questions PLUS the shared
+ * (untagged) ones, matching exactly the pool a mock exam of that type draws
+ * from — so what the admin sees is what students will get.
+ */
+const BANK_TABS = [
+  { value: "ARABIC", labelKey: "admin.200" },
+  { value: "LANGUAGE", labelKey: "admin.201" },
+  { value: "shared", labelKey: "admin.231" },
+  { value: "all", labelKey: "admin.230" },
+] as const;
 
 function QuestionBankView() {
   const tr = useT();
   const [search, setSearch] = React.useState("");
   const [difficulty, setDifficulty] = React.useState("all");
   const [type, setType] = React.useState("all");
+  const [bank, setBank] = React.useState<string>("ARABIC");
   const [openAdd, setOpenAdd] = React.useState(false);
   const [showAiGen, setShowAiGen] = React.useState(false);
   const [aiLesson, setAiLesson] = React.useState("");
@@ -1882,10 +2036,14 @@ function QuestionBankView() {
     if (search) params.set("search", search);
     if (difficulty !== "all") params.set("difficulty", difficulty);
     if (type !== "all") params.set("type", type);
+    if (bank !== "all") params.set("schoolType", bank);
     return `/api/admin/question-bank?${params.toString()}`;
-  }, [search, difficulty, type]);
+  }, [search, difficulty, type, bank]);
 
-  const { data, loading, error, reload } = useApi<{ questions: QuestionRow[] }>(query, [search, difficulty, type]);
+  const { data, loading, error, reload } = useApi<{
+    questions: QuestionRow[];
+    counts: { ARABIC: number; LANGUAGE: number; SHARED: number };
+  }>(query, [search, difficulty, type, bank]);
 
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
@@ -2004,14 +2162,59 @@ function QuestionBankView() {
       </AnimatePresence>
 
       <Card className="p-4">
+        {/* Question-bank selector (Arabic school / Language school / shared). */}
+        <div
+          role="tablist"
+          aria-label={tr("admin.216")}
+          className="flex flex-wrap items-center gap-2 mb-4 border-b border-border/60 pb-3"
+        >
+          {BANK_TABS.map((tab) => {
+            const active = bank === tab.value;
+            const count =
+              tab.value === "ARABIC"
+                ? data?.counts?.ARABIC
+                : tab.value === "LANGUAGE"
+                  ? data?.counts?.LANGUAGE
+                  : tab.value === "shared"
+                    ? data?.counts?.SHARED
+                    : undefined;
+            return (
+              <button
+                key={tab.value}
+                role="tab"
+                type="button"
+                aria-selected={active}
+                onClick={() => setBank(tab.value)}
+                className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
+                  active
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "bg-muted/50 text-muted-foreground hover:bg-muted"
+                }`}
+              >
+                <span>{tr(tab.labelKey)}</span>
+                {typeof count === "number" && (
+                  <span
+                    className={`rounded-full px-1.5 py-0.5 text-[10px] tabular-nums ${
+                      active ? "bg-primary-foreground/20" : "bg-background"
+                    }`}
+                  >
+                    {count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
         <div className="flex flex-wrap gap-3 mb-4">
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute end-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <div className="field-with-icon relative flex-1 min-w-[200px]">
+            <span className="field-icon">
+              <Search className="w-4 h-4" />
+            </span>
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={tr("admin.173")}
-              className="pe-9"
             />
           </div>
           <Select value={difficulty} onValueChange={setDifficulty}>
@@ -2064,6 +2267,13 @@ function QuestionBankView() {
                       <div className="flex items-center gap-1.5 shrink-0">
                         {difficultyBadge(q.difficulty)}
                         <Badge variant="outline" className="text-[10px]">{q.type}</Badge>
+                        <Badge variant="secondary" className="text-[10px]">
+                          {q.schoolType === "ARABIC"
+                            ? tr("admin.200")
+                            : q.schoolType === "LANGUAGE"
+                              ? tr("admin.201")
+                              : tr("admin.231")}
+                        </Badge>
                       </div>
                     </div>
                     {options.length > 0 && (
@@ -2121,6 +2331,8 @@ function AddQuestionDialog({
     options: ["", "", "", ""],
     explanation: "",
     marks: 1,
+    // "" = shared question (usable by both banks).
+    schoolType: "",
   });
   const [saving, setSaving] = React.useState(false);
 
@@ -2148,6 +2360,8 @@ function AddQuestionDialog({
         difficulty: form.difficulty,
         explanation: form.explanation || null,
         marks: Number(form.marks),
+        // null => shared question, available to both question banks.
+        schoolType: form.schoolType || null,
       };
       if (form.type === "TRUE_FALSE") {
         body.answer = form.answer;
@@ -2174,6 +2388,7 @@ function AddQuestionDialog({
         options: ["", "", "", ""],
         explanation: "",
         marks: 1,
+        schoolType: "",
       });
     } catch (e: any) {
       toast.error(e.message || tr("admin.001"));
@@ -2197,6 +2412,26 @@ function AddQuestionDialog({
           <div>
             <Label>{tr("admin.186")}</Label>
             <Textarea value={form.promptAr} onChange={(e) => setForm({ ...form, promptAr: e.target.value })} rows={2} />
+          </div>
+          {/* Which question bank this question belongs to. Left empty the
+              question is SHARED and both Arabic and Language exams may use it. */}
+          <div>
+            <Label>{tr("admin.216")}</Label>
+            <Select
+              value={form.schoolType || "SHARED"}
+              onValueChange={(v) =>
+                setForm({ ...form, schoolType: v === "SHARED" ? "" : v })
+              }
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="SHARED">{tr("admin.231")}</SelectItem>
+                <SelectItem value="ARABIC">{tr("admin.200")}</SelectItem>
+                <SelectItem value="LANGUAGE">{tr("admin.201")}</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>

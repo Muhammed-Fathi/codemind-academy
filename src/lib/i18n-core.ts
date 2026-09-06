@@ -1,9 +1,15 @@
 // CodeMind Academy — i18n CORE (isomorphic: safe on server AND client).
 // No "use client" directive here — API routes import translate() from this
 // module; client hooks live in src/lib/i18n.ts.
-import { DICT } from "@/lib/i18n-dict";
+import { DICT as GENERATED_DICT } from "@/lib/i18n-dict";
+import { DICT_2026 } from "@/lib/i18n-dict-2026";
 
 export type Locale = "ar" | "en";
+
+// The generated catalogue plus the hand-maintained 2026/2027 additions.
+// Keeping them in two files means `scripts/i18n/emit-dict.mjs` can regenerate
+// i18n-dict.ts without dropping the new keys.
+const DICT = { ...GENERATED_DICT, ...DICT_2026 };
 
 /** Translate a dict key with optional {p} interpolation. Pure & isomorphic. */
 export function translate(

@@ -17,6 +17,7 @@ model User {
   role          Role           @default(STUDENT)
   avatarUrl     String?
   isActive      Boolean        @default(true)
+  status        AccountStatus  @default(ACTIVE)
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   auditLogs     AuditLog[]
@@ -25,6 +26,12 @@ model User {
   payments      Payment[]
   student       Student?
   teacher       Teacher?
+  sessions      UserSession[]
+  resetTokens   PasswordResetToken[]
+  securityEvents SecurityEvent[]
+
+  @@index([role])
+  @@index([status])
 }
 
 model Student {
@@ -37,6 +44,7 @@ model Student {
   parentPhone       String?
   studentCode       String?              @unique
   groupId           String?
+  batchId           String?
   enrolledAt        DateTime             @default(now())
   createdAt         DateTime             @default(now())
   updatedAt         DateTime             @updatedAt
@@ -51,10 +59,16 @@ model Student {
   referralsReceived Referral[]           @relation("ReferredRelation")
   referralsMade     Referral[]           @relation("ReferrerRelation")
   group             Group?               @relation(fields: [groupId], references: [id])
+  batch             Batch?               @relation(fields: [batchId], references: [id], onDelete: SetNull)
   user              User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   badges            StudentBadge[]
   studyTasks        StudyTask[]
   subscription      Subscription?
+  videoViews        SessionVideoView[]
+
+  @@index([schoolType])
+  @@index([groupId])
+  @@index([batchId])
 }
 
 model StudentBadge {
@@ -115,6 +129,8 @@ model Course {
   updatedAt   DateTime @updatedAt
   groups      Group[]
   parts       Part[]
+  batches     Batch[]
+  mockExams   MockExam[]
 }
 
 model Part {
@@ -178,6 +194,7 @@ model Lesson {
   progress      LessonProgress[]
   sessions      LiveSession[]
   quizzes       Quiz[]
+  sessionVideos SessionVideo[]
 
   @@index([topicId])
 }
@@ -264,11 +281,14 @@ model Question {
   explanation String?
   difficulty  Difficulty   @default(MEDIUM)
   marks       Int          @default(1)
+  schoolType  SchoolType?
   createdAt   DateTime     @default(now())
   quiz        Quiz?        @relation(fields: [quizId], references: [id], onDelete: Cascade)
   answers     QuizAnswer[]
+  mockExamLinks MockExamQuestion[]
 
   @@index([quizId])
+  @@index([schoolType])
 }
 
 model QuizAttempt {
@@ -281,11 +301,14 @@ model QuizAttempt {
   passed     Boolean      @default(false)
   startedAt  DateTime     @default(now())
   finishedAt DateTime?
+  cameraStatus String     @default("NOT_REQUESTED")
   answers    QuizAnswer[]
+  evidence   QuizAttemptEvidence[]
   student    Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
   quiz       Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
 
   @@index([quizId, studentId])
+  @@index([studentId])
 }
 
 model QuizAnswer {
@@ -343,22 +366,35 @@ model ExamQuestion {
   explanation String?
   difficulty  Difficulty @default(MEDIUM)
   marks       Int        @default(2)
+  schoolType  SchoolType?
   lesson      Lesson?    @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  mockExamLinks MockExamQuestion[]
 
   @@index([lessonId])
+  @@index([schoolType])
 }
 
 model LessonProgress {
-  id           String    @id @default(cuid())
-  studentId    String
-  lessonId     String
-  progress     Int       @default(0)
-  isCompleted  Boolean   @default(false)
-  lastViewedAt DateTime?
-  lesson       Lesson    @relation(fields: [lessonId], references: [id], onDelete: Cascade)
-  student      Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  id                  String    @id @default(cuid())
+  studentId           String
+  lessonId            String
+  progress            Int       @default(0)
+  isCompleted         Boolean   @default(false)
+  lastViewedAt        DateTime?
+  // --- video watch tracking (server-verified, monotonic) ---
+  videoDurationSec    Int       @default(0)
+  videoWatchedSec     Int       @default(0)
+  videoPercent        Int       @default(0)
+  videoCompleted      Boolean   @default(false)
+  videoCompletedAt    DateTime?
+  lastHeartbeatAt     DateTime?
+  lesson              Lesson    @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  student             Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
   @@unique([studentId, lessonId])
+  @@index([studentId])
+  @@index([lessonId])
+  @@index([videoCompleted])
 }
 
 model TeacherNote {
@@ -477,6 +513,8 @@ model LessonNote {
 model ExamAttempt {
   id            String    @id @default(cuid())
   studentId     String
+  mockExamId    String?
+  schoolType    SchoolType?
   examType      String    @default("MOCK")
   questionCount Int
   durationMin   Int
@@ -488,9 +526,11 @@ model ExamAttempt {
   startedAt     DateTime  @default(now())
   finishedAt    DateTime?
   student       Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  mockExam      MockExam? @relation(fields: [mockExamId], references: [id], onDelete: SetNull)
 
   @@index([studentId, examType])
   @@index([finishedAt])
+  @@index([mockExamId])
 }
 
 model Coupon {
@@ -590,6 +630,247 @@ model LessonPlanTemplate {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   teacher     Teacher? @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+}
+
+// ============================================================
+// Platform upgrade 2026/2027 — new models
+// ============================================================
+
+/// A batch groups every student of one school type on one course, so a
+/// session video is published ONCE and resolved for all eligible students.
+model Batch {
+  id          String         @id @default(cuid())
+  name        String
+  nameAr      String
+  schoolType  SchoolType
+  courseId    String?
+  isActive    Boolean        @default(true)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  course      Course?        @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  students    Student[]
+  videos      SessionVideo[]
+
+  @@unique([schoolType, courseId])
+  @@index([schoolType])
+}
+
+/// Media stored ONCE (uploaded file or external URL). Never duplicated per student.
+model MediaAsset {
+  id            String         @id @default(cuid())
+  kind          MediaKind      @default(VIDEO)
+  storage       MediaStorage   @default(EXTERNAL_URL)
+  /// Private storage key (uploads) — never a public URL.
+  storageKey    String?
+  /// External URL (YouTube / Vimeo / CDN) when storage = EXTERNAL_URL.
+  externalUrl   String?
+  mimeType      String?
+  sizeBytes     Int?
+  durationSec   Int?
+  originalName  String?
+  /// Visibility: PRIVATE assets are only reachable through an authorized route.
+  isPrivate     Boolean        @default(false)
+  createdById   String?
+  createdAt     DateTime       @default(now())
+  sessionVideos SessionVideo[]
+  quizEvidence  QuizAttemptEvidence[]
+
+  @@index([kind])
+  @@index([storage])
+}
+
+/// A session video published to a batch. One row per (batch, lesson-ish session).
+model SessionVideo {
+  id           String             @id @default(cuid())
+  batchId      String
+  lessonId     String?
+  mediaAssetId String
+  title        String
+  titleAr      String
+  description  String?
+  /// Minimum watched percentage required to consider the video complete.
+  requiredPercent Int             @default(95)
+  isPublished  Boolean            @default(false)
+  publishedAt  DateTime?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  batch        Batch              @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  lesson       Lesson?            @relation(fields: [lessonId], references: [id], onDelete: SetNull)
+  media        MediaAsset         @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+  views        SessionVideoView[]
+
+  @@index([batchId, isPublished])
+  @@index([lessonId])
+}
+
+/// Per-student watch tracking of a batch session video (95% rule).
+model SessionVideoView {
+  id              String       @id @default(cuid())
+  sessionVideoId  String
+  studentId       String
+  watchedSec      Int          @default(0)
+  durationSec     Int          @default(0)
+  percent         Int          @default(0)
+  isCompleted     Boolean      @default(false)
+  completedAt     DateTime?
+  lastHeartbeatAt DateTime?
+  video           SessionVideo @relation(fields: [sessionVideoId], references: [id], onDelete: Cascade)
+  student         Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionVideoId, studentId])
+  @@index([studentId])
+  @@index([isCompleted])
+}
+
+/// Persisted mock-exam definition, bound to exactly one school-type bank.
+model MockExam {
+  id            String             @id @default(cuid())
+  title         String
+  titleAr       String
+  description   String?
+  schoolType    SchoolType
+  courseId      String?
+  questionCount Int                @default(10)
+  durationMin   Int                @default(30)
+  passMark      Int                @default(60)
+  difficulty    String             @default("MIXED")
+  /// RANDOM = sample the matching bank at attempt time; FIXED = use the pinned questions.
+  selectionMode String             @default("RANDOM")
+  isPublished   Boolean            @default(false)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  course        Course?            @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  questions     MockExamQuestion[]
+  attempts      ExamAttempt[]
+
+  @@index([schoolType, isPublished])
+}
+
+/// Pinned questions for a FIXED mock exam. Deleting a question detaches the
+/// link but never destroys historical ExamAttempt answer snapshots.
+model MockExamQuestion {
+  id             String        @id @default(cuid())
+  mockExamId     String
+  questionId     String?
+  examQuestionId String?
+  order          Int           @default(0)
+  mockExam       MockExam      @relation(fields: [mockExamId], references: [id], onDelete: Cascade)
+  question       Question?     @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  examQuestion   ExamQuestion? @relation(fields: [examQuestionId], references: [id], onDelete: Cascade)
+
+  @@unique([mockExamId, questionId])
+  @@unique([mockExamId, examQuestionId])
+  @@index([mockExamId])
+}
+
+/// Server-side device/session tracking (replaces the Setting-row hack).
+model UserSession {
+  id           String    @id @default(cuid())
+  userId       String
+  /// SHA-256 of the session token — the raw token is only ever in the cookie.
+  tokenHash    String    @unique
+  /// Stable-ish device fingerprint (hash of UA + platform hints). Advisory only.
+  deviceHash   String
+  userAgent    String?
+  ipHash       String?
+  createdAt    DateTime  @default(now())
+  lastSeenAt   DateTime  @default(now())
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  revokedReason String?
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+  @@index([deviceHash])
+}
+
+/// Single-use, short-lived password reset token/OTP. Only hashes are stored.
+model PasswordResetToken {
+  id         String    @id @default(cuid())
+  userId     String
+  /// SHA-256 of the emailed token or the SMS OTP. Raw value is never persisted or logged.
+  tokenHash  String    @unique
+  channel    String    @default("EMAIL")
+  /// Redacted destination for audit (e.g. "a***@mail.com" / "+2010****77").
+  destinationMask String?
+  attempts   Int       @default(0)
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime  @default(now())
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, usedAt])
+  @@index([expiresAt])
+}
+
+/// Generic server-side rate limiter bucket (reset requests, OTP verification…).
+model SecurityRateLimit {
+  id          String   @id @default(cuid())
+  bucket      String
+  identifier  String
+  count       Int      @default(0)
+  windowStart DateTime @default(now())
+  blockedUntil DateTime?
+
+  @@unique([bucket, identifier])
+  @@index([windowStart])
+}
+
+/// Security audit trail (never contains raw tokens/OTPs).
+model SecurityEvent {
+  id        String   @id @default(cuid())
+  userId    String?
+  type      String
+  detail    String?
+  ipHash    String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([type, createdAt])
+}
+
+/// Camera evidence captured during a quiz attempt (snapshots, private storage).
+model QuizAttemptEvidence {
+  id            String      @id @default(cuid())
+  attemptId     String
+  mediaAssetId  String?
+  /// SNAPSHOT | STATUS — STATUS rows record camera state changes with no media.
+  kind          String      @default("SNAPSHOT")
+  status        String?
+  capturedAt    DateTime    @default(now())
+  /// Retention deadline; a cleanup job deletes rows past this date.
+  retainUntil   DateTime?
+  attempt       QuizAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  media         MediaAsset? @relation(fields: [mediaAssetId], references: [id], onDelete: SetNull)
+
+  @@index([attemptId, capturedAt])
+  @@index([retainUntil])
+}
+
+enum SchoolType {
+  ARABIC
+  LANGUAGE
+}
+
+enum AccountStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED_MULTI_DEVICE
+}
+
+enum MediaKind {
+  VIDEO
+  IMAGE
+  DOCUMENT
+}
+
+enum MediaStorage {
+  EXTERNAL_URL
+  LOCAL_PRIVATE
+  S3
 }
 
 enum Role {

@@ -4,6 +4,8 @@ import { getServerT } from "@/lib/i18n-server";
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
+import { normalizeSchoolType, questionBankFilter } from "@/lib/school-type";
+import { getEnrollment } from "@/lib/enrollment";
 
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
@@ -22,17 +24,39 @@ export async function GET(req: NextRequest) {
   if (user.role !== "STUDENT") return err(tApi("api.094"), 403);
 
   const url = new URL(req.url);
-  const count = parseInt(url.searchParams.get("count") || "10", 10);
-  const difficulty = url.searchParams.get("difficulty") || "mixed";
+  let count = parseInt(url.searchParams.get("count") || "10", 10);
+  let difficulty = url.searchParams.get("difficulty") || "mixed";
   const examType = url.searchParams.get("examType") || "MOCK";
+  const mockExamId = url.searchParams.get("mockExamId");
 
   const student = await db.student.findUnique({ where: { userId: user.id } });
   if (!student) return err(tApi("api.095"), 404);
 
-  // Pull all quiz questions + exam questions available to this student
-  // (via their group's course lessons + exam questions)
-  const courseId = await getStudentCourseId(student.id);
-  if (!courseId) return err(tApi("api.096"), 400);
+  // Enrollment is enforced server-side: an unenrolled student gets no exam.
+  const enrollment = await getEnrollment(student.id);
+  if (!enrollment.isEnrolled || !enrollment.courseId)
+    return err(tApi("api.096"), 400);
+  const courseId = enrollment.courseId;
+
+  // The student's school type decides WHICH question bank is used. It comes
+  // from the database (Student.schoolType), never from the client.
+  const studentSchoolType = normalizeSchoolType(student.schoolType);
+  if (!studentSchoolType) return err(tApi("api.210"), 400);
+
+  // Optional: a specific admin-defined exam. It must match the student's type.
+  let mockExam = null as Awaited<ReturnType<typeof db.mockExam.findUnique>> | null;
+  if (mockExamId) {
+    mockExam = await db.mockExam.findUnique({ where: { id: mockExamId } });
+    if (!mockExam || !mockExam.isPublished) return err(tApi("api.211"), 404);
+    if (mockExam.schoolType !== studentSchoolType)
+      return err(tApi("api.212"), 403);
+    count = mockExam.questionCount;
+    difficulty = mockExam.difficulty === "MIXED" ? "mixed" : mockExam.difficulty;
+  }
+
+  // Bank isolation: only questions tagged with the student's school type, or
+  // explicitly shared (schoolType = null), can ever be selected.
+  const bankFilter = questionBankFilter(studentSchoolType);
 
   // Get quiz questions from lessons in the course
   const lessons = await db.lesson.findMany({
@@ -41,14 +65,38 @@ export async function GET(req: NextRequest) {
   });
   const lessonIds = lessons.map((l) => l.id);
 
+  // FIXED exams use their pinned set; RANDOM exams sample the matching bank.
+  const pinnedIds =
+    mockExam && mockExam.selectionMode === "FIXED"
+      ? (
+          await db.mockExamQuestion.findMany({
+            where: { mockExamId: mockExam.id },
+            orderBy: { order: "asc" },
+            select: { questionId: true, examQuestionId: true },
+          })
+        )
+      : null;
+
   const quizQuestions = await db.question.findMany({
-    where: { quiz: { lessonId: { in: lessonIds } } },
+    where: pinnedIds
+      ? {
+          id: { in: pinnedIds.map((p) => p.questionId).filter(Boolean) as string[] },
+          ...bankFilter,
+        }
+      : { quiz: { lessonId: { in: lessonIds } }, ...bankFilter },
     include: { quiz: { select: { lesson: { select: { titleAr: true, title: true } } } } },
   });
 
-  // Get exam questions
+  // Get exam questions (same bank isolation applies)
   const examQuestions = await db.examQuestion.findMany({
-    where: { lessonId: { in: lessonIds } },
+    where: pinnedIds
+      ? {
+          id: {
+            in: pinnedIds.map((p) => p.examQuestionId).filter(Boolean) as string[],
+          },
+          ...bankFilter,
+        }
+      : { lessonId: { in: lessonIds }, ...bankFilter },
     include: { lesson: { select: { titleAr: true, title: true } } },
   });
 
@@ -138,13 +186,19 @@ export async function GET(req: NextRequest) {
   });
 
   const totalMarks = questions.reduce((s, q) => s + q.marks, 0);
-  const durationMin = Math.max(10, Math.ceil(questions.length * 1.5));
+  const durationMin =
+    mockExam?.durationMin ?? Math.max(10, Math.ceil(questions.length * 1.5));
 
   return ok({
     exam: {
+      mockExamId: mockExam?.id ?? null,
+      title: mockExam ? mockExam.title : null,
+      titleAr: mockExam ? mockExam.titleAr : null,
+      schoolType: studentSchoolType,
       examType,
       questionCount: questions.length,
       durationMin,
+      passMark: mockExam?.passMark ?? 60,
       totalMarks,
       questions,
     },
@@ -159,32 +213,86 @@ export async function POST(req: NextRequest) {
   if (user.role !== "STUDENT") return err(tApi("api.094"), 403);
 
   const body = await req.json().catch(() => ({}));
-  const { examType, durationMin, answers } = body as {
+  const { examType, durationMin, answers, mockExamId } = body as {
     examType?: string;
     durationMin?: number;
+    mockExamId?: string | null;
     answers: { questionId: string; selected: string; isCorrect: boolean; marks: number }[];
   };
   if (!answers || !Array.isArray(answers)) return err("Answers required", 400);
 
   const student = await db.student.findUnique({ where: { userId: user.id } });
   if (!student) return err(tApi("api.095"), 404);
+  const studentSchoolType = normalizeSchoolType(student.schoolType);
 
-  const totalMarks = answers.reduce((s, a) => s + (a.marks || 0), 0);
-  const score = answers.filter((a) => a.isCorrect).reduce((s, a) => s + (a.marks || 0), 0);
+  // Re-grade on the server from the stored answer keys: the client-sent
+  // `isCorrect` / `marks` values are never trusted for scoring.
+  const questionIds = answers.map((a) => a.questionId).filter(Boolean);
+  const [bankQuestions, bankExamQuestions] = await Promise.all([
+    db.question.findMany({
+      where: { id: { in: questionIds } },
+      select: { id: true, answer: true, marks: true, options: true },
+    }),
+    db.examQuestion.findMany({
+      where: { id: { in: questionIds } },
+      select: { id: true, answer: true, marks: true, options: true },
+    }),
+  ]);
+  const keyById = new Map<string, { answer: string; marks: number; options: string }>();
+  for (const q of [...bankQuestions, ...bankExamQuestions]) {
+    keyById.set(q.id, { answer: q.answer, marks: q.marks, options: q.options });
+  }
+
+  const graded = answers.map((a) => {
+    const key = keyById.get(a.questionId);
+    if (!key) {
+      // Unknown question id — score it as 0 rather than trusting the client.
+      return { ...a, isCorrect: false, marks: 0 };
+    }
+    // The client shuffles option order, so it reports the SELECTED TEXT.
+    let isCorrect = false;
+    try {
+      const opts: string[] = JSON.parse(key.options);
+      const correctText = opts[parseInt(key.answer, 10)];
+      isCorrect =
+        String(a.selected) === String(key.answer) ||
+        (correctText !== undefined && String(a.selected) === correctText);
+    } catch {
+      isCorrect = String(a.selected) === String(key.answer);
+    }
+    return { ...a, isCorrect, marks: key.marks };
+  });
+
+  // A mock exam may only be attributed to an exam of the student's own type.
+  let linkedExamId: string | null = null;
+  if (mockExamId) {
+    const exam = await db.mockExam.findUnique({ where: { id: mockExamId } });
+    if (exam && exam.schoolType === studentSchoolType) linkedExamId = exam.id;
+  }
+  const passMark = linkedExamId
+    ? (await db.mockExam.findUnique({ where: { id: linkedExamId }, select: { passMark: true } }))
+        ?.passMark ?? 60
+    : 60;
+
+  const totalMarks = graded.reduce((s, a) => s + (a.marks || 0), 0);
+  const score = graded.filter((a) => a.isCorrect).reduce((s, a) => s + (a.marks || 0), 0);
   const percentage = totalMarks > 0 ? Math.round((score / totalMarks) * 100) : 0;
-  const passed = percentage >= 60;
+  const passed = percentage >= passMark;
 
   const attempt = await db.examAttempt.create({
     data: {
       studentId: student.id,
+      mockExamId: linkedExamId,
+      schoolType: studentSchoolType,
       examType: examType || "MOCK",
-      questionCount: answers.length,
+      questionCount: graded.length,
       durationMin: durationMin || 0,
       score,
       totalMarks,
       percentage,
       passed,
-      answers: JSON.stringify(answers),
+      // Immutable snapshot: results survive later question edits/deletions.
+      answers: JSON.stringify(graded),
       finishedAt: new Date(),
     },
   });
@@ -192,10 +300,4 @@ export async function POST(req: NextRequest) {
   return ok({ attempt: { ...attempt, percentage, passed, score, totalMarks } });
 }
 
-async function getStudentCourseId(studentId: string): Promise<string | null> {
-  const student = await db.student.findUnique({
-    where: { id: studentId },
-    include: { group: { select: { courseId: true } } },
-  });
-  return student?.group?.courseId || null;
-}
+

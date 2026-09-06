@@ -4,6 +4,7 @@ import { getServerT } from "@/lib/i18n-server";
 import { NextResponse } from "next/server";
 import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
+import { getVideoProgressForStudents, getVideoProgressInRange } from "@/lib/progress";
 
 export async function GET() {
   const tApi = await getServerT();
@@ -46,6 +47,18 @@ export async function GET() {
 
   const now = new Date();
   const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+  // Batched, from the SHARED progress service (same numbers as the dashboards).
+  const childIds = parent.children.map((l) => l.student.id);
+  const overallVideoProgress = await getVideoProgressForStudents(childIds);
+  const weeklyVideoByStudent = new Map(
+    await Promise.all(
+      childIds.map(
+        async (sid) =>
+          [sid, await getVideoProgressInRange(sid, weekAgo, now)] as const
+      )
+    )
+  );
 
   const weeklyReports = parent.children.map((link) => {
     const s = link.student;
@@ -141,6 +154,15 @@ export async function GET() {
         avgQuizScore: avgQuiz,
         activeDays,
         completionPct,
+      },
+      // --- Video progress (weekly window + overall) ---
+      videoProgress: {
+        week: weeklyVideoByStudent.get(s.id) || {
+          videosWatched: 0,
+          videosCompleted: 0,
+          watchedMinutes: 0,
+        },
+        overall: overallVideoProgress.get(s.id) || null,
       },
       dailyActivity,
       recentQuizzes: weeklyQuizAttempts.slice(0, 5).map((qa) => ({

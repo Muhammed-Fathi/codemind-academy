@@ -1,0 +1,190 @@
+// CodeMind Academy — SHARED progress service.
+//
+// This is the single source of truth for video / session progress. Admin,
+// Teacher, Parent and Student dashboards, plus the weekly & monthly reports,
+// all read through these functions so no two screens can disagree.
+//
+// Performance: every function is batch-oriented (one query per table for a set
+// of students) — no N+1 loops, no "fetch everything then filter in JS".
+
+import { db } from "@/lib/db";
+
+/** Minimum watched share of a video before it counts as completed. */
+export const VIDEO_COMPLETION_THRESHOLD = 95;
+
+export type VideoProgressSummary = {
+  studentId: string;
+  /** Lessons in the student's course that actually have a video. */
+  totalVideos: number;
+  /** Videos watched to >= VIDEO_COMPLETION_THRESHOLD. */
+  completedVideos: number;
+  /** Average watched percentage across all required videos (0-100). */
+  averagePercent: number;
+  /** completedVideos / totalVideos as a percentage (0-100). */
+  completionPercent: number;
+  totalWatchedMinutes: number;
+  lastWatchedAt: Date | null;
+};
+
+function emptySummary(studentId: string): VideoProgressSummary {
+  return {
+    studentId,
+    totalVideos: 0,
+    completedVideos: 0,
+    averagePercent: 0,
+    completionPercent: 0,
+    totalWatchedMinutes: 0,
+    lastWatchedAt: null,
+  };
+}
+
+/**
+ * Resolve, for each student, the set of lesson ids that carry a video and
+ * belong to the course the student is enrolled in (via their group).
+ */
+async function videoLessonIdsByStudent(
+  students: { id: string; groupId: string | null }[]
+): Promise<Map<string, string[]>> {
+  const result = new Map<string, string[]>();
+  const groupIds = [...new Set(students.map((s) => s.groupId).filter(Boolean))] as string[];
+  if (groupIds.length === 0) {
+    for (const s of students) result.set(s.id, []);
+    return result;
+  }
+
+  const groups = await db.group.findMany({
+    where: { id: { in: groupIds } },
+    select: { id: true, courseId: true },
+  });
+  const courseByGroup = new Map(groups.map((g) => [g.id, g.courseId]));
+  const courseIds = [...new Set(groups.map((g) => g.courseId))];
+
+  // One query for all courses at once.
+  const lessons = await db.lesson.findMany({
+    where: {
+      isPublished: true,
+      videoUrl: { not: null },
+      topic: { unit: { part: { courseId: { in: courseIds } } } },
+    },
+    select: { id: true, topic: { select: { unit: { select: { part: { select: { courseId: true } } } } } } },
+  });
+
+  const lessonsByCourse = new Map<string, string[]>();
+  for (const l of lessons) {
+    const cid = l.topic.unit.part.courseId;
+    const arr = lessonsByCourse.get(cid) || [];
+    arr.push(l.id);
+    lessonsByCourse.set(cid, arr);
+  }
+
+  for (const s of students) {
+    const courseId = s.groupId ? courseByGroup.get(s.groupId) : null;
+    result.set(s.id, courseId ? lessonsByCourse.get(courseId) || [] : []);
+  }
+  return result;
+}
+
+/**
+ * Batched video-progress summary for a set of students.
+ * Used by Admin, Teacher, Parent dashboards and the parent reports.
+ */
+export async function getVideoProgressForStudents(
+  studentIds: string[]
+): Promise<Map<string, VideoProgressSummary>> {
+  const out = new Map<string, VideoProgressSummary>();
+  if (studentIds.length === 0) return out;
+
+  const students = await db.student.findMany({
+    where: { id: { in: studentIds } },
+    select: { id: true, groupId: true },
+  });
+  for (const s of students) out.set(s.id, emptySummary(s.id));
+
+  const lessonIdsByStudent = await videoLessonIdsByStudent(students);
+  const allLessonIds = [...new Set([...lessonIdsByStudent.values()].flat())];
+  if (allLessonIds.length === 0) return out;
+
+  const progresses = await db.lessonProgress.findMany({
+    where: { studentId: { in: studentIds }, lessonId: { in: allLessonIds } },
+    select: {
+      studentId: true,
+      lessonId: true,
+      videoPercent: true,
+      videoCompleted: true,
+      videoWatchedSec: true,
+      lastHeartbeatAt: true,
+    },
+  });
+
+  const byStudent = new Map<string, typeof progresses>();
+  for (const p of progresses) {
+    const arr = byStudent.get(p.studentId) || [];
+    arr.push(p);
+    byStudent.set(p.studentId, arr);
+  }
+
+  for (const s of students) {
+    const required = lessonIdsByStudent.get(s.id) || [];
+    const requiredSet = new Set(required);
+    const rows = (byStudent.get(s.id) || []).filter((p) => requiredSet.has(p.lessonId));
+
+    const completedVideos = rows.filter((p) => p.videoCompleted).length;
+    const percentSum = rows.reduce((acc, p) => acc + p.videoPercent, 0);
+    const watchedSec = rows.reduce((acc, p) => acc + p.videoWatchedSec, 0);
+    const lastWatchedAt = rows.reduce<Date | null>(
+      (acc, p) =>
+        p.lastHeartbeatAt && (!acc || p.lastHeartbeatAt > acc) ? p.lastHeartbeatAt : acc,
+      null
+    );
+
+    out.set(s.id, {
+      studentId: s.id,
+      totalVideos: required.length,
+      completedVideos,
+      // Average is over ALL required videos (unwatched counts as 0%).
+      averagePercent: required.length ? Math.round(percentSum / required.length) : 0,
+      completionPercent: required.length
+        ? Math.round((completedVideos / required.length) * 100)
+        : 0,
+      totalWatchedMinutes: Math.round(watchedSec / 60),
+      lastWatchedAt,
+    });
+  }
+
+  return out;
+}
+
+/** Convenience single-student wrapper around the batched function. */
+export async function getVideoProgressForStudent(
+  studentId: string
+): Promise<VideoProgressSummary> {
+  const map = await getVideoProgressForStudents([studentId]);
+  return map.get(studentId) || emptySummary(studentId);
+}
+
+/**
+ * Video progress restricted to a time window — used by the parent weekly and
+ * monthly reports so both derive from the same table as the dashboards.
+ */
+export async function getVideoProgressInRange(
+  studentId: string,
+  from: Date,
+  to: Date
+): Promise<{ videosWatched: number; videosCompleted: number; watchedMinutes: number }> {
+  const rows = await db.lessonProgress.findMany({
+    where: {
+      studentId,
+      lastHeartbeatAt: { gte: from, lte: to },
+    },
+    select: { videoWatchedSec: true, videoCompleted: true, videoCompletedAt: true },
+  });
+  return {
+    videosWatched: rows.length,
+    videosCompleted: rows.filter(
+      (r) => r.videoCompleted && r.videoCompletedAt && r.videoCompletedAt >= from && r.videoCompletedAt <= to
+    ).length,
+    watchedMinutes: Math.round(
+      rows.reduce((acc, r) => acc + r.videoWatchedSec, 0) / 60
+    ),
+  };
+}

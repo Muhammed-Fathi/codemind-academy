@@ -6,6 +6,8 @@ import { db } from "@/lib/db";
 import { ok, err, requireRole } from "@/lib/api";
 import { hashPassword } from "@/lib/auth";
 import { createStudentWithCode } from "@/lib/curriculum-seed";
+import { normalizeSchoolType } from "@/lib/school-type";
+import { getVideoProgressForStudents } from "@/lib/progress";
 
 export async function GET(req: NextRequest) {
   const { error } = await requireRole("ADMIN");
@@ -14,6 +16,10 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const search = url.searchParams.get("search")?.trim() || "";
   const status = url.searchParams.get("status")?.trim() || "";
+  // School-type view (Arabic school / Language school). Filtering is done in
+  // SQL against the real Student.schoolType column — never in the frontend.
+  const schoolType = normalizeSchoolType(url.searchParams.get("schoolType"));
+  const withProgress = url.searchParams.get("withProgress") === "1";
   const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
   const pageSize = Math.min(100, Math.max(1, parseInt(url.searchParams.get("pageSize") || "20", 10)));
 
@@ -29,6 +35,8 @@ export async function GET(req: NextRequest) {
   }
   if (status === "active") where.user = { isActive: true };
   if (status === "inactive") where.user = { isActive: false };
+  if (status === "suspended") where.user = { status: "SUSPENDED_MULTI_DEVICE" };
+  if (schoolType) where.schoolType = schoolType;
 
   const [total, students] = await Promise.all([
     db.student.count({ where }),
@@ -51,6 +59,20 @@ export async function GET(req: NextRequest) {
     }),
   ]);
 
+  // Shared progress service — the SAME numbers the teacher/parent see.
+  // Computed for the current page only (never for every student).
+  const progressMap = withProgress
+    ? await getVideoProgressForStudents(students.map((s: any) => s.id))
+    : null;
+
+  // Counts per school type, so the tabs can show totals without extra
+  // round-trips and without loading all students.
+  const [arabicCount, languageCount, unspecifiedCount] = await Promise.all([
+    db.student.count({ where: { ...where, schoolType: "ARABIC" } }),
+    db.student.count({ where: { ...where, schoolType: "LANGUAGE" } }),
+    db.student.count({ where: { ...where, schoolType: null } }),
+  ]);
+
   return ok({
     students: students.map((s: any) => ({
       id: s.id,
@@ -68,7 +90,14 @@ export async function GET(req: NextRequest) {
       enrolledAt: s.enrolledAt,
       group: s.group,
       subscription: s.subscription,
+      accountStatus: s.user.status,
+      videoProgress: progressMap?.get(s.id) || null,
     })),
+    counts: {
+      ARABIC: arabicCount,
+      LANGUAGE: languageCount,
+      UNSPECIFIED: unspecifiedCount,
+    },
     pagination: {
       page,
       pageSize,
@@ -92,7 +121,7 @@ export async function POST(req: NextRequest) {
   const phone = body.phone ? String(body.phone) : null;
   const grade = body.grade ? String(body.grade) : "2nd Secondary";
   const schoolName = body.schoolName ? String(body.schoolName) : null;
-  const schoolType = body.schoolType ? String(body.schoolType).toUpperCase() : null;
+  const schoolType = normalizeSchoolType(body.schoolType);
   const nationalId = body.nationalId ? String(body.nationalId).trim() : null;
   const parentPhone = body.parentPhone ? String(body.parentPhone).trim() : null;
   const groupId = body.groupId ? String(body.groupId) : null;

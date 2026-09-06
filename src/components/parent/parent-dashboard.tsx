@@ -529,8 +529,10 @@ function ProgressRingCard({ pct, sub }: { pct: number; sub: string }) {
         </CardTitle>
       </CardHeader>
       <CardContent className="px-0 flex items-center justify-between gap-3">
-        <div className="relative w-[120px] h-[120px]">
-          <svg width="120" height="120" viewBox="0 0 120 120" dir="ltr">
+        {/* The progress ring is a geometric figure, so it must not mirror in
+            RTL. `dir` is applied to the wrapper, not the <svg> element. */}
+        <div className="relative w-[120px] h-[120px]" dir="ltr">
+          <svg width="120" height="120" viewBox="0 0 120 120">
             <circle
               cx="60"
               cy="60"
@@ -1125,7 +1127,7 @@ function RecentActivityCard({
         {activities.length === 0 ? (
           <EmptyMini text={tr("parent.092")} />
         ) : (
-          <ol className="relative max-h-96 overflow-y-auto pe-3$1border-s border-border/60 space-y-3">
+          <ol className="relative max-h-96 overflow-y-auto pe-3 border-s border-border/60 space-y-3">
             {activities.map((a, i) => {
               const Icon = iconFor(a.type, a.kind);
               return (

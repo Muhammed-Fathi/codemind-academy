@@ -43,6 +43,8 @@ import {
   Trophy,
   FileText,
   Timer,
+  Video,
+  Camera,
   Bookmark,
   Award,
   Ticket,
@@ -97,6 +99,9 @@ const NAV_BY_ROLE: Record<string, NavItem[]> = {
     { key: "admin-groups", label: "shell.009", icon: Users },
     { key: "admin-courses", label: "shell.010", icon: BookOpen },
     { key: "admin-question-bank", label: "Question Bank", icon: Library },
+    { key: "admin-session-videos", label: "admin.204", icon: Video },
+    { key: "admin-mock-exams", label: "admin.214", icon: Timer },
+    { key: "admin-quiz-review", label: "admin.245", icon: Camera },
     { key: "admin-payments", label: "shell.011", icon: CreditCard },
     { key: "admin-subscriptions", label: "shell.012", icon: ShieldCheck },
     { key: "admin-coupons", label: "shell.013", icon: Ticket },
@@ -228,7 +233,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen flex bg-background">
       {/* Desktop sidebar */}
-      <aside className="hidden lg:flex w-64 shrink-0 bg-sidebar$1border-e border-sidebar-border">
+      <aside className="hidden lg:flex w-64 shrink-0 bg-sidebar border-e border-sidebar-border">
         {sidebarContent}
       </aside>
 

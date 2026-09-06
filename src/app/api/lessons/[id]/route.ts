@@ -1,6 +1,9 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireUser, getStudentProfile } from "@/lib/api";
+import { canAccessLesson } from "@/lib/session-progress";
+import { VIDEO_COMPLETION_THRESHOLD } from "@/lib/progress";
+import { getServerT } from "@/lib/i18n-server";
 
 // GET /api/lessons/[id]
 // Returns lesson + quiz + homework + student progress.
@@ -48,10 +51,38 @@ export async function GET(
       ? courseLessons[currentIdx + 1].id
       : null;
 
-  // Student progress
-  let progress: { progress: number; isCompleted: boolean; lastViewedAt: string | null } | null = null;
+  // Student progress + backend gating
+  let progress:
+    | {
+        progress: number;
+        isCompleted: boolean;
+        lastViewedAt: string | null;
+        videoPercent: number;
+        videoCompleted: boolean;
+      }
+    | null = null;
+  let requirements: unknown = null;
   if (user.role === "STUDENT") {
     const s = await getStudentProfile(user.id);
+    if (!s) return err("Student profile not found", 404);
+
+    // AUTHORIZATION: enrollment + previous-session completion are enforced
+    // here, so opening the URL directly cannot bypass the lock.
+    const tApi = await getServerT();
+    const access = await canAccessLesson(s.id, id);
+    if (!access.allowed) {
+      return NextResponse.json(
+        {
+          error:
+            access.reason === "NOT_ENROLLED" ? tApi("api.208") : tApi("api.209"),
+          code: access.reason,
+          requirements: access.status,
+        },
+        { status: 403 }
+      );
+    }
+    requirements = access.status;
+
     if (s) {
       const lp = await db.lessonProgress.findUnique({
         where: { studentId_lessonId: { studentId: s.id, lessonId: lesson.id } },
@@ -61,6 +92,8 @@ export async function GET(
           progress: lp.progress,
           isCompleted: lp.isCompleted,
           lastViewedAt: lp.lastViewedAt ? lp.lastViewedAt.toISOString() : null,
+          videoPercent: lp.videoPercent,
+          videoCompleted: lp.videoCompleted,
         };
       }
       // Update lastViewedAt (touch) so dashboard "continue" works.
@@ -143,6 +176,8 @@ export async function GET(
         }
       : null,
     progress,
+    requirements,
+    videoThreshold: VIDEO_COMPLETION_THRESHOLD,
     prevLessonId,
     nextLessonId,
   });

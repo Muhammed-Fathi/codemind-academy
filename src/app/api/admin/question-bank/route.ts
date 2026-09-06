@@ -4,6 +4,7 @@ import { getServerT } from "@/lib/i18n-server";
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireRole } from "@/lib/api";
+import { normalizeSchoolType } from "@/lib/school-type";
 
 export async function GET(req: NextRequest) {
   const { error } = await requireRole("ADMIN");
@@ -13,8 +14,23 @@ export async function GET(req: NextRequest) {
   const difficulty = url.searchParams.get("difficulty")?.trim();
   const type = url.searchParams.get("type")?.trim();
   const search = url.searchParams.get("search")?.trim();
+  // Bank selector: ARABIC | LANGUAGE | "shared" (untagged) | all (default).
+  const bankParam = url.searchParams.get("schoolType")?.trim() || "";
+  const schoolType = normalizeSchoolType(bankParam);
+  const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
+  const pageSize = Math.min(
+    200,
+    Math.max(1, parseInt(url.searchParams.get("pageSize") || "50", 10))
+  );
 
   const where: any = {};
+  if (schoolType) {
+    // A bank view shows its own questions PLUS the shared (untagged) ones,
+    // exactly like the pool a mock exam of that type draws from.
+    where.OR = [{ schoolType }, { schoolType: null }];
+  } else if (bankParam.toLowerCase() === "shared") {
+    where.schoolType = null;
+  }
   if (difficulty === "EASY" || difficulty === "MEDIUM" || difficulty === "HARD") {
     where.difficulty = difficulty;
   }
@@ -22,20 +38,42 @@ export async function GET(req: NextRequest) {
     where.type = type;
   }
   if (search) {
-    where.OR = [
+    // Combine with a possible bank OR-clause without overwriting it.
+    const searchClause = [
       { prompt: { contains: search } },
       { promptAr: { contains: search } },
     ];
+    if (where.OR) {
+      where.AND = [{ OR: where.OR }, { OR: searchClause }];
+      delete where.OR;
+    } else {
+      where.OR = searchClause;
+    }
   }
 
-  const questions = await db.question.findMany({
-    where,
-    include: {
-      quiz: { select: { id: true, title: true, titleAr: true, lesson: { select: { id: true, titleAr: true } } } },
-    },
-    orderBy: { createdAt: "desc" },
-    take: 200,
-  });
+  const [total, questions, arabicCount, languageCount, sharedCount] =
+    await Promise.all([
+      db.question.count({ where }),
+      db.question.findMany({
+        where,
+        include: {
+          quiz: {
+            select: {
+              id: true,
+              title: true,
+              titleAr: true,
+              lesson: { select: { id: true, titleAr: true } },
+            },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      db.question.count({ where: { schoolType: "ARABIC" } }),
+      db.question.count({ where: { schoolType: "LANGUAGE" } }),
+      db.question.count({ where: { schoolType: null } }),
+    ]);
 
   return ok({
     questions: questions.map((q) => ({
@@ -48,8 +86,21 @@ export async function GET(req: NextRequest) {
       explanation: q.explanation,
       difficulty: q.difficulty,
       marks: q.marks,
+      schoolType: q.schoolType,
       quiz: q.quiz,
     })),
+    counts: {
+      ARABIC: arabicCount,
+      LANGUAGE: languageCount,
+      SHARED: sharedCount,
+    },
+    pagination: {
+      page,
+      pageSize,
+      total,
+      totalPages: Math.ceil(total / pageSize),
+      hasMore: page * pageSize < total,
+    },
   });
 }
 
@@ -71,6 +122,8 @@ export async function POST(req: NextRequest) {
   const explanation = body.explanation ? String(body.explanation) : null;
   const marks = Number(body.marks || 1);
   const quizId = body.quizId ? String(body.quizId) : null;
+  // null => shared question, usable by both the Arabic and Language banks.
+  const questionSchoolType = normalizeSchoolType(body.schoolType);
 
   let optionsRaw: any = body.options;
   let answer = String(body.answer ?? "0");
@@ -96,6 +149,7 @@ export async function POST(req: NextRequest) {
       explanation,
       difficulty,
       marks,
+      schoolType: questionSchoolType,
     },
   });
 
