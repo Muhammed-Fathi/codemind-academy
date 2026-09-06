@@ -72,8 +72,11 @@ export function makeStorageKey(scope: string, ext: string): string {
 }
 
 function resolveSafePath(storageKey: string): string {
-  const target = path.resolve(MEDIA_ROOT, storageKey);
-  const root = path.resolve(MEDIA_ROOT);
+  // `turbopackIgnore` keeps the bundler from treating this dynamic path as a
+  // reason to trace the entire project into the server output. The path is
+  // still resolved normally at runtime.
+  const target = path.resolve(/*turbopackIgnore: true*/ MEDIA_ROOT, storageKey);
+  const root = path.resolve(/*turbopackIgnore: true*/ MEDIA_ROOT);
   // Defend against path traversal in a stored key.
   if (target !== root && !target.startsWith(root + path.sep)) {
     throw new Error("Invalid storage key");
