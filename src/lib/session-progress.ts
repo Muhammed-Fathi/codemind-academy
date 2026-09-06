@@ -180,11 +180,20 @@ export async function canAccessLesson(
 
   const courseId = lesson.topic.unit.part.courseId;
 
+  // Enrollment must be judged by exactly the same rule as getEnrollment():
+  // membership of an ACTIVE group bound to this course. Omitting `isActive`
+  // here would let a student whose group was deactivated keep opening lesson
+  // content even though /api/courses/[slug] already refuses them — an
+  // inconsistency between two authorization paths is a bug in itself.
   const student = await db.student.findUnique({
     where: { id: studentId },
-    select: { group: { select: { courseId: true } } },
+    select: { group: { select: { courseId: true, isActive: true } } },
   });
-  if (!student?.group || student.group.courseId !== courseId) {
+  if (
+    !student?.group ||
+    !student.group.isActive ||
+    student.group.courseId !== courseId
+  ) {
     return { allowed: false, reason: "NOT_ENROLLED", status: null };
   }
 

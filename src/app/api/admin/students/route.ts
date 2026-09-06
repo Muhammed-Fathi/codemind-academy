@@ -18,7 +18,12 @@ export async function GET(req: NextRequest) {
   const status = url.searchParams.get("status")?.trim() || "";
   // School-type view (Arabic school / Language school). Filtering is done in
   // SQL against the real Student.schoolType column — never in the frontend.
-  const schoolType = normalizeSchoolType(url.searchParams.get("schoolType"));
+  const schoolTypeParam = url.searchParams.get("schoolType");
+  const schoolType = normalizeSchoolType(schoolTypeParam);
+  // Explicit "no school type recorded yet" view. This must be a SQL filter:
+  // filtering it on the client would only ever search the current page, so
+  // unspecified students on later pages would silently disappear.
+  const unspecifiedOnly = schoolTypeParam === "UNSPECIFIED";
   const withProgress = url.searchParams.get("withProgress") === "1";
   const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
   const pageSize = Math.min(100, Math.max(1, parseInt(url.searchParams.get("pageSize") || "20", 10)));
@@ -37,6 +42,7 @@ export async function GET(req: NextRequest) {
   if (status === "inactive") where.user = { isActive: false };
   if (status === "suspended") where.user = { status: "SUSPENDED_MULTI_DEVICE" };
   if (schoolType) where.schoolType = schoolType;
+  else if (unspecifiedOnly) where.schoolType = null;
 
   const [total, students] = await Promise.all([
     db.student.count({ where }),
@@ -67,10 +73,16 @@ export async function GET(req: NextRequest) {
 
   // Counts per school type, so the tabs can show totals without extra
   // round-trips and without loading all students.
+  //
+  // The counts must reflect the search/status filters but NOT the currently
+  // selected school-type tab — otherwise selecting "Arabic" would report 0 for
+  // the Language tab. `schoolType` is therefore stripped explicitly rather
+  // than relying on spread-override ordering.
+  const { schoolType: _ignoredSchoolType, ...countWhere } = where;
   const [arabicCount, languageCount, unspecifiedCount] = await Promise.all([
-    db.student.count({ where: { ...where, schoolType: "ARABIC" } }),
-    db.student.count({ where: { ...where, schoolType: "LANGUAGE" } }),
-    db.student.count({ where: { ...where, schoolType: null } }),
+    db.student.count({ where: { ...countWhere, schoolType: "ARABIC" } }),
+    db.student.count({ where: { ...countWhere, schoolType: "LANGUAGE" } }),
+    db.student.count({ where: { ...countWhere, schoolType: null } }),
   ]);
 
   return ok({

@@ -228,13 +228,28 @@ export async function POST(req: NextRequest) {
   // Re-grade on the server from the stored answer keys: the client-sent
   // `isCorrect` / `marks` values are never trusted for scoring.
   const questionIds = answers.map((a) => a.questionId).filter(Boolean);
+
+  // Bank isolation applies to GRADING as well as to selection. Without this,
+  // a crafted submission could reference questions from the other school's
+  // bank and have them graded into the attempt, polluting school-type
+  // reporting. Out-of-bank ids simply fail the keyById lookup below and score
+  // 0, exactly like an unknown id.
+  // A student with no school type recorded has NO bank of their own. Falling
+  // back to `{}` here would have disabled isolation entirely for exactly the
+  // accounts we know least about, so those submissions are graded against the
+  // SHARED questions only (`schoolType: null`). GET already refuses to serve an
+  // exam to such a student (400, api.210), so this path is unreachable in the
+  // normal flow and only ever narrows what a crafted submission can reach.
+  const gradingBankFilter = studentSchoolType
+    ? questionBankFilter(studentSchoolType)
+    : { schoolType: null };
   const [bankQuestions, bankExamQuestions] = await Promise.all([
     db.question.findMany({
-      where: { id: { in: questionIds } },
+      where: { id: { in: questionIds }, ...gradingBankFilter },
       select: { id: true, answer: true, marks: true, options: true },
     }),
     db.examQuestion.findMany({
-      where: { id: { in: questionIds } },
+      where: { id: { in: questionIds }, ...gradingBankFilter },
       select: { id: true, answer: true, marks: true, options: true },
     }),
   ]);
@@ -299,5 +314,3 @@ export async function POST(req: NextRequest) {
 
   return ok({ attempt: { ...attempt, percentage, passed, score, totalMarks } });
 }
-
-

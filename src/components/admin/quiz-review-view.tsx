@@ -142,8 +142,10 @@ export function QuizReviewView() {
                       .filter((e) => e.url)
                       .map((e) => (
                         <figure key={e.id} className="w-28">
-                          {/* Authorized, private stream URL — never a public path. */}
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          {/* Authorized, private stream URL — never a public path.
+                              Plain <img> is deliberate: next/image would try to
+                              optimize through its own loader, which cannot pass
+                              the session cookie these role-checked bytes need. */}
                           <img
                             src={e.url!}
                             alt={`${row.student.name} — ${new Date(e.capturedAt).toLocaleTimeString()}`}

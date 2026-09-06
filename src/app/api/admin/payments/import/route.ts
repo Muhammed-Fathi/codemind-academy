@@ -99,9 +99,7 @@ export async function POST(req: NextRequest) {
         method: validMethod,
         status: validStatus,
         paymentId: payment.id,
-        // Row outcome. Named distinctly from `status` (the payment status)
-        // so neither value is silently overwritten in the import report.
-        result: "created",
+        status: "created",
       });
       created++;
     }

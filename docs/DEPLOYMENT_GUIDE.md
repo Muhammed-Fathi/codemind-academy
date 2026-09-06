@@ -779,3 +779,55 @@ npm ci && npm run build && pm2 restart codemind
 
 Restore `db/custom.*.db.bak` only if you must also discard data created after
 the upgrade.
+
+### F.9 Password reset — production requirements (INCOMPLETE WITHOUT A PROVIDER)
+
+The password reset feature is **deliberately shipped without a delivery
+provider**. Everything except the final delivery hop is implemented and
+production-safe; the delivery hop must be configured by the operator before the
+feature is usable by real users.
+
+**What IS implemented and verified (source-level):**
+
+| Property | Where |
+|---|---|
+| No account enumeration — identical response for found / unknown / rate-limited | `password-reset/request` |
+| Rate limiting per identifier (3 / 15 min) and per IP (10 / hr) | `password-reset/request` |
+| Cryptographically random secret; only its SHA-256 is persisted | `lib/security.ts` |
+| Raw token/OTP never logged and never returned in a response | both routes |
+| Requesting a new token invalidates the previous unused ones | `request` |
+| Single use — `usedAt` stamped in the same transaction as the password change | `confirm` |
+| Replay/expiry/attempt-limit (5) rejection, all with a uniform error | `confirm` |
+| All sessions revoked after a successful reset | `revokeAllSessions` |
+| Audit trail stores only the MASKED destination | `logSecurityEvent` |
+
+**What is intentionally NOT implemented:** any actual email or SMS transport
+beyond the two thin provider bindings below. No fake/stub provider was added —
+when nothing is configured, `sendEmail` / `sendSms` return
+`{ delivered: false, reason: "NOT_CONFIGURED" }` and never pretend success.
+
+**Consequence:** with no provider configured the user never receives the link
+or OTP, so **the reset flow cannot be completed end-to-end in production.**
+This is why the requirement is reported as PARTIAL.
+
+**Required before production:**
+
+1. Choose a provider. Implemented bindings: **email → `resend`**,
+   **SMS → `twilio`**. Any other value is treated as `NOT_CONFIGURED`; adding
+   one means extending `src/lib/delivery.ts`.
+2. Set the environment variables:
+   - Email: `EMAIL_PROVIDER=resend`, `EMAIL_API_KEY`, `EMAIL_FROM`
+   - SMS (optional): `SMS_PROVIDER=twilio`, `SMS_API_KEY`, `SMS_API_SECRET`,
+     `SMS_ACCOUNT_SID`, `SMS_SENDER`
+   - `NEXT_PUBLIC_URL` — **must** be the real public origin, or the reset link
+     in the email will point at `http://localhost:3000`.
+   - `PASSWORD_RESET_TTL_MINUTES` (default 15).
+   - Ensure `DELIVERY_DEV_LOG` is unset in production.
+3. Verify the sending domain (SPF/DKIM for email, sender ID for SMS), or
+   messages will be silently spam-filtered.
+4. Smoke test after deploy: request a reset for a real account, confirm the
+   message arrives, complete it, and confirm every existing session is logged
+   out.
+
+`hasDeliveryProvider()` (`src/lib/delivery.ts`) reports whether at least one
+channel is usable and can be surfaced on an admin health screen.

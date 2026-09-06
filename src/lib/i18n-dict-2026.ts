@@ -79,6 +79,8 @@ export const DICT_2026: Record<string, DictEntry> = {
   "course.209": { ar: "الجلسة الجاية مفتوحة ✅", en: "Next session unlocked ✅" },
   "course.210": { ar: "نسبة مشاهدة الفيديو", en: "Video watched" },
   "course.211": { ar: "اتشاف بالكامل", en: "Fully watched" },
+  "course.212": { ar: "مش مشترك في الكورس ده. كلّم الإدارة عشان يتفعّلك.", en: "You are not enrolled in this course. Contact the administration to get access." },
+  "course.213": { ar: "مفيش كورس محدد.", en: "No course selected." },
 
   // ---------------- Quiz camera ----------------
   "quiz.200": { ar: "الكاميرا مطلوبة قبل بداية الاختبار", en: "Camera access is requested before the quiz" },

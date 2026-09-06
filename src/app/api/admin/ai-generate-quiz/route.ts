@@ -1,6 +1,7 @@
 // CodeMind Academy — AI Quiz Generation API
 // Uses z-ai-web-dev-sdk to generate quiz questions from lesson content.
 import { NextRequest, NextResponse } from "next/server";
+import ZAI from "z-ai-web-dev-sdk";
 import { requireRole, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
 
@@ -89,10 +90,6 @@ export async function POST(req: NextRequest) {
 ${context}`;
 
   try {
-    // Imported lazily: a top-level import of the SDK runs its initialisation
-    // during Next.js build-time page-data collection, which fails outside the
-    // sandbox. Loading it here keeps it strictly request-time.
-    const { default: ZAI } = await import("z-ai-web-dev-sdk");
     const zai = await ZAI.create();
     const completion = await zai.chat.completions.create({
       messages: [

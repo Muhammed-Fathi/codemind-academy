@@ -46,26 +46,34 @@ export async function POST(
     lastViewedAt: Date;
   } = { lastViewedAt: new Date() };
 
+  // The 95% video rule is evaluated ONCE, up front, and applies to EVERY route
+  // that can set isCompleted. Previously `progress: 100` set isCompleted
+  // directly without consulting the video threshold, which re-opened exactly
+  // the bypass the `completed` flag guards against: a client could POST
+  // { progress: 100 } and complete a lesson it never watched.
+  //
+  // `videoWatchedSec` / `videoPercent` are only ever written by the heartbeat
+  // route, which credits real elapsed wall-clock time — so this check cannot
+  // be satisfied by a forged request.
+  const existingProgress = await db.lessonProgress.findUnique({
+    where: { studentId_lessonId: { studentId: s.id, lessonId: id } },
+    select: { videoCompleted: true, videoPercent: true },
+  });
+  const videoSatisfied =
+    !lesson.videoUrl ||
+    !!existingProgress?.videoCompleted ||
+    (existingProgress?.videoPercent ?? 0) >= VIDEO_COMPLETION_THRESHOLD;
+
   if (progressValue !== undefined) {
     data.progress = progressValue;
-    if (progressValue >= 100) data.isCompleted = true;
+    if (progressValue >= 100) {
+      if (!videoSatisfied) return err(tApi("api.209"), 403);
+      data.isCompleted = true;
+    }
   }
   if (completedFlag !== undefined) {
     if (completedFlag) {
-      // A lesson that HAS a video can only be marked complete once the
-      // server-tracked watch time reached the 95% threshold. This closes the
-      // trivial "click Mark as complete" bypass.
-      const existing = await db.lessonProgress.findUnique({
-        where: { studentId_lessonId: { studentId: s.id, lessonId: id } },
-        select: { videoCompleted: true, videoPercent: true },
-      });
-      const videoSatisfied =
-        !lesson.videoUrl ||
-        !!existing?.videoCompleted ||
-        (existing?.videoPercent ?? 0) >= VIDEO_COMPLETION_THRESHOLD;
-      if (!videoSatisfied) {
-        return err(tApi("api.209"), 403);
-      }
+      if (!videoSatisfied) return err(tApi("api.209"), 403);
       data.isCompleted = true;
       if (progressValue === undefined) data.progress = 100;
     } else {

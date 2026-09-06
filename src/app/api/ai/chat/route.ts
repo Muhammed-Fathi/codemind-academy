@@ -1,6 +1,7 @@
 // CodeMind Academy — AI Assistant Chat API
 // Backend-only. Uses z-ai-web-dev-sdk LLM with a CodeMind-tutor system prompt.
 import { NextRequest, NextResponse } from "next/server";
+import ZAI from "z-ai-web-dev-sdk";
 import { requireUser, ok, err } from "@/lib/api";
 
 // In-memory conversation store keyed by sessionId (good enough for MVP).
@@ -67,10 +68,6 @@ export async function POST(req: NextRequest) {
   ];
 
   try {
-    // Imported lazily: a top-level import of the SDK runs its initialisation
-    // during Next.js build-time page-data collection, which fails outside the
-    // sandbox. Loading it here keeps it strictly request-time.
-    const { default: ZAI } = await import("z-ai-web-dev-sdk");
     const zai = await ZAI.create();
     const completion = await zai.chat.completions.create({
       messages: llmMessages,

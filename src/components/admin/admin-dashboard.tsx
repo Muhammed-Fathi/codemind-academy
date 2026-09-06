@@ -584,10 +584,10 @@ function StudentsView() {
     const params = new URLSearchParams();
     if (search) params.set("search", search);
     if (status !== "all") params.set("status", status);
-    // "UNSPECIFIED" means students with no school type recorded yet; the API
-    // ignores an unrecognised value and returns every student.
-    if (schoolType === "ARABIC" || schoolType === "LANGUAGE")
-      params.set("schoolType", schoolType);
+    // Every tab is filtered in SQL, including "UNSPECIFIED" (schoolType IS
+    // NULL). Filtering that case on the client would only search the current
+    // page and hide matching students on later pages.
+    params.set("schoolType", schoolType);
     params.set("page", String(page));
     params.set("withProgress", "1");
     return `/api/admin/students?${params.toString()}`;
@@ -600,13 +600,9 @@ function StudentsView() {
     page,
   ]);
 
-  // The "unspecified" view is derived on the client only for DISPLAY, from
-  // rows the server already returned; the two real views are server-filtered.
-  const rows = React.useMemo(() => {
-    const all = data?.students || [];
-    if (schoolType === "UNSPECIFIED") return all.filter((s) => !s.schoolType);
-    return all;
-  }, [data, schoolType]);
+  // All three views are server-filtered and paginated, so the rows are used
+  // exactly as returned — no client-side narrowing that could fight pagination.
+  const rows = data?.students || [];
 
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">

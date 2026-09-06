@@ -79,9 +79,25 @@ export async function DELETE(
   const exam = await db.mockExam.findUnique({ where: { id } });
   if (!exam) return err(tApi("api.211"), 404);
 
-  // ExamAttempt.mockExamId is ON DELETE SET NULL and each attempt stores a JSON
-  // snapshot of its own questions/answers, so historical results and reports
-  // remain intact after the definition is removed.
-  await db.mockExam.delete({ where: { id } });
+  // Historical results MUST survive deletion of the definition. Each attempt
+  // stores a JSON snapshot of its own questions/answers, so the score stays
+  // readable; here we only have to clear the dangling link.
+  //
+  // We detach EXPLICITLY rather than relying on `onDelete: SetNull`. That
+  // referential action is declared in schema.prisma, but the 2026 migration
+  // adds `ExamAttempt.mockExamId` with a plain `ALTER TABLE ... ADD COLUMN`
+  // and SQLite cannot attach a foreign key to an existing table without a full
+  // table rebuild — which would break the additive-only guarantee of that
+  // migration. So on an upgraded database no FK exists to fire, and a bare
+  // delete would leave attempts pointing at a missing exam. Doing it in a
+  // transaction keeps the two statements atomic and makes the behaviour
+  // identical on both freshly-created and migrated databases.
+  await db.$transaction([
+    db.examAttempt.updateMany({
+      where: { mockExamId: id },
+      data: { mockExamId: null },
+    }),
+    db.mockExam.delete({ where: { id } }),
+  ]);
   return ok({ ok: true });
 }

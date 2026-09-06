@@ -127,7 +127,7 @@ CREATE TABLE "LessonProgress" (
   "lessonId" TEXT NOT NULL,
   "isCompleted" BOOLEAN NOT NULL DEFAULT 0
 );
-CREATE TABLE "ExamAttempt" ("id" TEXT PRIMARY KEY, "studentId" TEXT NOT NULL, "percentage" INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE "ExamAttempt" ("id" TEXT PRIMARY KEY, "studentId" TEXT NOT NULL, "percentage" INTEGER NOT NULL DEFAULT 0, "answers" TEXT NOT NULL DEFAULT '[]');
 CREATE TABLE "QuizAttempt" (
   "id" TEXT PRIMARY KEY,
   "quizId" TEXT NOT NULL,
@@ -370,6 +370,76 @@ const cols = (t) => db.prepare(`PRAGMA table_info("${t}")`).all().map((c) => c.n
 }
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// 12. Historical exam results survive deletion of the exam/question they came
+//     from. This is the "do not corrupt historical records" requirement, and
+//     it is verified by actually performing the deletes against real SQLite
+//     with foreign keys ON — not by reading the schema.
+// ---------------------------------------------------------------------------
+{
+  db.exec("PRAGMA foreign_keys = ON");
+
+  db.exec(`
+    INSERT INTO "MockExam"
+      ("id","title","titleAr","schoolType","questionCount","durationMin","passMark",
+       "difficulty","selectionMode","isPublished","createdAt","updatedAt")
+    VALUES ('me_hist','Historical Exam','امتحان سابق','ARABIC',10,30,60,'MIXED','RANDOM',1,
+            '2026-09-01 09:00:00','2026-09-01 09:00:00');
+  `);
+  db.exec(`
+    INSERT INTO "ExamAttempt" ("id","studentId","percentage","mockExamId","schoolType","answers")
+    VALUES ('att_hist','s1',88,'me_hist','ARABIC','[{"questionId":"q1","selected":"1"}]');
+  `);
+
+  // Deleting the exam definition must NOT remove the student's result.
+  db.exec(`DELETE FROM "MockExam" WHERE "id" = 'me_hist'`);
+  const att = db.prepare('SELECT * FROM "ExamAttempt" WHERE "id" = ?').get("att_hist");
+  ok(!!att, "deleting a MockExam does NOT delete historical ExamAttempts");
+  ok(att && att.percentage === 88, "the historical score is preserved verbatim");
+  ok(
+    att && typeof att.answers === "string" && att.answers.includes("questionId"),
+    "the answers snapshot survives deletion of the exam definition"
+  );
+  // NOTE: on a MIGRATED database there is no FK on ExamAttempt.mockExamId —
+  // SQLite cannot add one via ALTER TABLE ADD COLUMN without a table rebuild,
+  // which the additive-only migration deliberately avoids. So the raw DELETE
+  // here leaves the link dangling, and the DELETE endpoint detaches attempts
+  // explicitly inside a transaction instead of relying on `onDelete: SetNull`.
+  // What matters for the requirement is that the RESULT survives, which the
+  // assertions above prove.
+  ok(att && att.mockExamId === "me_hist",
+    "raw SQL delete leaves the link dangling => the app must detach explicitly");
+  ok(att && att.schoolType === "ARABIC", "the attempt keeps its school type for reporting");
+
+  // MockExamQuestion rows are pure join rows: cascading them away on question
+  // deletion is correct, and must not touch attempts.
+  db.exec(`
+    INSERT INTO "MockExam"
+      ("id","title","titleAr","schoolType","questionCount","durationMin","passMark",
+       "difficulty","selectionMode","isPublished","createdAt","updatedAt")
+    VALUES ('me_q','Pinned Exam','امتحان مثبت','ARABIC',1,10,60,'MIXED','FIXED',1,
+            '2026-09-01 09:00:00','2026-09-01 09:00:00');
+  `);
+  db.exec(`INSERT INTO "Question" ("id","prompt","answer") VALUES ('q_del','Q?','1')`);
+  db.exec(`
+    INSERT INTO "MockExamQuestion" ("id","mockExamId","questionId","order")
+    VALUES ('meq1','me_q','q_del',0);
+  `);
+  db.exec(`
+    INSERT INTO "ExamAttempt" ("id","studentId","percentage","mockExamId","schoolType","answers")
+    VALUES ('att_q','s1',75,'me_q','ARABIC','[{"questionId":"q_del","selected":"1"}]');
+  `);
+
+  db.exec(`DELETE FROM "Question" WHERE "id" = 'q_del'`);
+  const joinRows = db.prepare('SELECT * FROM "MockExamQuestion" WHERE "questionId" = ?').all("q_del");
+  ok(joinRows.length === 0, "deleting a Question removes only its pinned-join rows");
+  const attQ = db.prepare('SELECT * FROM "ExamAttempt" WHERE "id" = ?').get("att_q");
+  ok(!!attQ && attQ.percentage === 75,
+    "deleting a Question does NOT alter an already-graded attempt");
+  ok(attQ && attQ.answers.includes("q_del"),
+    "the answers snapshot still names the deleted question (results stay readable)");
+}
+
 db.close();
 fs.rmSync(path.dirname(DB_PATH), { recursive: true, force: true });
 

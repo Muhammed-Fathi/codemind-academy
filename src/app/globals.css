@@ -1213,6 +1213,20 @@
     pointer-events: auto;
     cursor: pointer;
   }
+}
+
+/* The icon padding reservation MUST live in the utilities layer.
+   `@layer components` is ordered BEFORE `utilities` in Tailwind v4
+   (`@layer theme, base, components, utilities`), and layer order beats
+   selector specificity — so the `px-3` on shadcn's <Input> overrode a
+   components-layer rule no matter how specific it was, and the icon sat on
+   top of the text. Verified in a real browser: before this change the
+   computed padding-inline-end was 12px instead of 40px.
+
+   `!important` is deliberately NOT used: being in the same layer as `px-3`,
+   these higher-specificity selectors win cleanly, and a caller can still
+   opt out with an explicit utility if needed. */
+@layer utilities {
   .field-with-icon > input,
   .field-with-icon > textarea {
     padding-inline-end: 2.5rem;
@@ -1221,5 +1235,15 @@
   .field-with-icon:has(> .field-icon[data-side="start"]) > textarea {
     padding-inline-end: 0.75rem;
     padding-inline-start: 2.5rem;
+  }
+  /* Both a leading AND a trailing icon: reserve space on both sides. */
+  .field-with-icon:has(> .field-icon[data-side="start"]):has(
+      > .field-icon:not([data-side="start"])
+    ) > input,
+  .field-with-icon:has(> .field-icon[data-side="start"]):has(
+      > .field-icon:not([data-side="start"])
+    ) > textarea {
+    padding-inline-start: 2.5rem;
+    padding-inline-end: 2.5rem;
   }
 }

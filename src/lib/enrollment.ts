@@ -14,7 +14,18 @@ export type Enrollment = {
   groupId: string | null;
   batchId: string | null;
   schoolType: SchoolType | null;
-  /** ACTIVE subscription is required for full content access. */
+  /**
+   * Raw Subscription.status, surfaced for the dashboard//me/enrollment UI
+   * (renewal banners, "expiring soon" prompts).
+   *
+   * DELIBERATELY NOT AN ACCESS GATE. Content access is decided solely by
+   * `isEnrolled` (an ACTIVE group bound to a course) in `canAccessCourse` /
+   * `canAccessLesson`. Turning this into a paywall would revoke content from
+   * every currently-enrolled student whose subscription row is missing or
+   * lapsed, which is a business decision and not part of this upgrade. If a
+   * subscription gate is ever wanted, it belongs in `canAccessCourse` so the
+   * server stays the single source of truth — never in the UI.
+   */
   subscriptionStatus: string | null;
 };
 
