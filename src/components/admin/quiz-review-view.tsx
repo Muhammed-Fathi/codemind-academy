@@ -72,9 +72,12 @@ export function QuizReviewView() {
     >
       <div>
         <h2 className="text-xl font-bold">{tr("admin.245")}</h2>
-        <p className="text-xs text-muted-foreground">{tr("quiz.202")}</p>
+        {/* Page subtitle — describes the review task, NOT the privacy notice.
+            quiz.202 (the privacy message) is rendered exactly once below. */}
+        <p className="text-xs text-muted-foreground">{tr("quiz.213")}</p>
       </div>
 
+      {/* Privacy/notice callout — the single place quiz.202 appears. */}
       <Card className="border-amber-500/30 bg-amber-500/5 p-3">
         <p className="flex items-start gap-2 text-xs text-muted-foreground">
           <ShieldCheck className="mt-0.5 w-4 h-4 shrink-0 text-amber-600" />

@@ -2596,7 +2596,7 @@ function PaymentsView() {
         const j = await res.json();
         throw new Error(j.error || "err");
       }
-      toast.success(tr("admin.200"));
+      toast.success(tr("pay.rejectedToast"));
       reload();
     } catch (e: any) {
       toast.error(e.message || tr("admin.001"));
@@ -2607,8 +2607,8 @@ function PaymentsView() {
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-bold">{tr("admin.202")}</h2>
-          <p className="text-xs text-muted-foreground">{tr("admin.203")}</p>
+          <h2 className="text-xl font-bold">{tr("shell.011")}</h2>
+          <p className="text-xs text-muted-foreground">{tr("admin.payments.subtitle")}</p>
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -2618,13 +2618,13 @@ function PaymentsView() {
             className="border-primary/30 text-primary hover:bg-primary/5"
           >
             <Upload className="w-4 h-4 ms-2" />
-            {tr("admin.204")}</Button>
+            {tr("pay.importBtn")}</Button>
           <Select value={status} onValueChange={setStatus}>
             <SelectTrigger className="w-40">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">{tr("admin.205")}</SelectItem>
+              <SelectItem value="all">{tr("admin.016")}</SelectItem>
               <SelectItem value="PENDING">Pending</SelectItem>
               <SelectItem value="APPROVED">Approved</SelectItem>
               <SelectItem value="REJECTED">Rejected</SelectItem>
@@ -2646,9 +2646,9 @@ function PaymentsView() {
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
                   <Upload className="w-5 h-5 text-primary" />
-                  {tr("admin.206")}</CardTitle>
+                  {tr("pay.importTitle")}</CardTitle>
                 <CardDescription className="text-xs">
-                  {tr("admin.207")}</CardDescription>
+                  {tr("pay.importDesc")}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="flex items-center gap-3">
@@ -2670,16 +2670,16 @@ function PaymentsView() {
                     {importing ? (
                       <>
                         <Loader2 className="w-4 h-4 ms-2 animate-spin" />
-                        {tr("admin.208")}</>
+                        {tr("pay.importing")}</>
                     ) : (
                       <>
                         <Upload className="w-4 h-4 ms-2" />
-                        {tr("admin.209")}</>
+                        {tr("pay.chooseFile")}</>
                     )}
                   </Button>
                   <Button variant="outline" onClick={downloadTemplate}>
                     <Download className="w-4 h-4 ms-2" />
-                    {tr("admin.210")}</Button>
+                    {tr("pay.downloadTemplate")}</Button>
                   <Button variant="ghost" onClick={() => setShowImport(false)}>
                     {tr("admin.038")}</Button>
                 </div>
@@ -2693,26 +2693,26 @@ function PaymentsView() {
                     <div className="flex items-center gap-2 mb-2">
                       <CheckCircle2 className="w-5 h-5 text-emerald-500" />
                       <span className="font-bold text-emerald-700 dark:text-emerald-400">
-                        {tr("admin.212")}</span>
+                        {tr("pay.importResults")}</span>
                     </div>
                     <div className="grid grid-cols-3 gap-3 text-sm">
                       <div>
                         <div className="text-2xl font-bold text-emerald-600">
                           {importResult.created}
                         </div>
-                        <div className="text-xs text-muted-foreground">{tr("admin.213")}</div>
+                        <div className="text-xs text-muted-foreground">{tr("pay.imported")}</div>
                       </div>
                       <div>
                         <div className="text-2xl font-bold text-amber-600">
                           {importResult.failed}
                         </div>
-                        <div className="text-xs text-muted-foreground">{tr("admin.214")}</div>
+                        <div className="text-xs text-muted-foreground">{tr("pay.failed")}</div>
                       </div>
                       <div>
                         <div className="text-2xl font-bold text-muted-foreground">
                           {importResult.total}
                         </div>
-                        <div className="text-xs text-muted-foreground">{tr("admin.215")}</div>
+                        <div className="text-xs text-muted-foreground">{tr("pay.totalRows")}</div>
                       </div>
                     </div>
                     {importResult.results?.some((r: any) => r.status === "failed") && (
@@ -2721,7 +2721,7 @@ function PaymentsView() {
                           .filter((r: any) => r.status === "failed")
                           .map((r: any, i: number) => (
                             <div key={i} className="text-xs text-destructive">
-                              {tr("admin.216")}{r.row}: {r.userEmail} — {r.error}
+                              {tr("pay.row")}{r.row}: {r.userEmail} — {r.error}
                             </div>
                           ))}
                       </div>
@@ -2740,19 +2740,19 @@ function PaymentsView() {
         ) : error ? (
           <ErrorBlock message={error} onRetry={reload} />
         ) : !data || data.payments.length === 0 ? (
-          <EmptyBlock message={tr("admin.217")} />
+          <EmptyBlock message={tr("pay.empty")} />
         ) : (
           <div className="max-h-[70vh] overflow-auto">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>{tr("admin.218")}</TableHead>
-                  <TableHead>{tr("admin.219")}</TableHead>
-                  <TableHead>{tr("admin.220")}</TableHead>
-                  <TableHead>{tr("admin.221")}</TableHead>
-                  <TableHead>{tr("admin.222")}</TableHead>
+                  <TableHead>{tr("pay.colUser")}</TableHead>
+                  <TableHead>{tr("pay.colAmount")}</TableHead>
+                  <TableHead>{tr("pay.colMethod")}</TableHead>
+                  <TableHead>{tr("pay.colReference")}</TableHead>
+                  <TableHead>{tr("pay.colDate")}</TableHead>
                   <TableHead>{tr("admin.025")}</TableHead>
-                  <TableHead>{tr("admin.224")}</TableHead>
+                  <TableHead>{tr("pay.colActions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -2858,15 +2858,15 @@ function SubscriptionsView() {
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-bold">{tr("admin.225")}</h2>
-          <p className="text-xs text-muted-foreground">{tr("admin.226")}</p>
+          <h2 className="text-xl font-bold">{tr("shell.012")}</h2>
+          <p className="text-xs text-muted-foreground">{tr("admin.subscriptions.subtitle")}</p>
         </div>
         <Select value={status} onValueChange={setStatus}>
           <SelectTrigger className="w-40">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">{tr("admin.205")}</SelectItem>
+            <SelectItem value="all">{tr("admin.016")}</SelectItem>
             <SelectItem value="PENDING">Pending</SelectItem>
             <SelectItem value="ACTIVE">Active</SelectItem>
             <SelectItem value="EXPIRED">Expired</SelectItem>
@@ -2881,17 +2881,17 @@ function SubscriptionsView() {
         ) : error ? (
           <ErrorBlock message={error} onRetry={reload} />
         ) : !data || data.subscriptions.length === 0 ? (
-          <EmptyBlock message={tr("admin.228")} />
+          <EmptyBlock message={tr("sub.empty")} />
         ) : (
           <div className="max-h-[70vh] overflow-auto">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>{tr("admin.229")}</TableHead>
-                  <TableHead>{tr("admin.230")}</TableHead>
-                  <TableHead>{tr("admin.231")}</TableHead>
-                  <TableHead>{tr("admin.232")}</TableHead>
-                  <TableHead>{tr("admin.233")}</TableHead>
+                  <TableHead>{tr("sub.colStudent")}</TableHead>
+                  <TableHead>{tr("sub.colPlan")}</TableHead>
+                  <TableHead>{tr("sub.colPrice")}</TableHead>
+                  <TableHead>{tr("sub.colStart")}</TableHead>
+                  <TableHead>{tr("sub.colEnd")}</TableHead>
                   <TableHead>{tr("admin.025")}</TableHead>
                 </TableRow>
               </TableHeader>
@@ -2957,7 +2957,7 @@ function NotificationsView() {
 
   const submit = async () => {
     if (!form.title || !form.message) {
-      toast.error(tr("admin.235"));
+      toast.error(tr("notif.titleMessageRequired"));
       return;
     }
     setSending(true);
@@ -2969,7 +2969,7 @@ function NotificationsView() {
       });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || "err");
-      toast.success(tr("admin.236", { p1: j.sent }));
+      toast.success(tr("notif.sent", { p1: j.sent }));
       setForm({ ...form, title: "", message: "" });
       reload();
     } catch (e: any) {
@@ -2982,8 +2982,8 @@ function NotificationsView() {
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
       <div>
-        <h2 className="text-xl font-bold">{tr("admin.238")}</h2>
-        <p className="text-xs text-muted-foreground">{tr("admin.239")}</p>
+        <h2 className="text-xl font-bold">{tr("notif.title")}</h2>
+        <p className="text-xs text-muted-foreground">{tr("notif.subtitle")}</p>
       </div>
 
       {/* Notification Center Stats */}
@@ -2997,22 +2997,22 @@ function NotificationsView() {
               <Send className="w-4 h-4 text-emerald-500" />
               Send Notification
             </CardTitle>
-            <CardDescription>{tr("admin.240")}</CardDescription>
+            <CardDescription>{tr("notif.sendDesc")}</CardDescription>
           </CardHeader>
           <CardContent className="px-0 space-y-3">
             <div>
-              <Label>{tr("admin.241")}</Label>
+              <Label>{tr("notif.audience")}</Label>
               <Select value={form.target} onValueChange={(v) => setForm({ ...form, target: v })}>
                 <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">{tr("admin.242")}</SelectItem>
+                  <SelectItem value="all">{tr("notif.allUsers")}</SelectItem>
                   <SelectItem value="students">{tr("admin.010")}</SelectItem>
-                  <SelectItem value="parents">{tr("admin.244")}</SelectItem>
+                  <SelectItem value="parents">{tr("notif.parents")}</SelectItem>
                   <SelectItem value="teachers">{tr("admin.067")}</SelectItem>
-                  <SelectItem value="group">{tr("admin.246")}</SelectItem>
-                  <SelectItem value="user">{tr("admin.247")}</SelectItem>
+                  <SelectItem value="group">{tr("notif.group")}</SelectItem>
+                  <SelectItem value="user">{tr("notif.user")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -3021,7 +3021,7 @@ function NotificationsView() {
                 <Label>{tr("admin.023")}</Label>
                 <Select value={form.groupId} onValueChange={(v) => setForm({ ...form, groupId: v })}>
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder={tr("admin.249")} />
+                    <SelectValue placeholder={tr("notif.chooseGroup")} />
                   </SelectTrigger>
                   <SelectContent>
                     {groups.map((g) => (
