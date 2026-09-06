@@ -120,10 +120,25 @@ export function StudentCourseView() {
   const reload = React.useCallback(() => {
     setLoading(true);
     setError(null);
-    fetch(
-      `/api/courses/${encodeURIComponent(navParam || "programming-ai-2nd-sec")}`
-    )
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("fail"))))
+    // No hardcoded fallback slug: guessing a course here made an
+    // unenrolled/direct-navigation user look like they were enrolled in
+    // whichever course happened to be hardcoded. With no navParam there is
+    // simply nothing to load.
+    if (!navParam) {
+      setError(tr("course.213"));
+      setLoading(false);
+      return;
+    }
+    fetch(`/api/courses/${encodeURIComponent(navParam)}`)
+      .then((r) => {
+        if (r.ok) return r.json();
+        // 403 is an authorization outcome, not a transport failure, and it
+        // must not be collapsed into the generic "try again" message — the
+        // student would retry forever. The server stays the source of truth.
+        if (r.status === 403 || r.status === 401)
+          return Promise.reject(new Error("forbidden"));
+        return Promise.reject(new Error("fail"));
+      })
       .then((d) => {
         setData(d);
         const ids: string[] = [];
@@ -132,11 +147,11 @@ export function StudentCourseView() {
         }
         setOpenUnits(ids);
       })
-      .catch(() => {
-        setError(tr("course.034"));
+      .catch((e: Error) => {
+        setError(tr(e.message === "forbidden" ? "course.212" : "course.034"));
       })
       .finally(() => setLoading(false));
-  }, [navParam]);
+  }, [navParam, tr]);
 
   React.useEffect(() => {
     reload();

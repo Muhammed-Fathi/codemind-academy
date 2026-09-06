@@ -1,6 +1,9 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireUser, getStudentProfile } from "@/lib/api";
+import { getEnrollment } from "@/lib/enrollment";
+import { getCourseSessionProgress } from "@/lib/session-progress";
+import { getServerT } from "@/lib/i18n-server";
 
 // GET /api/courses/[slug]
 // Returns course + parts + units + topics + lessons with the current
@@ -43,11 +46,22 @@ export async function GET(
   });
   if (!course) return err("Course not found", 404);
 
-  // Resolve student for progress lookups
+  // Resolve student for progress lookups + ENFORCE ENROLLMENT.
+  // A student must never receive the content of a course they are not
+  // enrolled in, even when hitting this route directly.
   let studentId: string | null = null;
   if (user.role === "STUDENT") {
+    const tApi = await getServerT();
     const s = await getStudentProfile(user.id);
-    studentId = s?.id || null;
+    if (!s) return err("Student profile not found", 404);
+    const enrollment = await getEnrollment(s.id);
+    if (!enrollment.isEnrolled || enrollment.courseId !== course.id) {
+      return NextResponse.json(
+        { error: tApi("api.208"), code: "NOT_ENROLLED" },
+        { status: 403 }
+      );
+    }
+    studentId = s.id;
   }
 
   // Pull all LessonProgress for this student for the lessons in this course
@@ -130,30 +144,37 @@ export async function GET(
     }
   }
 
-  // Determine locked / current / completed statuses.
-  // Logic: a lesson is "locked" if it has isLocked flag set AND the previous
-  // lesson in the flat list is NOT completed. The first non-completed lesson
-  // is "current".
-  let foundCurrent = false;
-  for (let i = 0; i < flat.length; i++) {
-    const l = flat[i];
-    if (l.isCompleted) {
-      l.status = "completed";
-      continue;
+  // Determine locked / current / completed statuses from the SHARED session
+  // progression service, so the UI mirrors exactly what the backend enforces:
+  // a session is complete only when its video (>=95%), quiz and assignment
+  // requirements are all satisfied; missing components are not required.
+  const requirementsByLesson = new Map<string, any>();
+  if (studentId) {
+    const sessionProgress = await getCourseSessionProgress(studentId, course.id);
+    for (const row of sessionProgress.sessions) {
+      requirementsByLesson.set(row.lessonId, row);
     }
-    if (!foundCurrent) {
-      // first incomplete lesson
-      l.status = "current";
-      foundCurrent = true;
-    } else {
-      // locked unless previous is completed
-      const prev = flat[i - 1];
-      if (l.isLocked && prev && !prev.isCompleted) {
+    let currentAssigned = false;
+    for (const l of flat) {
+      const req = requirementsByLesson.get(l.id);
+      if (!req) {
+        l.status = l.isCompleted ? "completed" : "available";
+        continue;
+      }
+      if (!req.unlocked) {
         l.status = "locked";
+      } else if (req.completed) {
+        l.status = "completed";
+      } else if (!currentAssigned) {
+        l.status = "current";
+        currentAssigned = true;
       } else {
         l.status = "available";
       }
     }
+  } else {
+    // Non-student viewers (teacher/admin previews) see everything unlocked.
+    for (const l of flat) l.status = "available";
   }
 
   // Reshape the parts/units/topics/lessons with progress + status attached
@@ -193,6 +214,7 @@ export async function GET(
             progress: lp?.progress || 0,
             isCompleted: !!lp?.isCompleted,
             status: statusById[lesson.id],
+            requirements: requirementsByLesson.get(lesson.id) || null,
             quiz: lesson.quizzes[0] || null,
             homework: lesson.homeworks[0] || null,
           };

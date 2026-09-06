@@ -634,3 +634,200 @@ See `examples/` for a reference implementation.
 - [ ] Database backup cron job in place (VPS only).
 - [ ] `server.log` rotate config in place (VPS only).
 - [ ] Demo accounts either removed or password-changed (production).
+
+---
+
+## F. Deployment / Migration Guide — 2026 Platform Upgrade
+
+This section covers upgrading an **existing, populated** CodeMind Academy
+installation to the 2026 platform release. Everything in this upgrade is
+**additive**: no column is dropped, no row is deleted, and no historical
+record is rewritten. A production database can be upgraded in place.
+
+### F.1 What changes
+
+| Area | Change |
+|---|---|
+| Schema | New tables `Batch`, `MediaAsset`, `SessionVideo`, `SessionVideoView`, `MockExam`, `MockExamQuestion`, `UserSession`, `PasswordResetToken`, `SecurityRateLimit`, `SecurityEvent`, `QuizAttemptEvidence`. New nullable columns on `User`, `Student`, `Question`, `ExamQuestion`, `LessonProgress`, `ExamAttempt`, `QuizAttempt`. |
+| Storage | New private directory (`MEDIA_STORAGE_PATH`) for uploaded videos and quiz snapshots. |
+| Sessions | Single-device enforcement. Existing cookies remain valid; a `UserSession` row is created on next login. |
+| Academic year | Now `2026 / 2027`, sourced from `src/lib/brand.ts` and overridable by the `academic_year` row in `Setting`. |
+
+### F.2 Pre-flight
+
+```bash
+# 1. Back up the database — non-negotiable.
+cp db/custom.db "db/custom.$(date +%Y%m%d-%H%M%S).db.bak"
+
+# 2. Back up any existing uploads.
+tar czf storage-backup-$(date +%Y%m%d).tar.gz storage/ 2>/dev/null || true
+
+# 3. Note the current commit so you can roll back (see §11).
+git rev-parse HEAD > .last-deployed-commit
+```
+
+### F.3 Environment
+
+Add the new variables from `.env.example` to your `.env`. The minimum set that
+must be reviewed before going live:
+
+* `MEDIA_STORAGE_PATH` — an absolute path on a **persistent** volume, outside
+  the web root. Never expose it through nginx; `/api/media/[id]` is the only
+  legitimate reader and it authorises every request.
+* `QUIZ_EVIDENCE_RETENTION_DAYS` — camera snapshots are personal data. Set the
+  shortest period your integrity policy tolerates (default `30`).
+* `DELIVERY_DEV_LOG` — **must be `false`** in production, otherwise password
+  reset tokens are written to the server log.
+* `EMAIL_*` / `SMS_*` — without at least one configured channel, password reset
+  requests will succeed silently but deliver nothing.
+
+```bash
+mkdir -p "$MEDIA_STORAGE_PATH"
+chmod 700 "$MEDIA_STORAGE_PATH"
+chown "$APP_USER":"$APP_USER" "$MEDIA_STORAGE_PATH"
+```
+
+### F.4 Applying the migration
+
+The upgrade ships as `prisma/migrations/20260906120000_platform_upgrade_2026/migration.sql`.
+
+**Preferred — Prisma:**
+
+```bash
+npx prisma migrate deploy
+npx prisma generate
+```
+
+**Fallback — direct SQL.** If the host cannot reach `binaries.prisma.sh` (an
+air-gapped or egress-filtered server), apply the same file with the sqlite3
+CLI. The migration is written to be idempotent-safe under a transaction:
+
+```bash
+sqlite3 db/custom.db < prisma/migrations/20260906120000_platform_upgrade_2026/migration.sql
+sqlite3 db/custom.db "INSERT INTO _prisma_migrations
+  (id, checksum, migration_name, started_at, finished_at, applied_steps_count)
+  VALUES (lower(hex(randomblob(16))), '', '20260906120000_platform_upgrade_2026',
+          datetime('now'), datetime('now'), 1);"
+```
+
+Recording the row in `_prisma_migrations` is important — otherwise a later
+`prisma migrate deploy` will try to apply it a second time. See
+`docs/DATABASE_MIGRATION.md` for the full sqlite3-direct procedure.
+
+### F.5 Post-migration data steps
+
+None are mandatory — the application backfills lazily and safely:
+
+* **Batches** are created on demand from the admin *Session Videos* screen, and
+  a student is bound to the batch of their school type the first time they open
+  the session-video list.
+* **`User.status`** defaults to `ACTIVE` for every existing user.
+* **`Question.schoolType`** is `NULL` for every existing question, which means
+  *shared* — every existing question stays usable by both Arabic and Language
+  mock exams. Tag questions later, at your own pace, from the Question Bank
+  tabs.
+* **Students with no school type** appear under the *Unspecified* tab in the
+  admin Students screen; assign them there.
+
+Optional verification:
+
+```bash
+sqlite3 db/custom.db "SELECT COUNT(*) FROM User WHERE status IS NULL;"        # expect 0
+sqlite3 db/custom.db "SELECT schoolType, COUNT(*) FROM Student GROUP BY 1;"
+node --test tests/                                                            # offline schema tests
+```
+
+### F.6 Build and restart
+
+```bash
+npm ci
+npm run build
+pm2 restart codemind --update-env   # or: systemctl restart codemind
+pm2 logs codemind --lines 100
+```
+
+### F.7 Smoke test
+
+1. **Login** as a student on device A, then on device B — device A must be
+   signed out and the account marked `SUSPENDED_MULTI_DEVICE`.
+2. **Admin → Students** — reactivate that student; they can sign in again and
+   the badge clears.
+3. **Admin → Session Videos** — create the Arabic batch, publish one video by
+   URL and one by upload; confirm the uploaded one plays from `/api/media/...`
+   and returns 403 when logged out.
+4. **Student → Session Videos** — watch a video; the percentage must rise with
+   real playback time, and seeking to the end must *not* complete it.
+5. **Student → Quiz** — the consent screen appears first; decline once (quiz
+   still runs), then accept and confirm the live indicator and that snapshots
+   land in **Admin → Quiz Review**.
+6. **Mock exam** — create one per school type, verify the pool count and that a
+   student only receives questions from their own bank.
+7. **Forgot password** — request a reset, confirm the response is identical for
+   a real and a fake identifier, then complete the reset and verify all other
+   sessions were revoked.
+
+### F.8 Rollback
+
+Because the migration is purely additive, the previous application build runs
+unchanged against the upgraded database — new tables and nullable columns are
+simply ignored. To roll back:
+
+```bash
+git checkout "$(cat .last-deployed-commit)"
+npm ci && npm run build && pm2 restart codemind
+```
+
+Restore `db/custom.*.db.bak` only if you must also discard data created after
+the upgrade.
+
+### F.9 Password reset — production requirements (INCOMPLETE WITHOUT A PROVIDER)
+
+The password reset feature is **deliberately shipped without a delivery
+provider**. Everything except the final delivery hop is implemented and
+production-safe; the delivery hop must be configured by the operator before the
+feature is usable by real users.
+
+**What IS implemented and verified (source-level):**
+
+| Property | Where |
+|---|---|
+| No account enumeration — identical response for found / unknown / rate-limited | `password-reset/request` |
+| Rate limiting per identifier (3 / 15 min) and per IP (10 / hr) | `password-reset/request` |
+| Cryptographically random secret; only its SHA-256 is persisted | `lib/security.ts` |
+| Raw token/OTP never logged and never returned in a response | both routes |
+| Requesting a new token invalidates the previous unused ones | `request` |
+| Single use — `usedAt` stamped in the same transaction as the password change | `confirm` |
+| Replay/expiry/attempt-limit (5) rejection, all with a uniform error | `confirm` |
+| All sessions revoked after a successful reset | `revokeAllSessions` |
+| Audit trail stores only the MASKED destination | `logSecurityEvent` |
+
+**What is intentionally NOT implemented:** any actual email or SMS transport
+beyond the two thin provider bindings below. No fake/stub provider was added —
+when nothing is configured, `sendEmail` / `sendSms` return
+`{ delivered: false, reason: "NOT_CONFIGURED" }` and never pretend success.
+
+**Consequence:** with no provider configured the user never receives the link
+or OTP, so **the reset flow cannot be completed end-to-end in production.**
+This is why the requirement is reported as PARTIAL.
+
+**Required before production:**
+
+1. Choose a provider. Implemented bindings: **email → `resend`**,
+   **SMS → `twilio`**. Any other value is treated as `NOT_CONFIGURED`; adding
+   one means extending `src/lib/delivery.ts`.
+2. Set the environment variables:
+   - Email: `EMAIL_PROVIDER=resend`, `EMAIL_API_KEY`, `EMAIL_FROM`
+   - SMS (optional): `SMS_PROVIDER=twilio`, `SMS_API_KEY`, `SMS_API_SECRET`,
+     `SMS_ACCOUNT_SID`, `SMS_SENDER`
+   - `NEXT_PUBLIC_URL` — **must** be the real public origin, or the reset link
+     in the email will point at `http://localhost:3000`.
+   - `PASSWORD_RESET_TTL_MINUTES` (default 15).
+   - Ensure `DELIVERY_DEV_LOG` is unset in production.
+3. Verify the sending domain (SPF/DKIM for email, sender ID for SMS), or
+   messages will be silently spam-filtered.
+4. Smoke test after deploy: request a reset for a real account, confirm the
+   message arrives, complete it, and confirm every existing session is logged
+   out.
+
+`hasDeliveryProvider()` (`src/lib/delivery.ts`) reports whether at least one
+channel is usable and can be surfaced on an admin health screen.

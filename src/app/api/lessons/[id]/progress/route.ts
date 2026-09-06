@@ -1,6 +1,9 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireUser, getStudentProfile } from "@/lib/api";
+import { VIDEO_COMPLETION_THRESHOLD } from "@/lib/progress";
+import { canAccessLesson } from "@/lib/session-progress";
+import { getServerT } from "@/lib/i18n-server";
 
 // POST /api/lessons/[id]/progress
 // Body: { progress?: number, completed?: boolean }
@@ -20,6 +23,15 @@ export async function POST(
   const lesson = await db.lesson.findUnique({ where: { id } });
   if (!lesson) return err("Lesson not found", 404);
 
+  // Backend authorization: enrollment + session progression are enforced here,
+  // not only hidden in the UI.
+  const tApi = await getServerT();
+  const access = await canAccessLesson(s.id, id);
+  if (!access.allowed) {
+    if (access.reason === "NOT_ENROLLED") return err(tApi("api.208"), 403);
+    return err(tApi("api.209"), 403);
+  }
+
   const body = await req.json().catch(() => ({}));
   const progressValue =
     typeof body.progress === "number"
@@ -34,14 +46,38 @@ export async function POST(
     lastViewedAt: Date;
   } = { lastViewedAt: new Date() };
 
+  // The 95% video rule is evaluated ONCE, up front, and applies to EVERY route
+  // that can set isCompleted. Previously `progress: 100` set isCompleted
+  // directly without consulting the video threshold, which re-opened exactly
+  // the bypass the `completed` flag guards against: a client could POST
+  // { progress: 100 } and complete a lesson it never watched.
+  //
+  // `videoWatchedSec` / `videoPercent` are only ever written by the heartbeat
+  // route, which credits real elapsed wall-clock time — so this check cannot
+  // be satisfied by a forged request.
+  const existingProgress = await db.lessonProgress.findUnique({
+    where: { studentId_lessonId: { studentId: s.id, lessonId: id } },
+    select: { videoCompleted: true, videoPercent: true },
+  });
+  const videoSatisfied =
+    !lesson.videoUrl ||
+    !!existingProgress?.videoCompleted ||
+    (existingProgress?.videoPercent ?? 0) >= VIDEO_COMPLETION_THRESHOLD;
+
   if (progressValue !== undefined) {
     data.progress = progressValue;
-    if (progressValue >= 100) data.isCompleted = true;
+    if (progressValue >= 100) {
+      if (!videoSatisfied) return err(tApi("api.209"), 403);
+      data.isCompleted = true;
+    }
   }
   if (completedFlag !== undefined) {
-    data.isCompleted = completedFlag;
-    if (completedFlag && progressValue === undefined) {
-      data.progress = 100;
+    if (completedFlag) {
+      if (!videoSatisfied) return err(tApi("api.209"), 403);
+      data.isCompleted = true;
+      if (progressValue === undefined) data.progress = 100;
+    } else {
+      data.isCompleted = false;
     }
   }
 

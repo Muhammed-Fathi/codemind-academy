@@ -3,6 +3,7 @@ import { getServerT, serverPick, serverLocale } from "@/lib/i18n-server";
 import { db } from "@/lib/db";
 import { ok, err, requireUser, getParentProfile } from "@/lib/api";
 import type { ParentSubscriptionPayload } from "@/lib/parent-subscription";
+import { getVideoProgressForStudents } from "@/lib/progress";
 
 // GET /api/parents/me/dashboard
 // Returns aggregated analytics for the current parent's children.
@@ -16,6 +17,12 @@ export async function GET(_req: NextRequest) {
 
   const parent = await getParentProfile(user.id);
   if (!parent) return err("Parent profile not found", 404);
+
+  // Video progress for ALL children in one batched call from the shared
+  // progress service — the exact numbers the admin and teacher dashboards use.
+  const videoProgressMap = await getVideoProgressForStudents(
+    parent.children.map((l) => l.student.id)
+  );
 
   // Build a per-child aggregate payload.
   const children = await Promise.all(
@@ -365,6 +372,16 @@ export async function GET(_req: NextRequest) {
           completed: completedLessons,
           total: lessonsInCourse,
           pct: avgProgress,
+        },
+        // Video watch progress — same source of truth as Admin & Teacher.
+        videoProgress: videoProgressMap.get(student.id) || {
+          studentId: student.id,
+          totalVideos: 0,
+          completedVideos: 0,
+          averagePercent: 0,
+          completionPercent: 0,
+          totalWatchedMinutes: 0,
+          lastWatchedAt: null,
         },
         attendance: {
           pct: attendancePct,

@@ -111,10 +111,10 @@ export function WhySection() {
 export function JourneySection() {
   const tr = useT();
   const steps = [
-    { num: "01", title: "Register", desc: tr("landing.025"), icon: Rocket },
+    { num: "01", title: tr("landing.200"), desc: tr("landing.025"), icon: Rocket },
     { num: "02", title: tr("landing.026"), desc: tr("landing.027"), icon: Users },
     { num: "03", title: tr("landing.028"), desc: tr("landing.029"), icon: CreditCard },
-    { num: "04", title: "Admin Approval", desc: tr("landing.030"), icon: ShieldCheck },
+    { num: "04", title: tr("landing.201"), desc: tr("landing.030"), icon: ShieldCheck },
     { num: "05", title: tr("landing.031"), desc: tr("landing.032"), icon: BookOpen },
     { num: "06", title: tr("landing.033"), desc: tr("landing.034"), icon: LineChart },
   ];
@@ -128,18 +128,31 @@ export function JourneySection() {
         />
         <div className="mt-14 grid sm:grid-cols-2 lg:grid-cols-3 gap-5 stagger-in">
           {steps.map((s) => (
+            // The step number used to be absolutely positioned on top of the
+            // icon, which overlapped it in both AR and EN. It is now a sibling
+            // in a flex row: the icon and the number can never collide at any
+            // breakpoint, and `start/end` logical properties keep the order
+            // correct in RTL and LTR.
             <div
               key={s.num}
-              className="relative bg-card rounded-2xl p-6 border border-border/60 shadow-sm card-hover"
+              className="bg-card rounded-2xl p-6 border border-border/60 shadow-sm card-hover flex flex-col"
             >
-              <div className="absolute top-4 start-4 text-5xl font-black text-primary/10 leading-none select-none">
-                {s.num}
-              </div>
-              <div className="relative">
-                <div className="w-11 h-11 rounded-xl bg-primary/10 flex items-center justify-center mb-4">
+              <div className="flex items-start justify-between gap-3 mb-4">
+                <div className="w-11 h-11 shrink-0 rounded-xl bg-primary/10 flex items-center justify-center">
                   <s.icon className="w-5 h-5 text-primary" />
                 </div>
-                <h3 className="text-base font-bold">{s.title}</h3>
+                <span
+                  aria-hidden="true"
+                  className="shrink-0 text-3xl sm:text-4xl font-black text-primary/15 leading-none select-none tabular-nums"
+                >
+                  {s.num}
+                </span>
+              </div>
+              <div>
+                <h3 className="text-base font-bold">
+                  <span className="sr-only">{`${tr("landing.035")} ${s.num}: `}</span>
+                  {s.title}
+                </h3>
                 <p className="text-sm text-muted-foreground mt-1.5 leading-relaxed">
                   {s.desc}
                 </p>

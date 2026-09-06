@@ -146,6 +146,10 @@ function makeMockDb() {
         t.student.push(row);
         return clone(row);
       },
+      // Needed by the batched video-progress helper shared by every dashboard.
+      async findMany({ where } = {}) {
+        return t.student.filter((s) => matches(s, where)).map(clone);
+      },
       async count() { return t.student.length; },
     },
     parent: {
@@ -212,8 +216,76 @@ function makeMockDb() {
     // Everything else the dashboard aggregates over: empty for a new student.
     lesson: empty, lessonProgress: empty, attendance: empty, quizAttempt: empty,
     homework: empty, homeworkSubmission: empty, teacherNote: empty, liveSession: empty,
+
+    // Security/session tables introduced by the 2026 upgrade. These are
+    // exercised implicitly by every login in this test (single-device
+    // enforcement, rate limiting, audit logging), so they need real
+    // read/write behaviour rather than an empty stub.
+    userSession: table("sess"),
+    securityEvent: table("ev"),
+    securityRateLimit: table("rl"),
+    passwordResetToken: table("prt"),
   };
   return db;
+
+  // Minimal generic Prisma-delegate stand-in over an in-memory array.
+  //
+  // NOTE: uses a shallow copy rather than the JSON `clone` helper — these rows
+  // carry real Date values (expiresAt, lastSeenAt) that the session layer calls
+  // .getTime() on, and JSON round-tripping would turn them into strings.
+  function table(prefix) {
+    const rows = [];
+    t[prefix] = rows;
+    const clone = (r) => (r ? { ...r } : r);
+    const sel = (where) => rows.filter((r) => matches(r, where));
+    return {
+      async findMany({ where } = {}) { return sel(where).map(clone); },
+      async findFirst({ where } = {}) { return clone(sel(where)[0] || null); },
+      async findUnique({ where } = {}) { return clone(sel(where)[0] || null); },
+      async count({ where } = {}) { return sel(where).length; },
+      async create({ data }) {
+        const row = {
+          id: nid(prefix),
+          createdAt: new Date(),
+          // Mirrors @default(now()) in the schema — the session layer calls
+          // .getTime() on this to throttle last-seen writes.
+          lastSeenAt: new Date(),
+          revokedAt: null,
+          revokedReason: null,
+          usedAt: null,
+          attempts: 0,
+          ...data,
+        };
+        rows.push(row);
+        return clone(row);
+      },
+      async update({ where, data }) {
+        const row = sel(where)[0];
+        if (row) Object.assign(row, data);
+        return clone(row || null);
+      },
+      async updateMany({ where, data }) {
+        const hit = sel(where);
+        hit.forEach((r) => Object.assign(r, data));
+        return { count: hit.length };
+      },
+      async upsert({ where, create, update }) {
+        const row = sel(where)[0];
+        if (row) { Object.assign(row, update); return clone(row); }
+        return this.create({ data: create });
+      },
+      async delete({ where }) {
+        const i = rows.indexOf(sel(where)[0]);
+        if (i >= 0) rows.splice(i, 1);
+        return null;
+      },
+      async deleteMany({ where } = {}) {
+        const hit = sel(where);
+        hit.forEach((r) => rows.splice(rows.indexOf(r), 1));
+        return { count: hit.length };
+      },
+    };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -222,6 +294,12 @@ function makeMockDb() {
 // ---------------------------------------------------------------------------
 global.__MOCK_DB__ = makeMockDb();
 global.__COOKIES__ = new Map();
+// Stable fake request headers so every call in this test looks like the same
+// device (otherwise single-device enforcement would revoke our own session).
+global.__HEADERS__ = {
+  "user-agent": "codemind-test-agent/1.0",
+  "x-forwarded-for": "203.0.113.10",
+};
 
 const React = require(path.join(REPO, "node_modules/react"));
 const shim = (name, body) => {
@@ -233,11 +311,18 @@ const SHIMS = {
   "@/lib/db": shim("db", "module.exports = { db: global.__MOCK_DB__ };"),
   "next/headers": shim(
     "headers",
-    `module.exports = { cookies: async () => ({
-       get: (k) => global.__COOKIES__.has(k) ? { value: global.__COOKIES__.get(k) } : undefined,
-       set: (k, v) => global.__COOKIES__.set(k, v),
-       delete: (k) => global.__COOKIES__.delete(k),
-     }) };`
+    // Both cookies() and headers() are needed: the session layer derives a
+    // device fingerprint from the request headers to enforce single-device
+    // login, so headers() must exist even though this test does not exercise
+    // multi-device conflicts.
+    `module.exports = {
+       cookies: async () => ({
+         get: (k) => global.__COOKIES__.has(k) ? { value: global.__COOKIES__.get(k) } : undefined,
+         set: (k, v) => global.__COOKIES__.set(k, v),
+         delete: (k) => global.__COOKIES__.delete(k),
+       }),
+       headers: async () => new Map(Object.entries(global.__HEADERS__ || {})),
+     };`
   ),
   "next/server": shim(
     "server",
@@ -525,7 +610,15 @@ const NO_SUB_LINE_2 = "لما ابنك يشترك في باقة، التقرير
   ok(typeof parentDashboardMod.ParentDashboard === "function" || Object.keys(parentDashboardMod).length > 0, "parent-dashboard.tsx compiles and loads with the shared contract");
   const pdSrc = fs.readFileSync(path.join(REPO, "src/components/parent/parent-dashboard.tsx"), "utf8");
   ok(/if \(!subscription\) \{/.test(pdSrc), "SubscriptionCard keeps its null guard");
-  ok(pdSrc.includes("ابنك لسه ما اشتركش في أي باقة"), "SubscriptionCard uses the same Egyptian Arabic wording");
+  // The wording now lives in the i18n dictionary rather than inline in the
+  // component, so assert against the dictionary entry the card renders
+  // (parent.073) — that is the real source of truth for the copy.
+  ok(/tr\("parent\.073"\)/.test(pdSrc), "SubscriptionCard renders the no-subscription copy via i18n");
+  const dictSrc = fs.readFileSync(path.join(REPO, "src/lib/i18n-dict.ts"), "utf8");
+  ok(
+    /"parent\.073":\s*\{[^}]*ابنك لسه ما اشتركش في أي باقة/.test(dictSrc),
+    "parent.073 keeps the same Egyptian Arabic wording"
+  );
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

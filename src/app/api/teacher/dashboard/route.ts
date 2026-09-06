@@ -5,6 +5,7 @@ import { getServerT } from "@/lib/i18n-server";
 // homework + last 5 quiz attempts), and pending homework count.
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
+import { getVideoProgressForStudents } from "@/lib/progress";
 import { ok, err, requireUser, getTeacherProfile } from "@/lib/api";
 
 export async function GET(_req: NextRequest) {
@@ -20,6 +21,8 @@ export async function GET(_req: NextRequest) {
   const groups = await Promise.all(
     teacher.groups.map(async (g) => {
       const studentIds = g.students.map((s) => s.id);
+      // One batched query for the whole group — no per-student N+1 lookups.
+      const groupVideoProgress = await getVideoProgressForStudents(studentIds);
 
       // Attendance % across the group's students in this group's sessions
       const sessions = await db.liveSession.findMany({
@@ -108,6 +111,9 @@ export async function GET(_req: NextRequest) {
           avatarUrl: s.user.avatarUrl,
           grade: s.grade,
           studentCode: s.studentCode ?? null,
+          schoolType: s.schoolType ?? null,
+          // Same shared progress service used by Admin & Parent dashboards.
+          videoProgress: groupVideoProgress.get(s.id) || null,
         })),
         stats: {
           attendancePct,

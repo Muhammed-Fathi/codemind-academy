@@ -74,3 +74,9 @@ prompt
 
 # ── Examples (development reference only) ───────────────────────────────────
 /examples/
+
+# Private media storage (MEDIA_STORAGE_PATH default).
+# Uploaded session videos and quiz camera snapshots are user data and must
+# NEVER be committed — they are large and, in the case of camera evidence,
+# personal biometric data subject to a retention policy.
+/storage/

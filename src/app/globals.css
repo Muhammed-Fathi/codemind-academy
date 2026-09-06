@@ -1100,3 +1100,150 @@
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* ============================================================
+   Global form / layout / RTL-LTR safety (2026 upgrade)
+   ------------------------------------------------------------
+   These rules fix the SHARED root causes of the "form pushed to
+   the left / partially cut off" bug instead of patching each
+   form individually:
+
+   1. `.inset-inline-0` is a real logical utility used by the
+      Dialog/AlertDialog panels. Combined with `margin-inline:auto`
+      it centers a fixed-position panel identically in LTR and RTL,
+      unlike the previous `start-[50%] + translate-x-[-50%]` mix
+      (which double-shifted the panel under `dir="rtl"`).
+   2. Nothing on the page may create horizontal overflow.
+   3. Form controls inherit the document direction, while fields
+      that hold LTR-only data (emails, phones, codes, URLs) opt in
+      with `dir="ltr"` and stay correctly aligned.
+   ============================================================ */
+
+@layer utilities {
+  /* Logical horizontal inset — writing-mode agnostic. */
+  .inset-inline-0 {
+    inset-inline-start: 0;
+    inset-inline-end: 0;
+  }
+}
+
+@layer base {
+  /* No element may push the page sideways (root cause of clipped forms). */
+  html,
+  body {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  /* Long words / URLs inside labels & help text must wrap, not overflow. */
+  label,
+  .form-help,
+  [data-slot="form-message"] {
+    overflow-wrap: anywhere;
+  }
+
+  /* Inputs follow the document direction by default so the caret, the
+     placeholder and the text alignment are always correct in AR and EN. */
+  input,
+  textarea,
+  select {
+    direction: inherit;
+    max-width: 100%;
+  }
+
+  /* Fields explicitly marked as LTR data (email / phone / code / URL) keep
+     their latin direction but align to the reading edge of the document. */
+  [dir="rtl"] input[dir="ltr"],
+  [dir="rtl"] textarea[dir="ltr"] {
+    text-align: right;
+  }
+  [dir="ltr"] input[dir="rtl"],
+  [dir="ltr"] textarea[dir="rtl"] {
+    text-align: left;
+  }
+
+  /* Numeric inputs should never render their spinner over a field icon. */
+  input[type="number"] {
+    appearance: textfield;
+    -moz-appearance: textfield;
+  }
+}
+
+@layer components {
+  /* Shared page-level form container: centered, never clipped, responsive. */
+  .form-shell {
+    inline-size: 100%;
+    max-inline-size: 32rem;
+    margin-inline: auto;
+    padding-inline: 1rem;
+  }
+
+  /* Long forms inside a modal scroll internally instead of overflowing. */
+  .form-scroll {
+    max-block-size: min(70dvh, 40rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    /* Room so focus rings are not clipped by the scroll container. */
+    padding-inline-end: 0.25rem;
+  }
+
+  /* Field wrapper for inputs that carry a leading/trailing icon. The padding
+     is logical, so the icon never overlaps the text in either direction. */
+  .field-with-icon {
+    position: relative;
+  }
+  .field-with-icon > .field-icon {
+    position: absolute;
+    inset-block-start: 50%;
+    transform: translateY(-50%);
+    inset-inline-end: 0.75rem;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    color: var(--muted-foreground);
+  }
+  .field-with-icon > .field-icon[data-side="start"] {
+    inset-inline-end: auto;
+    inset-inline-start: 0.75rem;
+  }
+  /* Buttons inside the field (e.g. the password reveal toggle) must stay
+     clickable, unlike decorative icons. */
+  .field-with-icon > button.field-icon,
+  .field-with-icon > .field-icon[data-interactive="true"] {
+    pointer-events: auto;
+    cursor: pointer;
+  }
+}
+
+/* The icon padding reservation MUST live in the utilities layer.
+   `@layer components` is ordered BEFORE `utilities` in Tailwind v4
+   (`@layer theme, base, components, utilities`), and layer order beats
+   selector specificity — so the `px-3` on shadcn's <Input> overrode a
+   components-layer rule no matter how specific it was, and the icon sat on
+   top of the text. Verified in a real browser: before this change the
+   computed padding-inline-end was 12px instead of 40px.
+
+   `!important` is deliberately NOT used: being in the same layer as `px-3`,
+   these higher-specificity selectors win cleanly, and a caller can still
+   opt out with an explicit utility if needed. */
+@layer utilities {
+  .field-with-icon > input,
+  .field-with-icon > textarea {
+    padding-inline-end: 2.5rem;
+  }
+  .field-with-icon:has(> .field-icon[data-side="start"]) > input,
+  .field-with-icon:has(> .field-icon[data-side="start"]) > textarea {
+    padding-inline-end: 0.75rem;
+    padding-inline-start: 2.5rem;
+  }
+  /* Both a leading AND a trailing icon: reserve space on both sides. */
+  .field-with-icon:has(> .field-icon[data-side="start"]):has(
+      > .field-icon:not([data-side="start"])
+    ) > input,
+  .field-with-icon:has(> .field-icon[data-side="start"]):has(
+      > .field-icon:not([data-side="start"])
+    ) > textarea {
+    padding-inline-start: 2.5rem;
+    padding-inline-end: 2.5rem;
+  }
+}

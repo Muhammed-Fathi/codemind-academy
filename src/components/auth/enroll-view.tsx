@@ -352,7 +352,10 @@ function CoursePicker({
   const [courses, setCourses] = React.useState<Course[]>([]);
   const [loading, setLoading] = React.useState(true);
   React.useEffect(() => {
-    fetch("/api/courses")
+    // `catalog=1`: the enroll flow legitimately shows courses the student is
+    // not enrolled in yet. The default (non-catalog) response is restricted to
+    // the student's own enrolled course.
+    fetch("/api/courses?catalog=1")
       .then((r) => r.json())
       .then((d) => setCourses(d.courses || []))
       .finally(() => setLoading(false));

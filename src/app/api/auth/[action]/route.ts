@@ -6,7 +6,10 @@ import {
   verifyPassword,
   createSession,
   getCurrentUser,
+  getCurrentUserDetailed,
 } from "@/lib/auth";
+import { logSecurityEvent } from "@/lib/security";
+import { headers } from "next/headers";
 import { ok, err } from "@/lib/api";
 import {
   isValidArabicThreePartName,
@@ -25,14 +28,43 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ act
   const body = await req.json().catch(() => ({}));
 
   if (action === "login") {
+    const hdrs = await headers();
     const user = await db.user.findUnique({
       where: { email: String(body.email || "").toLowerCase().trim() },
     });
     if (!user || !verifyPassword(String(body.password || ""), user.password)) {
+      await logSecurityEvent({
+        userId: user?.id ?? null,
+        type: "LOGIN_FAILED",
+        detail: "Invalid credentials",
+        headers: hdrs,
+      });
       return err(tApi("api.057"), 401);
     }
-    if (!user.isActive) return err(tApi("api.058"), 403);
-    await createSession(user.id);
+    // Account suspended for concurrent multi-device use: the message is
+    // explicit so the student knows to contact support (admin can reactivate).
+    if (user.status === "SUSPENDED_MULTI_DEVICE") {
+      return NextResponse.json(
+        { error: tApi("api.207"), code: "ACCOUNT_SUSPENDED_MULTI_DEVICE" },
+        { status: 403 }
+      );
+    }
+    if (!user.isActive || user.status === "INACTIVE")
+      return err(tApi("api.058"), 403);
+
+    // Single-device enforcement happens server-side inside createSession().
+    const { conflict } = await createSession(user.id);
+    if (conflict) {
+      return NextResponse.json(
+        { error: tApi("api.207"), code: "ACCOUNT_SUSPENDED_MULTI_DEVICE" },
+        { status: 403 }
+      );
+    }
+    await logSecurityEvent({
+      userId: user.id,
+      type: "LOGIN_SUCCESS",
+      headers: hdrs,
+    });
     return ok({ user: safeUser(user) });
   }
 
@@ -181,7 +213,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ act
 
   if (action === "logout") {
     const { destroySession } = await import("@/lib/auth");
+    const current = await getCurrentUser().catch(() => null);
     await destroySession();
+    if (current) {
+      await logSecurityEvent({ userId: current.id, type: "LOGOUT" });
+    }
     return ok({ ok: true });
   }
 
@@ -191,8 +227,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ act
 export async function GET(req: NextRequest, { params }: { params: Promise<{ action: string }> }) {
   const { action } = await params;
   if (action === "me") {
-    const u = await getCurrentUser();
-    if (!u) return err("Unauthorized", 401);
+    const { user: u, reason } = await getCurrentUserDetailed();
+    if (!u) {
+      if (reason === "SUSPENDED") {
+        const tApi = await getServerT();
+        return NextResponse.json(
+          { error: tApi("api.207"), code: "ACCOUNT_SUSPENDED_MULTI_DEVICE" },
+          { status: 403 }
+        );
+      }
+      return err("Unauthorized", 401);
+    }
     // Attach studentCode for students so it is visible globally.
     if ((u as any).role === "STUDENT") {
       try {

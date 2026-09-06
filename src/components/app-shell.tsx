@@ -35,6 +35,7 @@ import { StudySchedulerView } from "@/components/student/study-scheduler";
 import { ReferralView } from "@/components/student/referral-view";
 import { LeaderboardView } from "@/components/student/leaderboard-view";
 import { AchievementsView } from "@/components/student/achievements-view";
+import { StudentSessionVideosView } from "@/components/course/session-videos-view";
 
 const pageTransition = {
   initial: { opacity: 0, y: 8 },
@@ -157,6 +158,8 @@ function renderView(view: string) {
       return <StudentLessonView />;
     case "student-quiz":
       return <QuizRunner />;
+    case "student-session-videos":
+      return <StudentSessionVideosView />;
     case "student-exam":
       return <MockExamRunner />;
     case "student-bookmarks":
