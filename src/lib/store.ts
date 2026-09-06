@@ -16,6 +16,7 @@ export type ViewKey =
   | "student-notifications"
   | "student-progress"
   | "student-exam"
+  | "student-session-videos"
   | "student-bookmarks"
   | "student-scheduler"
   | "student-referral"
@@ -40,6 +41,9 @@ export type ViewKey =
   | "admin-coupons"
   | "admin-question-bank"
   | "admin-notifications"
+  | "admin-session-videos"
+  | "admin-mock-exams"
+  | "admin-quiz-review"
   | "admin-settings";
 
 type SessionUser = {

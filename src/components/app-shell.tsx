@@ -56,9 +56,18 @@ export function AppShell() {
       .then((u) => {
         if (u) {
           useApp.getState().setUser(u);
-          if (useApp.getState().view === "landing") {
+          const currentView = useApp.getState().view;
+          // If we are on a public/landing page, or the current view doesn't
+          // belong to the authenticated user's role (e.g. a stale student
+          // view surviving after an admin login), redirect to the correct
+          // role home. This prevents ADMINs from accidentally rendering a
+          // STUDENT-only component that would hit /api/students/me/* and 403.
+          if (currentView === "landing" || !isViewForRole(currentView, u.role)) {
             useApp.getState().setView(homeViewForRole(u.role));
           }
+        } else {
+          // No session; force landing (defensive in case of stale state).
+          useApp.getState().setView("landing");
         }
       })
       .catch(() => {});
@@ -139,7 +148,7 @@ export function AppShell() {
       <DashboardShell>
         <AnimatePresence mode="wait">
           <motion.div key={view} {...pageTransition}>
-            {renderView(view)}
+            {renderView(view, user?.role)}
           </motion.div>
         </AnimatePresence>
       </DashboardShell>
@@ -148,9 +157,28 @@ export function AppShell() {
   );
 }
 
-function renderView(view: string) {
+function renderView(view: string, role?: string | null) {
+  // Role-aware default: never render a student-only component for non-students
+  // (the old default silently fell through to <StudentDashboard/> which would
+  // call /api/students/me/* and 403 for admins).
+  const fallback = (() => {
+    switch (role) {
+      case "ADMIN":
+        return <AdminDashboard />;
+      case "TEACHER":
+        return <TeacherDashboard />;
+      case "PARENT":
+        return <ParentDashboard />;
+      default:
+        return <StudentDashboard />;
+    }
+  })();
+
   switch (view) {
     case "student-dashboard":
+    case "student-homework":
+    case "student-notifications":
+    case "student-progress":
       return <StudentDashboard />;
     case "student-course":
       return <StudentCourseView />;
@@ -175,10 +203,14 @@ function renderView(view: string) {
     case "student-certificate":
       return <CertificateView />;
     case "parent-dashboard":
-      return <ParentDashboard />;
     case "parent-report":
       return <ParentDashboard />;
     case "teacher-dashboard":
+    case "teacher-attendance":
+    case "teacher-quizzes":
+    case "teacher-homework":
+    case "teacher-templates":
+    case "teacher-analytics":
       return <TeacherDashboard />;
     // All admin-* views route to the AdminDashboard shell
     case "admin-overview":
@@ -191,20 +223,70 @@ function renderView(view: string) {
     case "admin-coupons":
     case "admin-question-bank":
     case "admin-notifications":
+    case "admin-session-videos":
+    case "admin-mock-exams":
+    case "admin-quiz-review":
     case "admin-settings":
       return <AdminDashboard />;
-    // teacher sub-pages fall back to teacher dashboard
-    case "teacher-attendance":
-    case "teacher-quizzes":
-    case "teacher-homework":
-    case "teacher-templates":
-    case "teacher-analytics":
-      return <TeacherDashboard />;
-    case "student-homework":
-    case "student-notifications":
-    case "student-progress":
-      return <StudentDashboard />;
     default:
-      return <StudentDashboard />;
+      return fallback;
   }
+}
+
+/**
+ * Whitelist of view keys per role — used to detect stale/illegal views
+ * (e.g. an admin landing on a student-only view after a role change or a
+ * previously-persisted in-memory state) so we can redirect safely instead
+ * of rendering a component that will hit a forbidden API.
+ */
+function isViewForRole(view: string, role: string): boolean {
+  // Public / auth / enrollment pages are valid before/after login.
+  if (view === "landing" || view === "login" || view === "register" || view === "enroll") {
+    return true;
+  }
+  const VIEWS_BY_ROLE: Record<string, string[]> = {
+    STUDENT: [
+      "student-dashboard",
+      "student-course",
+      "student-lesson",
+      "student-quiz",
+      "student-homework",
+      "student-notifications",
+      "student-progress",
+      "student-exam",
+      "student-session-videos",
+      "student-bookmarks",
+      "student-scheduler",
+      "student-referral",
+      "student-leaderboard",
+      "student-achievements",
+      "student-certificate",
+    ],
+    PARENT: ["parent-dashboard", "parent-report"],
+    TEACHER: [
+      "teacher-dashboard",
+      "teacher-attendance",
+      "teacher-quizzes",
+      "teacher-homework",
+      "teacher-templates",
+      "teacher-analytics",
+    ],
+    ADMIN: [
+      "admin-overview",
+      "admin-students",
+      "admin-teachers",
+      "admin-groups",
+      "admin-courses",
+      "admin-payments",
+      "admin-subscriptions",
+      "admin-coupons",
+      "admin-question-bank",
+      "admin-notifications",
+      "admin-session-videos",
+      "admin-mock-exams",
+      "admin-quiz-review",
+      "admin-settings",
+    ],
+  };
+  return (VIEWS_BY_ROLE[role] || []).includes(view);
 }
