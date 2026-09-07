@@ -3,7 +3,8 @@ import { db } from "@/lib/db";
 import { ok, err, requireUser } from "@/lib/api";
 
 // GET /api/quizzes/[id]
-// Returns quiz + questions. For MVP, returns answers + explanations too —
+// Returns quiz + questions. Answers and explanations are withheld from
+// students until they have submitted at least one attempt —
 // the runner hides them until submission.
 export async function GET(
   _req: NextRequest,
@@ -35,6 +36,7 @@ export async function GET(
     passed: boolean;
     finishedAt: Date | null;
   } | null = null;
+  let studentHasAttempted = false;
   if (user.role === "STUDENT") {
     const attempts = await db.quizAttempt.findMany({
       where: { quizId: id, student: { userId: user.id } },
@@ -50,8 +52,14 @@ export async function GET(
         passed: a.passed,
         finishedAt: a.finishedAt,
       };
+      studentHasAttempted = attempts.some((x) => x.finishedAt !== null);
     }
   }
+
+  // Teachers and admins always see answers (needed for review/creation).
+  // Students see answers only after submitting at least one attempt.
+  const revealAnswers =
+    user.role === "ADMIN" || user.role === "TEACHER" || user.role === "PARENT" || studentHasAttempted;
 
   return ok({
     quiz: {
@@ -76,8 +84,8 @@ export async function GET(
       prompt: q.prompt,
       promptAr: q.promptAr,
       options: JSON.parse(q.options),
-      answer: q.answer,
-      explanation: q.explanation,
+      answer: revealAnswers ? q.answer : undefined,
+      explanation: revealAnswers ? q.explanation : undefined,
       difficulty: q.difficulty,
       marks: q.marks,
     })),

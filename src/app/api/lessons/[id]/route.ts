@@ -51,6 +51,27 @@ export async function GET(
       ? courseLessons[currentIdx + 1].id
       : null;
 
+  // Determine whether to reveal quiz answers. Students only see answers after
+  // they have finished at least one attempt on the quiz. Staff (admin/teacher/
+  // parent) always see answers.
+  let revealQuizAnswers = user.role !== "STUDENT";
+  if (user.role === "STUDENT") {
+    const s = await db.student.findUnique({
+      where: { userId: user.id },
+      select: { id: true },
+    });
+    if (s) {
+      const finishedCount = await db.quizAttempt.count({
+        where: {
+          quizId: { in: lesson.quizzes.map((q) => q.id) },
+          studentId: s.id,
+          finishedAt: { not: null },
+        },
+      });
+      revealQuizAnswers = finishedCount > 0;
+    }
+  }
+
   // Student progress + backend gating
   let progress:
     | {
@@ -158,8 +179,8 @@ export async function GET(
             prompt: q.prompt,
             promptAr: q.promptAr,
             options: JSON.parse(q.options),
-            answer: q.answer,
-            explanation: q.explanation,
+            answer: revealQuizAnswers ? q.answer : undefined,
+            explanation: revealQuizAnswers ? q.explanation : undefined,
             difficulty: q.difficulty,
             marks: q.marks,
           })),
