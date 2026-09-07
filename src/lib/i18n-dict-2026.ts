@@ -244,4 +244,49 @@ export const DICT_2026: Record<string, DictEntry> = {
     en: "Title and message are required",
   },
   "notif.sent": { ar: "اترسل الإشعار لـ {p1} مستخدم", en: "Notification sent to {p1} users" },
+
+  // ---------------------------------------------------------------------
+  // Calendar / study-scheduler labels.
+  //
+  // These previously lived behind opaque generated keys ("student.198" …
+  // "student.216"). Those keys were correct in the catalogue, but any call
+  // site that forgot to pass them through translate() rendered the raw key
+  // ("student.198") to the user — which is exactly what happened in the
+  // weekday header row of the study scheduler.
+  //
+  // Semantic keys make such a mistake self-evident in review and in the UI,
+  // and they are stable against future regeneration of i18n-dict.ts (the
+  // emitter owns the "student.*" namespace, not this one).
+  //
+  // Index order matches JavaScript's Date#getDay() / Date#getMonth().
+  "calendar.day.sun": { ar: "الأحد", en: "Sunday" },
+  "calendar.day.mon": { ar: "الإثنين", en: "Monday" },
+  "calendar.day.tue": { ar: "الثلاثاء", en: "Tuesday" },
+  "calendar.day.wed": { ar: "الأربعاء", en: "Wednesday" },
+  "calendar.day.thu": { ar: "الخميس", en: "Thursday" },
+  "calendar.day.fri": { ar: "الجمعة", en: "Friday" },
+  "calendar.day.sat": { ar: "السبت", en: "Saturday" },
+
+  // Short forms used in the 7-column grid header, where a full weekday name
+  // would overflow the cell on mobile widths.
+  "calendar.dayShort.sun": { ar: "أحد", en: "Sun" },
+  "calendar.dayShort.mon": { ar: "إثنين", en: "Mon" },
+  "calendar.dayShort.tue": { ar: "ثلاثاء", en: "Tue" },
+  "calendar.dayShort.wed": { ar: "أربعاء", en: "Wed" },
+  "calendar.dayShort.thu": { ar: "خميس", en: "Thu" },
+  "calendar.dayShort.fri": { ar: "جمعة", en: "Fri" },
+  "calendar.dayShort.sat": { ar: "سبت", en: "Sat" },
+
+  "calendar.month.1": { ar: "يناير", en: "January" },
+  "calendar.month.2": { ar: "فبراير", en: "February" },
+  "calendar.month.3": { ar: "مارس", en: "March" },
+  "calendar.month.4": { ar: "أبريل", en: "April" },
+  "calendar.month.5": { ar: "مايو", en: "May" },
+  "calendar.month.6": { ar: "يونيو", en: "June" },
+  "calendar.month.7": { ar: "يوليو", en: "July" },
+  "calendar.month.8": { ar: "أغسطس", en: "August" },
+  "calendar.month.9": { ar: "سبتمبر", en: "September" },
+  "calendar.month.10": { ar: "أكتوبر", en: "October" },
+  "calendar.month.11": { ar: "نوفمبر", en: "November" },
+  "calendar.month.12": { ar: "ديسمبر", en: "December" },
 };
