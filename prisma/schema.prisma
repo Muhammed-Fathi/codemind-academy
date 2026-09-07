@@ -163,6 +163,8 @@ model Course {
   enrollments Enrollment[]
   batches     Batch[]
   mockExams   MockExam[]
+
+  @@index([trackId])
 }
 
 model Part {

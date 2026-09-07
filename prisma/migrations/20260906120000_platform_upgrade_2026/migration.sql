@@ -19,6 +19,17 @@
 --   * `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS` make the new
 --     objects re-runnable. The ADD COLUMN statements are guarded in the
 --     documented sqlite3 procedure (docs/DATABASE_MIGRATION.md §2 Option B).
+--
+-- PHASE 3 CORRECTION (2026-09-07, ADR-004) — semantics unchanged:
+--   * Boolean defaults now use Prisma-canonical literals (true/false instead
+--     of 1/0) so this file matches `prisma db push` / `migrate diff` output.
+--   * `updatedAt` on the new tables Batch/SessionVideo/MockExam no longer
+--     carries a SQL default: `@updatedAt` is maintained by the Prisma client
+--     and db-push-created databases store these columns without a default.
+--   * The missing FK constraints for `Student.batchId` and
+--     `ExamAttempt.mockExamId` are reconciled in
+--     20260907130000_phase3_fk_reconciliation (SQLite cannot add FKs via
+--     ALTER TABLE, and this file deliberately contains no table rewrites).
 
 -- ============================================================
 -- 1. New columns on existing tables
@@ -38,7 +49,7 @@ ALTER TABLE "ExamQuestion" ADD COLUMN "schoolType" TEXT;
 ALTER TABLE "LessonProgress" ADD COLUMN "videoDurationSec" INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE "LessonProgress" ADD COLUMN "videoWatchedSec" INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE "LessonProgress" ADD COLUMN "videoPercent" INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE "LessonProgress" ADD COLUMN "videoCompleted" BOOLEAN NOT NULL DEFAULT 0;
+ALTER TABLE "LessonProgress" ADD COLUMN "videoCompleted" BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE "LessonProgress" ADD COLUMN "videoCompletedAt" DATETIME;
 ALTER TABLE "LessonProgress" ADD COLUMN "lastHeartbeatAt" DATETIME;
 
@@ -59,9 +70,9 @@ CREATE TABLE IF NOT EXISTS "Batch" (
   "nameAr"     TEXT NOT NULL,
   "schoolType" TEXT NOT NULL,
   "courseId"   TEXT,
-  "isActive"   BOOLEAN NOT NULL DEFAULT 1,
+  "isActive"   BOOLEAN NOT NULL DEFAULT true,
   "createdAt"  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "updatedAt"  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt"  DATETIME NOT NULL,
   CONSTRAINT "Batch_courseId_fkey" FOREIGN KEY ("courseId") REFERENCES "Course"("id") ON DELETE SET NULL ON UPDATE CASCADE
 );
 
@@ -75,7 +86,7 @@ CREATE TABLE IF NOT EXISTS "MediaAsset" (
   "sizeBytes"    INTEGER,
   "durationSec"  INTEGER,
   "originalName" TEXT,
-  "isPrivate"    BOOLEAN NOT NULL DEFAULT 0,
+  "isPrivate"    BOOLEAN NOT NULL DEFAULT false,
   "createdById"  TEXT,
   "createdAt"    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -89,10 +100,10 @@ CREATE TABLE IF NOT EXISTS "SessionVideo" (
   "titleAr"         TEXT NOT NULL,
   "description"     TEXT,
   "requiredPercent" INTEGER NOT NULL DEFAULT 95,
-  "isPublished"     BOOLEAN NOT NULL DEFAULT 0,
+  "isPublished"     BOOLEAN NOT NULL DEFAULT false,
   "publishedAt"     DATETIME,
   "createdAt"       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "updatedAt"       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt"       DATETIME NOT NULL,
   CONSTRAINT "SessionVideo_batchId_fkey" FOREIGN KEY ("batchId") REFERENCES "Batch"("id") ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT "SessionVideo_lessonId_fkey" FOREIGN KEY ("lessonId") REFERENCES "Lesson"("id") ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT "SessionVideo_mediaAssetId_fkey" FOREIGN KEY ("mediaAssetId") REFERENCES "MediaAsset"("id") ON DELETE RESTRICT ON UPDATE CASCADE
@@ -105,7 +116,7 @@ CREATE TABLE IF NOT EXISTS "SessionVideoView" (
   "watchedSec"      INTEGER NOT NULL DEFAULT 0,
   "durationSec"     INTEGER NOT NULL DEFAULT 0,
   "percent"         INTEGER NOT NULL DEFAULT 0,
-  "isCompleted"     BOOLEAN NOT NULL DEFAULT 0,
+  "isCompleted"     BOOLEAN NOT NULL DEFAULT false,
   "completedAt"     DATETIME,
   "lastHeartbeatAt" DATETIME,
   CONSTRAINT "SessionVideoView_sessionVideoId_fkey" FOREIGN KEY ("sessionVideoId") REFERENCES "SessionVideo"("id") ON DELETE CASCADE ON UPDATE CASCADE,
@@ -124,9 +135,9 @@ CREATE TABLE IF NOT EXISTS "MockExam" (
   "passMark"      INTEGER NOT NULL DEFAULT 60,
   "difficulty"    TEXT NOT NULL DEFAULT 'MIXED',
   "selectionMode" TEXT NOT NULL DEFAULT 'RANDOM',
-  "isPublished"   BOOLEAN NOT NULL DEFAULT 0,
+  "isPublished"   BOOLEAN NOT NULL DEFAULT false,
   "createdAt"     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "updatedAt"     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt"     DATETIME NOT NULL,
   CONSTRAINT "MockExam_courseId_fkey" FOREIGN KEY ("courseId") REFERENCES "Course"("id") ON DELETE SET NULL ON UPDATE CASCADE
 );
 

@@ -218,3 +218,76 @@ sqlite3 $DB "PRAGMA index_list(Student);"
   `node tests/seed-idempotency.test.js` (18/18),
   registration validator suite (24/24),
   scratch-DB migration simulation (15/15).
+
+---
+
+## 8. Prisma migration history (baseline) — REQUIRED once per environment
+
+**Why.** This project was `db push`-managed for a long time, so the migration
+history committed to Git starts with additive migrations and previously could
+not build a clean database (`P3006` on the shadow database). Since the
+Phase-3-correction (ADR-004), the committed history is a complete, replayable
+chain:
+
+```
+20260901000000_baseline_core_schema        ← creates the core schema (pre-2026-09-04)
+20260904090608_add_student_identity_fields
+20260906120000_platform_upgrade_2026
+20260907100000_phase3_domain_foundation
+20260907130000_phase3_fk_reconciliation    ← adds the FKs SQLite ALTER cannot express
+```
+
+### 8.1 Fresh / clean database (new developer, CI, new production)
+
+```bash
+npx prisma migrate dev        # or: npx prisma migrate deploy (non-dev)
+npx prisma generate
+```
+
+That is all — a clean database is created entirely from the migration
+history. Do **not** run `prisma db push` anymore; it diverges from the
+migration history.
+
+### 8.2 Existing `db/custom.db` (created earlier via `db push` or the manual
+    sqlite3 procedures above) — one-time reconciliation, NO data loss
+
+Your database already contains all tables/columns from the first four
+migrations (it was kept in sync with `schema.prisma`). The migration history
+itself (`_prisma_migrations` table) is the only thing missing. Record it —
+this only inserts bookkeeping rows; **no table is rebuilt and no row is
+changed**:
+
+```bash
+# 0) Backup first (standard §0 rule):
+cp db/custom.db "db/custom.db.bak-$(date +%Y%m%d)-pre-baseline"
+
+# 1) Mark everything the database already contains as applied:
+npx prisma migrate resolve --applied 20260901000000_baseline_core_schema
+npx prisma migrate resolve --applied 20260904090608_add_student_identity_fields
+npx prisma migrate resolve --applied 20260906120000_platform_upgrade_2026
+npx prisma migrate resolve --applied 20260907100000_phase3_domain_foundation
+
+# 2) Apply the one remaining migration (FK reconciliation) and verify:
+npx prisma migrate dev          # or: npx prisma migrate deploy
+npx prisma migrate status       # → "Database schema is up to date!"
+npx prisma generate
+```
+
+Notes on step 2 — `20260907130000_phase3_fk_reconciliation` copies the rows of
+`Student`, `ExamAttempt`, `Course`, and `Lesson` into identically-defined
+tables that additionally carry the four FK constraints (`Student.batchId`,
+`ExamAttempt.mockExamId`, `Course.trackId`, `Lesson.unitId`) and renames them
+in place. Every row and value is preserved; if your DB went through `db push`
+(FKs already present) it is an effective no-op. On very large databases take
+the backup seriously and expect a brief table lock.
+
+Safety rules (unchanged, now enforced by tooling):
+- **Never** `prisma migrate reset` against an environment with real data.
+- **Never** hand-edit a migration that an environment has recorded as
+  applied (checksum mismatch → P3009). New fixes = new migrations.
+- Verify with the offline suite whenever migrations change:
+  `node tests/migration-history-consistency.test.js` — it replays the whole
+  history on a scratch DB and proves the result matches `schema.prisma`
+  exactly (tables/columns/defaults/indexes/FKs), preserves sentinel data on
+  both existing-DB flavors, and reproduces the old P3006 failure without the
+  baseline.
