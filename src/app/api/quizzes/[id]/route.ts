@@ -75,7 +75,7 @@ export async function GET(
           id: quiz.lesson.id,
           title: quiz.lesson.title,
           titleAr: quiz.lesson.titleAr,
-          courseSlug: quiz.lesson.topic.unit.part.course.slug,
+          courseSlug: quiz.lesson.topic?.unit.part.course.slug ?? null,
         }
       : null,
     questions: quiz.questions.map((q) => ({

@@ -241,13 +241,19 @@ export async function GET(_req: NextRequest) {
       ? {
           id: continueLesson.id,
           title: sp(continueLesson.titleAr, continueLesson.title),
-          part: sp(continueLesson.topic.unit.part.titleAr, continueLesson.topic.unit.part.title),
-          unit: sp(continueLesson.topic.unit.titleAr, continueLesson.topic.unit.title),
-          topic: sp(continueLesson.topic.titleAr, continueLesson.topic.title),
+          part: continueLesson.topic
+            ? sp(continueLesson.topic.unit.part.titleAr, continueLesson.topic.unit.part.title)
+            : null,
+          unit: continueLesson.topic
+            ? sp(continueLesson.topic.unit.titleAr, continueLesson.topic.unit.title)
+            : null,
+          topic: continueLesson.topic
+            ? sp(continueLesson.topic.titleAr, continueLesson.topic.title)
+            : null,
           progress: continueLesson.progress[0]?.progress || 0,
           isCompleted: continueLesson.progress[0]?.isCompleted || false,
           videoUrl: continueLesson.videoUrl,
-          courseSlug: continueLesson.topic.unit.part.course.slug,
+          courseSlug: continueLesson.topic?.unit.part.course.slug ?? null,
         }
       : null,
     nextSession: nextSession

@@ -87,7 +87,7 @@ export async function GET(req: NextRequest) {
         ? {
             id: hw.lesson.id,
             title: hw.lesson.titleAr || hw.lesson.title,
-            course: hw.lesson.topic.unit.part.course
+            course: hw.lesson.topic?.unit.part.course
               ? {
                   id: hw.lesson.topic.unit.part.course.id,
                   name:

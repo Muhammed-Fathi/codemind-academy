@@ -7,7 +7,11 @@
   - All 337 test assertions still pass
 - Phase 2: completed; `docs/curriculum/knowledge-model.json` is the source-aligned curriculum contract.
 - Phase 3: completed — Database & Domain Model Foundation (PR #14 merged).
-- Next planned phase: Phase 2 of current cycle — Production Hardening (only after explicit approval).
+- **Production Build & Type Safety (Phase 2 of current cycle): completed (2026-09-07). Baseline `fce4821`. See `docs/PHASE_2_BUILD_TYPE_SAFETY.md`.**
+  - `ignoreBuildErrors` removed — `next build` performs real TypeScript validation (67 pre-existing hidden errors fixed; `tsc --noEmit` now clean).
+  - Build script is cross-platform: `prisma generate && next build && node scripts/copy-standalone-assets.mjs` (replaces the Unix-only `cp -r` chain; same standalone layout preserved).
+  - Added `bun run typecheck` (`tsc --noEmit`). All 337 test assertions still pass; lint state unchanged (78 pre-existing issues deferred); production startup verified under node and bun.
+- Next planned phase: only after explicit approval.
 
 ## Architecture summary
 Next.js application with Prisma and SQLite. The database remains SQLite, while the schema uses portable relational concepts and stable IDs. Existing operational grouping (`Group`) remains separate from explicit student access (`Enrollment`).
@@ -41,6 +45,6 @@ Schema additions and migration are complete for the foundation. Documentation is
 
 ## Known risks
 - SQLite is not suitable for concurrent production use (M2 — deferred).
-- `ignoreBuildErrors: true` suppresses TypeScript errors during build (M1 — deferred).
+- ~~`ignoreBuildErrors: true` suppresses TypeScript errors during build (M1 — deferred).~~ **Resolved (2026-09-07, Phase 2 of current cycle):** the flag was removed; builds type-check for real and all 67 previously hidden errors were fixed.
 - `SECURITY_HASH_SECRET` falls back to a hardcoded value if not set (M3 — deferred).
 - No `middleware.ts` for edge-level route protection (M4 — deferred).

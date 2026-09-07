@@ -7,8 +7,8 @@ import { getServerT } from "@/lib/i18n-server";
 //   Upserts each Attendance record (relies on @@unique([studentId, sessionId])).
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { ok, err, requireUser, getTeacherProfile } from "@/lib/api";
 import type { AttendanceStatus } from "@prisma/client";
+import { ok, err, requireUser, getTeacherProfile } from "@/lib/api";
 
 const ALLOWED: AttendanceStatus[] = ["PRESENT", "ABSENT", "LATE", "EXCUSED"];
 
@@ -174,7 +174,12 @@ export async function POST(req: NextRequest) {
 
   // Upsert each record. Prisma's upsert can't use composite unique on SQLite
   // for find queries directly with where — use the @@unique constraint name.
-  const results = [];
+  const results: Array<{
+    studentId: string;
+    sessionId: string;
+    status: AttendanceStatus;
+    note: string | null;
+  }> = [];
   for (const entry of attendance) {
     const r = await db.attendance.upsert({
       where: {

@@ -97,7 +97,6 @@ export async function POST(req: NextRequest) {
         userName: targetUser.name,
         amount,
         method: validMethod,
-        status: validStatus,
         paymentId: payment.id,
         status: "created",
       });

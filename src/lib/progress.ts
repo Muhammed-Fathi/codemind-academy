@@ -71,7 +71,8 @@ async function videoLessonIdsByStudent(
 
   const lessonsByCourse = new Map<string, string[]>();
   for (const l of lessons) {
-    const cid = l.topic.unit.part.courseId;
+    const cid = l.topic?.unit.part.courseId;
+    if (!cid) continue;
     const arr = lessonsByCourse.get(cid) || [];
     arr.push(l.id);
     lessonsByCourse.set(cid, arr);

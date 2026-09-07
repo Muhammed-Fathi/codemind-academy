@@ -87,7 +87,9 @@ export async function GET(_req: NextRequest) {
   >();
 
   for (const l of lessons) {
-    const course = l.topic.unit.part.course;
+    const topic = l.topic;
+    if (!topic) continue;
+    const course = topic.unit.part.course;
     if (!course) continue;
     if (!byCourse.has(course.id)) {
       byCourse.set(course.id, {
@@ -97,32 +99,32 @@ export async function GET(_req: NextRequest) {
       });
     }
     const c = byCourse.get(course.id)!;
-    const partId = l.topic.unit.part.id;
+    const partId = topic.unit.part.id;
     if (!c.parts.has(partId)) {
       c.parts.set(partId, {
         id: partId,
-        title: l.topic.unit.part.titleAr || l.topic.unit.part.title,
-        titleAr: l.topic.unit.part.titleAr,
+        title: topic.unit.part.titleAr || topic.unit.part.title,
+        titleAr: topic.unit.part.titleAr,
         units: new Map(),
       });
     }
     const p = c.parts.get(partId)!;
-    const unitId = l.topic.unit.id;
+    const unitId = topic.unit.id;
     if (!p.units.has(unitId)) {
       p.units.set(unitId, {
         id: unitId,
-        title: l.topic.unit.titleAr || l.topic.unit.title,
-        titleAr: l.topic.unit.titleAr,
+        title: topic.unit.titleAr || topic.unit.title,
+        titleAr: topic.unit.titleAr,
         topics: new Map(),
       });
     }
     const u = p.units.get(unitId)!;
-    const topicId = l.topic.id;
+    const topicId = topic.id;
     if (!u.topics.has(topicId)) {
       u.topics.set(topicId, {
         id: topicId,
-        title: l.topic.titleAr || l.topic.title,
-        titleAr: l.topic.titleAr,
+        title: topic.titleAr || topic.title,
+        titleAr: topic.titleAr,
         lessons: [],
       });
     }

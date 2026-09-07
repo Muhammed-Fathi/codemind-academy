@@ -48,7 +48,8 @@ export async function PATCH(
   });
   if (!hw) return err(tApi("api.171"), 404);
   const teacherCourseIds = teacher.groups.map((g) => g.courseId);
-  if (!teacherCourseIds.includes(hw.lesson.topic.unit.part.courseId)) {
+  const hwCourseId = hw.lesson.topic?.unit.part.courseId;
+  if (!hwCourseId || !teacherCourseIds.includes(hwCourseId)) {
     return err(tApi("api.172"), 403);
   }
 
