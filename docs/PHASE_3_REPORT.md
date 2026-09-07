@@ -135,3 +135,81 @@ Added persistent phase gate, authoritative source, domain decisions, security no
 # Phase Status
 
 PASS WITH KNOWN LIMITATIONS
+
+---
+
+# Phase 3 Correction — Migration History Baseline & FK Reconciliation (2026-09-07)
+
+## Problem discovered
+
+After Phase 3 merged (PR #14), local verification of `npx prisma migrate dev` failed with **P3006**:
+
+> Migration `20260904090608_add_student_identity_fields` failed to apply cleanly to the shadow database.
+
+## Root cause
+
+1. **No baseline migration.** The original database server was created and evolved exclusively through `prisma db push` (`package.json` `db:push`; `docs/DATABASE_MIGRATION.md` Option A) and hand-applied SQL files (Option B). The migration folders added to Git later (student identity → platform upgrade → phase 3 domain) were written as *manual offline SQL for existing databases*; no migration ever created the core tables (`User`, `Student`, `Parent`, `Teacher`, `Course`, `Part`, `Unit`, `Topic`, `Lesson`, `Question`, `ExamQuestion`, `LessonProgress`, …). Replaying the committed history from an empty/shadow database therefore failed at the very first `ALTER TABLE "Student"`. This remained invisible because every environment ran `db push`, and the Phase 3 sandbox could not run engine-backed CLI verification at all (engine download blocked — recorded as a Known Limitation of the original Phase 3 report).
+2. **Replayed state did not converge with `schema.prisma` (drift).** Two independent causes:
+   - SQLite `ALTER TABLE ... ADD COLUMN` cannot create `FOREIGN KEY` constraints, so the four relation columns added additively (`Student.batchId`, `ExamAttempt.mockExamId`, `Course.trackId`, `Lesson.unitId`) lacked the FK constraints the schema declares — whereas `db push`-produced databases have them.
+   - The hand-written SQL used `BOOLEAN ... DEFAULT 1/0` and gave `@updatedAt` columns a `CURRENT_TIMESTAMP` default, both divergent from Prisma's canonical `db push` / `migrate diff` output.
+
+No database anywhere has a `_prisma_migrations` table, so no checksum of the hand-written migrations was ever recorded; correcting the history invalidated nothing.
+
+## Migration strategy (ADR-004)
+
+- `20260901000000_baseline_core_schema` (new): creates exactly the pre-2026-09-04 core schema, derived by reversing the three documented additive migrations — not invented. Uses Prisma-canonical SQLite DDL so replay ≡ `db push` state.
+- `prisma/migrations/migration_lock.toml` (new): `provider = "sqlite"`.
+- `20260907130000_phase3_fk_reconciliation` (new): Prisma's canonical SQLite redefinition pattern for the four tables, adding the missing FK constraints (`SET NULL` on delete) while copying every row, recreating every index, and running `PRAGMA foreign_key_check`. Semantically a no-op on `db push`-managed databases.
+- Semantics-identical normalization of the two hand-written migration files (boolean literals `true/false`; no SQL default on `@updatedAt`) with a documented note in each file header.
+- `schema.prisma`: added `@@index([trackId])` to `Course`, matching the index the approved Phase 3 migration already creates.
+- The existing additive migrations' tested safety contract (no `DROP TABLE`/`RENAME`, guarded `CREATE`s, metadata-only `ALTER`s) is deliberately left intact — that is why the redefinitions form a separate migration.
+- Existing databases are **baselined, never reset**: four one-time `prisma migrate resolve --applied …` commands, then `migrate dev`/`deploy` applies the reconciliation migration. Full procedure: `docs/DATABASE_MIGRATION.md` §8.
+
+## Files changed (correction)
+
+- `prisma/migrations/20260901000000_baseline_core_schema/migration.sql` (new)
+- `prisma/migrations/20260907130000_phase3_fk_reconciliation/migration.sql` (new)
+- `prisma/migrations/migration_lock.toml` (new)
+- `prisma/migrations/20260906120000_platform_upgrade_2026/migration.sql` (normalization + header note)
+- `prisma/migrations/20260907100000_phase3_domain_foundation/migration.sql` (normalization + header note)
+- `prisma/schema.prisma` (+1 line: `Course @@index([trackId])`)
+- `tests/migration-history-consistency.test.js` (new offline proof, 7494 assertions)
+- `docs/decisions/ADR-004-migration-history-baseline.md` (new)
+- `docs/DATABASE_MIGRATION.md` (§8), `docs/PROJECT_STATE.md`, `docs/PHASE_3_REPORT.md`
+
+No application feature/runtime code was touched. Phase 4 was not started.
+
+## Database impact
+
+- Fresh/clean databases (incl. the `migrate dev` shadow database): now build entirely from the migration history; replay order verified machine-tested.
+- Existing `db/custom.db` (`db push`- or sqlite3-managed): schema content unchanged by the correction itself; adoption is bookkeeping (`migrate resolve --applied`) plus one row-preserving reconciliation migration that copies the four tables with identical definitions + FKs (no-op if FKs already exist). No `migrate reset`, no `db push` divergence, no data deletion anywhere.
+
+## Validation
+
+Environment note: the sandbox cannot reach `binaries.prisma.sh` or any engine mirror (npm registry/GitHub/PyPI reachable; engine CDNs, GitHub asset/blob CDNs blocked), so the schema-engine executable could never be downloaded — the same limitation the original Phase 3 session recorded. Engine-free commands were run genuinely (WASM-backed); engine-dependent CLI commands are covered by the offline replay proof and exact local commands are documented in §8.
+
+| Command | Result |
+| --- | --- |
+| `npx prisma validate` | PASS — “The schema at prisma/schema.prisma is valid 🚀” |
+| `npx prisma format` | PASS — reformatted cleanly; whitespace-only diff discarded to keep the correction targeted |
+| `npx prisma generate` | PASS — “✔ Generated Prisma Client (v6.19.3)” (local query-engine library is an env placeholder; real engine downloads on machines with engine CDN access) |
+| `npx prisma migrate status` | BLOCKED in sandbox (schema-engine binary unfetchable) — run locally per §8; expected: “Database schema is up to date!” after baselining |
+| `npx prisma migrate dev` (clean DB) | BLOCKED in sandbox (same) — covered instead by exact-SQL replay (below); expected locally: applies 5 migrations, no drift, no new migration offered |
+| `node tests/migration-history-consistency.test.js` | PASS — 7494/7494: fresh replay of all 5 migrations applies with zero SQL errors; resulting DB == `schema.prisma` on tables/columns/nullability/defaults/PKs/unique/plain indexes/FKs incl. ON DELETE/UPDATE; P3006 reproduced without baseline; sentinel data preserved byte-identical on both existing-DB flavors; orphaned `batchId` rejected |
+| `node tests/migration-sql.test.js` | PASS (unchanged contract) |
+| `node tests/platform-upgrade-2026-migration.test.js` | PASS (incl. re-run idempotence contract) |
+| `node tests/seed-idempotency.test.js` · `registration-validators.test.js` · `authorization-invariants.test.js` · `mock-exam-grading-isolation.test.js` · `parent-monthly-report.test.js` | PASS |
+
+Required local one-time commands (machine with engine access): the §8.2 block in `docs/DATABASE_MIGRATION.md`.
+
+## Risks / Dependencies
+
+- The FK reconciliation migration rewrites `Student`, `ExamAttempt`, `Course`, `Lesson` once (row-copy + rename, Prisma-standard). Brief table lock; take the §0 backup; verified data-preserving on populated scratch DBs of both flavors.
+- `PG …`/future PostgreSQL port: baseline is SQLite DDL like the rest of the history; port conversions remain a separate reviewed task.
+- Sandbox could not execute `migrate dev` itself; residual risk limited to Prisma-internal normalization corner cases, mitigated by using Prisma-canonical DDL everywhere and verified semantically offline. First local `migrate dev` run closes this loop.
+- History is now immutable-by-tooling: any future fix must be a new migration (editing applied migrations = checksum mismatch P3009).
+
+## Git state (correction)
+
+- Branch: `arena/01a07d7b-codemind-academy`
+- Scope: Phase 3 correction only; do not merge before owner review; Phase 4 not started.
