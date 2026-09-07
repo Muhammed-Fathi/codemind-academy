@@ -36,14 +36,18 @@ export async function GET(
   });
   if (!lesson) return err("Lesson not found", 404);
 
-  // Find prev / next lessons in the same course (by order)
-  const courseLessons = await db.lesson.findMany({
-    where: {
-      topic: { unit: { part: { courseId: lesson.topic.unit.part.courseId } } },
-    },
-    orderBy: [{ topic: { unit: { part: { order: "asc" } } } }, { order: "asc" }],
-    select: { id: true },
-  });
+  // Find prev / next lessons in the same course (by order).
+  // `topic` is a nullable legacy link (official lessons hang off `unit`
+  // directly), so lessons without a topic have no course siblings to walk.
+  const courseLessons = lesson.topic
+    ? await db.lesson.findMany({
+        where: {
+          topic: { unit: { part: { courseId: lesson.topic.unit.part.courseId } } },
+        },
+        orderBy: [{ topic: { unit: { part: { order: "asc" } } } }, { order: "asc" }],
+        select: { id: true },
+      })
+    : [];
   const currentIdx = courseLessons.findIndex((l) => l.id === lesson.id);
   const prevLessonId = currentIdx > 0 ? courseLessons[currentIdx - 1].id : null;
   const nextLessonId =
@@ -145,27 +149,35 @@ export async function GET(
       pdfUrl: lesson.pdfUrl,
       isLocked: lesson.isLocked,
     },
-    part: {
-      id: lesson.topic.unit.part.id,
-      title: lesson.topic.unit.part.title,
-      titleAr: lesson.topic.unit.part.titleAr,
-    },
-    unit: {
-      id: lesson.topic.unit.id,
-      title: lesson.topic.unit.title,
-      titleAr: lesson.topic.unit.titleAr,
-    },
-    topic: {
-      id: lesson.topic.id,
-      title: lesson.topic.title,
-      titleAr: lesson.topic.titleAr,
-    },
-    course: {
-      id: lesson.topic.unit.part.course.id,
-      slug: lesson.topic.unit.part.course.slug,
-      name: lesson.topic.unit.part.course.name,
-      nameAr: lesson.topic.unit.part.course.nameAr,
-    },
+    part: lesson.topic
+      ? {
+          id: lesson.topic.unit.part.id,
+          title: lesson.topic.unit.part.title,
+          titleAr: lesson.topic.unit.part.titleAr,
+        }
+      : null,
+    unit: lesson.topic
+      ? {
+          id: lesson.topic.unit.id,
+          title: lesson.topic.unit.title,
+          titleAr: lesson.topic.unit.titleAr,
+        }
+      : null,
+    topic: lesson.topic
+      ? {
+          id: lesson.topic.id,
+          title: lesson.topic.title,
+          titleAr: lesson.topic.titleAr,
+        }
+      : null,
+    course: lesson.topic
+      ? {
+          id: lesson.topic.unit.part.course.id,
+          slug: lesson.topic.unit.part.course.slug,
+          name: lesson.topic.unit.part.course.name,
+          nameAr: lesson.topic.unit.part.course.nameAr,
+        }
+      : null,
     quiz: lesson.quizzes[0]
       ? {
           id: lesson.quizzes[0].id,

@@ -213,17 +213,24 @@ bun run build
 What `bun run build` does (from `package.json`):
 
 ```bash
-next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/
+prisma generate && next build && node scripts/copy-standalone-assets.mjs
 ```
 
+- `prisma generate` regenerates the Prisma Client from
+  `prisma/schema.prisma` so the build always type-checks against the
+  current schema.
 - `next build` produces `.next/` (compiled) + `.next/standalone/`
   (self-contained server, because `output: "standalone"` is set in
-  `next.config.ts`).
-- `cp -r .next/static .next/standalone/.next/` copies the static
-  chunks into the standalone tree (otherwise the server can't find
-  them).
-- `cp -r public .next/standalone/` copies the `public/` assets (logo,
-  manifest, robots, sitemap) into the standalone tree.
+  `next.config.ts`) and performs full TypeScript validation — any TS
+  error fails the build.
+- `scripts/copy-standalone-assets.mjs` copies the two asset trees the
+  standalone server needs (it is a small Node script, so this works on
+  Windows CMD as well as Linux/macOS, unlike the previous `cp -r`
+  chain):
+  - `.next/static` → `.next/standalone/.next/static` (static chunks,
+    otherwise the server can't find them),
+  - `public` → `.next/standalone/public` (logo, manifest, robots,
+    sitemap).
 
 The result: `.next/standalone/server.js` — a single Node-compatible
 entry point that can run anywhere without `node_modules` (Prisma

@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import ZAI from "z-ai-web-dev-sdk";
 import { requireRole, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
+import type { Question } from "@prisma/client";
 
 export async function POST(req: NextRequest) {
   const { user, error } = await requireRole("ADMIN", "TEACHER");
@@ -41,10 +42,10 @@ export async function POST(req: NextRequest) {
   // Build context from lesson
   const context = [
     `Lesson Title: ${lesson.titleAr || lesson.title}`,
-    `Topic: ${lesson.topic.titleAr || lesson.topic.title}`,
-    `Unit: ${lesson.topic.unit.titleAr || lesson.topic.unit.title}`,
-    `Part: ${lesson.topic.unit.part.titleAr || lesson.topic.unit.part.title}`,
-    `Course: ${lesson.topic.unit.part.course.nameAr || lesson.topic.unit.part.course.name}`,
+    `Topic: ${lesson.topic?.titleAr || lesson.topic?.title || "—"}`,
+    `Unit: ${lesson.topic?.unit.titleAr || lesson.topic?.unit.title || "—"}`,
+    `Part: ${lesson.topic?.unit.part.titleAr || lesson.topic?.unit.part.title || "—"}`,
+    `Course: ${lesson.topic?.unit.part.course.nameAr || lesson.topic?.unit.part.course.name || "—"}`,
     lesson.description ? `Description: ${lesson.description}` : "",
     lesson.summary ? `Summary: ${lesson.summary}` : "",
   ]
@@ -117,7 +118,7 @@ ${context}`;
     }
 
     // Save generated questions to the database
-    const created = [];
+    const created: Question[] = [];
     for (const q of parsed.questions.slice(0, questionCount)) {
       if (!q.prompt || !q.options || q.correctIndex === undefined) continue;
 

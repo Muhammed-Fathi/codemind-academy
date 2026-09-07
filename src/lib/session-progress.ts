@@ -77,13 +77,13 @@ export async function getCourseSessionProgress(
           where: { studentId, lessonId: { in: lessonIds } },
           select: { lessonId: true, videoPercent: true, videoCompleted: true, isCompleted: true },
         })
-      : Promise.resolve([]),
+      : Promise.resolve<Array<{ lessonId: string; videoPercent: number; videoCompleted: boolean; isCompleted: boolean }>>([]),
     quizIds.length
       ? db.quizAttempt.findMany({
           where: { studentId, quizId: { in: quizIds }, finishedAt: { not: null } },
           select: { quizId: true, percentage: true },
         })
-      : Promise.resolve([]),
+      : Promise.resolve<Array<{ quizId: string; percentage: number }>>([]),
     homeworkIds.length
       ? db.homeworkSubmission.findMany({
           where: {
@@ -93,7 +93,7 @@ export async function getCourseSessionProgress(
           },
           select: { homeworkId: true },
         })
-      : Promise.resolve([]),
+      : Promise.resolve<Array<{ homeworkId: string }>>([]),
   ]);
 
   const progressByLesson = new Map(progressRows.map((p) => [p.lessonId, p]));
@@ -178,7 +178,10 @@ export async function canAccessLesson(
   });
   if (!lesson) return { allowed: false, reason: "LESSON_NOT_FOUND", status: null };
 
-  const courseId = lesson.topic.unit.part.courseId;
+  // `topic` is the nullable legacy link; a lesson without it is not attached
+  // to any course this gating rule can verify, so access stays closed.
+  const courseId = lesson.topic?.unit.part.courseId;
+  if (!courseId) return { allowed: false, reason: "LESSON_NOT_FOUND", status: null };
 
   // Enrollment must be judged by exactly the same rule as getEnrollment():
   // membership of an ACTIVE group bound to this course. Omitting `isActive`

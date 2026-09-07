@@ -126,7 +126,7 @@ export async function GET(_req: NextRequest) {
       });
       const submissions = await db.homeworkSubmission.findMany({
         where: { studentId: student.id },
-        include: { homework: { select: { id: true, title: true, titleAr: true } } },
+        include: { homework: { select: { id: true, title: true, titleAr: true, deadline: true } } },
       });
       const submittedCount = submissions.filter(
         (s) => s.status === "SUBMITTED" || s.status === "GRADED" || s.status === "LATE"
