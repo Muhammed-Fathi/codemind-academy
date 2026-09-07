@@ -53,13 +53,23 @@ export function AuthView() {
   const setView = useApp((s) => s.setView);
 
   // "forgot" is a third client-side mode reusing the same auth shell.
-  const [mode, setMode] = React.useState<"login" | "register" | "forgot">(
-    view === "register" ? "register" : "login"
+  // Arriving from an emailed password-reset link (/?token=…) opens the
+  // forgot/reset form directly so the token is pre-filled.
+  const hasResetToken =
+    view === "login" &&
+    typeof window !== "undefined" &&
+    Boolean(new URLSearchParams(window.location.search).get("token"));
+  const [mode, setMode] = React.useState<"login" | "register" | "forgot">(() =>
+    view === "register" ? "register" : hasResetToken ? "forgot" : "login"
   );
   const [role, setRole] = React.useState<Role>("STUDENT");
-  React.useEffect(() => {
-    setMode(view === "register" ? "register" : "login");
-  }, [view]);
+  // Adjust mode when the parent switches between login/register. Never
+  // overwrite the reset mode: the URL token must survive view changes.
+  const [prevView, setPrevView] = React.useState(view);
+  if (prevView !== view) {
+    setPrevView(view);
+    if (!hasResetToken) setMode(view === "register" ? "register" : "login");
+  }
 
   return (
     <div className="flex-1 flex items-stretch">

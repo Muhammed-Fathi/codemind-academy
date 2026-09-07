@@ -1,12 +1,15 @@
 // POST /api/auth/password-reset/confirm
-// Body: { token: string, password: string, identifier?: string }
+// Body: { token: string, password: string }
+//
+// Password recovery is EMAIL ONLY. The `token` is the high-entropy secret from
+// the emailed reset link.
 //
 // Security properties:
 //  * Token is looked up by SHA-256 — the raw value is never stored.
 //  * Single use: `usedAt` is stamped inside the same transaction as the
 //    password change, so a token can never be replayed.
 //  * Expired tokens are rejected and consumed.
-//  * Per-token attempt limit prevents brute-forcing 6-digit SMS OTPs.
+//  * Per-token attempt limit defends against brute-force guesses.
 //  * All other reset tokens of the user are invalidated afterwards.
 //  * All active sessions are revoked — the user must log in again.
 
@@ -68,6 +71,18 @@ export async function POST(req: NextRequest) {
     await logSecurityEvent({
       type: "PASSWORD_RESET_FAILED",
       detail: "Unknown or already-consumed token presented",
+      headers: hdrs,
+    });
+    return invalid();
+  }
+
+  // Password recovery is email-only: reject any legacy SMS/OTP token that
+  // predates this change (they can no longer be delivered anyway).
+  if (record.channel !== "EMAIL") {
+    await logSecurityEvent({
+      userId: record.userId,
+      type: "PASSWORD_RESET_FAILED",
+      detail: "Non-email channel token presented",
       headers: hdrs,
     });
     return invalid();
@@ -138,7 +153,13 @@ export async function POST(req: NextRequest) {
 
   // Rotate sessions: every device must re-authenticate with the new password.
   await revokeAllSessions(record.userId, "PASSWORD_RESET");
-  await resetRateLimit("pwreset:id", sha256(record.userId));
+
+  // Clear the per-identifier request bucket (keyed by hashed email in the
+  // request route) so a legitimate user can request again immediately.
+  const user = await db.user
+    .findUnique({ where: { id: record.userId }, select: { email: true } })
+    .catch(() => null);
+  if (user) await resetRateLimit("pwreset:id", sha256(user.email));
 
   await logSecurityEvent({
     userId: record.userId,

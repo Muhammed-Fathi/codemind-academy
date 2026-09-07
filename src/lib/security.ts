@@ -3,7 +3,7 @@
 // Everything here runs on the server only. Raw tokens/OTPs are NEVER stored,
 // logged, or returned to a client that isn't the legitimate recipient.
 
-import { createHash, randomBytes, randomInt, timingSafeEqual } from "crypto";
+import { createHash, randomBytes, timingSafeEqual } from "crypto";
 import { db } from "@/lib/db";
 
 // ---------------------------------------------------------------------------
@@ -28,12 +28,6 @@ export function generateToken(bytes = 32): string {
   return randomBytes(bytes).toString("base64url");
 }
 
-/** Cryptographically secure numeric OTP (no Math.random). */
-export function generateOtp(digits = 6): string {
-  const max = 10 ** digits;
-  return String(randomInt(0, max)).padStart(digits, "0");
-}
-
 // ---------------------------------------------------------------------------
 // Privacy helpers
 // ---------------------------------------------------------------------------
@@ -54,13 +48,6 @@ export function maskEmail(email: string): string {
   if (!domain) return "***";
   if (local.length <= 2) return `${local[0] ?? "*"}***@${domain}`;
   return `${local[0]}${"*".repeat(Math.min(5, local.length - 2))}${local.at(-1)}@${domain}`;
-}
-
-/** "+201147422177" -> "+2011****77" */
-export function maskPhone(phone: string): string {
-  const clean = phone.replace(/\s/g, "");
-  if (clean.length <= 4) return "****";
-  return `${clean.slice(0, 5)}****${clean.slice(-2)}`;
 }
 
 // ---------------------------------------------------------------------------

@@ -780,54 +780,53 @@ npm ci && npm run build && pm2 restart codemind
 Restore `db/custom.*.db.bak` only if you must also discard data created after
 the upgrade.
 
-### F.9 Password reset — production requirements (INCOMPLETE WITHOUT A PROVIDER)
+### F.9 Password reset — production requirements (EMAIL ONLY, Gmail SMTP)
 
-The password reset feature is **deliberately shipped without a delivery
-provider**. Everything except the final delivery hop is implemented and
-production-safe; the delivery hop must be configured by the operator before the
-feature is usable by real users.
+Password recovery is **email only**. Phone numbers are still collected during
+registration and shown in profiles, but they are **never** used for account
+recovery: there is no SMS path, no OTP code, and no phone-based reset UI.
 
 **What IS implemented and verified (source-level):**
 
 | Property | Where |
 |---|---|
 | No account enumeration — identical response for found / unknown / rate-limited | `password-reset/request` |
-| Rate limiting per identifier (3 / 15 min) and per IP (10 / hr) | `password-reset/request` |
+| Rate limiting per email (3 / 15 min) and per IP (10 / hr) | `password-reset/request` |
 | Cryptographically random secret; only its SHA-256 is persisted | `lib/security.ts` |
-| Raw token/OTP never logged and never returned in a response | both routes |
+| Raw token never logged and never returned in a response | both routes |
 | Requesting a new token invalidates the previous unused ones | `request` |
 | Single use — `usedAt` stamped in the same transaction as the password change | `confirm` |
 | Replay/expiry/attempt-limit (5) rejection, all with a uniform error | `confirm` |
+| New password hashed with scrypt (`hashPassword`), never stored in plaintext | `confirm` |
 | All sessions revoked after a successful reset | `revokeAllSessions` |
 | Audit trail stores only the MASKED destination | `logSecurityEvent` |
-
-**What is intentionally NOT implemented:** any actual email or SMS transport
-beyond the two thin provider bindings below. No fake/stub provider was added —
-when nothing is configured, `sendEmail` / `sendSms` return
-`{ delivered: false, reason: "NOT_CONFIGURED" }` and never pretend success.
-
-**Consequence:** with no provider configured the user never receives the link
-or OTP, so **the reset flow cannot be completed end-to-end in production.**
-This is why the requirement is reported as PARTIAL.
+| Gmail SMTP transport with STARTTLS on 587 (`requireTLS`, TLS ≥ 1.2) | `lib/mailer.ts` |
+| SMTP credentials read from env only; redacted from errors/logs/API responses | `lib/mailer.ts` |
 
 **Required before production:**
 
-1. Choose a provider. Implemented bindings: **email → `resend`**,
-   **SMS → `twilio`**. Any other value is treated as `NOT_CONFIGURED`; adding
-   one means extending `src/lib/delivery.ts`.
-2. Set the environment variables:
-   - Email: `EMAIL_PROVIDER=resend`, `EMAIL_API_KEY`, `EMAIL_FROM`
-   - SMS (optional): `SMS_PROVIDER=twilio`, `SMS_API_KEY`, `SMS_API_SECRET`,
-     `SMS_ACCOUNT_SID`, `SMS_SENDER`
-   - `NEXT_PUBLIC_URL` — **must** be the real public origin, or the reset link
-     in the email will point at `http://localhost:3000`.
+1. Create a Gmail **App Password** (not your normal Gmail password) at
+   <https://myaccount.google.com/apppasswords> (needs 2-Step Verification).
+2. Set the environment variables **server-side only** (never in a client bundle:
+   the `SMTP_*` / `EMAIL_*` variables are read exclusively by
+   `src/lib/mailer.ts`, which server code imports):
+   - `SMTP_HOST=smtp.gmail.com`
+   - `SMTP_PORT=587` (STARTTLS; use `465` + `SMTP_SECURE=1` only if 587 is blocked)
+   - `SMTP_USER=<your codemind Gmail address>`
+   - `SMTP_PASSWORD=<the 16-char Gmail App Password>`
+   - `EMAIL_FROM` — optional; Gmail only allows the authenticated address, so
+     leave it empty to default to `SMTP_USER`.
+   - `NEXT_PUBLIC_URL` — **must** be the real public origin (HTTPS in
+     production), or the reset link in the email will point at
+     `http://localhost:3000`.
    - `PASSWORD_RESET_TTL_MINUTES` (default 15).
    - Ensure `DELIVERY_DEV_LOG` is unset in production.
-3. Verify the sending domain (SPF/DKIM for email, sender ID for SMS), or
-   messages will be silently spam-filtered.
-4. Smoke test after deploy: request a reset for a real account, confirm the
-   message arrives, complete it, and confirm every existing session is logged
-   out.
+3. Smoke test with `npm run test:email` from the server (see
+   `docs/DEVELOPMENT_GUIDE.md` / the script header): it verifies credentials
+   and STARTTLS first, then sends a real test email.
+4. End-to-end test after deploy: request a reset for a real account, open the
+   link from the email, set a new password, and confirm every existing session
+   is logged out.
 
-`hasDeliveryProvider()` (`src/lib/delivery.ts`) reports whether at least one
-channel is usable and can be surfaced on an admin health screen.
+`hasDeliveryProvider()` (`src/lib/delivery.ts`) reports whether Gmail SMTP is
+usable and can be surfaced on an admin health screen (server-side only).

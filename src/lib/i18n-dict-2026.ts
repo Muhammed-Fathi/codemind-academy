@@ -7,15 +7,15 @@ import type { DictEntry } from "@/lib/i18n-dict";
 
 export const DICT_2026: Record<string, DictEntry> = {
   // ---------------- API / server messages ----------------
-  "api.200": { ar: "لازم تدخل الإيميل أو رقم الموبايل", en: "Enter your email or mobile number" },
+  "api.200": { ar: "لازم تدخل الإيميل", en: "Enter your email address" },
   "api.201": {
-    ar: "لو الحساب موجود، هتوصلك تعليمات إعادة تعيين كلمة السر.",
-    en: "If an account exists, reset instructions have been sent.",
+    ar: "لو فيه حساب على الإيميل ده، هتوصلك رسالة فيها رابط إعادة تعيين كلمة السر.",
+    en: "If an account exists for this email, a password reset link has been sent.",
   },
   "api.202": { ar: "محاولات كتير. حاول تاني بعد شوية.", en: "Too many attempts. Please try again later." },
-  "api.203": { ar: "الكود أو الرابط مطلوب", en: "The code or link is required" },
+  "api.203": { ar: "رابط إعادة التعيين مطلوب", en: "The reset link is required" },
   "api.204": { ar: "كلمة السر لازم تكون 8 حروف على الأقل", en: "Password must be at least 8 characters" },
-  "api.205": { ar: "الكود غير صالح أو منتهي الصلاحية", en: "Invalid or expired code" },
+  "api.205": { ar: "رابط إعادة التعيين غير صالح أو منتهي الصلاحية", en: "Invalid or expired reset link" },
   "api.206": { ar: "اتغيرت كلمة السر بنجاح. ادخل من تاني.", en: "Password changed successfully. Please log in again." },
   "api.207": {
     ar: "الحساب اتفتح على أكتر من جهاز وتم إيقافه مؤقتاً. برجاء التواصل مع الدعم.",
@@ -33,6 +33,7 @@ export const DICT_2026: Record<string, DictEntry> = {
   "api.217": { ar: "الرابط غير صالح", en: "Invalid URL" },
   "api.218": { ar: "المجموعة غير موجودة", en: "Batch not found" },
   "api.219": { ar: "لازم ترفع ملف أو تدخل رابط", en: "Upload a file or provide a URL" },
+  "api.220": { ar: "اكتب إيميل صحيح", en: "Enter a valid email address" },
 
   // ---------------- Landing: how to start steps ----------------
   "landing.200": { ar: "سجّل حسابك", en: "Register" },
@@ -42,26 +43,24 @@ export const DICT_2026: Record<string, DictEntry> = {
   "auth.200": { ar: "نسيت كلمة السر؟", en: "Forgot your password?" },
   "auth.201": { ar: "إعادة تعيين كلمة السر", en: "Reset your password" },
   "auth.202": {
-    ar: "اكتب الإيميل أو رقم الموبايل المسجّل، وهنبعتلك خطوات إعادة التعيين.",
-    en: "Enter your registered email or mobile number and we'll send you reset instructions.",
+    ar: "اكتب الإيميل المسجّل، وهنبعتلك رابط إعادة تعيين كلمة السر.",
+    en: "Enter your registered email address and we'll send you a password reset link.",
   },
-  "auth.203": { ar: "الإيميل أو رقم الموبايل", en: "Email or mobile number" },
-  "auth.204": { ar: "طريقة الاستلام", en: "Delivery method" },
-  "auth.205": { ar: "إيميل", en: "Email" },
-  "auth.206": { ar: "رسالة SMS", en: "SMS message" },
-  "auth.207": { ar: "ابعت التعليمات", en: "Send instructions" },
-  "auth.208": { ar: "الكود أو رمز الرابط", en: "Code or link token" },
+  "auth.203": { ar: "الإيميل", en: "Email address" },
+  "auth.207": { ar: "ابعت رابط إعادة التعيين", en: "Send reset link" },
+  "auth.208": { ar: "كود رابط إعادة التعيين (من الإيميل)", en: "Reset link token (from the email)" },
   "auth.209": { ar: "كلمة السر الجديدة", en: "New password" },
   "auth.210": { ar: "تأكيد كلمة السر الجديدة", en: "Confirm new password" },
   "auth.211": { ar: "غيّر كلمة السر", en: "Change password" },
   "auth.212": { ar: "كلمتا السر مش متطابقتين", en: "Passwords do not match" },
-  "auth.213": { ar: "عندك كود بالفعل؟", en: "Already have a code?" },
+  "auth.213": { ar: "عندك رابط إعادة التعيين بالفعل؟", en: "Already have the reset link?" },
   "auth.214": { ar: "رجوع لتسجيل الدخول", en: "Back to login" },
   "auth.215": {
-    ar: "الحساب اتفتح على أكتر من جهاز وتم إيقافه مؤقتاً. برجاء التواصل مع الدعم.",
-    en: "The account was opened on more than one device and has been temporarily suspended. Please contact support.",
+    ar: "لو فيه حساب على الإيميل ده، هتوصلك رسالة فيها رابط إعادة تعيين كلمة السر.",
+    en: "If an account exists for this email, a password reset link has been sent.",
   },
   "auth.216": { ar: "تواصل مع الدعم", en: "Contact support" },
+  "auth.217": { ar: "اطلب رابط جديد", en: "Request a new link" },
 
   // ---------------- Student course / enrollment ----------------
   "course.200": { ar: "لسه مش مشترك في أي كورس", en: "You are not enrolled in any course yet" },
