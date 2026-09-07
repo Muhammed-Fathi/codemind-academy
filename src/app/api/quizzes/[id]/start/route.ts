@@ -15,6 +15,7 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireUser, getStudentProfile } from "@/lib/api";
+import { canAccessLesson } from "@/lib/session-progress";
 
 const ALLOWED_STATUSES = new Set([
   "NOT_REQUESTED",
@@ -37,8 +38,15 @@ export async function POST(
   const student = await getStudentProfile(user.id);
   if (!student) return err("Student profile not found", 404);
 
-  const quiz = await db.quiz.findUnique({ where: { id }, select: { id: true } });
+  const quiz = await db.quiz.findUnique({
+    where: { id },
+    select: { id: true, lessonId: true },
+  });
   if (!quiz) return err("Quiz not found", 404);
+
+  // SECURITY: never open an attempt on a quiz whose session is still locked.
+  const access = await canAccessLesson(student.id, quiz.lessonId);
+  if (!access.allowed) return err("Forbidden", 403);
 
   const body = await req.json().catch(() => ({}));
   const requested = String(body.cameraStatus || "NOT_REQUESTED");

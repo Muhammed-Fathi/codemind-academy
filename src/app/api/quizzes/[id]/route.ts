@@ -1,10 +1,21 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { ok, err, requireUser } from "@/lib/api";
+import { ok, err, requireUser, getStudentProfile } from "@/lib/api";
+import { canAccessLesson } from "@/lib/session-progress";
 
 // GET /api/quizzes/[id]
-// Returns quiz + questions. For MVP, returns answers + explanations too —
-// the runner hides them until submission.
+//
+// SECURITY: the correct answer and the explanation are NEVER included in this
+// payload for a student. Previously both were serialized here and merely
+// hidden by the runner, so `fetch('/api/quizzes/<id>').then(r=>r.json())` in
+// the browser console handed the student a full answer key before submitting.
+// Answers/explanations are now only returned by the /submit route, after the
+// attempt has been graded and persisted.
+//
+// SECURITY: a quiz belongs to a lesson (session). Opening a quiz is therefore
+// gated by exactly the same rule as opening the lesson itself — otherwise a
+// student could read the questions of a locked future session by calling this
+// route directly with a guessed/leaked quiz id.
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -25,6 +36,20 @@ export async function GET(
     },
   });
   if (!quiz) return err("Quiz not found", 404);
+
+  const isStudent = user.role === "STUDENT";
+
+  if (isStudent) {
+    const s = await getStudentProfile(user.id);
+    if (!s) return err("Student profile not found", 404);
+    const access = await canAccessLesson(s.id, quiz.lessonId);
+    if (!access.allowed) {
+      // Deliberately vague: do not confirm which of "not enrolled" vs
+      // "locked" applies beyond the machine-readable code already used by
+      // the lesson route, and never echo any question data.
+      return err("Forbidden", 403);
+    }
+  }
 
   // Pull the student's previous attempts (if student)
   let bestAttempt: {
@@ -76,10 +101,12 @@ export async function GET(
       prompt: q.prompt,
       promptAr: q.promptAr,
       options: JSON.parse(q.options),
-      answer: q.answer,
-      explanation: q.explanation,
       difficulty: q.difficulty,
       marks: q.marks,
+      // `answer` and `explanation` are intentionally omitted for students.
+      // Staff (teacher/admin) authoring views get them so the existing
+      // review tooling keeps working.
+      ...(isStudent ? {} : { answer: q.answer, explanation: q.explanation }),
     })),
     bestAttempt,
   });

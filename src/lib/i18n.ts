@@ -20,6 +20,8 @@ export {
   applyLocale,
   readStoredLocale,
   getStrings,
+  getWeekdayNames,
+  getMonthNames,
   STRINGS,
 } from "@/lib/i18n-core";
 export type { Locale } from "@/lib/i18n-core";

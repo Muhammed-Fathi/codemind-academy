@@ -517,6 +517,75 @@ section("11. Password reset security");
   );
 }
 
+
+// ---------------------------------------------------------------------------
+// 9. Quiz answer-key confidentiality + session gating on the quiz routes.
+//
+//    Regression: GET /api/quizzes/[id] used to serialize `answer` and
+//    `explanation` for every question and rely on the runner to hide them,
+//    so any student could read the full answer key from the browser console
+//    before submitting. It also performed no session-lock check, so the
+//    questions of a locked future session were readable by id.
+// ---------------------------------------------------------------------------
+{
+  const quizGet = read("src/app/api/quizzes/[id]/route.ts");
+  const quizStart = read("src/app/api/quizzes/[id]/start/route.ts");
+  const quizSubmit = read("src/app/api/quizzes/[id]/submit/route.ts");
+  const runner = read("src/components/course/quiz-runner.tsx");
+
+  ok(
+    /canAccessLesson/.test(quizGet),
+    "GET /api/quizzes/[id] gates on canAccessLesson"
+  );
+  ok(
+    /canAccessLesson/.test(quizStart),
+    "POST /api/quizzes/[id]/start gates on canAccessLesson"
+  );
+  ok(
+    /canAccessLesson/.test(quizSubmit),
+    "POST /api/quizzes/[id]/submit gates on canAccessLesson"
+  );
+
+  // The only place `answer:` may appear in the GET payload is behind the
+  // non-student branch.
+  ok(
+    /isStudent \? \{\} : \{ answer: q\.answer, explanation: q\.explanation \}/.test(
+      quizGet
+    ),
+    "the answer key is only serialized for non-student (staff) callers"
+  );
+  ok(
+    !/^\s*answer: q\.answer,\s*$/m.test(quizGet),
+    "no unconditional `answer: q.answer` in the quiz payload"
+  );
+  ok(
+    !/^\s*explanation: q\.explanation,\s*$/m.test(quizGet),
+    "no unconditional `explanation: q.explanation` in the quiz payload"
+  );
+
+  // The client type must not declare the fields either — that is what made
+  // the leak look intentional to reviewers.
+  const qType = runner.slice(
+    runner.indexOf("type Question = {"),
+    runner.indexOf("type QuizData = {")
+  );
+  ok(
+    !/\banswer:\s*string/.test(qType),
+    "the runner's Question type no longer expects a correct answer"
+  );
+  ok(
+    !/\bexplanation:/.test(qType),
+    "the runner's Question type no longer expects an explanation"
+  );
+
+  // Explanations must still reach the student AFTER grading, otherwise the
+  // results screen loses its educational value.
+  ok(
+    /explanation: a\.explanation/.test(quizSubmit),
+    "graded /submit response still returns per-question explanations"
+  );
+}
+
 // ---------------------------------------------------------------------------
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

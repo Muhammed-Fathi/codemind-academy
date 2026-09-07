@@ -59,6 +59,56 @@ export function fmtDateTime(
   return d.toLocaleString(DATE_LOCALE[locale], options);
 }
 
+// --- calendar labels ---------------------------------------------------------
+// Weekday and month names must NOT live in the generated key catalogue.
+// They used to be hand-keyed (student.198…student.216); the codemod that
+// produced those keys left one call site rendering the raw key instead of the
+// translation, which surfaced as literal "student.198" in the scheduler grid.
+// Deriving them from Intl removes the whole class of bug: there is no key to
+// forget to translate, and the output is automatically correct for ar-EG/en-GB
+// including RTL ordering handled by the browser.
+
+const WEEKDAY_REF_DATES = [
+  // 2023-01-01 is a Sunday; index i => weekday i (0 = Sunday … 6 = Saturday),
+  // matching JavaScript's Date.prototype.getDay().
+  Date.UTC(2023, 0, 1),
+  Date.UTC(2023, 0, 2),
+  Date.UTC(2023, 0, 3),
+  Date.UTC(2023, 0, 4),
+  Date.UTC(2023, 0, 5),
+  Date.UTC(2023, 0, 6),
+  Date.UTC(2023, 0, 7),
+];
+
+/**
+ * Localized weekday names indexed by `Date.getDay()` (0 = Sunday).
+ * `width` follows Intl semantics: "long" (Sunday), "short" (Sun), "narrow" (S).
+ */
+export function getWeekdayNames(
+  locale: Locale,
+  width: "long" | "short" | "narrow" = "long"
+): string[] {
+  const fmt = new Intl.DateTimeFormat(DATE_LOCALE[locale], {
+    weekday: width,
+    timeZone: "UTC",
+  });
+  return WEEKDAY_REF_DATES.map((ts) => fmt.format(new Date(ts)));
+}
+
+/** Localized month names indexed by `Date.getMonth()` (0 = January). */
+export function getMonthNames(
+  locale: Locale,
+  width: "long" | "short" = "long"
+): string[] {
+  const fmt = new Intl.DateTimeFormat(DATE_LOCALE[locale], {
+    month: width,
+    timeZone: "UTC",
+  });
+  return Array.from({ length: 12 }, (_, m) =>
+    fmt.format(new Date(Date.UTC(2023, m, 1)))
+  );
+}
+
 /** Apply locale globally: <html lang/dir> + persist (localStorage + cookie). */
 export function applyLocale(locale: Locale) {
   if (typeof document === "undefined") return;

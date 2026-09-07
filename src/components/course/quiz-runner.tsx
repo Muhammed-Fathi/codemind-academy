@@ -41,8 +41,9 @@ type Question = {
   prompt: string;
   promptAr: string | null;
   options: string[];
-  answer: string;
-  explanation: string | null;
+  // NOTE: `answer` / `explanation` are deliberately absent. The server does
+  // not send them before submission — they arrive only in the graded
+  // /submit response (see GradedAnswer below). Do not re-add them here.
   difficulty: "EASY" | "MEDIUM" | "HARD";
   marks: number;
 };

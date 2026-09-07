@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireUser, getStudentProfile } from "@/lib/api";
+import { canAccessLesson } from "@/lib/session-progress";
 
 // POST /api/quizzes/[id]/submit
 // Body: { answers: { questionId, selected }[] }
@@ -22,6 +23,11 @@ export async function POST(
     include: { questions: true },
   });
   if (!quiz) return err("Quiz not found", 404);
+
+  // SECURITY: grading a locked session's quiz would also mark it "attempted"
+  // and cascade an unintended unlock, so gate here as well.
+  const access = await canAccessLesson(s.id, quiz.lessonId);
+  if (!access.allowed) return err("Forbidden", 403);
 
   const body = await req.json().catch(() => ({}));
   const answersRaw: { questionId: string; selected: string }[] = Array.isArray(body.answers)
