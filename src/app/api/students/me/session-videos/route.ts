@@ -3,11 +3,18 @@
 // Returns the PUBLISHED session videos of the student's own batch only.
 // Access control is entirely server-side: a student of the Arabic batch can
 // never see a Language-batch video, regardless of what the client requests.
+//
+// SECURITY: batch membership alone is NOT sufficient. A video attached to a
+// lesson the student has not unlocked yet must not be listed or streamable,
+// otherwise the whole point of sequential progression collapses — a student
+// could watch Session 8 on day one. Videos with no lesson binding (general
+// batch announcements) remain visible, since they gate nothing.
 
 import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
 import { getEnrollment, syncStudentBatch } from "@/lib/enrollment";
 import { VIDEO_COMPLETION_THRESHOLD } from "@/lib/progress";
+import { getCourseSessionProgress } from "@/lib/session-progress";
 
 export async function GET() {
   const user = await requireUser();
@@ -40,10 +47,23 @@ export async function GET() {
     take: 100,
   });
 
+  // Drop videos bound to a still-locked session.
+  const unlocked = new Set<string>();
+  if (enrollment.courseId) {
+    const progress = await getCourseSessionProgress(
+      student.id,
+      enrollment.courseId
+    );
+    for (const row of progress.sessions) {
+      if (row.unlocked) unlocked.add(row.lessonId);
+    }
+  }
+  const visible = videos.filter((v) => !v.lessonId || unlocked.has(v.lessonId));
+
   return ok({
     isEnrolled: true,
     threshold: VIDEO_COMPLETION_THRESHOLD,
-    videos: videos.map((v) => {
+    videos: visible.map((v) => {
       const view = v.views[0];
       return {
         id: v.id,

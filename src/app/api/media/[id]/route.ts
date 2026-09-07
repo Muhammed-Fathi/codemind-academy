@@ -13,6 +13,7 @@ import { db } from "@/lib/db";
 import { requireUser, err } from "@/lib/api";
 import { readPrivateFile, privateFileStat } from "@/lib/media";
 import { logSecurityEvent } from "@/lib/security";
+import { canAccessLesson } from "@/lib/session-progress";
 
 export async function GET(
   req: NextRequest,
@@ -25,7 +26,9 @@ export async function GET(
   const asset = await db.mediaAsset.findUnique({
     where: { id },
     include: {
-      sessionVideos: { select: { id: true, batchId: true, isPublished: true } },
+      sessionVideos: {
+        select: { id: true, batchId: true, isPublished: true, lessonId: true },
+      },
       quizEvidence: { select: { id: true } },
     },
   });
@@ -50,13 +53,33 @@ export async function GET(
     if (user.role === "STUDENT") {
       const student = await db.student.findUnique({
         where: { userId: user.id },
-        select: { batchId: true, user: { select: { isActive: true } } },
+        select: { id: true, batchId: true, user: { select: { isActive: true } } },
       });
-      const allowed =
-        !!student?.batchId &&
-        asset.sessionVideos.some(
-          (v) => v.isPublished && v.batchId === student.batchId
-        );
+      // The video must be published to the student's own batch...
+      const candidates = student?.batchId
+        ? asset.sessionVideos.filter(
+            (v) => v.isPublished && v.batchId === student.batchId
+          )
+        : [];
+      if (!student || candidates.length === 0) return err("Forbidden", 403);
+
+      // ...AND the session it belongs to must be unlocked for this student.
+      // Batch membership alone was previously enough, so the raw file of a
+      // locked future session could be streamed straight from this route,
+      // bypassing every lock the lesson UI and list endpoints apply.
+      // A video with no lesson binding gates nothing and stays accessible.
+      let allowed = false;
+      for (const v of candidates) {
+        if (!v.lessonId) {
+          allowed = true;
+          break;
+        }
+        const access = await canAccessLesson(student.id, v.lessonId);
+        if (access.allowed) {
+          allowed = true;
+          break;
+        }
+      }
       if (!allowed) return err("Forbidden", 403);
     } else if (user.role === "PARENT") {
       // Parents do not stream lesson media.

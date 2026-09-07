@@ -586,6 +586,93 @@ section("11. Password reset security");
   );
 }
 
+
+// ---------------------------------------------------------------------------
+// 12. Stage 2 — locked-session content must not leak from ANY route, and the
+//     progress heartbeats must be race-safe.
+//
+//     Securing the lesson page alone is not enough: the course tree, the
+//     assignment list, the batch video list, the video heartbeats and the raw
+//     media stream each returned or accepted locked-session data.
+// ---------------------------------------------------------------------------
+section("12. Locked-session leakage across every content route");
+{
+  const courseRoute = read("src/app/api/courses/[slug]/route.ts");
+  const homeworkRoute = read("src/app/api/students/me/homework/route.ts");
+  const videosRoute = read("src/app/api/students/me/session-videos/route.ts");
+  const videoBeat = read(
+    "src/app/api/students/me/session-videos/[id]/progress/route.ts"
+  );
+  const lessonBeat = read("src/app/api/lessons/[id]/video-progress/route.ts");
+  const mediaRoute = read("src/app/api/media/[id]/route.ts");
+  const lib = read("src/lib/session-progress.ts");
+
+  ok(
+    /export function redactLockedLesson/.test(lib),
+    "a shared locked-lesson redaction helper exists"
+  );
+  // The helper must actually strip the content fields, not just exist.
+  for (const field of ["videoUrl", "pdfUrl", "summary", "description", "quiz"]) {
+    ok(
+      new RegExp(`${field}: null`).test(lib),
+      `redactLockedLesson nulls \`${field}\``
+    );
+  }
+
+  ok(
+    /redactLockedLesson/.test(courseRoute),
+    "the course tree redacts locked sessions"
+  );
+  ok(
+    /statusById\[lesson\.id\] === "locked"/.test(courseRoute),
+    "redaction is keyed off the server-computed locked status"
+  );
+
+  ok(
+    /getCourseSessionProgress/.test(homeworkRoute),
+    "the assignment list resolves session progression"
+  );
+  ok(
+    /unlocked\.has\(h\.lesson\.id\)/.test(homeworkRoute),
+    "assignments of locked sessions are filtered out"
+  );
+
+  ok(
+    /getCourseSessionProgress/.test(videosRoute),
+    "the batch video list resolves session progression"
+  );
+  ok(
+    /!v\.lessonId \|\| unlocked\.has\(v\.lessonId\)/.test(videosRoute),
+    "videos of locked sessions are filtered out, unbound videos stay visible"
+  );
+
+  ok(
+    /canAccessLesson/.test(videoBeat),
+    "the batch video heartbeat refuses locked sessions"
+  );
+  ok(
+    /canAccessLesson/.test(mediaRoute),
+    "the media stream checks session unlock, not just batch membership"
+  );
+
+  // Race safety on both heartbeats.
+  for (const [name, src] of [
+    ["batch session video", videoBeat],
+    ["lesson video", lessonBeat],
+  ]) {
+    ok(
+      /db\.\$transaction/.test(src),
+      `${name} heartbeat computes and writes inside a transaction`
+    );
+    ok(
+      /watchedSec: \{ lte: watchedSec \}|videoWatchedSec: \{ lte: watchedSec \}/.test(
+        src
+      ),
+      `${name} heartbeat only ever advances watched time (monotonic guard)`
+    );
+  }
+}
+
 // ---------------------------------------------------------------------------
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

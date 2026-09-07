@@ -47,54 +47,74 @@ export async function POST(
   if (durationSec <= 0) return err("durationSec is required", 400);
 
   const now = new Date();
-  const existing = await db.lessonProgress.findUnique({
-    where: { studentId_lessonId: { studentId: student.id, lessonId: id } },
-  });
 
-  // Real seconds since the last heartbeat — this is the credit ceiling.
-  const elapsedSec = existing?.lastHeartbeatAt
-    ? Math.max(0, Math.floor((now.getTime() - existing.lastHeartbeatAt.getTime()) / 1000))
-    : 0;
-  const credit = Math.min(elapsedSec, MAX_CREDIT_PER_BEAT_SEC);
+  // CONCURRENCY: see the batch session-video heartbeat for the full rationale.
+  // Concurrent heartbeats must never pull watched time backwards, because that
+  // can un-satisfy a completion requirement that has already unlocked the next
+  // session. Read-compute-write runs in a transaction and the update is
+  // guarded so it can only ever advance.
+  const record = await db.$transaction(async (tx) => {
+    const existing = await tx.lessonProgress.findUnique({
+      where: { studentId_lessonId: { studentId: student.id, lessonId: id } },
+    });
 
-  // Monotonic watched time, additionally capped by the playhead and duration:
-  // you cannot have watched more than where you are, or more than the video.
-  const previousWatched = existing?.videoWatchedSec ?? 0;
-  const watchedSec = Math.min(
-    durationSec,
-    Math.max(previousWatched, Math.min(previousWatched + credit, positionSec))
-  );
+    // Real seconds since the last heartbeat — this is the credit ceiling.
+    const elapsedSec = existing?.lastHeartbeatAt
+      ? Math.max(
+          0,
+          Math.floor((now.getTime() - existing.lastHeartbeatAt.getTime()) / 1000)
+        )
+      : 0;
+    const credit = Math.min(elapsedSec, MAX_CREDIT_PER_BEAT_SEC);
 
-  const percent = Math.min(100, Math.round((watchedSec / durationSec) * 100));
-  const alreadyCompleted = existing?.videoCompleted ?? false;
-  const videoCompleted = alreadyCompleted || percent >= VIDEO_COMPLETION_THRESHOLD;
+    // Monotonic watched time, additionally capped by the playhead and duration:
+    // you cannot have watched more than where you are, or more than the video.
+    const previousWatched = existing?.videoWatchedSec ?? 0;
+    const watchedSec = Math.min(
+      durationSec,
+      Math.max(previousWatched, Math.min(previousWatched + credit, positionSec))
+    );
 
-  const record = await db.lessonProgress.upsert({
-    where: { studentId_lessonId: { studentId: student.id, lessonId: id } },
-    create: {
-      studentId: student.id,
-      lessonId: id,
-      progress: percent,
-      videoDurationSec: durationSec,
-      videoWatchedSec: watchedSec,
-      videoPercent: percent,
-      videoCompleted,
-      videoCompletedAt: videoCompleted ? now : null,
-      lastHeartbeatAt: now,
-      lastViewedAt: now,
-    },
-    update: {
-      videoDurationSec: durationSec,
-      videoWatchedSec: watchedSec,
-      videoPercent: percent,
-      videoCompleted,
-      // Never overwrite the original completion timestamp.
-      ...(videoCompleted && !alreadyCompleted ? { videoCompletedAt: now } : {}),
-      lastHeartbeatAt: now,
-      lastViewedAt: now,
-      // Keep the coarse legacy `progress` column in step, never decreasing.
-      progress: Math.max(existing?.progress ?? 0, percent),
-    },
+    const percent = Math.min(100, Math.round((watchedSec / durationSec) * 100));
+    const alreadyCompleted = existing?.videoCompleted ?? false;
+    // Completion latches: never revoked by a later heartbeat.
+    const videoCompleted =
+      alreadyCompleted || percent >= VIDEO_COMPLETION_THRESHOLD;
+
+    if (!existing) {
+      return tx.lessonProgress.create({
+        data: {
+          studentId: student.id,
+          lessonId: id,
+          progress: percent,
+          videoDurationSec: durationSec,
+          videoWatchedSec: watchedSec,
+          videoPercent: percent,
+          videoCompleted,
+          videoCompletedAt: videoCompleted ? now : null,
+          lastHeartbeatAt: now,
+          lastViewedAt: now,
+        },
+      });
+    }
+
+    await tx.lessonProgress.updateMany({
+      where: { id: existing.id, videoWatchedSec: { lte: watchedSec } },
+      data: {
+        videoDurationSec: durationSec,
+        videoWatchedSec: watchedSec,
+        videoPercent: percent,
+        videoCompleted,
+        // Never overwrite the original completion timestamp.
+        ...(videoCompleted && !alreadyCompleted ? { videoCompletedAt: now } : {}),
+        lastHeartbeatAt: now,
+        lastViewedAt: now,
+        // Keep the coarse legacy `progress` column in step, never decreasing.
+        progress: Math.max(existing.progress ?? 0, percent),
+      },
+    });
+
+    return tx.lessonProgress.findUniqueOrThrow({ where: { id: existing.id } });
   });
 
   return ok({

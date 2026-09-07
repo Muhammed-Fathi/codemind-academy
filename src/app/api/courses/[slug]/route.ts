@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireUser, getStudentProfile } from "@/lib/api";
 import { getEnrollment } from "@/lib/enrollment";
-import { getCourseSessionProgress } from "@/lib/session-progress";
+import {
+  getCourseSessionProgress,
+  redactLockedLesson,
+} from "@/lib/session-progress";
 import { getServerT } from "@/lib/i18n-server";
 
 // GET /api/courses/[slug]
@@ -200,7 +203,7 @@ export async function GET(
         order: topic.order,
         lessons: topic.lessons.map((lesson) => {
           const lp = progressMap[lesson.id];
-          return {
+          const shaped = {
             id: lesson.id,
             title: lesson.title,
             titleAr: lesson.titleAr,
@@ -218,6 +221,14 @@ export async function GET(
             quiz: lesson.quizzes[0] || null,
             homework: lesson.homeworks[0] || null,
           };
+          // SECURITY: a student must see that a future session EXISTS (so the
+          // syllabus renders) but never its substance. Without this, the whole
+          // course — every video url, pdf url, summary and quiz id, including
+          // sessions months away — was returned in one unauthenticated-by-
+          // session fetch. Staff previews (studentId === null) are unaffected.
+          return statusById[lesson.id] === "locked"
+            ? redactLockedLesson(shaped)
+            : shaped;
         }),
       })),
     })),

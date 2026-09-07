@@ -168,8 +168,7 @@ export type LessonAccess = {
 export async function canAccessLesson(
   studentId: string,
   lessonId: string
-): Promise<LessonAccess> {
-  const lesson = await db.lesson.findUnique({
+): Promise<LessonAccess> {  const lesson = await db.lesson.findUnique({
     where: { id: lessonId },
     select: {
       id: true,
@@ -204,4 +203,59 @@ export async function canAccessLesson(
     return { allowed: false, reason: "PREVIOUS_SESSION_INCOMPLETE", status };
 
   return { allowed: true, reason: null, status };
+}
+
+// ---------------------------------------------------------------------------
+// Locked-session redaction
+// ---------------------------------------------------------------------------
+//
+// Returning the *existence* of a session is fine — a student must be able to
+// see that "Session 4" is coming and that it is locked. Returning its
+// substance is not. Before this helper existed, /api/courses/[slug] shipped
+// `videoUrl`, `pdfUrl`, `summary`, `description` and the quiz/homework ids of
+// EVERY session in the course, including locked ones, so the whole syllabus
+// (and a direct handle on future quizzes) was one fetch away.
+//
+// `redactLockedLesson` keeps the shape of the payload stable — the client can
+// still render a card and a lock icon — while stripping everything that is
+// content or a capability handle.
+
+export type RedactableLesson = {
+  id: string;
+  title: string;
+  titleAr: string;
+  order: number;
+  duration: number;
+  isLocked: boolean;
+  videoUrl?: string | null;
+  pdfUrl?: string | null;
+  summary?: string | null;
+  description?: string | null;
+  quiz?: unknown;
+  homework?: unknown;
+  meetingUrl?: string | null;
+  [k: string]: unknown;
+};
+
+/**
+ * Strip every piece of substance from a lesson the student may not open yet.
+ * Identity/ordering fields are preserved so the syllabus outline still renders.
+ */
+export function redactLockedLesson<T extends RedactableLesson>(lesson: T): T {
+  return {
+    ...lesson,
+    videoUrl: null,
+    pdfUrl: null,
+    meetingUrl: null,
+    // A one-line teaser is acceptable UX, the full summary/description is not.
+    summary: null,
+    description: null,
+    // Ids are capability handles: with a quiz id a student could previously
+    // call /api/quizzes/<id> directly. Those routes are gated now too, but
+    // defence in depth means not handing out the identifier either.
+    quiz: null,
+    homework: null,
+    quizId: null,
+    homeworkId: null,
+  };
 }
