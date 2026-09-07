@@ -1,5 +1,5 @@
 "use client";
-import { useT , pickAuto } from "@/lib/i18n";
+import { useT , pickAuto, useCalendarLabels } from "@/lib/i18n";
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -36,14 +36,10 @@ type Task = {
   status: string;
 };
 
-const DAY_NAMES = ["student.198", "student.199", "student.200", "student.201", "student.202", "student.203", "student.204"];
-const MONTH_NAMES = [
-  "student.205", "student.206", "student.207", "student.208", "student.209", "student.210",
-  "student.211", "student.212", "student.213", "student.214", "student.215", "student.216",
-];
 
 export function StudySchedulerView() {
   const tr = useT();
+  const cal = useCalendarLabels();
   const setView = useApp((s) => s.setView);
   const [tasks, setTasks] = React.useState<Task[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -174,7 +170,7 @@ export function StudySchedulerView() {
                   <ChevronRight className="w-4 h-4" />
                 </Button>
                 <div className="text-sm font-bold min-w-[120px] text-center">
-                  {tr(MONTH_NAMES[month])} {year}
+                  {cal.monthName(month)} {year}
                 </div>
                 <Button
                   variant="ghost"
@@ -189,9 +185,9 @@ export function StudySchedulerView() {
           <CardContent>
             {/* Calendar grid */}
             <div className="grid grid-cols-7 gap-1.5 mb-3">
-              {DAY_NAMES.map((d) => (
-                <div key={d} className="text-center text-xs font-bold text-muted-foreground py-2">
-                  {d}
+              {cal.dayHeaders.map((label, i) => (
+                <div key={i} className="text-center text-xs font-bold text-muted-foreground py-2">
+                  {label}
                 </div>
               ))}
             </div>
@@ -262,7 +258,7 @@ export function StudySchedulerView() {
               <div className="flex items-center justify-between">
                 <div>
                   <CardTitle className="text-base">
-                    {tr(DAY_NAMES[selectedDate.getDay()])}{tr("student.224")}{selectedDate.getDate()} {tr(MONTH_NAMES[selectedDate.getMonth()])}
+                    {cal.dayName(selectedDate.getDay())}{tr("student.224")}{selectedDate.getDate()} {cal.monthName(selectedDate.getMonth())}
                   </CardTitle>
                   <CardDescription className="text-xs">
                     {selectedTasks.length} {tr("student.225")}{selectedTasks.filter((t) => t.status === "DONE").length} {tr("student.222")}</CardDescription>

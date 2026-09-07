@@ -59,6 +59,42 @@ export function fmtDateTime(
   return d.toLocaleString(DATE_LOCALE[locale], options);
 }
 
+// ---------------------------------------------------------------------------
+// Calendar labels
+//
+// Weekday/month labels used to be referenced as bare generated key strings
+// ("student.198"…) held in component-local arrays. Nothing forced a call site
+// to run them through translate(), so a single missed call rendered the raw
+// key to end users. Exposing *resolved strings* through these helpers removes
+// that failure mode entirely: there is no key left for a component to leak.
+//
+// Indexes follow Date#getDay() (0 = Sunday) and Date#getMonth() (0 = January).
+
+const DAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
+
+/** Full weekday name, e.g. "Sunday" / "الأحد". `day` is Date#getDay(). */
+export function weekdayName(locale: Locale, day: number): string {
+  const key = DAY_KEYS[((day % 7) + 7) % 7];
+  return translate(locale, `calendar.day.${key}`);
+}
+
+/** Abbreviated weekday name for narrow grid headers, e.g. "Sun" / "أحد". */
+export function weekdayShortName(locale: Locale, day: number): string {
+  const key = DAY_KEYS[((day % 7) + 7) % 7];
+  return translate(locale, `calendar.dayShort.${key}`);
+}
+
+/** Month name, e.g. "January" / "يناير". `month` is Date#getMonth() (0-based). */
+export function monthName(locale: Locale, month: number): string {
+  const m = ((month % 12) + 12) % 12;
+  return translate(locale, `calendar.month.${m + 1}`);
+}
+
+/** The seven weekday headers in display order, already translated. */
+export function weekdayHeaders(locale: Locale, short = true): string[] {
+  return DAY_KEYS.map((_, i) => (short ? weekdayShortName : weekdayName)(locale, i));
+}
+
 /** Apply locale globally: <html lang/dir> + persist (localStorage + cookie). */
 export function applyLocale(locale: Locale) {
   if (typeof document === "undefined") return;

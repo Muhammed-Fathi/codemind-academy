@@ -24,7 +24,14 @@ export {
 } from "@/lib/i18n-core";
 export type { Locale } from "@/lib/i18n-core";
 
-import { pickL10n, fmtDate as _fmtDate, fmtDateTime as _fmtDateTime } from "@/lib/i18n-core";
+import {
+  pickL10n,
+  fmtDate as _fmtDate,
+  fmtDateTime as _fmtDateTime,
+  weekdayName as _weekdayName,
+  weekdayHeaders as _weekdayHeaders,
+  monthName as _monthName,
+} from "@/lib/i18n-core";
 
 /**
  * React hook: returns a translator bound to the active locale.
@@ -44,6 +51,28 @@ export function useT() {
 export function useLocale(): Locale {
   const locale = useApp((s) => s.locale);
   return locale === "en" ? "en" : "ar";
+}
+
+/**
+ * React hook: locale-aware calendar labels (weekday/month names).
+ *
+ * Components must NOT keep local arrays of translation keys — that pattern is
+ * what caused raw keys ("student.198") to render in the study scheduler. These
+ * helpers hand back already-translated strings and re-render on AR/EN toggle.
+ */
+export function useCalendarLabels() {
+  const loc = useLocale();
+  return React.useMemo(
+    () => ({
+      /** Translated headers for the 7-column grid, Sunday-first. */
+      dayHeaders: _weekdayHeaders(loc, true),
+      /** Full weekday name for a Date#getDay() index. */
+      dayName: (day: number) => _weekdayName(loc, day),
+      /** Month name for a Date#getMonth() index. */
+      monthName: (month: number) => _monthName(loc, month),
+    }),
+    [loc]
+  );
 }
 
 /**
