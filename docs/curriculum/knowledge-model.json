@@ -1,0 +1,4309 @@
+{
+  "$schema": "./knowledge-model.schema.json",
+  "schemaVersion": "2.0.0",
+  "modelType": "curriculum-knowledge-model",
+  "phase": "Phase 2 — Curriculum Source Analysis & Knowledge Model",
+  "status": "source-aligned-baseline",
+  "lastValidated": "2026-09-07",
+  "identity": {
+    "courseId": "programming-ai-2nd-sec",
+    "subjectEn": "Programming and Artificial Intelligence",
+    "subjectAr": "البرمجة والذكاء الاصطناعي",
+    "gradeEn": "Egyptian Baccalaureate — 2nd Year",
+    "gradeAr": "البكالوريا المصرية — الصف الثاني الثانوي",
+    "canonicalLocale": "en",
+    "supportedLocales": [
+      "en",
+      "ar"
+    ],
+    "canonicalHierarchy": "Part → Unit → Lesson",
+    "lessonIdsAreStable": true
+  },
+  "sourcePolicy": {
+    "structureSource": "official contents pages and lesson headings in all four committed PDFs",
+    "objectiveSource": "Learning Objectives blocks in the English and Arabic PDFs; English is canonical for normalized text and Arabic is the localization reference",
+    "conceptSource": "Key Concepts blocks plus explicit term definitions where a lesson has no labelled Key Concepts block",
+    "pagePolicy": "PDF page ranges are stored for reproducibility; textbook page ranges are stored separately because front matter differs by locale/file.",
+    "derivedDataPolicy": "knowledge summaries, cautions, concept IDs, and dependency edges are normalized/curated derivatives and are never treated as verbatim textbook text."
+  },
+  "sources": [
+    {
+      "sourceId": "source-en-p1",
+      "locale": "en",
+      "partCode": "P1",
+      "path": "docs/curriculum/english/Programming-ArtificialIntelligence-En-EB-part 1.pdf",
+      "sha256": "068e2bf706c7d92fd2483fbbca5d2457a9a430e8a1226fa38908f3fd6990a9b1",
+      "pdfPages": 104,
+      "contentsPdfPage": 4,
+      "contentTextbookPages": [
+        4,
+        101
+      ],
+      "title": "Programming and Artificial Intelligence — Part 1",
+      "publisher": "Ministry of Education and Technical Education",
+      "copyrightYear": "2026/2027"
+    },
+    {
+      "sourceId": "source-en-p2",
+      "locale": "en",
+      "partCode": "P2",
+      "path": "docs/curriculum/english/Programming-ArtificialIntelligence-En-EB-part 2.pdf",
+      "sha256": "f61204beb3d25db0d7696558a04e354cef7dcb39d2ead82fff08b6bce2a9192a",
+      "pdfPages": 88,
+      "contentsPdfPage": 4,
+      "contentTextbookPages": [
+        4,
+        85
+      ],
+      "title": "Programming and Artificial Intelligence — Part 2",
+      "publisher": "Ministry of Education and Technical Education",
+      "copyrightYear": "2026/2027"
+    },
+    {
+      "sourceId": "source-ar-p1",
+      "locale": "ar",
+      "partCode": "P1",
+      "path": "docs/curriculum/arabic/Programming-ArtificialIntelligence-Ar-EB-part 1.pdf",
+      "sha256": "11675fe5a1ddad6e0da8451dc8412cae02121008ce9dadc918fed5e1a41e352d",
+      "pdfPages": 95,
+      "contentsPdfPage": 4,
+      "contentTextbookPages": [
+        4,
+        91
+      ],
+      "title": "البرمجة والذكاء الاصطناعي — الجزء الأول",
+      "publisher": "وزارة التربية والتعليم والتعليم الفني",
+      "copyrightYear": "2026/2027"
+    },
+    {
+      "sourceId": "source-ar-p2",
+      "locale": "ar",
+      "partCode": "P2",
+      "path": "docs/curriculum/arabic/Programming-ArtificialIntelligence-Ar-EB-part 2.pdf",
+      "sha256": "fbad37d73a458e4099ee70eebfd8225ffc09becc4bfd2ea83a2de825d43dc089",
+      "pdfPages": 77,
+      "contentsPdfPage": 4,
+      "contentTextbookPages": [
+        4,
+        72
+      ],
+      "title": "البرمجة والذكاء الاصطناعي — الجزء الثاني",
+      "publisher": "وزارة التربية والتعليم والتعليم الفني",
+      "copyrightYear": "2026/2027"
+    }
+  ],
+  "parts": [
+    {
+      "id": "part-1",
+      "code": "P1",
+      "order": 1,
+      "title": "Part 1",
+      "titleAr": "الجزء الأول",
+      "descriptionEn": "Information Technology and Society; Cybersecurity; Web Applications; Web and Media Design.",
+      "descriptionAr": "تكنولوجيا المعلومات والمجتمع؛ الأمن السيبراني؛ تطبيقات الويب؛ تصميم الويب والوسائط.",
+      "sourceIds": [
+        "source-en-p1",
+        "source-ar-p1"
+      ],
+      "units": [
+        {
+          "id": "unit-1",
+          "code": "1",
+          "order": 1,
+          "title": "Information Technology and Society",
+          "titleAr": "تكنولوجيا المعلومات والمجتمع",
+          "icon": "Globe",
+          "sourceTextbookPages": {
+            "english": [
+              4,
+              32
+            ],
+            "arabic": [
+              4,
+              30
+            ]
+          },
+          "lessons": [
+            {
+              "id": "lesson-1-1",
+              "code": "1-1",
+              "order": 1,
+              "title": "Development of Information Technology and Social Transformation",
+              "titleAr": "تطور تكنولوجيا المعلومات والتحول الاجتماعي",
+              "sourcePages": {
+                "english": {
+                  "pdfPages": [
+                    5,
+                    6,
+                    7,
+                    8,
+                    9,
+                    10,
+                    11,
+                    12
+                  ],
+                  "textbookPages": [
+                    4,
+                    5,
+                    6,
+                    7,
+                    8,
+                    9,
+                    10,
+                    11
+                  ],
+                  "objectivesPdfPage": 5,
+                  "conceptEvidencePdfPage": 6
+                },
+                "arabic": {
+                  "pdfPages": [
+                    5,
+                    6,
+                    7,
+                    8,
+                    9,
+                    10,
+                    11,
+                    12
+                  ],
+                  "textbookPages": [
+                    4,
+                    5,
+                    6,
+                    7,
+                    8,
+                    9,
+                    10,
+                    11
+                  ],
+                  "objectivesPdfPage": 5,
+                  "conceptEvidencePdfPage": 6
+                }
+              },
+              "objectives": [
+                {
+                  "textEn": "Explain the major stages in the development of information technology and their impact on society.",
+                  "textAr": "شرح المراحل الرئيسية في تطور تكنولوجيا المعلومات وتأثيرها على المجتمع.",
+                  "verb": "explain",
+                  "cognitiveLevel": "understand"
+                },
+                {
+                  "textEn": "Give examples of social changes and emerging technologies brought about by information technology, and explain their characteristics.",
+                  "textAr": "إعطاء أمثلة على التغيرات الاجتماعية والتقنيات الناشئة التي أحدثتها تكنولوجيا المعلومات، وشرح خصائصها.",
+                  "verb": "give examples",
+                  "cognitiveLevel": "apply"
+                }
+              ],
+              "knowledgeSummaryEn": "Information technology advances through stages that introduce new capabilities and reshape communication, work, learning, and commerce.",
+              "cautionAndMisconceptionsEn": [
+                "Do not treat one technology stage as isolated; the lesson connects technical change to social impact."
+              ],
+              "conceptIds": [
+                "concept-moore-s-law",
+                "concept-sns",
+                "concept-e-commerce",
+                "concept-remote-work",
+                "concept-online-learning",
+                "concept-cashless-payment",
+                "concept-edge-computing",
+                "concept-autonomous-driving",
+                "concept-ar-vr",
+                "concept-quantum-computing"
+              ]
+            },
+            {
+              "id": "lesson-1-2",
+              "code": "1-2",
+              "order": 2,
+              "title": "How AI Works",
+              "titleAr": "كيف يعمل الذكاء الاصطناعي",
+              "sourcePages": {
+                "english": {
+                  "pdfPages": [
+                    13,
+                    14,
+                    15,
+                    16,
+                    17,
+                    18,
+                    19
+                  ],
+                  "textbookPages": [
+                    12,
+                    13,
+                    14,
+                    15,
+                    16,
+                    17,
+                    18
+                  ],
+                  "objectivesPdfPage": 13,
+                  "conceptEvidencePdfPage": 14
+                },
+                "arabic": {
+                  "pdfPages": [
+                    13,
+                    14,
+                    15,
+                    16,
+                    17,
+                    18
+                  ],
+                  "textbookPages": [
+                    12,
+                    13,
+                    14,
+                    15,
+                    16,
+                    17
+                  ],
+                  "objectivesPdfPage": 13,
+                  "conceptEvidencePdfPage": 14
+                }
+              },
+              "objectives": [
+                {
+                  "textEn": "Explain what AI is.",
+                  "textAr": "شرح ماهية الذكاء الاصطناعي.",
+                  "verb": "explain",
+                  "cognitiveLevel": "understand"
+                },
+                {
+                  "textEn": "Explain how generative AI is positioned within AI technologies.",
+                  "textAr": "شرح موقع الذكاء الاصطناعي التوليدي ضمن تقنيات الذكاء الاصطناعي.",
+                  "verb": "explain",
+                  "cognitiveLevel": "understand"
+                }
+              ],
+              "knowledgeSummaryEn": "AI is the broad field; machine learning is within AI, deep learning is within machine learning, and generative AI is built on deep learning.",
+              "cautionAndMisconceptionsEn": [
+                "AI, machine learning, deep learning, and generative AI are nested rather than interchangeable.",
+                "Generative AI uses learning technologies; it does not generate from no data or rules."
+              ],
+              "conceptIds": [
+                "concept-ai-artificial-intelligence",
+                "concept-machine-learning",
+                "concept-deep-learning",
+                "concept-neural-network",
+                "concept-generative-ai"
+              ]
+            },
+            {
+              "id": "lesson-1-3",
+              "code": "1-3",
+              "order": 3,
+              "title": "AI in Daily Life and Industry",
+              "titleAr": "الذكاء الاصطناعي في الحياة اليومية والصناعة",
+              "sourcePages": {
+                "english": {
+                  "pdfPages": [
+                    20,
+                    21,
+                    22,
+                    23,
+                    24,
+                    25,
+                    26
+                  ],
+                  "textbookPages": [
+                    19,
+                    20,
+                    21,
+                    22,
+                    23,
+                    24,
+                    25
+                  ],
+                  "objectivesPdfPage": 20,
+                  "conceptEvidencePdfPage": 21
+                },
+                "arabic": {
+                  "pdfPages": [
+                    19,
+                    20,
+                    21,
+                    22,
+                    23,
+                    24
+                  ],
+                  "textbookPages": [
+                    18,
+                    19,
+                    20,
+                    21,
+                    22,
+                    23
+                  ],
+                  "objectivesPdfPage": 19,
+                  "conceptEvidencePdfPage": 20
+                }
+              },
+              "objectives": [
+                {
+                  "textEn": "Give examples of how AI is used in daily life and various industries.",
+                  "textAr": "إعطاء أمثلة على استخدام الذكاء الاصطناعي في الحياة اليومية ومختلف الصناعات.",
+                  "verb": "give examples",
+                  "cognitiveLevel": "apply"
+                },
+                {
+                  "textEn": "Explain what AI is good at and what requires caution when using AI.",
+                  "textAr": "شرح ما يجيده الذكاء الاصطناعي وما يتطلب الحذر عند استخدامه.",
+                  "verb": "explain",
+                  "cognitiveLevel": "analyze"
+                }
+              ],
+              "knowledgeSummaryEn": "AI is strong at finding patterns, recognition, generation, and probabilistic prediction, but human judgment remains necessary for ethics, privacy, responsibility, and factual reliability.",
+              "cautionAndMisconceptionsEn": [
+                "Pattern recognition or prediction is not the same as ethical judgment or responsibility.",
+                "A fluent AI output can still be a hallucination."
+              ],
+              "conceptIds": [
+                "concept-recommendation-system",
+                "concept-voice-assistant",
+                "concept-machine-translation",
+                "concept-face-recognition",
+                "concept-image-diagnosis-ai",
+                "concept-predictive-maintenance",
+                "concept-black-box-problem",
+                "concept-hallucination"
+              ]
+            },
+            {
+              "id": "lesson-1-4",
+              "code": "1-4",
+              "order": 4,
+              "title": "Ethical Issues with AI",
+              "titleAr": "القضايا الأخلاقية للذكاء الاصطناعي",
+              "sourcePages": {
+                "english": {
+                  "pdfPages": [
+                    27,
+                    28,
+                    29,
+                    30,
+                    31,
+                    32,
+                    33
+                  ],
+                  "textbookPages": [
+                    26,
+                    27,
+                    28,
+                    29,
+                    30,
+                    31,
+                    32
+                  ],
+                  "objectivesPdfPage": 27,
+                  "conceptEvidencePdfPage": 28
+                },
+                "arabic": {
+                  "pdfPages": [
+                    25,
+                    26,
+                    27,
+                    28,
+                    29,
+                    30,
+                    31
+                  ],
+                  "textbookPages": [
+                    24,
+                    25,
+                    26,
+                    27,
+                    28,
+                    29,
+                    30
+                  ],
+                  "objectivesPdfPage": 25,
+                  "conceptEvidencePdfPage": 26
+                }
+              },
+              "objectives": [
+                {
+                  "textEn": "Explain what algorithmic bias is and describe its main causes.",
+                  "textAr": "شرح التحيز الخوارزمي وبيان أسبابه الرئيسية.",
+                  "verb": "explain",
+                  "cognitiveLevel": "understand"
+                },
+                {
+                  "textEn": "Connect the basic principles of AI ethics (fairness, transparency, privacy protection, and accountability) to specific situations.",
+                  "textAr": "ربط مبادئ أخلاقيات الذكاء الاصطناعي الأساسية (العدالة والشفافية وحماية الخصوصية والمساءلة) بمواقف محددة.",
+                  "verb": "connect",
+                  "cognitiveLevel": "apply"
+                }
+              ],
+              "knowledgeSummaryEn": "AI decisions can affect people; biased training data, opaque reasoning, privacy concerns, and unclear responsibility require explicit ethical principles.",
+              "cautionAndMisconceptionsEn": [
+                "More data does not automatically remove bias if the training data is biased.",
+                "Explainability helps people inspect decisions but does not by itself assign responsibility."
+              ],
+              "conceptIds": [
+                "concept-algorithmic-bias",
+                "concept-training-data",
+                "concept-face-recognition",
+                "concept-privacy",
+                "concept-explainable-ai-xai",
+                "concept-black-box-problem",
+                "concept-responsibility",
+                "concept-fairness",
+                "concept-transparency",
+                "concept-privacy-protection",
+                "concept-accountability"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "unit-2",
+          "code": "2",
+          "order": 2,
+          "title": "Cybersecurity",
+          "titleAr": "الأمن السيبراني",
+          "icon": "ShieldCheck",
+          "sourceTextbookPages": {
+            "english": [
+              33,
+              54
+            ],
+            "arabic": [
+              31,
+              49
+            ]
+          },
+          "lessons": [
+            {
+              "id": "lesson-2-1",
+              "code": "2-1",
+              "order": 1,
+              "title": "Cryptographic Technologies and Authentication",
+              "titleAr": "تقنيات التشفير والمصادقة",
+              "sourcePages": {
+                "english": {
+                  "pdfPages": [
+                    34,
+                    35,
+                    36,
+                    37,
+                    38,
+                    39,
+                    40,
+                    41
+                  ],
+                  "textbookPages": [
+                    33,
+                    34,
+                    35,
+                    36,
+                    37,
+                    38,
+                    39,
+                    40
+                  ],
+                  "objectivesPdfPage": 34,
+                  "conceptEvidencePdfPage": 35
+                },
+                "arabic": {
+                  "pdfPages": [
+                    32,
+                    33,
+                    34,
+                    35,
+                    36,
+                    37,
+                    38
+                  ],
+                  "textbookPages": [
+                    31,
+                    32,
+                    33,
+                    34,
+                    35,
+                    36,
+                    37
+                  ],
+                  "objectivesPdfPage": 32,
+                  "conceptEvidencePdfPage": 33
+                }
+              },
+              "objectives": [
+                {
+                  "textEn": "Explain how HTTPS secures communication: how the TLS handshake uses public-key cryptography to share a key safely, and how common-key cryptography then protects the data that follows.",
+                  "textAr": "شرح كيفية تأمين HTTPS للاتصال؛ إذ تستخدم مصافحة TLS التشفير بالمفتاح العام لمشاركة مفتاح بأمان، ثم يحمي التشفير بالمفتاح المتماثل البيانات التالية.",
+                  "verb": "explain",
+                  "cognitiveLevel": "understand"
+                },
+                {
+                  "textEn": "Describe how authentication, including multi-factor authentication, is used in real services, and explain why security technologies are combined.",
+                  "textAr": "وصف كيفية استخدام المصادقة، بما فيها المصادقة متعددة العوامل، في الخدمات الحقيقية، وشرح سبب الجمع بين تقنيات الأمان.",
+                  "verb": "describe",
+                  "cognitiveLevel": "apply"
+                }
+              ],
+              "knowledgeSummaryEn": "HTTPS uses public-key cryptography during the TLS handshake and common-key cryptography for the continuing data; authentication verifies identity and can combine factors.",
+              "cautionAndMisconceptionsEn": [
+                "Public-key and common-key cryptography have different roles in HTTPS.",
+                "Authentication is identity verification; using several controls is stronger than relying on one technology."
+              ],
+              "conceptIds": [
+                "concept-https",
+                "concept-common-key-cryptography",
+                "concept-public-key-cryptography",
+                "concept-tls-handshake",
+                "concept-multi-factor-authentication",
+                "concept-digital-signature",
+                "concept-digital-certificate",
+                "concept-non-repudiation"
+              ]
+            },
+            {
+              "id": "lesson-2-2",
+              "code": "2-2",
+              "order": 2,
+              "title": "Network Security Design",
+              "titleAr": "تصميم أمن الشبكات",
+              "sourcePages": {
+                "english": {
+                  "pdfPages": [
+                    42,
+                    43,
+                    44,
+                    45,
+                    46,
+                    47,
+                    48
+                  ],
+                  "textbookPages": [
+                    41,
+                    42,
+                    43,
+                    44,
+                    45,
+                    46,
+                    47
+                  ],
+                  "objectivesPdfPage": 42,
+                  "conceptEvidencePdfPage": 43
+                },
+                "arabic": {
+                  "pdfPages": [
+                    39,
+                    40,
+                    41,
+                    42,
+                    43,
+                    44
+                  ],
+                  "textbookPages": [
+                    38,
+                    39,
+                    40,
+                    41,
+                    42,
+                    43
+                  ],
+                  "objectivesPdfPage": 39,
+                  "conceptEvidencePdfPage": 40
+                }
+              },
+              "objectives": [
+                {
+                  "textEn": "Explain the roles of firewalls, VPNs, and DMZs in protecting a network.",
+                  "textAr": "شرح أدوار جدران الحماية وVPNs والمناطق منزوعة السلاح (DMZs) في حماية الشبكة.",
+                  "verb": "explain",
+                  "cognitiveLevel": "understand"
+                },
+                {
+                  "textEn": "Describe defense in depth and zero trust, and explain why layered, verified access is stronger than a single barrier.",
+                  "textAr": "وصف الدفاع متعدد الطبقات والثقة الصفرية، وشرح سبب قوة الوصول المتحقق منه متعدد الطبقات مقارنة بحاجز واحد.",
+                  "verb": "describe",
+                  "cognitiveLevel": "analyze"
+                }
+              ],
+              "knowledgeSummaryEn": "Network security places different controls at boundaries and inside the system: firewall, VPN, DMZ, layered defense, and verified access.",
+              "cautionAndMisconceptionsEn": [
+                "A VPN is not the same as a firewall or a DMZ.",
+                "Defense in depth does not mean one perimeter barrier; it layers controls and verification."
+              ],
+              "conceptIds": [
+                "concept-firewall",
+                "concept-vpn",
+                "concept-dmz",
+                "concept-defense-in-depth",
+                "concept-zero-trust",
+                "concept-perimeter"
+              ]
+            },
+            {
+              "id": "lesson-2-3",
+              "code": "2-3",
+              "order": 3,
+              "title": "Incident Response and Risk Management",
+              "titleAr": "الاستجابة للحوادث وإدارة المخاطر",
+              "sourcePages": {
+                "english": {
+                  "pdfPages": [
+                    49,
+                    50,
+                    51,
+                    52,
+                    53,
+                    54,
+                    55
+                  ],
+                  "textbookPages": [
+                    48,
+                    49,
+                    50,
+                    51,
+                    52,
+                    53,
+                    54
+                  ],
+                  "objectivesPdfPage": 49,
+                  "conceptEvidencePdfPage": 50
+                },
+                "arabic": {
+                  "pdfPages": [
+                    45,
+                    46,
+                    47,
+                    48,
+                    49,
+                    50
+                  ],
+                  "textbookPages": [
+                    44,
+                    45,
+                    46,
+                    47,
+                    48,
+                    49
+                  ],
+                  "objectivesPdfPage": 45,
+                  "conceptEvidencePdfPage": 46
+                }
+              },
+              "objectives": [
+                {
+                  "textEn": "Explain what a security incident is and describe the stages of incident response in the correct order.",
+                  "textAr": "شرح ماهية الحادث الأمني ووصف مراحل الاستجابة للحوادث بالترتيب الصحيح.",
+                  "verb": "explain",
+                  "cognitiveLevel": "understand"
+                },
+                {
+                  "textEn": "Apply the idea of risk assessment by prioritizing risks according to their impact and likelihood.",
+                  "textAr": "تطبيق فكرة تقييم المخاطر بترتيب المخاطر وفقًا لتأثيرها واحتمالية حدوثها.",
+                  "verb": "apply",
+                  "cognitiveLevel": "analyze"
+                }
+              ],
+              "knowledgeSummaryEn": "Incident response follows Preparation, Detection, Containment, Eradication, Recovery, and Prevention of recurrence; risk is prioritized by impact multiplied by likelihood.",
+              "cautionAndMisconceptionsEn": [
+                "Containment comes before eradication so damage does not spread.",
+                "Risk is not determined by impact alone; likelihood also matters."
+              ],
+              "conceptIds": [
+                "concept-security-incident",
+                "concept-the-six-stages",
+                "concept-containment-eradication",
+                "concept-risk-impact-likelihood"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "unit-3",
+          "code": "3",
+          "order": 3,
+          "title": "Web Applications",
+          "titleAr": "تطبيقات الويب",
+          "icon": "Globe2",
+          "sourceTextbookPages": {
+            "english": [
+              55,
+              74
+            ],
+            "arabic": [
+              50,
+              67
+            ]
+          },
+          "lessons": [
+            {
+              "id": "lesson-3-1",
+              "code": "3-1",
+              "order": 1,
+              "title": "The Overall Structure of Web Applications",
+              "titleAr": "البنية العامة لتطبيقات الويب",
+              "sourcePages": {
+                "english": {
+                  "pdfPages": [
+                    56,
+                    57,
+                    58,
+                    59,
+                    60,
+                    61,
+                    62
+                  ],
+                  "textbookPages": [
+                    55,
+                    56,
+                    57,
+                    58,
+                    59,
+                    60,
+                    61
+                  ],
+                  "objectivesPdfPage": 56,
+                  "conceptEvidencePdfPage": 57
+                },
+                "arabic": {
+                  "pdfPages": [
+                    51,
+                    52,
+                    53,
+                    54,
+                    55,
+                    56
+                  ],
+                  "textbookPages": [
+                    50,
+                    51,
+                    52,
+                    53,
+                    54,
+                    55
+                  ],
+                  "objectivesPdfPage": 51,
+                  "conceptEvidencePdfPage": 52
+                }
+              },
+              "objectives": [
+                {
+                  "textEn": "Explain what a web application is and describe the roles of its three tiers: frontend, backend, and database.",
+                  "textAr": "شرح ماهية تطبيق الويب ووصف أدوار طبقاته الثلاث: الواجهة الأمامية والواجهة الخلفية وقاعدة البيانات.",
+                  "verb": "explain",
+                  "cognitiveLevel": "understand"
+                },
+                {
+                  "textEn": "Trace how the three tiers cooperate to turn a user’s action into a result, using familiar services as examples.",
+                  "textAr": "تتبع كيفية تعاون الطبقات الثلاث لتحويل إجراء المستخدم إلى نتيجة، باستخدام خدمات مألوفة كأمثلة.",
+                  "verb": "trace",
+                  "cognitiveLevel": "analyze"
+                }
+              ],
+              "knowledgeSummaryEn": "A web application coordinates the presentation/frontend, logic/backend, and data/database tiers to turn user actions into results.",
+              "cautionAndMisconceptionsEn": [
+                "Frontend, backend, and database are distinct roles that cooperate; they are not interchangeable labels."
+              ],
+              "conceptIds": [
+                "concept-web-application",
+                "concept-frontend",
+                "concept-backend",
+                "concept-database",
+                "concept-three-tier-architecture"
+              ]
+            },
+            {
+              "id": "lesson-3-2",
+              "code": "3-2",
+              "order": 2,
+              "title": "Web Application Communication Methods",
+              "titleAr": "طرق الاتصال في تطبيقات الويب",
+              "sourcePages": {
+                "english": {
+                  "pdfPages": [
+                    63,
+                    64,
+                    65,
+                    66,
+                    67,
+                    68
+                  ],
+                  "textbookPages": [
+                    62,
+                    63,
+                    64,
+                    65,
+                    66,
+                    67
+                  ],
+                  "objectivesPdfPage": 63,
+                  "conceptEvidencePdfPage": 64
+                },
+                "arabic": {
+                  "pdfPages": [
+                    57,
+                    58,
+                    59,
+                    60,
+                    61,
+                    62
+                  ],
+                  "textbookPages": [
+                    56,
+                    57,
+                    58,
+                    59,
+                    60,
+                    61
+                  ],
+                  "objectivesPdfPage": 57,
+                  "conceptEvidencePdfPage": 58
+                }
+              },
+              "objectives": [
+                {
+                  "textEn": "Explain the client and server model and the difference between HTTP and HTTPS.",
+                  "textAr": "شرح نموذج العميل والخادم والفرق بين HTTP وHTTPS.",
+                  "verb": "explain",
+                  "cognitiveLevel": "understand"
+                },
+                {
+                  "textEn": "Describe how HTTP requests and responses work, and explain the role of an API in exchanging data.",
+                  "textAr": "وصف كيفية عمل طلبات واستجابات HTTP وشرح دور واجهة برمجة التطبيقات في تبادل البيانات.",
+                  "verb": "describe",
+                  "cognitiveLevel": "apply"
+                }
+              ],
+              "knowledgeSummaryEn": "Clients send requests and servers return responses; HTTP methods, status codes, APIs, and JSON organize communication, while HTTPS adds protection.",
+              "cautionAndMisconceptionsEn": [
+                "HTTP and HTTPS are not interchangeable when sensitive data is involved.",
+                "An API is an exchange boundary, not a database or a frontend by itself."
+              ],
+              "conceptIds": [
+                "concept-client-server",
+                "concept-http-https",
+                "concept-http-method",
+                "concept-status-code",
+                "concept-api-json"
+              ]
+            },
+            {
+              "id": "lesson-3-3",
+              "code": "3-3",
+              "order": 3,
+              "title": "Fundamentals of Frontend Technology",
+              "titleAr": "أساسيات تكنولوجيا الواجهة الأمامية",
+              "sourcePages": {
+                "english": {
+                  "pdfPages": [
+                    69,
+                    70,
+                    71,
+                    72,
+                    73,
+                    74,
+                    75
+                  ],
+                  "textbookPages": [
+                    68,
+                    69,
+                    70,
+                    71,
+                    72,
+                    73,
+                    74
+                  ],
+                  "objectivesPdfPage": 69,
+                  "conceptEvidencePdfPage": 70
+                },
+                "arabic": {
+                  "pdfPages": [
+                    63,
+                    64,
+                    65,
+                    66,
+                    67,
+                    68
+                  ],
+                  "textbookPages": [
+                    62,
+                    63,
+                    64,
+                    65,
+                    66,
+                    67
+                  ],
+                  "objectivesPdfPage": 63,
+                  "conceptEvidencePdfPage": 64
+                }
+              },
+              "objectives": [
+                {
+                  "textEn": "Explain the distinct roles of HTML, CSS, and JavaScript in building a web page.",
+                  "textAr": "شرح الأدوار المختلفة لـHTML وCSS وJavaScript في بناء صفحة ويب.",
+                  "verb": "explain",
+                  "cognitiveLevel": "understand"
+                },
+                {
+                  "textEn": "Describe how semantic HTML, responsive design, and frameworks improve a modern frontend.",
+                  "textAr": "وصف كيفية تحسين HTML الدلالي والتصميم المتجاوب وأطر العمل للواجهة الأمامية الحديثة.",
+                  "verb": "describe",
+                  "cognitiveLevel": "apply"
+                }
+              ],
+              "knowledgeSummaryEn": "HTML supplies structure, CSS appearance, and JavaScript behavior; semantic, responsive, accessible design supports modern frontends.",
+              "cautionAndMisconceptionsEn": [
+                "HTML, CSS, and JavaScript have different responsibilities.",
+                "A framework supports frontend development; it does not replace the underlying web roles."
+              ],
+              "conceptIds": [
+                "concept-html-css-javascript",
+                "concept-semantic-html",
+                "concept-accessibility-seo",
+                "concept-responsive-design",
+                "concept-framework"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "unit-4",
+          "code": "4",
+          "order": 4,
+          "title": "Web and Media Design",
+          "titleAr": "تصميم الويب والوسائط",
+          "icon": "Palette",
+          "sourceTextbookPages": {
+            "english": [
+              75,
+              101
+            ],
+            "arabic": [
+              68,
+              91
+            ]
+          },
+          "lessons": [
+            {
+              "id": "lesson-4-1",
+              "code": "4-1",
+              "order": 1,
+              "title": "Types and Characteristics of Media",
+              "titleAr": "أنواع الوسائط وخصائصها",
+              "sourcePages": {
+                "english": {
+                  "pdfPages": [
+                    76,
+                    77,
+                    78,
+                    79,
+                    80,
+                    81
+                  ],
+                  "textbookPages": [
+                    75,
+                    76,
+                    77,
+                    78,
+                    79,
+                    80
+                  ],
+                  "objectivesPdfPage": 76,
+                  "conceptEvidencePdfPage": 77
+                },
+                "arabic": {
+                  "pdfPages": [
+                    69,
+                    70,
+                    71,
+                    72,
+                    73,
+                    74
+                  ],
+                  "textbookPages": [
+                    68,
+                    69,
+                    70,
+                    71,
+                    72,
+                    73
+                  ],
+                  "objectivesPdfPage": 69,
+                  "conceptEvidencePdfPage": 70
+                }
+              },
+              "objectives": [
+                {
+                  "textEn": "Compare the characteristics of different media, and explain the strengths and constraints of websites.",
+                  "textAr": "مقارنة خصائص الوسائط المختلفة وشرح نقاط قوة المواقع الإلكترونية وقيودها.",
+                  "verb": "compare",
+                  "cognitiveLevel": "analyze"
+                },
+                {
+                  "textEn": "Choose suitable media for a given purpose and audience, and justify the choice.",
+                  "textAr": "اختيار الوسيط المناسب لغرض وجمهور محددين وتبرير الاختيار.",
+                  "verb": "choose",
+                  "cognitiveLevel": "evaluate"
+                }
+              ],
+              "knowledgeSummaryEn": "Media differ in reach, interaction, and constraints; a suitable choice depends on purpose and audience and may combine media.",
+              "cautionAndMisconceptionsEn": [
+                "No medium is universally best; suitability depends on the purpose and audience."
+              ],
+              "conceptIds": [
+                "concept-tv-radio-newspaper",
+                "concept-website-sns",
+                "concept-one-way-two-way",
+                "concept-strengths-constraints",
+                "concept-combining-media"
+              ]
+            },
+            {
+              "id": "lesson-4-2",
+              "code": "4-2",
+              "order": 2,
+              "title": "Information Design and User Experience for Websites",
+              "titleAr": "تصميم المعلومات وتجربة المستخدم للمواقع",
+              "sourcePages": {
+                "english": {
+                  "pdfPages": [
+                    82,
+                    83,
+                    84,
+                    85,
+                    86,
+                    87,
+                    88
+                  ],
+                  "textbookPages": [
+                    81,
+                    82,
+                    83,
+                    84,
+                    85,
+                    86,
+                    87
+                  ],
+                  "objectivesPdfPage": 82,
+                  "conceptEvidencePdfPage": 83
+                },
+                "arabic": {
+                  "pdfPages": [
+                    75,
+                    76,
+                    77,
+                    78,
+                    79,
+                    80,
+                    81
+                  ],
+                  "textbookPages": [
+                    74,
+                    75,
+                    76,
+                    77,
+                    78,
+                    79,
+                    80
+                  ],
+                  "objectivesPdfPage": 75,
+                  "conceptEvidencePdfPage": 76
+                }
+              },
+              "objectives": [
+                {
+                  "textEn": "Explain how personas and wireframes are used to plan a website before designing its appearance.",
+                  "textAr": "شرح كيفية استخدام شخصيات المستخدم والمخططات الهيكلية لتخطيط الموقع قبل تصميم مظهره.",
+                  "verb": "explain",
+                  "cognitiveLevel": "understand"
+                },
+                {
+                  "textEn": "Apply the four principles of design (contrast, repetition, alignment, proximity) and explain the idea of user-centered design.",
+                  "textAr": "تطبيق مبادئ التصميم الأربعة (التباين والتكرار والمحاذاة والتقارب) وشرح فكرة التصميم المتمحور حول المستخدم.",
+                  "verb": "apply",
+                  "cognitiveLevel": "apply"
+                }
+              ],
+              "knowledgeSummaryEn": "Good information design starts from user needs: persona, wireframe, CRAP principles, and user-centered design make structure and interaction clearer.",
+              "cautionAndMisconceptionsEn": [
+                "A wireframe is a planning blueprint, not a finished visual design.",
+                "User-centered design prioritizes user needs rather than the creator’s preference."
+              ],
+              "conceptIds": [
+                "concept-persona",
+                "concept-wireframe",
+                "concept-contrast-repetition",
+                "concept-alignment-proximity",
+                "concept-user-centered-design"
+              ]
+            },
+            {
+              "id": "lesson-4-3",
+              "code": "4-3",
+              "order": 3,
+              "title": "Methods for Evaluating Websites",
+              "titleAr": "أساليب تقييم المواقع الإلكترونية",
+              "sourcePages": {
+                "english": {
+                  "pdfPages": [
+                    89,
+                    90,
+                    91,
+                    92,
+                    93,
+                    94,
+                    95
+                  ],
+                  "textbookPages": [
+                    88,
+                    89,
+                    90,
+                    91,
+                    92,
+                    93,
+                    94
+                  ],
+                  "objectivesPdfPage": 89,
+                  "conceptEvidencePdfPage": 90
+                },
+                "arabic": {
+                  "pdfPages": [
+                    82,
+                    83,
+                    84,
+                    85,
+                    86,
+                    87
+                  ],
+                  "textbookPages": [
+                    81,
+                    82,
+                    83,
+                    84,
+                    85,
+                    86
+                  ],
+                  "objectivesPdfPage": 82,
+                  "conceptEvidencePdfPage": 83
+                }
+              },
+              "objectives": [
+                {
+                  "textEn": "Distinguish qualitative from quantitative evaluation, and explain the major indicators used in web analytics.",
+                  "textAr": "التمييز بين التقييم النوعي والكمي وشرح المؤشرات الرئيسية المستخدمة في تحليلات الويب.",
+                  "verb": "distinguish",
+                  "cognitiveLevel": "analyze"
+                },
+                {
+                  "textEn": "Explain how heuristic evaluation works, and why combining both approaches gives a clearer picture of a website.",
+                  "textAr": "شرح كيفية عمل التقييم الاستدلالي وسبب إعطاء الجمع بين النهجين صورة أوضح عن الموقع.",
+                  "verb": "explain",
+                  "cognitiveLevel": "analyze"
+                }
+              ],
+              "knowledgeSummaryEn": "Qualitative evaluation explains user voices and behavior, quantitative evaluation measures usage, and heuristic review uses expert rules; combining them gives a fuller picture.",
+              "cautionAndMisconceptionsEn": [
+                "Page views alone do not explain why users leave.",
+                "Qualitative and quantitative evidence answer different questions and should not be collapsed into one measure."
+              ],
+              "conceptIds": [
+                "concept-qualitative-evaluation",
+                "concept-quantitative-evaluation",
+                "concept-web-analytics",
+                "concept-pv-bounce-rate-cvr",
+                "concept-heuristic-evaluation"
+              ]
+            },
+            {
+              "id": "lesson-4-4",
+              "code": "4-4",
+              "order": 4,
+              "title": "The Iterative Improvement Process for Websites",
+              "titleAr": "عملية التحسين التكراري للمواقع",
+              "sourcePages": {
+                "english": {
+                  "pdfPages": [
+                    96,
+                    97,
+                    98,
+                    99,
+                    100,
+                    101,
+                    102
+                  ],
+                  "textbookPages": [
+                    95,
+                    96,
+                    97,
+                    98,
+                    99,
+                    100,
+                    101
+                  ],
+                  "objectivesPdfPage": 96,
+                  "conceptEvidencePdfPage": 97
+                },
+                "arabic": {
+                  "pdfPages": [
+                    88,
+                    89,
+                    90,
+                    91,
+                    92,
+                    93
+                  ],
+                  "textbookPages": [
+                    87,
+                    88,
+                    89,
+                    90,
+                    91,
+                    92
+                  ],
+                  "objectivesPdfPage": 88,
+                  "conceptEvidencePdfPage": 89
+                }
+              },
+              "objectives": [
+                {
+                  "textEn": "Explain the PDCA cycle and the steps of design thinking as ways of improving a website.",
+                  "textAr": "شرح دورة PDCA وخطوات التفكير التصميمي باعتبارهما طريقتين لتحسين الموقع.",
+                  "verb": "explain",
+                  "cognitiveLevel": "understand"
+                },
+                {
+                  "textEn": "Describe how A/B testing compares two options using real data, and explain why improvement is repeated in cycles.",
+                  "textAr": "وصف كيفية مقارنة اختبار A/B بين خيارين باستخدام بيانات حقيقية وشرح سبب تكرار التحسين في دورات.",
+                  "verb": "describe",
+                  "cognitiveLevel": "evaluate"
+                }
+              ],
+              "knowledgeSummaryEn": "Website improvement is cyclical: PDCA, design thinking, and controlled A/B tests use evidence to refine one change at a time.",
+              "cautionAndMisconceptionsEn": [
+                "A/B testing should isolate the changed element as far as possible.",
+                "A website is not finished after one PDCA cycle; improvement repeats."
+              ],
+              "conceptIds": [
+                "concept-pdca-cycle",
+                "concept-plan-do-check-act",
+                "concept-design-thinking",
+                "concept-a-b-testing",
+                "concept-continuous-improvement"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "part-2",
+      "code": "P2",
+      "order": 2,
+      "title": "Part 2",
+      "titleAr": "الجزء الثاني",
+      "descriptionEn": "Data Collection and Cleaning; Analysis and Communication; Machine Learning and Artificial Intelligence.",
+      "descriptionAr": "جمع البيانات وتنقيتها؛ التحليل والتواصل؛ التعلم الآلي والذكاء الاصطناعي.",
+      "sourceIds": [
+        "source-en-p2",
+        "source-ar-p2"
+      ],
+      "units": [
+        {
+          "id": "unit-5",
+          "code": "5",
+          "order": 5,
+          "title": "Data Collection and Cleaning",
+          "titleAr": "جمع البيانات وتنقيتها",
+          "icon": "Database",
+          "sourceTextbookPages": {
+            "english": [
+              4,
+              28
+            ],
+            "arabic": [
+              4,
+              25
+            ]
+          },
+          "lessons": [
+            {
+              "id": "lesson-5-1",
+              "code": "5-1",
+              "order": 1,
+              "title": "Methods of Data Collection",
+              "titleAr": "طرق جمع البيانات",
+              "sourcePages": {
+                "english": {
+                  "pdfPages": [
+                    5,
+                    6,
+                    7,
+                    8,
+                    9,
+                    10,
+                    11,
+                    12
+                  ],
+                  "textbookPages": [
+                    4,
+                    5,
+                    6,
+                    7,
+                    8,
+                    9,
+                    10,
+                    11
+                  ],
+                  "objectivesPdfPage": 5,
+                  "conceptEvidencePdfPage": 6
+                },
+                "arabic": {
+                  "pdfPages": [
+                    5,
+                    6,
+                    7,
+                    8,
+                    9,
+                    10,
+                    11
+                  ],
+                  "textbookPages": [
+                    4,
+                    5,
+                    6,
+                    7,
+                    8,
+                    9,
+                    10
+                  ],
+                  "objectivesPdfPage": 5,
+                  "conceptEvidencePdfPage": 6
+                }
+              },
+              "objectives": [
+                {
+                  "textEn": "Distinguish primary from secondary data and explain when each is appropriate.",
+                  "textAr": "التمييز بين البيانات الأولية والثانوية وشرح الوقت المناسب لاستخدام كل منهما.",
+                  "verb": "distinguish",
+                  "cognitiveLevel": "understand"
+                },
+                {
+                  "textEn": "Explain how sampling works, and describe how sampling bias can lead to confident but wrong conclusions.",
+                  "textAr": "شرح كيفية عمل أخذ العينات ووصف كيف يمكن لتحيز العينة أن يؤدي إلى استنتاجات واثقة لكنها خاطئة.",
+                  "verb": "explain",
+                  "cognitiveLevel": "analyze"
+                }
+              ],
+              "knowledgeSummaryEn": "Trustworthy analysis starts with a collection plan, appropriate primary or secondary data, and an unbiased sample representing a population.",
+              "cautionAndMisconceptionsEn": [
+                "A sample is not the whole population.",
+                "A confident conclusion can still be wrong when the sample is biased."
+              ],
+              "conceptIds": [
+                "concept-data-collection",
+                "concept-primary-secondary-data",
+                "concept-population-sample",
+                "concept-sampling-simple-random-stratified",
+                "concept-sampling-bias"
+              ]
+            },
+            {
+              "id": "lesson-5-2",
+              "code": "5-2",
+              "order": 2,
+              "title": "Data Cleaning and Transformation",
+              "titleAr": "تنقية البيانات وتحويلها",
+              "sourcePages": {
+                "english": {
+                  "pdfPages": [
+                    13,
+                    14,
+                    15,
+                    16,
+                    17,
+                    18,
+                    19,
+                    20,
+                    21
+                  ],
+                  "textbookPages": [
+                    12,
+                    13,
+                    14,
+                    15,
+                    16,
+                    17,
+                    18,
+                    19,
+                    20
+                  ],
+                  "objectivesPdfPage": 13,
+                  "conceptEvidencePdfPage": 14
+                },
+                "arabic": {
+                  "pdfPages": [
+                    12,
+                    13,
+                    14,
+                    15,
+                    16,
+                    17,
+                    18,
+                    19
+                  ],
+                  "textbookPages": [
+                    11,
+                    12,
+                    13,
+                    14,
+                    15,
+                    16,
+                    17,
+                    18
+                  ],
+                  "objectivesPdfPage": 12,
+                  "conceptEvidencePdfPage": 13
+                }
+              },
+              "objectives": [
+                {
+                  "textEn": "Explain how missing values, outliers, and duplicate data are handled when cleaning a dataset.",
+                  "textAr": "شرح كيفية التعامل مع القيم المفقودة والقيم الشاذة والبيانات المكررة عند تنظيف مجموعة البيانات.",
+                  "verb": "explain",
+                  "cognitiveLevel": "apply"
+                },
+                {
+                  "textEn": "Describe data type conversion, normalization and standardization, and the reshaping of data to fit a purpose.",
+                  "textAr": "وصف تحويل أنواع البيانات والتطبيع والتوحيد وإعادة تشكيل البيانات لتناسب الغرض.",
+                  "verb": "describe",
+                  "cognitiveLevel": "apply"
+                }
+              ],
+              "knowledgeSummaryEn": "Cleaning fixes data quality problems; transformation changes type, scale, or shape so the data fits the intended analysis.",
+              "cautionAndMisconceptionsEn": [
+                "Cleaning is not always deleting rows; the treatment depends on the meaning and purpose of the data.",
+                "Normalization, standardization, and reshaping are different operations."
+              ],
+              "conceptIds": [
+                "concept-data-cleaning-transformation",
+                "concept-missing-values-outliers-duplicates",
+                "concept-data-type-conversion",
+                "concept-normalization-standardization",
+                "concept-reshaping-pivot-join-aggregation"
+              ]
+            },
+            {
+              "id": "lesson-5-3",
+              "code": "5-3",
+              "order": 3,
+              "title": "Open Data and APIs",
+              "titleAr": "البيانات المفتوحة وواجهات برمجة التطبيقات",
+              "sourcePages": {
+                "english": {
+                  "pdfPages": [
+                    22,
+                    23,
+                    24,
+                    25,
+                    26,
+                    27,
+                    28,
+                    29
+                  ],
+                  "textbookPages": [
+                    21,
+                    22,
+                    23,
+                    24,
+                    25,
+                    26,
+                    27,
+                    28
+                  ],
+                  "objectivesPdfPage": 22,
+                  "conceptEvidencePdfPage": 23
+                },
+                "arabic": {
+                  "pdfPages": [
+                    20,
+                    21,
+                    22,
+                    23,
+                    24,
+                    25,
+                    26
+                  ],
+                  "textbookPages": [
+                    19,
+                    20,
+                    21,
+                    22,
+                    23,
+                    24,
+                    25
+                  ],
+                  "objectivesPdfPage": 20,
+                  "conceptEvidencePdfPage": 21
+                }
+              },
+              "objectives": [
+                {
+                  "textEn": "Explain what open data is and identify major reliable sources of it.",
+                  "textAr": "شرح ماهية البيانات المفتوحة وتحديد مصادرها الرئيسية الموثوقة.",
+                  "verb": "explain",
+                  "cognitiveLevel": "understand"
+                },
+                {
+                  "textEn": "Describe how data is obtained through an API, and explain the importance of terms of use and source citation.",
+                  "textAr": "وصف كيفية الحصول على البيانات من خلال واجهة برمجة التطبيقات وشرح أهمية شروط الاستخدام وتوثيق المصدر.",
+                  "verb": "describe",
+                  "cognitiveLevel": "apply"
+                }
+              ],
+              "knowledgeSummaryEn": "Open data can be reused, but APIs, terms of use, rate limits, and source citation govern responsible access and analysis.",
+              "cautionAndMisconceptionsEn": [
+                "Publicly available data is not automatically free of usage conditions.",
+                "Using an API still requires checking terms of use and citing the source."
+              ],
+              "conceptIds": [
+                "concept-open-data",
+                "concept-world-bank-open-data-un-data-kaggle",
+                "concept-api-endpoint-json",
+                "concept-terms-of-use",
+                "concept-source-citation"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "unit-6",
+          "code": "6",
+          "order": 6,
+          "title": "Analysis and Communication",
+          "titleAr": "التحليل والتواصل",
+          "icon": "BarChart3",
+          "sourceTextbookPages": {
+            "english": [
+              29,
+              56
+            ],
+            "arabic": [
+              26,
+              49
+            ]
+          },
+          "lessons": [
+            {
+              "id": "lesson-6-1",
+              "code": "6-1",
+              "order": 1,
+              "title": "Statistical Inference",
+              "titleAr": "الاستدلال الإحصائي",
+              "sourcePages": {
+                "english": {
+                  "pdfPages": [
+                    30,
+                    31,
+                    32,
+                    33,
+                    34,
+                    35,
+                    36,
+                    37,
+                    38,
+                    39
+                  ],
+                  "textbookPages": [
+                    29,
+                    30,
+                    31,
+                    32,
+                    33,
+                    34,
+                    35,
+                    36,
+                    37,
+                    38
+                  ],
+                  "objectivesPdfPage": 30,
+                  "conceptEvidencePdfPage": 31
+                },
+                "arabic": {
+                  "pdfPages": [
+                    27,
+                    28,
+                    29,
+                    30,
+                    31,
+                    32,
+                    33,
+                    34
+                  ],
+                  "textbookPages": [
+                    26,
+                    27,
+                    28,
+                    29,
+                    30,
+                    31,
+                    32,
+                    33
+                  ],
+                  "objectivesPdfPage": 27,
+                  "conceptEvidencePdfPage": 28
+                }
+              },
+              "objectives": [
+                {
+                  "textEn": "Explain the difference between point estimation and interval estimation, including the meaning of a confidence level.",
+                  "textAr": "شرح الفرق بين التقدير النقطي والتقدير الفتري، بما في ذلك معنى مستوى الثقة.",
+                  "verb": "explain",
+                  "cognitiveLevel": "understand"
+                },
+                {
+                  "textEn": "Describe the procedure of hypothesis testing, and explain the cautions needed when interpreting its results.",
+                  "textAr": "وصف إجراءات اختبار الفرضيات وشرح الاحتياطات اللازمة عند تفسير نتائجه.",
+                  "verb": "describe",
+                  "cognitiveLevel": "analyze"
+                }
+              ],
+              "knowledgeSummaryEn": "Statistical inference reasons from a sample to a population and measures uncertainty through estimation and hypothesis testing.",
+              "cautionAndMisconceptionsEn": [
+                "Statistical significance is not the same as practical importance.",
+                "A p-value below a threshold does not make a conclusion certainly true."
+              ],
+              "conceptIds": [
+                "concept-statistical-inference",
+                "concept-point-interval-estimation",
+                "concept-confidence-interval-level",
+                "concept-null-alternative-hypothesis",
+                "concept-p-value-significance-level",
+                "concept-type-i-ii-errors"
+              ]
+            },
+            {
+              "id": "lesson-6-2",
+              "code": "6-2",
+              "order": 2,
+              "title": "Use and Evaluation of Regression Analysis",
+              "titleAr": "استخدام تحليل الانحدار وتقييمه",
+              "sourcePages": {
+                "english": {
+                  "pdfPages": [
+                    40,
+                    41,
+                    42,
+                    43,
+                    44,
+                    45,
+                    46,
+                    47,
+                    48
+                  ],
+                  "textbookPages": [
+                    39,
+                    40,
+                    41,
+                    42,
+                    43,
+                    44,
+                    45,
+                    46,
+                    47
+                  ],
+                  "objectivesPdfPage": 40,
+                  "conceptEvidencePdfPage": 41
+                },
+                "arabic": {
+                  "pdfPages": [
+                    35,
+                    36,
+                    37,
+                    38,
+                    39,
+                    40,
+                    41,
+                    42
+                  ],
+                  "textbookPages": [
+                    34,
+                    35,
+                    36,
+                    37,
+                    38,
+                    39,
+                    40,
+                    41
+                  ],
+                  "objectivesPdfPage": 35,
+                  "conceptEvidencePdfPage": 36
+                }
+              },
+              "objectives": [
+                {
+                  "textEn": "Explain the difference between simple and multiple regression, and what a regression model represents.",
+                  "textAr": "شرح الفرق بين الانحدار البسيط والمتعدد وما يمثله نموذج الانحدار.",
+                  "verb": "explain",
+                  "cognitiveLevel": "understand"
+                },
+                {
+                  "textEn": "Evaluate a regression model using R², RMSE, and MAE, and explain why a good fit does not prove causation.",
+                  "textAr": "تقييم نموذج الانحدار باستخدام R² وRMSE وMAE وشرح سبب عدم إثبات جودة المطابقة للسببية.",
+                  "verb": "evaluate",
+                  "cognitiveLevel": "evaluate"
+                }
+              ],
+              "knowledgeSummaryEn": "Regression expresses relationships as a model for prediction; R², RMSE, and MAE describe fit, but a good fit does not prove causation.",
+              "cautionAndMisconceptionsEn": [
+                "Correlation is not causation.",
+                "A model is a simplified representation and must be evaluated for accuracy and limitations."
+              ],
+              "conceptIds": [
+                "concept-regression-analysis",
+                "concept-response-explanatory-variable",
+                "concept-simple-multiple-regression",
+                "concept-regression-line-least-squares",
+                "concept-r-rmse-mae",
+                "concept-correlation-versus-causation"
+              ]
+            },
+            {
+              "id": "lesson-6-3",
+              "code": "6-3",
+              "order": 3,
+              "title": "Data Visualization and Communication",
+              "titleAr": "تصور البيانات والتواصل",
+              "sourcePages": {
+                "english": {
+                  "pdfPages": [
+                    49,
+                    50,
+                    51,
+                    52,
+                    53,
+                    54,
+                    55,
+                    56,
+                    57
+                  ],
+                  "textbookPages": [
+                    48,
+                    49,
+                    50,
+                    51,
+                    52,
+                    53,
+                    54,
+                    55,
+                    56
+                  ],
+                  "objectivesPdfPage": 49,
+                  "conceptEvidencePdfPage": 50
+                },
+                "arabic": {
+                  "pdfPages": [
+                    43,
+                    44,
+                    45,
+                    46,
+                    47,
+                    48,
+                    49,
+                    50
+                  ],
+                  "textbookPages": [
+                    42,
+                    43,
+                    44,
+                    45,
+                    46,
+                    47,
+                    48,
+                    49
+                  ],
+                  "objectivesPdfPage": 43,
+                  "conceptEvidencePdfPage": 44
+                }
+              },
+              "objectives": [
+                {
+                  "textEn": "Explain the role of data visualization and select suitable graphs, including for multiple variables.",
+                  "textAr": "شرح دور تصور البيانات واختيار الرسوم البيانية المناسبة، بما في ذلك الرسوم للمتغيرات المتعددة.",
+                  "verb": "explain",
+                  "cognitiveLevel": "apply"
+                },
+                {
+                  "textEn": "Apply data storytelling to communicate a clear and honest message from data.",
+                  "textAr": "تطبيق سرد البيانات للتواصل برسالة واضحة وصادقة مستندة إلى البيانات.",
+                  "verb": "apply",
+                  "cognitiveLevel": "evaluate"
+                }
+              ],
+              "knowledgeSummaryEn": "A visualization should reveal relevant patterns without hiding uncertainty or density; data storytelling connects a suitable chart to an honest message.",
+              "cautionAndMisconceptionsEn": [
+                "A more decorative chart is not necessarily a clearer chart.",
+                "Overplotting can hide density and the chart type must fit the variables."
+              ],
+              "conceptIds": [
+                "concept-data-visualization",
+                "concept-heatmap",
+                "concept-mosaic-plot",
+                "concept-overplotting",
+                "concept-data-storytelling"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "unit-7",
+          "code": "7",
+          "order": 7,
+          "title": "Machine Learning and Artificial Intelligence",
+          "titleAr": "التعلم الآلي والذكاء الاصطناعي",
+          "icon": "BrainCircuit",
+          "sourceTextbookPages": {
+            "english": [
+              57,
+              85
+            ],
+            "arabic": [
+              50,
+              72
+            ]
+          },
+          "lessons": [
+            {
+              "id": "lesson-7-1",
+              "code": "7-1",
+              "order": 1,
+              "title": "The Basics of Machine Learning",
+              "titleAr": "أساسيات التعلم الآلي",
+              "sourcePages": {
+                "english": {
+                  "pdfPages": [
+                    58,
+                    59,
+                    60,
+                    61,
+                    62,
+                    63,
+                    64,
+                    65,
+                    66,
+                    67,
+                    68
+                  ],
+                  "textbookPages": [
+                    57,
+                    58,
+                    59,
+                    60,
+                    61,
+                    62,
+                    63,
+                    64,
+                    65,
+                    66,
+                    67
+                  ],
+                  "objectivesPdfPage": 58,
+                  "conceptEvidencePdfPage": 59
+                },
+                "arabic": {
+                  "pdfPages": [
+                    51,
+                    52,
+                    53,
+                    54,
+                    55,
+                    56,
+                    57,
+                    58,
+                    59
+                  ],
+                  "textbookPages": [
+                    50,
+                    51,
+                    52,
+                    53,
+                    54,
+                    55,
+                    56,
+                    57,
+                    58
+                  ],
+                  "objectivesPdfPage": 51,
+                  "conceptEvidencePdfPage": 52
+                }
+              },
+              "objectives": [
+                {
+                  "textEn": "Explain the idea of machine learning and distinguish supervised, unsupervised, and reinforcement learning.",
+                  "textAr": "شرح فكرة تعلم الآلة والتمييز بين التعلم الخاضع للإشراف وغير الخاضع للإشراف والتعلم بالتعزيز.",
+                  "verb": "explain",
+                  "cognitiveLevel": "understand"
+                },
+                {
+                  "textEn": "Describe classification, clustering, and reinforcement learning with examples, and explain the limits caused by data bias and the black-box problem.",
+                  "textAr": "وصف التصنيف والتجميع والتعلم بالتعزيز مع أمثلة وشرح القيود الناتجة عن تحيز البيانات ومشكلة الصندوق الأسود.",
+                  "verb": "describe",
+                  "cognitiveLevel": "analyze"
+                }
+              ],
+              "knowledgeSummaryEn": "Machine learning learns patterns from data through supervised, unsupervised, or reinforcement approaches; data bias and opaque reasoning limit trust.",
+              "cautionAndMisconceptionsEn": [
+                "More examples do not guarantee fairness when the examples are biased.",
+                "Classification, clustering, and reinforcement learning solve different kinds of tasks."
+              ],
+              "conceptIds": [
+                "concept-machine-learning",
+                "concept-supervised-unsupervised-reinforcement",
+                "concept-classification-feature",
+                "concept-clustering",
+                "concept-bias-black-box-problem"
+              ]
+            },
+            {
+              "id": "lesson-7-2",
+              "code": "7-2",
+              "order": 2,
+              "title": "Neural Networks and Deep Learning",
+              "titleAr": "الشبكات العصبية والتعلم العميق",
+              "sourcePages": {
+                "english": {
+                  "pdfPages": [
+                    69,
+                    70,
+                    71,
+                    72,
+                    73,
+                    74,
+                    75,
+                    76,
+                    77
+                  ],
+                  "textbookPages": [
+                    68,
+                    69,
+                    70,
+                    71,
+                    72,
+                    73,
+                    74,
+                    75,
+                    76
+                  ],
+                  "objectivesPdfPage": 69,
+                  "conceptEvidencePdfPage": 70
+                },
+                "arabic": {
+                  "pdfPages": [
+                    60,
+                    61,
+                    62,
+                    63,
+                    64,
+                    65,
+                    66,
+                    67
+                  ],
+                  "textbookPages": [
+                    59,
+                    60,
+                    61,
+                    62,
+                    63,
+                    64,
+                    65,
+                    66
+                  ],
+                  "objectivesPdfPage": 60,
+                  "conceptEvidencePdfPage": 61
+                }
+              },
+              "objectives": [
+                {
+                  "textEn": "Describe the structure of a neural network and explain how a single neuron processes its inputs.",
+                  "textAr": "وصف بنية الشبكة العصبية وشرح كيفية معالجة عصبون واحد لمدخلاته.",
+                  "verb": "describe",
+                  "cognitiveLevel": "understand"
+                },
+                {
+                  "textEn": "Explain what deep learning is, and why stacking many hidden layers brought a leap in AI performance.",
+                  "textAr": "شرح ماهية التعلم العميق وسبب إحداث تكديس طبقات مخفية كثيرة قفزة في أداء الذكاء الاصطناعي.",
+                  "verb": "explain",
+                  "cognitiveLevel": "analyze"
+                }
+              ],
+              "knowledgeSummaryEn": "Neural networks connect weighted neurons in layers; deep learning stacks hidden layers to learn hierarchical features.",
+              "cautionAndMisconceptionsEn": [
+                "A single neuron is not a whole deep network.",
+                "Depth refers to layered representation learning, not simply a larger dataset."
+              ],
+              "conceptIds": [
+                "concept-node-neuron-layer",
+                "concept-input-hidden-output-layer",
+                "concept-weight-training",
+                "concept-deep-learning",
+                "concept-hierarchical-features"
+              ]
+            },
+            {
+              "id": "lesson-7-3",
+              "code": "7-3",
+              "order": 3,
+              "title": "Large Language Models (LLM) and Generative AI",
+              "titleAr": "نماذج اللغة الكبيرة (LLM) والذكاء الاصطناعي التوليدي",
+              "sourcePages": {
+                "english": {
+                  "pdfPages": [
+                    78,
+                    79,
+                    80,
+                    81,
+                    82,
+                    83,
+                    84,
+                    85,
+                    86
+                  ],
+                  "textbookPages": [
+                    77,
+                    78,
+                    79,
+                    80,
+                    81,
+                    82,
+                    83,
+                    84,
+                    85
+                  ],
+                  "objectivesPdfPage": 78,
+                  "conceptEvidencePdfPage": 79
+                },
+                "arabic": {
+                  "pdfPages": [
+                    68,
+                    69,
+                    70,
+                    71,
+                    72,
+                    73,
+                    74,
+                    75
+                  ],
+                  "textbookPages": [
+                    67,
+                    68,
+                    69,
+                    70,
+                    71,
+                    72,
+                    73,
+                    74
+                  ],
+                  "objectivesPdfPage": 68,
+                  "conceptEvidencePdfPage": 69
+                }
+              },
+              "objectives": [
+                {
+                  "textEn": "Explain how a language model generates text by predicting the next word, and why this causes hallucination.",
+                  "textAr": "شرح كيفية توليد النموذج اللغوي للنص بالتنبؤ بالكلمة التالية وسبب تسبب ذلك في الهلوسة.",
+                  "verb": "explain",
+                  "cognitiveLevel": "understand"
+                },
+                {
+                  "textEn": "Describe what makes a language model large, and explain the roles of RLHF tuning and multimodality.",
+                  "textAr": "وصف ما يجعل النموذج اللغوي كبيرًا وشرح أدوار ضبط RLHF وتعدد الوسائط.",
+                  "verb": "describe",
+                  "cognitiveLevel": "analyze"
+                }
+              ],
+              "knowledgeSummaryEn": "A language model repeatedly predicts a plausible next word; scale, parameters, RLHF, and multimodality expand capability, but fluency is not truth.",
+              "cautionAndMisconceptionsEn": [
+                "Next-word prediction optimizes plausibility, not guaranteed factual accuracy.",
+                "RLHF improves alignment and helpfulness; it does not make every answer true.",
+                "Multimodality means handling multiple data types, not merely arithmetic over numbers."
+              ],
+              "conceptIds": [
+                "concept-language-model-next-word-prediction",
+                "concept-hallucination",
+                "concept-large-language-model-llm-parameters",
+                "concept-rlhf",
+                "concept-multimodality"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "concepts": [
+    {
+      "id": "concept-moore-s-law",
+      "canonicalLabel": "Moore's Law",
+      "labelAr": "قانون مور",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-1-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-1-1",
+          "englishPdfPage": 6,
+          "arabicPdfPage": 6
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-sns",
+      "canonicalLabel": "SNS",
+      "labelAr": "خدمات الشبكات الاجتماعية (SNS)",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-1-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-1-1",
+          "englishPdfPage": 6,
+          "arabicPdfPage": 6
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-e-commerce",
+      "canonicalLabel": "e-commerce",
+      "labelAr": "التجارة الإلكترونية",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-1-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-1-1",
+          "englishPdfPage": 6,
+          "arabicPdfPage": 6
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-remote-work",
+      "canonicalLabel": "remote work",
+      "labelAr": "العمل عن بُعد",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-1-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-1-1",
+          "englishPdfPage": 6,
+          "arabicPdfPage": 6
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-online-learning",
+      "canonicalLabel": "online learning",
+      "labelAr": "التعلم عبر الإنترنت",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-1-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-1-1",
+          "englishPdfPage": 6,
+          "arabicPdfPage": 6
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-cashless-payment",
+      "canonicalLabel": "cashless payment",
+      "labelAr": "الدفع غير النقدي",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-1-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-1-1",
+          "englishPdfPage": 6,
+          "arabicPdfPage": 6
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-edge-computing",
+      "canonicalLabel": "edge computing",
+      "labelAr": "الحوسبة الطرفية",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-1-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-1-1",
+          "englishPdfPage": 6,
+          "arabicPdfPage": 6
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-autonomous-driving",
+      "canonicalLabel": "autonomous driving",
+      "labelAr": "القيادة الذاتية",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-1-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-1-1",
+          "englishPdfPage": 6,
+          "arabicPdfPage": 6
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-ar-vr",
+      "canonicalLabel": "AR / VR",
+      "labelAr": "الواقع المعزز / الواقع الافتراضي",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-1-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-1-1",
+          "englishPdfPage": 6,
+          "arabicPdfPage": 6
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-quantum-computing",
+      "canonicalLabel": "quantum computing",
+      "labelAr": "الحوسبة الكمية",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-1-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-1-1",
+          "englishPdfPage": 6,
+          "arabicPdfPage": 6
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-ai-artificial-intelligence",
+      "canonicalLabel": "AI (Artificial Intelligence)",
+      "labelAr": "الذكاء الاصطناعي (AI)",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-1-2",
+      "evidence": [
+        {
+          "lessonId": "lesson-1-2",
+          "englishPdfPage": 14,
+          "arabicPdfPage": 14
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-machine-learning",
+      "canonicalLabel": "machine learning",
+      "labelAr": "تعلم الآلة",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-1-2",
+      "evidence": [
+        {
+          "lessonId": "lesson-1-2",
+          "englishPdfPage": 14,
+          "arabicPdfPage": 14
+        },
+        {
+          "lessonId": "lesson-7-1",
+          "englishPdfPage": 59,
+          "arabicPdfPage": 52
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-deep-learning",
+      "canonicalLabel": "deep learning",
+      "labelAr": "التعلم العميق",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-1-2",
+      "evidence": [
+        {
+          "lessonId": "lesson-1-2",
+          "englishPdfPage": 14,
+          "arabicPdfPage": 14
+        },
+        {
+          "lessonId": "lesson-7-2",
+          "englishPdfPage": 70,
+          "arabicPdfPage": 61
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-neural-network",
+      "canonicalLabel": "neural network",
+      "labelAr": "الشبكة العصبية",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-1-2",
+      "evidence": [
+        {
+          "lessonId": "lesson-1-2",
+          "englishPdfPage": 14,
+          "arabicPdfPage": 14
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-generative-ai",
+      "canonicalLabel": "generative AI",
+      "labelAr": "الذكاء الاصطناعي التوليدي",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-1-2",
+      "evidence": [
+        {
+          "lessonId": "lesson-1-2",
+          "englishPdfPage": 14,
+          "arabicPdfPage": 14
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-recommendation-system",
+      "canonicalLabel": "recommendation system",
+      "labelAr": "نظام التوصية",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-1-3",
+      "evidence": [
+        {
+          "lessonId": "lesson-1-3",
+          "englishPdfPage": 21,
+          "arabicPdfPage": 20
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-voice-assistant",
+      "canonicalLabel": "voice assistant",
+      "labelAr": "المساعد الصوتي",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-1-3",
+      "evidence": [
+        {
+          "lessonId": "lesson-1-3",
+          "englishPdfPage": 21,
+          "arabicPdfPage": 20
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-machine-translation",
+      "canonicalLabel": "machine translation",
+      "labelAr": "الترجمة الآلية",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-1-3",
+      "evidence": [
+        {
+          "lessonId": "lesson-1-3",
+          "englishPdfPage": 21,
+          "arabicPdfPage": 20
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-face-recognition",
+      "canonicalLabel": "face recognition",
+      "labelAr": "التعرف على الوجه",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-1-3",
+      "evidence": [
+        {
+          "lessonId": "lesson-1-3",
+          "englishPdfPage": 21,
+          "arabicPdfPage": 20
+        },
+        {
+          "lessonId": "lesson-1-4",
+          "englishPdfPage": 28,
+          "arabicPdfPage": 26
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-image-diagnosis-ai",
+      "canonicalLabel": "image-diagnosis AI",
+      "labelAr": "الذكاء الاصطناعي لتشخيص الصور",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-1-3",
+      "evidence": [
+        {
+          "lessonId": "lesson-1-3",
+          "englishPdfPage": 21,
+          "arabicPdfPage": 20
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-predictive-maintenance",
+      "canonicalLabel": "predictive maintenance",
+      "labelAr": "الصيانة التنبؤية",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-1-3",
+      "evidence": [
+        {
+          "lessonId": "lesson-1-3",
+          "englishPdfPage": 21,
+          "arabicPdfPage": 20
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-black-box-problem",
+      "canonicalLabel": "black-box problem",
+      "labelAr": "مشكلة الصندوق الأسود",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-1-3",
+      "evidence": [
+        {
+          "lessonId": "lesson-1-3",
+          "englishPdfPage": 21,
+          "arabicPdfPage": 20
+        },
+        {
+          "lessonId": "lesson-1-4",
+          "englishPdfPage": 28,
+          "arabicPdfPage": 26
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-hallucination",
+      "canonicalLabel": "hallucination",
+      "labelAr": "الهلوسة",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-1-3",
+      "evidence": [
+        {
+          "lessonId": "lesson-1-3",
+          "englishPdfPage": 21,
+          "arabicPdfPage": 20
+        },
+        {
+          "lessonId": "lesson-7-3",
+          "englishPdfPage": 79,
+          "arabicPdfPage": 69
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-algorithmic-bias",
+      "canonicalLabel": "algorithmic bias",
+      "labelAr": "التحيز الخوارزمي",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-1-4",
+      "evidence": [
+        {
+          "lessonId": "lesson-1-4",
+          "englishPdfPage": 28,
+          "arabicPdfPage": 26
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-training-data",
+      "canonicalLabel": "training data",
+      "labelAr": "بيانات التدريب",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-1-4",
+      "evidence": [
+        {
+          "lessonId": "lesson-1-4",
+          "englishPdfPage": 28,
+          "arabicPdfPage": 26
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-privacy",
+      "canonicalLabel": "privacy",
+      "labelAr": "الخصوصية",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-1-4",
+      "evidence": [
+        {
+          "lessonId": "lesson-1-4",
+          "englishPdfPage": 28,
+          "arabicPdfPage": 26
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-explainable-ai-xai",
+      "canonicalLabel": "explainable AI (XAI)",
+      "labelAr": "الذكاء الاصطناعي القابل للتفسير (XAI)",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-1-4",
+      "evidence": [
+        {
+          "lessonId": "lesson-1-4",
+          "englishPdfPage": 28,
+          "arabicPdfPage": 26
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-responsibility",
+      "canonicalLabel": "responsibility",
+      "labelAr": "المسؤولية",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-1-4",
+      "evidence": [
+        {
+          "lessonId": "lesson-1-4",
+          "englishPdfPage": 28,
+          "arabicPdfPage": 26
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-fairness",
+      "canonicalLabel": "fairness",
+      "labelAr": "العدالة",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-1-4",
+      "evidence": [
+        {
+          "lessonId": "lesson-1-4",
+          "englishPdfPage": 28,
+          "arabicPdfPage": 26
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-transparency",
+      "canonicalLabel": "transparency",
+      "labelAr": "الشفافية",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-1-4",
+      "evidence": [
+        {
+          "lessonId": "lesson-1-4",
+          "englishPdfPage": 28,
+          "arabicPdfPage": 26
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-privacy-protection",
+      "canonicalLabel": "privacy protection",
+      "labelAr": "حماية الخصوصية",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-1-4",
+      "evidence": [
+        {
+          "lessonId": "lesson-1-4",
+          "englishPdfPage": 28,
+          "arabicPdfPage": 26
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-accountability",
+      "canonicalLabel": "accountability",
+      "labelAr": "المساءلة",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-1-4",
+      "evidence": [
+        {
+          "lessonId": "lesson-1-4",
+          "englishPdfPage": 28,
+          "arabicPdfPage": 26
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-https",
+      "canonicalLabel": "HTTPS",
+      "labelAr": "HTTPS",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-2-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-2-1",
+          "englishPdfPage": 35,
+          "arabicPdfPage": 33
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-common-key-cryptography",
+      "canonicalLabel": "common-key cryptography",
+      "labelAr": "التشفير بالمفتاح المتماثل",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-2-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-2-1",
+          "englishPdfPage": 35,
+          "arabicPdfPage": 33
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-public-key-cryptography",
+      "canonicalLabel": "public-key cryptography",
+      "labelAr": "التشفير بالمفتاح العام",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-2-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-2-1",
+          "englishPdfPage": 35,
+          "arabicPdfPage": 33
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-tls-handshake",
+      "canonicalLabel": "TLS handshake",
+      "labelAr": "مصافحة TLS",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-2-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-2-1",
+          "englishPdfPage": 35,
+          "arabicPdfPage": 33
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-multi-factor-authentication",
+      "canonicalLabel": "multi-factor authentication",
+      "labelAr": "المصادقة متعددة العوامل",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-2-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-2-1",
+          "englishPdfPage": 35,
+          "arabicPdfPage": 33
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-digital-signature",
+      "canonicalLabel": "digital signature",
+      "labelAr": "التوقيع الرقمي",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-2-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-2-1",
+          "englishPdfPage": 35,
+          "arabicPdfPage": 33
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-digital-certificate",
+      "canonicalLabel": "digital certificate",
+      "labelAr": "الشهادة الرقمية",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-2-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-2-1",
+          "englishPdfPage": 35,
+          "arabicPdfPage": 33
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-non-repudiation",
+      "canonicalLabel": "non-repudiation",
+      "labelAr": "عدم التنصل",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-2-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-2-1",
+          "englishPdfPage": 35,
+          "arabicPdfPage": 33
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-firewall",
+      "canonicalLabel": "firewall",
+      "labelAr": "جدار الحماية",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-2-2",
+      "evidence": [
+        {
+          "lessonId": "lesson-2-2",
+          "englishPdfPage": 43,
+          "arabicPdfPage": 40
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-vpn",
+      "canonicalLabel": "VPN",
+      "labelAr": "VPN",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-2-2",
+      "evidence": [
+        {
+          "lessonId": "lesson-2-2",
+          "englishPdfPage": 43,
+          "arabicPdfPage": 40
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-dmz",
+      "canonicalLabel": "DMZ",
+      "labelAr": "المنطقة منزوعة السلاح (DMZ)",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-2-2",
+      "evidence": [
+        {
+          "lessonId": "lesson-2-2",
+          "englishPdfPage": 43,
+          "arabicPdfPage": 40
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-defense-in-depth",
+      "canonicalLabel": "defense in depth",
+      "labelAr": "الدفاع متعدد الطبقات",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-2-2",
+      "evidence": [
+        {
+          "lessonId": "lesson-2-2",
+          "englishPdfPage": 43,
+          "arabicPdfPage": 40
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-zero-trust",
+      "canonicalLabel": "zero trust",
+      "labelAr": "الثقة الصفرية",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-2-2",
+      "evidence": [
+        {
+          "lessonId": "lesson-2-2",
+          "englishPdfPage": 43,
+          "arabicPdfPage": 40
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-perimeter",
+      "canonicalLabel": "perimeter",
+      "labelAr": "المحيط الأمني",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-2-2",
+      "evidence": [
+        {
+          "lessonId": "lesson-2-2",
+          "englishPdfPage": 43,
+          "arabicPdfPage": 40
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-security-incident",
+      "canonicalLabel": "security incident",
+      "labelAr": "حادث أمني",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-2-3",
+      "evidence": [
+        {
+          "lessonId": "lesson-2-3",
+          "englishPdfPage": 50,
+          "arabicPdfPage": 46
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-the-six-stages",
+      "canonicalLabel": "the six stages",
+      "labelAr": "المراحل الست",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-2-3",
+      "evidence": [
+        {
+          "lessonId": "lesson-2-3",
+          "englishPdfPage": 50,
+          "arabicPdfPage": 46
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-containment-eradication",
+      "canonicalLabel": "containment / eradication",
+      "labelAr": "الاحتواء / الاستئصال",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-2-3",
+      "evidence": [
+        {
+          "lessonId": "lesson-2-3",
+          "englishPdfPage": 50,
+          "arabicPdfPage": 46
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-risk-impact-likelihood",
+      "canonicalLabel": "risk = impact × likelihood",
+      "labelAr": "المخاطر = التأثير × الاحتمالية",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-2-3",
+      "evidence": [
+        {
+          "lessonId": "lesson-2-3",
+          "englishPdfPage": 50,
+          "arabicPdfPage": 46
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-web-application",
+      "canonicalLabel": "web application",
+      "labelAr": "تطبيق الويب",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-3-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-3-1",
+          "englishPdfPage": 57,
+          "arabicPdfPage": 52
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-frontend",
+      "canonicalLabel": "frontend",
+      "labelAr": "الواجهة الأمامية",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-3-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-3-1",
+          "englishPdfPage": 57,
+          "arabicPdfPage": 52
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-backend",
+      "canonicalLabel": "backend",
+      "labelAr": "الواجهة الخلفية",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-3-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-3-1",
+          "englishPdfPage": 57,
+          "arabicPdfPage": 52
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-database",
+      "canonicalLabel": "database",
+      "labelAr": "قاعدة البيانات",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-3-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-3-1",
+          "englishPdfPage": 57,
+          "arabicPdfPage": 52
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-three-tier-architecture",
+      "canonicalLabel": "three-tier architecture",
+      "labelAr": "البنية ذات الطبقات الثلاث",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-3-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-3-1",
+          "englishPdfPage": 57,
+          "arabicPdfPage": 52
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-client-server",
+      "canonicalLabel": "client / server",
+      "labelAr": "العميل / الخادم",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-3-2",
+      "evidence": [
+        {
+          "lessonId": "lesson-3-2",
+          "englishPdfPage": 64,
+          "arabicPdfPage": 58
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-http-https",
+      "canonicalLabel": "HTTP / HTTPS",
+      "labelAr": "HTTP / HTTPS",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-3-2",
+      "evidence": [
+        {
+          "lessonId": "lesson-3-2",
+          "englishPdfPage": 64,
+          "arabicPdfPage": 58
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-http-method",
+      "canonicalLabel": "HTTP method",
+      "labelAr": "طريقة HTTP",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-3-2",
+      "evidence": [
+        {
+          "lessonId": "lesson-3-2",
+          "englishPdfPage": 64,
+          "arabicPdfPage": 58
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-status-code",
+      "canonicalLabel": "status code",
+      "labelAr": "رمز الحالة",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-3-2",
+      "evidence": [
+        {
+          "lessonId": "lesson-3-2",
+          "englishPdfPage": 64,
+          "arabicPdfPage": 58
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-api-json",
+      "canonicalLabel": "API / JSON",
+      "labelAr": "واجهة برمجة التطبيقات / JSON",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-3-2",
+      "evidence": [
+        {
+          "lessonId": "lesson-3-2",
+          "englishPdfPage": 64,
+          "arabicPdfPage": 58
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-html-css-javascript",
+      "canonicalLabel": "HTML / CSS / JavaScript",
+      "labelAr": "HTML / CSS / JavaScript",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-3-3",
+      "evidence": [
+        {
+          "lessonId": "lesson-3-3",
+          "englishPdfPage": 70,
+          "arabicPdfPage": 64
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-semantic-html",
+      "canonicalLabel": "semantic HTML",
+      "labelAr": "HTML الدلالي",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-3-3",
+      "evidence": [
+        {
+          "lessonId": "lesson-3-3",
+          "englishPdfPage": 70,
+          "arabicPdfPage": 64
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-accessibility-seo",
+      "canonicalLabel": "accessibility / SEO",
+      "labelAr": "إمكانية الوصول / تحسين محركات البحث",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-3-3",
+      "evidence": [
+        {
+          "lessonId": "lesson-3-3",
+          "englishPdfPage": 70,
+          "arabicPdfPage": 64
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-responsive-design",
+      "canonicalLabel": "responsive design",
+      "labelAr": "التصميم المتجاوب",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-3-3",
+      "evidence": [
+        {
+          "lessonId": "lesson-3-3",
+          "englishPdfPage": 70,
+          "arabicPdfPage": 64
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-framework",
+      "canonicalLabel": "framework",
+      "labelAr": "إطار العمل",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-3-3",
+      "evidence": [
+        {
+          "lessonId": "lesson-3-3",
+          "englishPdfPage": 70,
+          "arabicPdfPage": 64
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-tv-radio-newspaper",
+      "canonicalLabel": "TV / radio / newspaper",
+      "labelAr": "التلفاز / الراديو / الصحيفة",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-4-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-4-1",
+          "englishPdfPage": 77,
+          "arabicPdfPage": 70
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-website-sns",
+      "canonicalLabel": "website / SNS",
+      "labelAr": "الموقع الإلكتروني / SNS",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-4-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-4-1",
+          "englishPdfPage": 77,
+          "arabicPdfPage": 70
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-one-way-two-way",
+      "canonicalLabel": "one-way / two-way",
+      "labelAr": "أحادي الاتجاه / ثنائي الاتجاه",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-4-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-4-1",
+          "englishPdfPage": 77,
+          "arabicPdfPage": 70
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-strengths-constraints",
+      "canonicalLabel": "strengths / constraints",
+      "labelAr": "نقاط القوة / القيود",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-4-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-4-1",
+          "englishPdfPage": 77,
+          "arabicPdfPage": 70
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-combining-media",
+      "canonicalLabel": "combining media",
+      "labelAr": "دمج الوسائط",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-4-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-4-1",
+          "englishPdfPage": 77,
+          "arabicPdfPage": 70
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-persona",
+      "canonicalLabel": "persona",
+      "labelAr": "شخصية المستخدم",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-4-2",
+      "evidence": [
+        {
+          "lessonId": "lesson-4-2",
+          "englishPdfPage": 83,
+          "arabicPdfPage": 76
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-wireframe",
+      "canonicalLabel": "wireframe",
+      "labelAr": "المخطط الهيكلي",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-4-2",
+      "evidence": [
+        {
+          "lessonId": "lesson-4-2",
+          "englishPdfPage": 83,
+          "arabicPdfPage": 76
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-contrast-repetition",
+      "canonicalLabel": "contrast / repetition",
+      "labelAr": "التباين / التكرار",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-4-2",
+      "evidence": [
+        {
+          "lessonId": "lesson-4-2",
+          "englishPdfPage": 83,
+          "arabicPdfPage": 76
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-alignment-proximity",
+      "canonicalLabel": "alignment / proximity",
+      "labelAr": "المحاذاة / التقارب",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-4-2",
+      "evidence": [
+        {
+          "lessonId": "lesson-4-2",
+          "englishPdfPage": 83,
+          "arabicPdfPage": 76
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-user-centered-design",
+      "canonicalLabel": "user-centered design",
+      "labelAr": "التصميم المتمحور حول المستخدم",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-4-2",
+      "evidence": [
+        {
+          "lessonId": "lesson-4-2",
+          "englishPdfPage": 83,
+          "arabicPdfPage": 76
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-qualitative-evaluation",
+      "canonicalLabel": "qualitative evaluation",
+      "labelAr": "التقييم النوعي",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-4-3",
+      "evidence": [
+        {
+          "lessonId": "lesson-4-3",
+          "englishPdfPage": 90,
+          "arabicPdfPage": 83
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-quantitative-evaluation",
+      "canonicalLabel": "quantitative evaluation",
+      "labelAr": "التقييم الكمي",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-4-3",
+      "evidence": [
+        {
+          "lessonId": "lesson-4-3",
+          "englishPdfPage": 90,
+          "arabicPdfPage": 83
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-web-analytics",
+      "canonicalLabel": "web analytics",
+      "labelAr": "تحليلات الويب",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-4-3",
+      "evidence": [
+        {
+          "lessonId": "lesson-4-3",
+          "englishPdfPage": 90,
+          "arabicPdfPage": 83
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-pv-bounce-rate-cvr",
+      "canonicalLabel": "PV / bounce rate / CVR",
+      "labelAr": "مشاهدات الصفحة / معدل الارتداد / معدل التحويل",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-4-3",
+      "evidence": [
+        {
+          "lessonId": "lesson-4-3",
+          "englishPdfPage": 90,
+          "arabicPdfPage": 83
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-heuristic-evaluation",
+      "canonicalLabel": "heuristic evaluation",
+      "labelAr": "التقييم الاستدلالي",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-4-3",
+      "evidence": [
+        {
+          "lessonId": "lesson-4-3",
+          "englishPdfPage": 90,
+          "arabicPdfPage": 83
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-pdca-cycle",
+      "canonicalLabel": "PDCA cycle",
+      "labelAr": "دورة PDCA",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-4-4",
+      "evidence": [
+        {
+          "lessonId": "lesson-4-4",
+          "englishPdfPage": 97,
+          "arabicPdfPage": 89
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-plan-do-check-act",
+      "canonicalLabel": "Plan / Do / Check / Act",
+      "labelAr": "خطط / نفّذ / تحقّق / تصرّف",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-4-4",
+      "evidence": [
+        {
+          "lessonId": "lesson-4-4",
+          "englishPdfPage": 97,
+          "arabicPdfPage": 89
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-design-thinking",
+      "canonicalLabel": "design thinking",
+      "labelAr": "التفكير التصميمي",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-4-4",
+      "evidence": [
+        {
+          "lessonId": "lesson-4-4",
+          "englishPdfPage": 97,
+          "arabicPdfPage": 89
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-a-b-testing",
+      "canonicalLabel": "A/B testing",
+      "labelAr": "اختبار A/B",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-4-4",
+      "evidence": [
+        {
+          "lessonId": "lesson-4-4",
+          "englishPdfPage": 97,
+          "arabicPdfPage": 89
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-continuous-improvement",
+      "canonicalLabel": "continuous improvement",
+      "labelAr": "التحسين المستمر",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-4-4",
+      "evidence": [
+        {
+          "lessonId": "lesson-4-4",
+          "englishPdfPage": 97,
+          "arabicPdfPage": 89
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-data-collection",
+      "canonicalLabel": "data collection",
+      "labelAr": "جمع البيانات",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-5-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-5-1",
+          "englishPdfPage": 6,
+          "arabicPdfPage": 6
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-primary-secondary-data",
+      "canonicalLabel": "primary / secondary data",
+      "labelAr": "البيانات الأولية / الثانوية",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-5-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-5-1",
+          "englishPdfPage": 6,
+          "arabicPdfPage": 6
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-population-sample",
+      "canonicalLabel": "population & sample",
+      "labelAr": "المجتمع والعينة",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-5-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-5-1",
+          "englishPdfPage": 6,
+          "arabicPdfPage": 6
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-sampling-simple-random-stratified",
+      "canonicalLabel": "sampling (simple random, stratified)",
+      "labelAr": "أخذ العينات (العشوائية البسيطة والطبقية)",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-5-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-5-1",
+          "englishPdfPage": 6,
+          "arabicPdfPage": 6
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-sampling-bias",
+      "canonicalLabel": "sampling bias",
+      "labelAr": "تحيز العينة",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-5-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-5-1",
+          "englishPdfPage": 6,
+          "arabicPdfPage": 6
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-data-cleaning-transformation",
+      "canonicalLabel": "data cleaning / transformation",
+      "labelAr": "تنظيف البيانات / تحويلها",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-5-2",
+      "evidence": [
+        {
+          "lessonId": "lesson-5-2",
+          "englishPdfPage": 14,
+          "arabicPdfPage": 13
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-missing-values-outliers-duplicates",
+      "canonicalLabel": "missing values, outliers, duplicates",
+      "labelAr": "القيم المفقودة والقيم الشاذة والتكرارات",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-5-2",
+      "evidence": [
+        {
+          "lessonId": "lesson-5-2",
+          "englishPdfPage": 14,
+          "arabicPdfPage": 13
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-data-type-conversion",
+      "canonicalLabel": "data type conversion",
+      "labelAr": "تحويل نوع البيانات",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-5-2",
+      "evidence": [
+        {
+          "lessonId": "lesson-5-2",
+          "englishPdfPage": 14,
+          "arabicPdfPage": 13
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-normalization-standardization",
+      "canonicalLabel": "normalization / standardization",
+      "labelAr": "التطبيع / التوحيد",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-5-2",
+      "evidence": [
+        {
+          "lessonId": "lesson-5-2",
+          "englishPdfPage": 14,
+          "arabicPdfPage": 13
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-reshaping-pivot-join-aggregation",
+      "canonicalLabel": "reshaping (pivot, join, aggregation)",
+      "labelAr": "إعادة التشكيل (Pivot وJoin والتجميع)",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-5-2",
+      "evidence": [
+        {
+          "lessonId": "lesson-5-2",
+          "englishPdfPage": 14,
+          "arabicPdfPage": 13
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-open-data",
+      "canonicalLabel": "open data",
+      "labelAr": "البيانات المفتوحة",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-5-3",
+      "evidence": [
+        {
+          "lessonId": "lesson-5-3",
+          "englishPdfPage": 23,
+          "arabicPdfPage": 21
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-world-bank-open-data-un-data-kaggle",
+      "canonicalLabel": "World Bank Open Data / UN Data / Kaggle",
+      "labelAr": "بيانات البنك الدولي / بيانات الأمم المتحدة / Kaggle",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-5-3",
+      "evidence": [
+        {
+          "lessonId": "lesson-5-3",
+          "englishPdfPage": 23,
+          "arabicPdfPage": 21
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-api-endpoint-json",
+      "canonicalLabel": "API / endpoint / JSON",
+      "labelAr": "واجهة برمجة التطبيقات / نقطة النهاية / JSON",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-5-3",
+      "evidence": [
+        {
+          "lessonId": "lesson-5-3",
+          "englishPdfPage": 23,
+          "arabicPdfPage": 21
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-terms-of-use",
+      "canonicalLabel": "terms of use",
+      "labelAr": "شروط الاستخدام",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-5-3",
+      "evidence": [
+        {
+          "lessonId": "lesson-5-3",
+          "englishPdfPage": 23,
+          "arabicPdfPage": 21
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-source-citation",
+      "canonicalLabel": "source citation",
+      "labelAr": "توثيق المصدر",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-5-3",
+      "evidence": [
+        {
+          "lessonId": "lesson-5-3",
+          "englishPdfPage": 23,
+          "arabicPdfPage": 21
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-statistical-inference",
+      "canonicalLabel": "statistical inference",
+      "labelAr": "الاستدلال الإحصائي",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-6-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-6-1",
+          "englishPdfPage": 31,
+          "arabicPdfPage": 28
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-point-interval-estimation",
+      "canonicalLabel": "point / interval estimation",
+      "labelAr": "التقدير النقطي / الفتري",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-6-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-6-1",
+          "englishPdfPage": 31,
+          "arabicPdfPage": 28
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-confidence-interval-level",
+      "canonicalLabel": "confidence interval & level",
+      "labelAr": "فترة الثقة ومستوى الثقة",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-6-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-6-1",
+          "englishPdfPage": 31,
+          "arabicPdfPage": 28
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-null-alternative-hypothesis",
+      "canonicalLabel": "null / alternative hypothesis",
+      "labelAr": "الفرضية الصفرية / البديلة",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-6-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-6-1",
+          "englishPdfPage": 31,
+          "arabicPdfPage": 28
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-p-value-significance-level",
+      "canonicalLabel": "p-value & significance level",
+      "labelAr": "القيمة الاحتمالية ومستوى الدلالة",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-6-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-6-1",
+          "englishPdfPage": 31,
+          "arabicPdfPage": 28
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-type-i-ii-errors",
+      "canonicalLabel": "Type I / II errors",
+      "labelAr": "أخطاء النوع الأول / الثاني",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-6-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-6-1",
+          "englishPdfPage": 31,
+          "arabicPdfPage": 28
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-regression-analysis",
+      "canonicalLabel": "regression analysis",
+      "labelAr": "تحليل الانحدار",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-6-2",
+      "evidence": [
+        {
+          "lessonId": "lesson-6-2",
+          "englishPdfPage": 41,
+          "arabicPdfPage": 36
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-response-explanatory-variable",
+      "canonicalLabel": "response / explanatory variable",
+      "labelAr": "المتغير التابع / التفسيري",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-6-2",
+      "evidence": [
+        {
+          "lessonId": "lesson-6-2",
+          "englishPdfPage": 41,
+          "arabicPdfPage": 36
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-simple-multiple-regression",
+      "canonicalLabel": "simple / multiple regression",
+      "labelAr": "الانحدار البسيط / المتعدد",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-6-2",
+      "evidence": [
+        {
+          "lessonId": "lesson-6-2",
+          "englishPdfPage": 41,
+          "arabicPdfPage": 36
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-regression-line-least-squares",
+      "canonicalLabel": "regression line, least-squares",
+      "labelAr": "خط الانحدار والمربعات الصغرى",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-6-2",
+      "evidence": [
+        {
+          "lessonId": "lesson-6-2",
+          "englishPdfPage": 41,
+          "arabicPdfPage": 36
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-r-rmse-mae",
+      "canonicalLabel": "R², RMSE, MAE",
+      "labelAr": "R² وRMSE وMAE",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-6-2",
+      "evidence": [
+        {
+          "lessonId": "lesson-6-2",
+          "englishPdfPage": 41,
+          "arabicPdfPage": 36
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-correlation-versus-causation",
+      "canonicalLabel": "correlation versus causation",
+      "labelAr": "الارتباط مقابل السببية",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-6-2",
+      "evidence": [
+        {
+          "lessonId": "lesson-6-2",
+          "englishPdfPage": 41,
+          "arabicPdfPage": 36
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-data-visualization",
+      "canonicalLabel": "data visualization",
+      "labelAr": "تصور البيانات",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-6-3",
+      "evidence": [
+        {
+          "lessonId": "lesson-6-3",
+          "englishPdfPage": 50,
+          "arabicPdfPage": 44
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-heatmap",
+      "canonicalLabel": "heatmap",
+      "labelAr": "الخريطة الحرارية",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-6-3",
+      "evidence": [
+        {
+          "lessonId": "lesson-6-3",
+          "englishPdfPage": 50,
+          "arabicPdfPage": 44
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-mosaic-plot",
+      "canonicalLabel": "mosaic plot",
+      "labelAr": "المخطط الفسيفسائي",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-6-3",
+      "evidence": [
+        {
+          "lessonId": "lesson-6-3",
+          "englishPdfPage": 50,
+          "arabicPdfPage": 44
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-overplotting",
+      "canonicalLabel": "overplotting",
+      "labelAr": "تراكب النقاط",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-6-3",
+      "evidence": [
+        {
+          "lessonId": "lesson-6-3",
+          "englishPdfPage": 50,
+          "arabicPdfPage": 44
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-data-storytelling",
+      "canonicalLabel": "data storytelling",
+      "labelAr": "سرد البيانات",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-6-3",
+      "evidence": [
+        {
+          "lessonId": "lesson-6-3",
+          "englishPdfPage": 50,
+          "arabicPdfPage": 44
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-supervised-unsupervised-reinforcement",
+      "canonicalLabel": "supervised / unsupervised / reinforcement",
+      "labelAr": "التعلم الخاضع للإشراف / غير الخاضع للإشراف / بالتعزيز",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-7-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-7-1",
+          "englishPdfPage": 59,
+          "arabicPdfPage": 52
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-classification-feature",
+      "canonicalLabel": "classification, feature",
+      "labelAr": "التصنيف والميزة",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-7-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-7-1",
+          "englishPdfPage": 59,
+          "arabicPdfPage": 52
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-clustering",
+      "canonicalLabel": "clustering",
+      "labelAr": "التجميع",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-7-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-7-1",
+          "englishPdfPage": 59,
+          "arabicPdfPage": 52
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-bias-black-box-problem",
+      "canonicalLabel": "bias, black-box problem",
+      "labelAr": "التحيز ومشكلة الصندوق الأسود",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-7-1",
+      "evidence": [
+        {
+          "lessonId": "lesson-7-1",
+          "englishPdfPage": 59,
+          "arabicPdfPage": 52
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-node-neuron-layer",
+      "canonicalLabel": "node (neuron), layer",
+      "labelAr": "العقدة (العصبون) والطبقة",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-7-2",
+      "evidence": [
+        {
+          "lessonId": "lesson-7-2",
+          "englishPdfPage": 70,
+          "arabicPdfPage": 61
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-input-hidden-output-layer",
+      "canonicalLabel": "input / hidden / output layer",
+      "labelAr": "طبقة الإدخال / المخفية / الإخراج",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-7-2",
+      "evidence": [
+        {
+          "lessonId": "lesson-7-2",
+          "englishPdfPage": 70,
+          "arabicPdfPage": 61
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-weight-training",
+      "canonicalLabel": "weight, training",
+      "labelAr": "الوزن والتدريب",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-7-2",
+      "evidence": [
+        {
+          "lessonId": "lesson-7-2",
+          "englishPdfPage": 70,
+          "arabicPdfPage": 61
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-hierarchical-features",
+      "canonicalLabel": "hierarchical features",
+      "labelAr": "الميزات الهرمية",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-7-2",
+      "evidence": [
+        {
+          "lessonId": "lesson-7-2",
+          "englishPdfPage": 70,
+          "arabicPdfPage": 61
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-language-model-next-word-prediction",
+      "canonicalLabel": "language model, next-word prediction",
+      "labelAr": "النموذج اللغوي والتنبؤ بالكلمة التالية",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-7-3",
+      "evidence": [
+        {
+          "lessonId": "lesson-7-3",
+          "englishPdfPage": 79,
+          "arabicPdfPage": 69
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-large-language-model-llm-parameters",
+      "canonicalLabel": "large language model (LLM), parameters",
+      "labelAr": "نموذج اللغة الكبير (LLM) والمعاملات",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-7-3",
+      "evidence": [
+        {
+          "lessonId": "lesson-7-3",
+          "englishPdfPage": 79,
+          "arabicPdfPage": 69
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-rlhf",
+      "canonicalLabel": "RLHF",
+      "labelAr": "التعلم المعزز من ردود الفعل البشرية",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-7-3",
+      "evidence": [
+        {
+          "lessonId": "lesson-7-3",
+          "englishPdfPage": 79,
+          "arabicPdfPage": 69
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    },
+    {
+      "id": "concept-multimodality",
+      "canonicalLabel": "multimodality",
+      "labelAr": "تعدد الوسائط",
+      "aliases": [],
+      "firstIntroducedIn": "lesson-7-3",
+      "evidence": [
+        {
+          "lessonId": "lesson-7-3",
+          "englishPdfPage": 79,
+          "arabicPdfPage": 69
+        }
+      ],
+      "definitionStatus": "source-term-or-key-concept"
+    }
+  ],
+  "knowledgeRelations": [
+    {
+      "from": "lesson-1-1",
+      "to": "lesson-1-2",
+      "type": "supports",
+      "basis": "inferred-from-sequence",
+      "reason": "IT development and social impact provide context for AI as a technology."
+    },
+    {
+      "from": "lesson-1-2",
+      "to": "lesson-1-3",
+      "type": "supports",
+      "basis": "inferred-from-sequence",
+      "reason": "AI categories precede their daily-life and industry applications."
+    },
+    {
+      "from": "lesson-1-3",
+      "to": "lesson-1-4",
+      "type": "supports",
+      "basis": "inferred-from-sequence",
+      "reason": "AI use cases and limitations precede explicit ethics and accountability."
+    },
+    {
+      "from": "lesson-2-1",
+      "to": "lesson-2-2",
+      "type": "supports",
+      "basis": "inferred-from-sequence",
+      "reason": "Cryptography and authentication are foundational controls before network architecture."
+    },
+    {
+      "from": "lesson-2-2",
+      "to": "lesson-2-3",
+      "type": "supports",
+      "basis": "inferred-from-sequence",
+      "reason": "Security design controls precede response and risk prioritization."
+    },
+    {
+      "from": "lesson-3-1",
+      "to": "lesson-3-2",
+      "type": "supports",
+      "basis": "inferred-from-sequence",
+      "reason": "The three-tier web model precedes communication details."
+    },
+    {
+      "from": "lesson-3-2",
+      "to": "lesson-3-3",
+      "type": "supports",
+      "basis": "inferred-from-sequence",
+      "reason": "Client/server communication precedes frontend implementation technologies."
+    },
+    {
+      "from": "lesson-4-1",
+      "to": "lesson-4-2",
+      "type": "supports",
+      "basis": "inferred-from-sequence",
+      "reason": "Media choice precedes user-centered information design."
+    },
+    {
+      "from": "lesson-4-2",
+      "to": "lesson-4-3",
+      "type": "supports",
+      "basis": "inferred-from-sequence",
+      "reason": "Design planning precedes website evaluation."
+    },
+    {
+      "from": "lesson-4-3",
+      "to": "lesson-4-4",
+      "type": "supports",
+      "basis": "inferred-from-sequence",
+      "reason": "Evaluation evidence feeds iterative improvement."
+    },
+    {
+      "from": "lesson-5-1",
+      "to": "lesson-5-2",
+      "type": "supports",
+      "basis": "inferred-from-sequence",
+      "reason": "Collection quality precedes cleaning and transformation."
+    },
+    {
+      "from": "lesson-5-2",
+      "to": "lesson-5-3",
+      "type": "supports",
+      "basis": "inferred-from-sequence",
+      "reason": "Clean and shaped data supports responsible API/open-data use."
+    },
+    {
+      "from": "lesson-5-3",
+      "to": "lesson-6-1",
+      "type": "supports",
+      "basis": "inferred-from-sequence",
+      "reason": "Collection and sourcing precede inference from samples."
+    },
+    {
+      "from": "lesson-6-1",
+      "to": "lesson-6-2",
+      "type": "supports",
+      "basis": "inferred-from-sequence",
+      "reason": "Inference and uncertainty support model evaluation."
+    },
+    {
+      "from": "lesson-6-2",
+      "to": "lesson-6-3",
+      "type": "supports",
+      "basis": "inferred-from-sequence",
+      "reason": "Regression output is one source for visualization and communication."
+    },
+    {
+      "from": "lesson-7-1",
+      "to": "lesson-7-2",
+      "type": "supports",
+      "basis": "inferred-from-sequence",
+      "reason": "ML categories precede neural networks and deep learning."
+    },
+    {
+      "from": "lesson-7-2",
+      "to": "lesson-7-3",
+      "type": "supports",
+      "basis": "inferred-from-sequence",
+      "reason": "Deep learning concepts precede LLM and generative AI."
+    },
+    {
+      "from": "lesson-1-2",
+      "to": "lesson-7-1",
+      "type": "connects",
+      "basis": "explicit-topic-continuity",
+      "reason": "The AI/ML nesting introduced in Part 1 is expanded in Unit 7."
+    }
+  ],
+  "assessmentModel": {
+    "status": "contract-only-not-implemented-in-phase-2",
+    "cognitiveLevels": [
+      "remember",
+      "understand",
+      "apply",
+      "analyze",
+      "evaluate"
+    ],
+    "coverageDimensions": [
+      "lesson objectives",
+      "key concepts and definitions",
+      "worked examples and cautions",
+      "source page provenance"
+    ],
+    "scopeRules": [
+      {
+        "scope": "lesson",
+        "includes": "one lesson and its source-backed concepts/objectives only"
+      },
+      {
+        "scope": "unit",
+        "includes": "all lessons within one Unit; preserve lesson provenance"
+      },
+      {
+        "scope": "part",
+        "includes": "all Units within one Part; do not silently cross Part boundaries"
+      },
+      {
+        "scope": "mock",
+        "includes": "the complete two-Part curriculum; record Part/Unit/Lesson for every item"
+      }
+    ],
+    "questionGenerationConstraints": [
+      "Do not generate content from a concept unless it has a lessonId and source page evidence.",
+      "Keep answer keys and explanations tied to the same lesson/unit scope as the item.",
+      "Use Arabic and English labels from the same model record; do not translate stable technical identifiers.",
+      "Mark any teacher-authored extension as supplemental rather than official-source knowledge."
+    ]
+  },
+  "kodgyGrounding": {
+    "status": "data-contract-only-not-implemented-in-phase-2",
+    "retrievalKeys": [
+      "partId",
+      "unitId",
+      "lessonId",
+      "conceptId",
+      "locale",
+      "sourcePdfPage"
+    ],
+    "responseRules": [
+      "Prefer source-backed lesson concepts and summaries.",
+      "Cite the source lesson/page when a future answer cites curriculum content.",
+      "Distinguish official curriculum knowledge from inferred prerequisite links and supplemental explanations.",
+      "Stay within the course scope unless the user explicitly asks for an out-of-scope explanation."
+    ]
+  },
+  "integrity": {
+    "expectedCounts": {
+      "parts": 2,
+      "units": 7,
+      "lessons": 23,
+      "objectives": 46
+    },
+    "computedCounts": {
+      "parts": 2,
+      "units": 7,
+      "lessons": 23,
+      "objectives": 46,
+      "uniqueConcepts": 129,
+      "conceptOccurrences": 134
+    },
+    "validationChecks": [
+      "source files exist",
+      "SHA-256 hashes match",
+      "PDF page counts match",
+      "contents titles and lesson headings are present in English source pages",
+      "learning objective blocks are present and objective text is covered",
+      "concept evidence pages are present",
+      "stable IDs/order/counts are internally consistent"
+    ]
+  }
+}

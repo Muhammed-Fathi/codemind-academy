@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codemind.academy/schemas/curriculum-knowledge-model.schema.json",
+  "title": "CodeMind Academy curriculum knowledge model",
+  "description": "The source-aligned Phase 2 contract for the Egyptian Baccalaureate Programming and Artificial Intelligence curriculum.",
+  "type": "object",
+  "required": [
+    "$schema",
+    "schemaVersion",
+    "modelType",
+    "phase",
+    "status",
+    "identity",
+    "sourcePolicy",
+    "sources",
+    "parts",
+    "concepts",
+    "knowledgeRelations",
+    "assessmentModel",
+    "kodgyGrounding",
+    "integrity"
+  ],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schemaVersion": { "const": "2.0.0" },
+    "modelType": { "const": "curriculum-knowledge-model" },
+    "phase": { "const": "Phase 2 — Curriculum Source Analysis & Knowledge Model" },
+    "status": { "type": "string" },
+    "lastValidated": { "type": "string", "format": "date" },
+    "identity": {
+      "type": "object",
+      "required": ["courseId", "subjectEn", "subjectAr", "gradeEn", "gradeAr", "canonicalLocale", "supportedLocales", "canonicalHierarchy", "lessonIdsAreStable"],
+      "properties": {
+        "courseId": { "type": "string" },
+        "subjectEn": { "type": "string" },
+        "subjectAr": { "type": "string" },
+        "gradeEn": { "type": "string" },
+        "gradeAr": { "type": "string" },
+        "canonicalLocale": { "const": "en" },
+        "supportedLocales": { "type": "array", "items": { "type": "string" } },
+        "canonicalHierarchy": { "const": "Part → Unit → Lesson" },
+        "lessonIdsAreStable": { "type": "boolean" }
+      }
+    },
+    "sourcePolicy": { "type": "object" },
+    "sources": {
+      "type": "array",
+      "minItems": 4,
+      "items": {
+        "type": "object",
+        "required": ["sourceId", "locale", "partCode", "path", "sha256", "pdfPages", "contentsPdfPage"],
+        "properties": {
+          "sourceId": { "type": "string" },
+          "locale": { "enum": ["en", "ar"] },
+          "partCode": { "enum": ["P1", "P2"] },
+          "path": { "type": "string" },
+          "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "pdfPages": { "type": "integer", "minimum": 1 },
+          "contentsPdfPage": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    "parts": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "required": ["id", "code", "order", "title", "titleAr", "sourceIds", "units"],
+        "properties": {
+          "id": { "type": "string" },
+          "code": { "type": "string" },
+          "order": { "type": "integer", "minimum": 1 },
+          "title": { "type": "string" },
+          "titleAr": { "type": "string" },
+          "sourceIds": { "type": "array", "items": { "type": "string" } },
+          "units": { "type": "array", "minItems": 1 }
+        }
+      }
+    },
+    "concepts": { "type": "array", "items": { "type": "object", "required": ["id", "canonicalLabel", "firstIntroducedIn", "evidence"] } },
+    "knowledgeRelations": { "type": "array", "items": { "type": "object", "required": ["from", "to", "type", "basis", "reason"] } },
+    "assessmentModel": { "type": "object", "required": ["status", "cognitiveLevels", "coverageDimensions", "scopeRules", "questionGenerationConstraints"] },
+    "kodgyGrounding": { "type": "object", "required": ["status", "retrievalKeys", "responseRules"] },
+    "integrity": { "type": "object", "required": ["expectedCounts", "computedCounts", "validationChecks"] }
+  }
+}
