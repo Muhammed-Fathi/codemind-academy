@@ -51,6 +51,12 @@ export function AppShell() {
 
   // Restore session on mount
   React.useEffect(() => {
+    // Password reset links arrive as /?token=… — open the auth view directly
+    // so ForgotPasswordForm can pre-fill the token from the URL.
+    const resetToken = new URLSearchParams(window.location.search).get("token");
+    const initialView: "login" | "landing" = resetToken ? "login" : "landing";
+    if (resetToken) useApp.getState().setView("login");
+
     fetch("/api/auth/me")
       .then((r) => (r.ok ? r.json() : null))
       .then((u) => {
@@ -66,8 +72,9 @@ export function AppShell() {
             useApp.getState().setView(homeViewForRole(u.role));
           }
         } else {
-          // No session; force landing (defensive in case of stale state).
-          useApp.getState().setView("landing");
+          // No session; open the reset form for reset links, otherwise force
+          // landing (defensive in case of stale state).
+          useApp.getState().setView(initialView);
         }
       })
       .catch(() => {});

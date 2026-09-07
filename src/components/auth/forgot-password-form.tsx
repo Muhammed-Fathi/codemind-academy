@@ -3,14 +3,15 @@
 // ============================================================
 // CodeMind Academy — Forgot / reset password flow (client UI)
 //
-// Two steps in one component:
-//   1. REQUEST — user gives an email or mobile number and a delivery channel.
-//      The API ALWAYS answers the same way, so this UI must never imply that
-//      an account does or does not exist. We show a neutral "if the account
-//      exists…" confirmation in every case.
-//   2. CONFIRM — user pastes the emailed link token or the 6-digit SMS code
-//      and chooses a new password. On success every existing session of that
-//      account is revoked server-side, so the user logs in fresh.
+// EMAIL ONLY. Phone numbers / SMS / OTP are NOT offered for password
+// recovery — they remain registration/profile data only.
+//
+//   REQUEST — the user enters their email. The API ALWAYS answers with the
+//   same neutral message, so this UI never implies whether an account exists.
+//
+//   CONFIRM — the user opens the emailed reset link (token is pre-filled
+//   from ?token=) or pastes the token and chooses a new password. On success
+//   every existing session of that account is revoked server-side.
 // ============================================================
 
 import * as React from "react";
@@ -20,35 +21,31 @@ import { useT } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, Mail, MessageSquare, ArrowRight, CheckCircle2, Eye, EyeOff } from "lucide-react";
+import { Loader2, Mail, ArrowRight, CheckCircle2, Eye, EyeOff } from "lucide-react";
 
 export function ForgotPasswordForm({ onBackToLogin }: { onBackToLogin: () => void }) {
   const tr = useT();
 
-  const [step, setStep] = React.useState<"request" | "confirm">("request");
-  const [identifier, setIdentifier] = React.useState("");
-  const [channel, setChannel] = React.useState<"EMAIL" | "SMS">("EMAIL");
+  // Pre-fill the token when the user arrives from an emailed reset link.
+  const urlToken =
+    typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("token") || ""
+      : "";
+  const [step, setStep] = React.useState<"request" | "confirm">(() =>
+    urlToken ? "confirm" : "request"
+  );
+  const [email, setEmail] = React.useState("");
   const [sent, setSent] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
 
-  const [token, setToken] = React.useState("");
+  const [token, setToken] = React.useState(urlToken);
   const [password, setPassword] = React.useState("");
   const [confirmPassword, setConfirmPassword] = React.useState("");
   const [showPassword, setShowPassword] = React.useState(false);
 
-  // Pre-fill the token when the user arrives from an emailed reset link.
-  React.useEffect(() => {
-    if (typeof window === "undefined") return;
-    const t = new URLSearchParams(window.location.search).get("token");
-    if (t) {
-      setToken(t);
-      setStep("confirm");
-    }
-  }, []);
-
   const submitRequest = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!identifier.trim()) {
+    if (!email.trim()) {
       toast.error(tr("api.200"));
       return;
     }
@@ -57,13 +54,12 @@ export function ForgotPasswordForm({ onBackToLogin }: { onBackToLogin: () => voi
       const r = await fetch("/api/auth/password-reset/request", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ identifier: identifier.trim(), channel }),
+        body: JSON.stringify({ email: email.trim() }),
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error || tr("auth.005"));
       // Deliberately neutral: never confirm whether the account exists.
       setSent(true);
-      setStep("confirm");
       toast.success(tr("auth.215"));
     } catch (err: any) {
       toast.error(err.message || tr("auth.007"));
@@ -94,7 +90,6 @@ export function ForgotPasswordForm({ onBackToLogin }: { onBackToLogin: () => voi
         body: JSON.stringify({
           token: token.trim(),
           password,
-          identifier: identifier.trim() || undefined,
         }),
       });
       const d = await r.json().catch(() => ({}));
@@ -126,43 +121,22 @@ export function ForgotPasswordForm({ onBackToLogin }: { onBackToLogin: () => voi
           <p className="text-sm text-muted-foreground">{tr("auth.202")}</p>
 
           <div>
-            <Label htmlFor="fp-identifier" className="text-xs font-semibold">
+            <Label htmlFor="fp-email" className="text-xs font-semibold">
               {tr("auth.203")}
             </Label>
-            <Input
-              id="fp-identifier"
-              value={identifier}
-              onChange={(e) => setIdentifier(e.target.value)}
-              autoComplete="username"
-              dir="ltr"
-              className="mt-1"
-            />
-          </div>
-
-          <div>
-            <Label className="text-xs font-semibold">{tr("auth.204")}</Label>
-            <div className="mt-1 grid grid-cols-2 gap-2">
-              {(
-                [
-                  { value: "EMAIL", labelKey: "auth.205", Icon: Mail },
-                  { value: "SMS", labelKey: "auth.206", Icon: MessageSquare },
-                ] as const
-              ).map(({ value, labelKey, Icon }) => (
-                <button
-                  key={value}
-                  type="button"
-                  aria-pressed={channel === value}
-                  onClick={() => setChannel(value)}
-                  className={`inline-flex items-center justify-center gap-2 rounded-xl border p-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
-                    channel === value
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "border-border/60 text-muted-foreground hover:bg-muted/50"
-                  }`}
-                >
-                  <Icon className="w-4 h-4 shrink-0" />
-                  {tr(labelKey)}
-                </button>
-              ))}
+            <div className="relative mt-1">
+              <Mail className="absolute end-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+              <Input
+                id="fp-email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
+                autoCapitalize="none"
+                dir="ltr"
+                className="h-11 pe-10"
+                placeholder="you@example.com"
+              />
             </div>
           </div>
 
@@ -246,7 +220,7 @@ export function ForgotPasswordForm({ onBackToLogin }: { onBackToLogin: () => voi
             onClick={() => setStep("request")}
             className="w-full text-center text-xs text-primary hover:underline"
           >
-            {tr("auth.207")}
+            {tr("auth.217")}
           </button>
         </form>
       )}
