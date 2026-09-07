@@ -5,11 +5,11 @@ import { ok, err, requireUser, getParentProfile } from "@/lib/api";
 import { isValidStudentCode, normalizePhone } from "@/lib/registration";
 
 // POST /api/parents/me/link-student
-// Supports TWO modes:
-//  1. Legacy: { studentEmail } — link by email (kept for backward compat).
-//  2. Verified: { studentNationalId, parentPhone, studentCode } — link by
+// Supports ONE mode:
+//   Verified: { studentNationalId, parentPhone, studentCode } — link by
 //     matching Parent Phone + Student National ID (+ Student Code), i.e. the
 //     data the student provided at registration.
+// The legacy email-only linking path was removed for security.
 export async function POST(req: NextRequest) {
   const tApi = await getServerT();
   const user = await requireUser();
@@ -53,17 +53,11 @@ export async function POST(req: NextRequest) {
     }
     student = matched;
   } else if (studentEmail) {
-    const studentUser = await db.user.findUnique({
-      where: { email: studentEmail },
-      include: { student: { include: { user: true } } },
-    });
-    if (!studentUser || !studentUser.student) {
-      return err(tApi("api.115"), 404);
-    }
-    if (studentUser.role !== "STUDENT") {
-      return err(tApi("api.116"), 400);
-    }
-    student = studentUser.student;
+    // Legacy email-based linking was removed for security: knowing a
+    // student's email was sufficient to impersonate their parent.
+    // All linking now requires the verified path (national ID + student
+    // code + parent phone).
+    return err(tApi("api.110"), 400);
   } else {
     return err(tApi("api.117"), 400);
   }

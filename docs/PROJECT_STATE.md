@@ -1,10 +1,13 @@
 # CodeMind Academy Project State
 
 ## Phase status
-- Phase 1: completed (the referenced `docs/PHASE1_AUDIT_REPORT.md` is not present in this checkout; current code and Phase 2 findings were used).
+- **Deployment Readiness Audit (Phase 1):** completed (2026-09-07). Baseline `635de56`. See `docs/DEPLOYMENT_READINESS_AUDIT.md`.
+  - 1 CRITICAL security fix (privilege escalation via registration)
+  - 2 HIGH security fixes (quiz answer leakage, parent impersonation)
+  - All 337 test assertions still pass
 - Phase 2: completed; `docs/curriculum/knowledge-model.json` is the source-aligned curriculum contract.
-- Phase 3: in progress — Database & Domain Model Foundation.
-- Next planned phase: Phase 4 (only after explicit approval).
+- Phase 3: completed — Database & Domain Model Foundation (PR #14 merged).
+- Next planned phase: Phase 2 of current cycle — Production Hardening (only after explicit approval).
 
 ## Architecture summary
 Next.js application with Prisma and SQLite. The database remains SQLite, while the schema uses portable relational concepts and stable IDs. Existing operational grouping (`Group`) remains separate from explicit student access (`Enrollment`).
@@ -30,3 +33,14 @@ Prisma 6.11.1, SQLite, and the existing migration history are dependencies. The 
 
 ## Implementation status
 Schema additions and migration are complete for the foundation. Documentation is complete; Phase 3 PR #14 is open and awaiting approval.
+
+## Deployment Readiness Audit fixes (2026-09-07)
+- **CRITICAL (C1):** Registration endpoint no longer allows self-registration as ADMIN/TEACHER.
+- **HIGH (H1):** Quiz answers/explanations withheld from students until they have at least one finished attempt.
+- **HIGH (H2):** Legacy email-based parent-student linking removed; all linking requires verified path (national ID + student code + parent phone).
+
+## Known risks
+- SQLite is not suitable for concurrent production use (M2 — deferred).
+- `ignoreBuildErrors: true` suppresses TypeScript errors during build (M1 — deferred).
+- `SECURITY_HASH_SECRET` falls back to a hardcoded value if not set (M3 — deferred).
+- No `middleware.ts` for edge-level route protection (M4 — deferred).

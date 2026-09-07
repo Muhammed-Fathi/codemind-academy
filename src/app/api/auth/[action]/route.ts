@@ -191,24 +191,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ act
       return ok({ user: safeUser(user) });
     }
 
-    // ---------------- TEACHER / ADMIN (unchanged) ----------------
-    if (!name) return err(tApi("api.059"), 400);
-    const user = await db.user.create({
-      data: {
-        email,
-        name,
-        password: hashPassword(password),
-        phone: body.phone ? String(body.phone) : null,
-        role,
-      },
-    });
-
-    if (role === "TEACHER") {
-      await db.teacher.create({ data: { userId: user.id } });
+    // ---------------- TEACHER / ADMIN — registration blocked --------
+    // Teacher and Admin accounts must be provisioned by an existing admin
+    // via the admin management API, never through public self-registration.
+    // Allowing clients to choose these roles would be a privilege escalation.
+    if (role === "TEACHER" || role === "ADMIN") {
+      return err(tApi("api.059"), 400);
     }
 
-    await createSession(user.id);
-    return ok({ user: safeUser(user) });
+    return err(tApi("api.059"), 400);
   }
 
   if (action === "logout") {
