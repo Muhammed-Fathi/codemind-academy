@@ -14,16 +14,27 @@ All existing tests pass (337 assertions across 7 test suites). No regressions in
 
 ## Baseline
 
-- **Commit:** `635de56`
-- **Branch:** `arena/01a07dd6-codemind-academy`
+- **Commit:** `635de56` — state *before* the Phase 1 fixes
+- **Audited / final commit:** `b257a6c` (head of PR #18; merged into `main` as `fce4821`)
+- **Branch:** `arena/01a07dd6-codemind-academy` (deleted after merge)
 - **Date:** 2026-09-07
+
+> **Reconciliation note.** Every number in this document was re-verified against `b257a6c`
+> on 2026-09-07 and the incorrect figures were corrected in place. The corrections are
+> documentation-only: no application code, schema, dependency, or migration was changed.
+> See **“Reconciliation Against `b257a6c`”** at the end of this document for the full list.
 
 ## Architecture Reviewed
 
 ### Stack
-- **Frontend:** Next.js 16.3.4, React 19, TypeScript, Tailwind CSS 4
+- **Frontend:** Next.js 16 (declared `^16.1.1`), React 19, TypeScript, Tailwind CSS 4
 - **Backend:** Next.js API routes (no separate backend), cookie-based sessions
-- **Database:** SQLite via Prisma 6.11.1
+- **Database:** SQLite via Prisma (declared `^6.11.1`)
+
+`package.json` declares caret ranges, and the repository commits **two** lockfiles that resolve
+those ranges to different versions. The declared range is the only version the repository
+actually pins; the resolved version depends on which lockfile is used to install. See
+**“Dependency Version Reconciliation”** in the reconciliation section for the exact numbers.
 - **Auth:** Custom cookie-based sessions (no JWT, no NextAuth), scrypt password hashing
 - **i18n:** next-intl, Arabic/English, RTL/LTR
 - **Theming:** next-themes, dark/light mode
@@ -135,10 +146,20 @@ All existing tests pass (337 assertions across 7 test suites). No regressions in
 
 ### LOW
 
-#### L1: Lint Errors in Test Files
+#### L1: Lint Errors in Test Files *and* Source Components
 - **Severity:** LOW
-- **Location:** All `tests/*.test.js` files
-- **Problem:** 77 ESLint errors, all `@typescript-eslint/no-require-imports` in CJS test files.
+- **Location:** All `tests/*.test.js` files, plus 5 source components
+- **Problem:** `bun run lint` (which runs `eslint .`) reports **43 errors, 0 warnings** on the
+  toolchain resolved by `bun.lock` (the project's runtime package manager):
+  - **38 errors in test files** — all `@typescript-eslint/no-require-imports`, in the CJS test files
+  - **5 errors in source components** — 4 × `react-hooks/preserve-manual-memoization`
+    (`src/components/parent/monthly-report.tsx`, `src/components/student/bookmarks-view.tsx`,
+    `src/components/student/gamification-panel.tsx`, `src/components/student/referral-view.tsx`)
+    and 1 × `react-hooks/refs` (`src/components/student/student-dashboard.tsx`)
+- **Note:** the total is toolchain-dependent, not source-dependent — the same file tree reports
+  **77 errors, 1 warning** when the ESLint toolchain resolved by `package-lock.json` is installed.
+  The “all in test files” wording was wrong under either toolchain; only the 38 test-file errors
+  are `no-require-imports`. See the reconciliation section for the toolchain versions.
 - **Fixed:** NO (deferred)
 
 #### L2: React Strict Mode Disabled
@@ -207,7 +228,10 @@ All existing tests pass (337 assertions across 7 test suites). No regressions in
 ## Database Findings
 
 ### Schema
-- 3 migrations present, all additive
+- **3 migrations present, all additive** (verified by directory listing at `b257a6c`):
+  1. `20260904090608_add_student_identity_fields`
+  2. `20260906120000_platform_upgrade_2026`
+  3. `20260907100000_phase3_domain_foundation`
 - SQLite provider with proper relations, indexes, and constraints
 - No missing foreign keys or orphan records in schema design
 - Unique constraints properly defined (nationalId, studentCode, email, tokenHash)
@@ -216,7 +240,10 @@ All existing tests pass (337 assertions across 7 test suites). No regressions in
 ### Migration Safety
 - Migrations are additive and do not drop data
 - `db push --accept-data-loss` in scripts is risky for production but not used in migrations
-- Migration lock file present
+- **No migration lock file is tracked.** `prisma/migrations/migration_lock.toml` does not exist
+  at `b257a6c` and is not in the git index. The earlier claim that a lock file was present was
+  incorrect. With a single `sqlite` provider this has no practical effect today, but the file
+  should be committed before any provider change is attempted (see M2).
 
 ### Issues
 - SQLite is not suitable for concurrent production writes (M2)
@@ -285,14 +312,68 @@ All 7 test suites pass:
 All 7 test suites still pass with no regressions.
 
 ### Lint
-77 errors, 1 warning — all in test files (`no-require-imports`), pre-existing.
+
+Measured at `b257a6c` with `bun run lint` (`eslint .`) on the toolchain resolved by `bun.lock`:
+
+| Scope | Errors | Warnings |
+|---|---|---|
+| Test files (`tests/*.test.js`) | 38 | 0 |
+| Source / components (`src/**`) | 5 | 0 |
+| **Total** | **43** | **0** |
+
+- The 38 test-file errors are all `@typescript-eslint/no-require-imports` (CJS test files).
+- The 5 source errors are React Compiler hook rules: 4 × `react-hooks/preserve-manual-memoization`
+  and 1 × `react-hooks/refs`.
+
+The same file tree reports **77 errors, 1 warning** (38 test-file + 39 source) when the ESLint
+toolchain resolved by `package-lock.json` is installed instead. Both counts are pre-existing;
+Phase 1 introduced none of them.
 
 ### Build
-- **Compile**: ✅ Turbopack compiles successfully (~1.8s)
-- **Typecheck**: ⚠️ `tsc --noEmit` reports errors because `@prisma/client` types are not generated (requires `prisma generate` which downloads engine binaries). `next build` skips type validation because `ignoreBuildErrors: true` is set.
-- **Page data collection**: ❌ Fails at runtime because `PrismaClient` cannot initialize without generated client code. This is an environment constraint (no network access to `binaries.prisma.sh`), not a code defect.
-- **Full production build**: ❌ Cannot complete in this sandbox environment. In a deployment environment with network access, `prisma generate` + `next build` would succeed.
-- **Root cause of build failure**: Stale Prisma client in `node_modules/.prisma/client/` does not match current `schema.prisma`. Running `prisma generate` resolves this.
+
+The build script is two separate things chained together:
+
+```
+"build": "next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/"
+```
+
+1. the **Next.js production build** (`next build`), and
+2. a **POSIX shell copy step** (`cp -r …`) that stages the standalone output.
+
+They fail independently, and only the second one fails on Windows.
+
+**Next.js build — succeeds.**
+
+| Stage | Result | Evidence |
+|---|---|---|
+| Compile | ✅ | Turbopack compiles successfully (~15s in this sandbox; ~1.8s in the original audit run) |
+| Typecheck | ⚠️ skipped | `next.config.ts` sets `typescript.ignoreBuildErrors: true`, so `next build` runs no type validation. A standalone `tsc --noEmit` reports errors unless `prisma generate` has produced `@prisma/client` types. |
+| Collecting page data | ✅ on a machine with a generated Prisma client | Confirmed locally on Windows |
+| Generating static pages | ✅ | Confirmed locally on Windows |
+| Finalizing optimization | ✅ | Confirmed locally on Windows |
+
+**Copy step — fails on Windows.**
+
+- ❌ `cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/` fails under
+  **Windows CMD**, because `cp` is a POSIX command that CMD does not provide. This happens
+  **after** the Next.js build has already produced a complete, successful production build.
+
+**Accurate summary.** `bun run build` produces a **successful** Next.js production build
+(compile → page data collection → static generation → optimization). The only failure is the
+final `cp -r` copy step, which is a **shell-portability limitation of the npm script on
+Windows** — not a TypeScript, Next.js, or Prisma defect. On Linux/macOS, or on Windows via a
+POSIX shell (Git Bash, WSL, PowerShell with `cp` aliased), the full `bun run build` command
+including the copy step completes. Fixing it is a build-script change and was deliberately
+out of scope for this phase.
+
+**Sandbox-only failure (not a repository defect).** In this sandbox, `next build` stops at
+“Collecting page data” with `@prisma/client did not initialize yet` (`src/lib/db.ts:9`),
+because `prisma generate` cannot download its engine binaries — `binaries.prisma.sh` is
+unreachable from the sandbox. The Prisma client in `node_modules/.prisma/client/` is therefore
+an uninitialized stub. Running `prisma generate` with network access resolves this; it is an
+environment constraint, not a code defect. The earlier wording (“page data collection ❌”,
+“full production build ❌”) described this sandbox limitation but read as a defect in the
+repository, so it is corrected here.
 
 ## Implemented Fixes
 
@@ -327,6 +408,8 @@ All 7 test suites still pass with no regressions.
 
 ## Appendix: Files Changed
 
+Source files changed by Phase 1 (PR #18):
+
 ```
  src/app/api/auth/[action]/route.ts           | 23 +++++++----------------
  src/app/api/lessons/[id]/route.ts            | 23 +++++++++++++++++++++++
@@ -334,3 +417,79 @@ All 7 test suites still pass with no regressions.
  src/app/api/quizzes/[id]/route.ts            | 14 +++++++++++---
  4 files changed, 46 insertions(+), 30 deletions(-)
 ```
+
+The PR also changed two documentation files (`docs/DEPLOYMENT_READINESS_AUDIT.md` itself and
+`docs/PROJECT_STATE.md`), for six changed files in total.
+
+---
+
+## Reconciliation Against `b257a6c` (2026-09-07)
+
+This document was re-verified line by line against commit `b257a6c` — the head of PR #18,
+merged into `main` as `fce4821`. The tree at `b257a6c` is identical to the tree at `fce4821`.
+
+### Claim-by-claim result
+
+| Item | Previously stated | Verified at `b257a6c` | Status |
+|---|---|---|---|
+| Migration count | "3 migrations present" | **3** — count was correct | ✅ correct, names added |
+| Migration lock file | "Migration lock file present" | **Not tracked**; `migration_lock.toml` does not exist | ❌ corrected |
+| Next.js version | 16.3.4 | Declared `^16.1.1`; `bun.lock` → **16.1.3**; `package-lock.json` → 16.3.4 | ❌ corrected |
+| Prisma version | 6.11.1 | Declared `^6.11.1`; `bun.lock` → **6.19.2**; `package-lock.json` → 6.19.3 | ❌ corrected |
+| Lint count | "77 errors, 1 warning — all in test files" | **43 errors, 0 warnings** (38 test + 5 source) on `bun.lock`; 77/1 on `package-lock.json`; never "all in test files" | ❌ corrected |
+| Build | "page data collection ❌", "full production build ❌" | Next.js build **succeeds**; only the POSIX `cp -r` step fails, and only on Windows | ❌ corrected |
+| Test assertions | 337 across 7 suites | **337** (93+15+22+67+98+24+18), 7 suites, all passing | ✅ correct |
+| npm audit | 12 (4 moderate, 8 high) | **12** (4 moderate, 8 high) | ✅ correct |
+| Source files | 198 | **198** tracked files under `src/` | ✅ correct |
+| API routes | ~70 | 79 `route.ts` files | ⚠️ understated, left as approximate |
+| Library modules | ~25 | 25 | ✅ correct |
+
+Only the rows marked ❌ were changed in this document. No application code, schema,
+dependency, or migration was touched.
+
+### Dependency Version Reconciliation
+
+`package.json` declares caret ranges; both lockfiles are committed at `b257a6c` and they
+resolve those ranges differently:
+
+| Package | `package.json` | `bun.lock` | `package-lock.json` |
+|---|---|---|---|
+| `next` | `^16.1.1` | **16.1.3** | 16.3.4 |
+| `prisma` | `^6.11.1` | **6.19.2** | 6.19.3 |
+| `@prisma/client` | `^6.11.1` | **6.19.2** | 6.19.3 |
+| `react` | `^19.0.0` | 19.2.3 | 19.2.8 |
+
+**Why the audit showed different versions.** The two figures came from two different files and
+were mixed together:
+
+- **Next.js 16.3.4** is the resolution recorded in `package-lock.json`.
+- **Prisma 6.11.1** is not an installed version at all — it is the caret range `^6.11.1` in
+  `package.json`, quoted as though it were the resolved version. Neither lockfile resolves
+  Prisma to 6.11.1.
+
+Because the project is installed and run with **bun** (`bun.lock`, `bun-types` in
+devDependencies, `bun .next/standalone/server.js` in the `start` script), `bun.lock` is the
+resolution that applies locally: **Next.js 16.1.3** and **Prisma 6.19.2**. Both lockfiles are
+legitimate for this repository until one is designated authoritative; nothing was upgraded or
+downgraded during this reconciliation.
+
+### Lint Reconciliation
+
+The two totals describe the same file tree measured with two different ESLint toolchains —
+the same split seen in the dependency table:
+
+| ESLint package | `bun.lock` | `package-lock.json` |
+|---|---|---|
+| `eslint` | 9.39.2 | 9.39.5 |
+| `eslint-config-next` / `@next/eslint-plugin-next` | 16.1.3 | 16.3.4 |
+| `typescript-eslint` / `@typescript-eslint/*` | 8.53.0 | 8.69.0 |
+| `eslint-plugin-react-hooks` | 7.0.1 | 7.1.1 |
+
+| Toolchain | Total | Errors in `tests/` | Errors in `src/` | Warnings |
+|---|---|---|---|---|
+| `bun.lock` (what `bun run lint` uses locally) | **43** | 38 | 5 | 0 |
+| `package-lock.json` | 77 | 38 | 39 | 1 |
+
+The 38 test-file errors are identical in both (all `@typescript-eslint/no-require-imports`).
+The 34-error difference is entirely in `src/`: the newer `eslint-plugin-react-hooks` (7.1.1)
+adds rules that fire across the component tree. Neither total is "all in test files".
