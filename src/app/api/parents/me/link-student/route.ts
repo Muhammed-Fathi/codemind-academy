@@ -5,11 +5,11 @@ import { ok, err, requireUser, getParentProfile } from "@/lib/api";
 import { isValidStudentCode, normalizePhone } from "@/lib/registration";
 
 // POST /api/parents/me/link-student
-// Supports TWO modes:
-//  1. Legacy: { studentEmail } — link by email (kept for backward compat).
-//  2. Verified: { studentNationalId, parentPhone, studentCode } — link by
+// Supports ONE mode:
+//   Verified: { studentNationalId, parentPhone, studentCode } — link by
 //     matching Parent Phone + Student National ID (+ Student Code), i.e. the
 //     data the student provided at registration.
+// The legacy email-only linking path was removed for security.
 export async function POST(req: NextRequest) {
   const tApi = await getServerT();
   const user = await requireUser();
