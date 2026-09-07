@@ -65,6 +65,7 @@ model Student {
   studyTasks        StudyTask[]
   subscription      Subscription?
   videoViews        SessionVideoView[]
+  enrollments       Enrollment[]
 
   @@index([schoolType])
   @@index([groupId])
@@ -117,6 +118,34 @@ model Teacher {
   teacherNotes TeacherNote[]
 }
 
+model Track {
+  id          String       @id @default(cuid())
+  code        String       @unique
+  name        String
+  nameAr      String
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  courses     Course[]
+  enrollments Enrollment[]
+}
+
+model Enrollment {
+  id        String       @id @default(cuid())
+  studentId String
+  courseId  String
+  trackId   String
+  status    EnrollmentStatus @default(ACTIVE)
+  startsAt  DateTime     @default(now())
+  endsAt    DateTime?
+  createdAt DateTime     @default(now())
+  student   Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  course    Course       @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  track     Track        @relation(fields: [trackId], references: [id], onDelete: Restrict)
+  @@unique([studentId, courseId, trackId])
+  @@index([courseId, trackId, status])
+}
+
 model Course {
   id          String   @id @default(cuid())
   slug        String   @unique
@@ -129,6 +158,9 @@ model Course {
   updatedAt   DateTime @updatedAt
   groups      Group[]
   parts       Part[]
+  trackId     String?
+  track       Track?       @relation(fields: [trackId], references: [id], onDelete: SetNull)
+  enrollments Enrollment[]
   batches     Batch[]
   mockExams   MockExam[]
 }
@@ -154,6 +186,7 @@ model Unit {
   order   Int
   icon    String?
   topics  Topic[]
+  lessons Lesson[]
   part    Part    @relation(fields: [partId], references: [id], onDelete: Cascade)
 
   @@index([partId])
@@ -173,7 +206,10 @@ model Topic {
 
 model Lesson {
   id            String           @id @default(cuid())
-  topicId       String
+  topicId       String?
+  unitId        String?
+  officialCode  String?          @unique
+  curriculumStatus CurriculumStatus @default(LEGACY)
   title         String
   titleAr       String
   order         Int
@@ -188,7 +224,9 @@ model Lesson {
   updatedAt     DateTime         @updatedAt
   examQuestions ExamQuestion[]
   homeworks     Homework[]
-  topic         Topic            @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  topic         Topic?           @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  unit          Unit?            @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  materials     Material[]
   bookmarks     LessonBookmark[]
   notes         LessonNote[]
   progress      LessonProgress[]
@@ -197,6 +235,7 @@ model Lesson {
   sessionVideos SessionVideo[]
 
   @@index([topicId])
+  @@index([unitId, order])
 }
 
 model Group {
@@ -215,6 +254,21 @@ model Group {
   students  Student[]
 
   @@index([courseId])
+}
+
+model Material {
+  id          String       @id @default(cuid())
+  lessonId    String
+  kind        MaterialKind @default(GENERATED)
+  title       String
+  storageKey  String?
+  mediaAssetId String?
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  lesson      Lesson       @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  media       MediaAsset?  @relation(fields: [mediaAssetId], references: [id], onDelete: SetNull)
+  @@index([lessonId, isActive])
 }
 
 model LiveSession {
@@ -674,6 +728,7 @@ model MediaAsset {
   createdAt     DateTime       @default(now())
   sessionVideos SessionVideo[]
   quizEvidence  QuizAttemptEvidence[]
+  materials     Material[]
 
   @@index([kind])
   @@index([storage])
@@ -848,6 +903,24 @@ model QuizAttemptEvidence {
 
   @@index([attemptId, capturedAt])
   @@index([retainUntil])
+}
+
+enum CurriculumStatus {
+  OFFICIAL
+  LEGACY
+  ARCHIVED
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+enum MaterialKind {
+  GENERATED
+  ADMIN_UPLOADED
 }
 
 enum SchoolType {
