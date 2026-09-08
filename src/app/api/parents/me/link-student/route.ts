@@ -43,6 +43,11 @@ export async function POST(req: NextRequest) {
       where: { nationalId: studentNationalId, studentCode },
       include: { user: true },
     });
+    // Phase 7: both failure branches answer 404 with the SAME message
+    // (api.113 and api.114 are intentionally identical text). A distinct
+    // "phone mismatch" message would confirm that a guessed (national ID +
+    // student code) pair is real, turning this endpoint into an oracle for
+    // enumerating students.
     if (!matched) return err(tApi("api.113"), 404);
     const stored = normalizePhone(String(matched.parentPhone || ""));
     if (!stored || stored !== normalizePhone(parentPhone)) {

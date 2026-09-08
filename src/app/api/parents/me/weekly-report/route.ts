@@ -1,6 +1,11 @@
 import { getServerT } from "@/lib/i18n-server";
 // CodeMind Academy — Parent Weekly Report API
-// Returns a weekly summary of the child's activity (last 7 days).
+// Returns a weekly summary of each LINKED child's activity (last 7 days).
+// Scope is the server-side Parent → Student links; this route accepts no ids.
+//
+// Phase 7 rules: quiz stats count finished attempts only, attendance counts
+// PRESENT + LATE as attended (the student definition), lesson completion is
+// measured against the child's course, and the handler is read-only.
 import { NextResponse } from "next/server";
 import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
@@ -44,6 +49,42 @@ export async function GET() {
     },
   });
   if (!parent) return err(tApi("api.119"), 404);
+
+  // Course lesson totals, one batched query for every linked child's course
+  // (same universe as the parent dashboard: published lessons, legacy chain).
+  const weeklyCourseIds = [
+    ...new Set(
+      parent.children
+        .map((l) => l.student.group?.courseId)
+        .filter((id): id is string => !!id)
+    ),
+  ];
+  const weeklyLessonRows =
+    weeklyCourseIds.length > 0
+      ? await db.lesson.findMany({
+          where: {
+            isPublished: true,
+            topic: {
+              unit: { part: { courseId: { in: weeklyCourseIds } } },
+            },
+          },
+          select: {
+            id: true,
+            topic: {
+              select: { unit: { select: { part: { select: { courseId: true } } } } },
+            },
+          },
+        })
+      : [];
+  const weeklyLessonTotalByCourse = new Map<string, number>();
+  for (const row of weeklyLessonRows) {
+    const cid = row.topic?.unit.part.courseId;
+    if (!cid) continue;
+    weeklyLessonTotalByCourse.set(
+      cid,
+      (weeklyLessonTotalByCourse.get(cid) || 0) + 1
+    );
+  }
 
   const now = new Date();
   const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -115,7 +156,9 @@ export async function GET() {
     const totalQuizzes = weeklyQuizAttempts.length;
     const totalHomework = weeklyHomework.length;
     const totalAttendance = weeklyAttendance.length;
-    const presentAttendance = weeklyAttendance.filter((a) => a.status === "PRESENT").length;
+    const presentAttendance = weeklyAttendance.filter(
+      (a) => a.status === "PRESENT" || a.status === "LATE"
+    ).length;
 
     // Best quiz score this week
     const bestQuiz = weeklyQuizAttempts.length > 0
@@ -127,9 +170,12 @@ export async function GET() {
       ? Math.round(weeklyQuizAttempts.reduce((sum, q) => sum + q.percentage, 0) / weeklyQuizAttempts.length)
       : 0;
 
-    // Overall progress
+    // Overall progress, measured against the child's COURSE (same denominator
+    // as the parent dashboard, not the count of progress rows that exist).
     const completedLessons = s.lessonProgress.filter((lp) => lp.isCompleted).length;
-    const totalCourseLessons = s.lessonProgress.length;
+    const totalCourseLessons = s.group?.courseId
+      ? weeklyLessonTotalByCourse.get(s.group.courseId) || 0
+      : 0;
     const completionPct = totalCourseLessons > 0 ? Math.round((completedLessons / totalCourseLessons) * 100) : 0;
 
     // Active days (days with any activity)

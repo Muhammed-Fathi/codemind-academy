@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { ok, err, requireUser, getStudentProfile, denyProgression } from "@/lib/api";
 import { canAccessQuiz } from "@/lib/session-progress";
 import { loadAttemptQuestionSet, safeParseOptions } from "@/lib/session-quiz";
+import { isParentAuthorizedForCourse } from "@/lib/parent-access";
 
 // GET /api/quizzes/[id]
 // Returns quiz + questions. Answers and explanations are withheld from
@@ -45,6 +46,19 @@ export async function GET(
     },
   });
   if (!quiz) return err("Quiz not found", 404);
+
+  // Phase 7: a parent may open ONLY quizzes of courses in which a linked
+  // child is enrolled. Quiz ids are unguessable, so an out-of-scope quiz
+  // looks exactly like a nonexistent one (404). Teacher/admin preview and
+  // the student session gate below are unchanged.
+  if (user.role === "PARENT") {
+    const quizCourseId =
+      quiz.lesson?.unit?.part.courseId ??
+      quiz.lesson?.topic?.unit.part.courseId ??
+      null;
+    const allowed = await isParentAuthorizedForCourse(user.id, quizCourseId);
+    if (!allowed) return err("Quiz not found", 404);
+  }
 
   // Pull the student's previous attempts (if student)
   let bestAttempt: {

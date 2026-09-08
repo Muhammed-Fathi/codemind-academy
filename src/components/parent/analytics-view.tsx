@@ -54,11 +54,30 @@ type ChildAnalytics = {
   attendancePct: number;
 };
 
-export function ParentAnalyticsView({ onClose }: { onClose: () => void }) {
+export function ParentAnalyticsView({
+  onClose,
+  initialStudentId,
+}: {
+  onClose: () => void;
+  /** Linked child to select first (defaults to the first linked child). */
+  initialStudentId?: string | null;
+}) {
   const tr = useT();
   const [data, setData] = React.useState<{ children: ChildAnalytics[] } | null>(null);
   const [loading, setLoading] = React.useState(true);
-  const [activeChild, setActiveChild] = React.useState(0);
+  // Phase 7: open on the child the parent had selected on the dashboard
+  // instead of silently resetting to the first child. The initial tab is
+  // DERIVED during render (no effect): an explicit tab click overrides it.
+  // Every tab is server-authorized linked data, so the choice is display-only.
+  const [tabOverride, setTabOverride] = React.useState<number | null>(null);
+  const initialIndex =
+    initialStudentId && data
+      ? Math.max(
+          0,
+          data.children.findIndex((c) => c.studentId === initialStudentId)
+        )
+      : 0;
+  const activeChild = tabOverride ?? initialIndex;
 
   React.useEffect(() => {
     fetch("/api/parents/me/analytics")
@@ -105,7 +124,7 @@ export function ParentAnalyticsView({ onClose }: { onClose: () => void }) {
           {data.children.map((c, i) => (
             <button
               key={c.studentId}
-              onClick={() => setActiveChild(i)}
+              onClick={() => setTabOverride(i)}
               className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
                 activeChild === i
                   ? "bg-primary text-primary-foreground shadow-sm"

@@ -159,6 +159,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ act
         where: { nationalId: studentNationalId, studentCode },
         include: { user: true },
       });
+      // Phase 7: both failure branches answer 404 with the SAME message
+      // (api.073 and api.074 are intentionally identical text) so a failed
+      // parent registration never confirms that a guessed (national ID +
+      // student code) pair belongs to a real student.
       if (!matched) return err(tApi("api.073"), 404);
       const storedParentPhone = normalizePhone(String(matched.parentPhone || ""));
       if (!storedParentPhone || storedParentPhone !== normalizePhone(parentPhone)) {

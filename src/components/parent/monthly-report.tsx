@@ -93,7 +93,33 @@ export function buildReportData(child: any, locale: "ar" | "en" = "ar"): ReportD
   };
 }
 
-export function MonthlyReportView({ onClose }: { onClose: () => void }) {
+/**
+ * Pick which linked child the monthly report covers. Exported (pure) so the
+ * multi-child selection rule is unit-testable: an explicitly selected child
+ * wins, an unknown/omitted id falls back to the first linked child, and an
+ * empty list yields null. Every candidate comes from the server payload, so
+ * the selection can never address an unlinked student.
+ */
+export function selectReportChild(
+  children: { id: string }[] | null | undefined,
+  studentId?: string | null
+): { id: string } | null {
+  if (!children || children.length === 0) return null;
+  if (studentId) {
+    const match = children.find((c) => c.id === studentId);
+    if (match) return match;
+  }
+  return children[0];
+}
+
+export function MonthlyReportView({
+  onClose,
+  studentId,
+}: {
+  onClose: () => void;
+  /** Linked child to report on (defaults to the first linked child). */
+  studentId?: string | null;
+}) {
   const tr = useT();
   const locale = useLocale();
   const localeRef = React.useRef(locale);
@@ -105,13 +131,15 @@ export function MonthlyReportView({ onClose }: { onClose: () => void }) {
     fetch("/api/parents/me/dashboard")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
-        if (d?.children?.[0]) {
-          setData(buildReportData(d.children[0], localeRef.current));
+        const child = selectReportChild(d?.children, studentId);
+        if (child) {
+          setData(buildReportData(child, localeRef.current));
         }
       })
       .catch(() => toast.error(tr("parent.009")))
       .finally(() => setLoading(false));
-  }, []);
+    // Re-resolves when the selected child changes (same fetch, no new API).
+  }, [studentId]);
 
   if (loading) {
     return (

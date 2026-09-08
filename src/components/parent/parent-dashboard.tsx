@@ -179,6 +179,34 @@ type Child = {
     time: string;
     kind: "good" | "neutral" | "warn";
   }[];
+  // Finished mock exams only, kept separate from session quizzes (Phase 7).
+  mockExams?: {
+    attempts: number;
+    average: number;
+    best: number | null;
+    passed: number;
+    failed: number;
+    recent: {
+      id: string;
+      examType: string;
+      mockExamTitle: string;
+      questionCount: number;
+      score: number;
+      totalMarks: number;
+      percentage: number;
+      passed: boolean;
+      finishedAt: string;
+    }[];
+  };
+  // Session unlock state from the Phase 4 engine; null when unenrolled.
+  sessionProgress?: {
+    total: number;
+    completed: number;
+    unlocked: number;
+    locked: number;
+    currentLessonId: string | null;
+    currentLessonTitle: string | null;
+  } | null;
 };
 
 type DashboardPayload = {
@@ -260,11 +288,22 @@ export function ParentDashboard() {
   }, [data, activeChildId]);
 
   if (showReport) {
-    return <MonthlyReportView onClose={() => setShowReport(false)} />;
+    // Phase 7: the report covers the SELECTED child, not children[0].
+    return (
+      <MonthlyReportView
+        onClose={() => setShowReport(false)}
+        studentId={activeChildId}
+      />
+    );
   }
 
   if (showAnalytics) {
-    return <ParentAnalyticsView onClose={() => setShowAnalytics(false)} />;
+    return (
+      <ParentAnalyticsView
+        onClose={() => setShowAnalytics(false)}
+        initialStudentId={activeChildId}
+      />
+    );
   }
 
   if (showWeekly) {
@@ -394,6 +433,7 @@ export function ParentDashboard() {
         <ProgressRingCard
           pct={child.courseProgress.pct}
           sub={`${child.courseProgress.completed}/${child.courseProgress.total} Lessons`}
+          session={child.sessionProgress}
         />
         <AttendanceCard attendance={child.attendance} />
         <QuizAverageCard
@@ -402,7 +442,7 @@ export function ParentDashboard() {
           passed={child.quizzes.passed}
         />
         <HomeworkCard homework={child.homework} />
-        <MonthlyExamCard />
+        <MonthlyExamCard mockExams={child.mockExams} />
         <SubscriptionCard subscription={child.subscription} />
       </motion.div>
 
@@ -515,7 +555,15 @@ function ChildSummaryCard({ child }: { child: Child }) {
 // ============================================================
 // Card 1: Animated Progress Ring
 // ============================================================
-function ProgressRingCard({ pct, sub }: { pct: number; sub: string }) {
+function ProgressRingCard({
+  pct,
+  sub,
+  session,
+}: {
+  pct: number;
+  sub: string;
+  session?: Child["sessionProgress"];
+}) {
   const tr = useT();
   const radius = 52;
   const circumference = 2 * Math.PI * radius;
@@ -583,6 +631,12 @@ function ProgressRingCard({ pct, sub }: { pct: number; sub: string }) {
               ? tr("parent.059")
               : tr("parent.060")}
           </div>
+          {session?.currentLessonTitle ? (
+            <div className="text-[11px] mt-2 leading-snug">
+              <span className="text-muted-foreground">Current: </span>
+              <span className="font-semibold">{session.currentLessonTitle}</span>
+            </div>
+          ) : null}
         </div>
       </CardContent>
     </Card>
@@ -745,26 +799,74 @@ function HomeworkCard({ homework }: { homework: Child["homework"] }) {
 // ============================================================
 // Card 5: Monthly Exam (placeholder)
 // ============================================================
-function MonthlyExamCard() {
+function MonthlyExamCard({
+  mockExams,
+}: {
+  mockExams?: Child["mockExams"];
+}) {
   const tr = useT();
+  // No finished mock exams → keep the existing "coming soon" placeholder.
+  if (!mockExams || mockExams.attempts === 0) {
+    return (
+      <Card className="glass card-hover p-6 border-dashed">
+        <CardHeader className="px-0 pt-0">
+          <CardTitle className="text-sm flex items-center gap-2 text-muted-foreground">
+            <Award className="w-4 h-4 text-amber-500" />
+            Monthly Exam
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="px-0">
+          <div className="flex flex-col items-start gap-2">
+            <Badge
+              variant="outline"
+              className="bg-amber-400/10 text-amber-700 dark:text-amber-300"
+            >
+              {tr("parent.070")}</Badge>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              {tr("parent.071")}</p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+  // Finished mock-exam history exists: show the server-graded summary
+  // (strictly separate from the session-quiz card).
+  const latest = mockExams.recent[0];
   return (
-    <Card className="glass card-hover p-6 border-dashed">
+    <Card className="glass card-hover p-6">
       <CardHeader className="px-0 pt-0">
         <CardTitle className="text-sm flex items-center gap-2 text-muted-foreground">
           <Award className="w-4 h-4 text-amber-500" />
-          Monthly Exam
+          Mock Exams
         </CardTitle>
       </CardHeader>
       <CardContent className="px-0">
-        <div className="flex flex-col items-start gap-2">
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <div className="text-3xl font-extrabold text-gradient">
+              {mockExams.average}%
+            </div>
+            <div className="text-xs text-muted-foreground mt-1">
+              {mockExams.passed}/{mockExams.attempts} passed
+              {mockExams.best !== null ? ` · best ${mockExams.best}%` : ""}
+            </div>
+          </div>
           <Badge
             variant="outline"
-            className="bg-amber-400/10 text-amber-700 dark:text-amber-300"
+            className={
+              mockExams.average >= 60
+                ? "border-emerald-400/30 text-emerald-600"
+                : "border-amber-400/30 text-amber-600"
+            }
           >
-            {tr("parent.070")}</Badge>
-          <p className="text-xs text-muted-foreground leading-relaxed">
-            {tr("parent.071")}</p>
+            {mockExams.attempts} exams
+          </Badge>
         </div>
+        {latest ? (
+          <div className="text-[11px] text-muted-foreground mt-3 truncate">
+            Latest: {latest.mockExamTitle} — {latest.percentage}%
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );
