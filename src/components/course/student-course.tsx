@@ -57,6 +57,9 @@ type LessonItem = {
   progress: number;
   isCompleted: boolean;
   status: LessonStatus;
+  /** Presence only — the API never names a locked session's quiz/assignment. */
+  hasQuiz?: boolean;
+  hasAssignment?: boolean;
   quiz: { id: string; title: string; titleAr: string } | null;
   homework: { id: string; title: string; titleAr: string } | null;
 };
@@ -404,12 +407,12 @@ function LessonRow({ lesson }: { lesson: LessonItem }) {
         </div>
         <div className="text-[11px] text-muted-foreground flex items-center gap-2 mt-0.5">
           <Clock className="w-3 h-3" />
-          {lesson.duration} {tr("course.045")}{lesson.quiz && (
+          {lesson.duration} {tr("course.045")}{(lesson.hasQuiz ?? !!lesson.quiz) && (
             <span className="flex items-center gap-0.5">
               · <Trophy className="w-3 h-3" /> Quiz
             </span>
           )}
-          {lesson.homework && (
+          {(lesson.hasAssignment ?? !!lesson.homework) && (
             <span className="flex items-center gap-0.5">
               · <FileText className="w-3 h-3" /> Homework
             </span>

@@ -200,6 +200,13 @@ export async function GET(
         order: topic.order,
         lessons: topic.lessons.map((lesson) => {
           const lp = progressMap[lesson.id];
+          const status = statusById[lesson.id];
+          // A LOCKED session is described by its title/number/duration only.
+          // Media URLs, the PDF, the summary/description, the quiz and
+          // assignment identities and the requirement breakdown all stay
+          // server-side: hiding them in the UI is not protection, because the
+          // client can simply read this response.
+          const locked = status === "locked";
           return {
             id: lesson.id,
             title: lesson.title,
@@ -207,16 +214,20 @@ export async function GET(
             order: lesson.order,
             duration: lesson.duration,
             isLocked: lesson.isLocked,
-            videoUrl: lesson.videoUrl,
-            pdfUrl: lesson.pdfUrl,
-            summary: lesson.summary,
-            description: lesson.description,
-            progress: lp?.progress || 0,
-            isCompleted: !!lp?.isCompleted,
-            status: statusById[lesson.id],
-            requirements: requirementsByLesson.get(lesson.id) || null,
-            quiz: lesson.quizzes[0] || null,
-            homework: lesson.homeworks[0] || null,
+            videoUrl: locked ? null : lesson.videoUrl,
+            pdfUrl: locked ? null : lesson.pdfUrl,
+            summary: locked ? null : lesson.summary,
+            description: locked ? null : lesson.description,
+            progress: locked ? 0 : lp?.progress || 0,
+            isCompleted: locked ? false : !!lp?.isCompleted,
+            status,
+            requirements: locked ? null : requirementsByLesson.get(lesson.id) || null,
+            // Presence flags only — enough for the "Quiz"/"Homework" badges in
+            // the course tree, without naming or linking the protected items.
+            hasQuiz: lesson.quizzes.length > 0,
+            hasAssignment: lesson.homeworks.length > 0,
+            quiz: locked ? null : lesson.quizzes[0] || null,
+            homework: locked ? null : lesson.homeworks[0] || null,
           };
         }),
       })),

@@ -1,10 +1,15 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { ok, err, requireUser, getStudentProfile } from "@/lib/api";
+import { ok, err, requireUser, getStudentProfile, denyProgression } from "@/lib/api";
+import { canAccessQuiz } from "@/lib/session-progress";
 
 // POST /api/quizzes/[id]/submit
 // Body: { answers: { questionId, selected }[] }
 // Creates a QuizAttempt, computes score, returns the result.
+//
+// AUTHORIZATION: the quiz must belong to a session the student has unlocked.
+// Otherwise a single POST would satisfy the quiz requirement of a session the
+// student never opened (and hand back every correct answer + explanation).
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -22,6 +27,9 @@ export async function POST(
     include: { questions: true },
   });
   if (!quiz) return err("Quiz not found", 404);
+
+  const access = await canAccessQuiz(s.id, id);
+  if (!access.allowed) return denyProgression(access.reason, "Quiz not found");
 
   const body = await req.json().catch(() => ({}));
   const answersRaw: { questionId: string; selected: string }[] = Array.isArray(body.answers)

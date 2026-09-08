@@ -151,14 +151,28 @@ export async function getCourseSessionProgress(
   };
 }
 
+export type AccessReason =
+  | null
+  | "NOT_ENROLLED"
+  | "LESSON_NOT_FOUND"
+  | "PREVIOUS_SESSION_INCOMPLETE";
+
 export type LessonAccess = {
   allowed: boolean;
-  reason:
-    | null
-    | "NOT_ENROLLED"
-    | "LESSON_NOT_FOUND"
-    | "PREVIOUS_SESSION_INCOMPLETE";
+  reason: AccessReason;
   status: SessionStatusRow | null;
+};
+
+/**
+ * Gating result for a resource that hangs off a lesson (quiz, homework).
+ * `status` is deliberately absent: it describes the REQUIREMENTS of a session
+ * the caller may not be allowed to open yet, and returning it would tell a
+ * probing client which components (video / quiz / assignment) a locked
+ * session hides.
+ */
+export type ResourceAccess = {
+  allowed: boolean;
+  reason: AccessReason;
 };
 
 /**
@@ -207,4 +221,74 @@ export async function canAccessLesson(
     return { allowed: false, reason: "PREVIOUS_SESSION_INCOMPLETE", status };
 
   return { allowed: true, reason: null, status };
+}
+
+// ---------------------------------------------------------------------------
+// Resource-level gating (quiz, homework)
+// ---------------------------------------------------------------------------
+//
+// A quiz or an assignment is only ever reachable through the session it
+// belongs to. Without this, a student who knows (or guesses) an id could POST
+// straight to `/api/quizzes/<id>/submit` for a session they have not unlocked
+// and pre-satisfy that session's quiz requirement — turning the quiz gate into
+// a no-op for the whole course, and reading the questions/answers of content
+// they were never allowed to open.
+//
+// Both helpers resolve to the OWNING LESSON and then re-use `canAccessLesson`,
+// so there is exactly one definition of "may this student open this session".
+
+/** Gate any resource that belongs to a lesson, by lesson id. */
+async function gateByLesson(
+  studentId: string,
+  lessonId: string | null
+): Promise<ResourceAccess> {
+  if (!lessonId) return { allowed: false, reason: "LESSON_NOT_FOUND" };
+  const access = await canAccessLesson(studentId, lessonId);
+  return { allowed: access.allowed, reason: access.reason };
+}
+
+/**
+ * Server-side authorization for a quiz. Callers must treat
+ * `LESSON_NOT_FOUND` as 404 and the other reasons as 403.
+ */
+export async function canAccessQuiz(
+  studentId: string,
+  quizId: string
+): Promise<ResourceAccess> {
+  const quiz = await db.quiz.findUnique({
+    where: { id: quizId },
+    select: { lessonId: true },
+  });
+  if (!quiz) return { allowed: false, reason: "LESSON_NOT_FOUND" };
+  return gateByLesson(studentId, quiz.lessonId);
+}
+
+/** Server-side authorization for a homework/assignment. */
+export async function canAccessHomework(
+  studentId: string,
+  homeworkId: string
+): Promise<ResourceAccess> {
+  const homework = await db.homework.findUnique({
+    where: { id: homeworkId },
+    select: { lessonId: true },
+  });
+  if (!homework) return { allowed: false, reason: "LESSON_NOT_FOUND" };
+  return gateByLesson(studentId, homework.lessonId);
+}
+
+/**
+ * Batch gate a set of lessons at once and report which ones are open.
+ *
+ * Used by list endpoints (course tree, homework list, dashboard) so a single
+ * request cannot describe the protected content of sessions the student has
+ * not unlocked. One progression computation for the whole course — no N+1.
+ */
+export async function getUnlockedLessonIds(
+  studentId: string,
+  courseId: string
+): Promise<Set<string>> {
+  const progress = await getCourseSessionProgress(studentId, courseId);
+  return new Set(
+    progress.sessions.filter((s) => s.unlocked).map((s) => s.lessonId)
+  );
 }

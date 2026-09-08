@@ -34,6 +34,24 @@ export const DICT_2026: Record<string, DictEntry> = {
   "api.218": { ar: "المجموعة غير موجودة", en: "Batch not found" },
   "api.219": { ar: "لازم ترفع ملف أو تدخل رابط", en: "Upload a file or provide a URL" },
   "api.220": { ar: "اكتب إيميل صحيح", en: "Enter a valid email address" },
+  // ---- Phase 4: assignment (homework) submission ----
+  "api.221": { ar: "لازم تحدد الواجب", en: "A homework id is required" },
+  "api.222": { ar: "اكتب إجابتك قبل ما تسلّم الواجب", en: "Write your answer before submitting the assignment" },
+  "api.223": {
+    ar: "الإجابة طويلة أوي (الحد الأقصى {p1} حرف)",
+    en: "The answer is too long (maximum {p1} characters)",
+  },
+  "api.224": {
+    ar: "الواجب ده اتصحح خلاص، مش ممكن تعدّل الإجابة",
+    en: "This assignment has already been graded and can no longer be changed",
+  },
+  "api.225": { ar: "تم تسليم الواجب", en: "Assignment submitted" },
+  "student.240": {
+    ar: "اكتب إجابتك هنا…",
+    en: "Write your answer here…",
+  },
+  "student.241": { ar: "سلّم الواجب", en: "Submit assignment" },
+  "student.242": { ar: "بيسلّم…", en: "Submitting…" },
 
   // ---------------- Landing: how to start steps ----------------
   "landing.200": { ar: "سجّل حسابك", en: "Register" },
