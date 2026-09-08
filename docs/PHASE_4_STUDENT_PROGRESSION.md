@@ -49,12 +49,66 @@ Everything below was read from the repository, not assumed.
 * **Edge layer** — `src/proxy.ts` (Next 16 name for middleware): cookie-presence
   401 for protected `/api/*` prefixes. Defense-in-depth only.
 
+## Progression Universe (Course → Part → Unit → Lesson)
+
+The canonical hierarchy is `Track → Course → Part → Unit → Lesson`, reached
+through `Lesson.unitId`. `Topic` is a **nullable legacy compatibility layer**
+(`Lesson.topicId`); `docs/PROJECT_STATE.md` records that official lessons use
+`Lesson.unitId`, `officialCode` and `curriculumStatus=OFFICIAL`.
+
+**Root cause of the review finding.** `getCourseSessionProgress()` discovered
+its lessons with `where: { topic: { unit: { part: { courseId } } } }` and
+ordered them by the Topic chain. An official lesson with `topicId = null`
+therefore never entered the progression universe — and an *invisible* lesson is
+worse than a *locked* one: it is absent from the sequence, so
+`canAccessLesson()` answered `LESSON_NOT_FOUND` (404) for it and the student
+could never progress past it. The same blind spot existed in
+`/api/courses/[slug]`, whose tree was built as
+`parts → units → topics → lessons`, so official lessons did not render at all.
+
+**Fix — one universe, both chains:**
+
+```ts
+where: {
+  isPublished: true,
+  OR: [
+    { unit: { part: { courseId } } },            // canonical
+    { topic: { unit: { part: { courseId } } } }, // legacy
+  ],
+}
+```
+
+Ordering moved out of SQL into `orderCourseLessons()`, because Prisma cannot
+express "nullable Topic" in an `orderBy` chain. The order is a **deterministic
+total order**: `Part.order → Unit.order → Topic.order → Lesson.order → id`.
+Unit-linked lessons have no Topic, so they take `topicOrder = -1` and sort
+before the legacy topics of the same Unit — the canonical hierarchy is
+authoritative. `chainPositionOf()` resolves the position *relative to the
+requested course*, so a lesson whose two links point at different courses can
+never be placed by the wrong one.
+
+When a lesson carries **both** links, `resolveLessonCourseId()` returns the
+canonical `unit.part.courseId` and the legacy chain is a fallback, never a
+second opinion. `canAccessLesson()` selects `LESSON_CHAIN_SELECT` — the *same*
+shared shape the universe query uses — so the gate and the sequence can never
+disagree about where a lesson lives.
+
+`/api/courses/[slug]` was restructured to match: a Unit now returns
+`unit.lessons` (canonical) **and** `unit.topics[].lessons` (legacy), and the
+flat status list is built in the engine's order. A lesson carrying both links
+is rendered under the Unit only (`if (lesson.unitId) continue`), so it can never
+appear twice. `student-course.tsx` renders the canonical sessions first, then
+the legacy Topic groups, and skips empty Topic shells.
+
+No schema change, no migration, and no fake `Topic` rows: official lessons are
+legitimate with `topicId = null`.
+
 ## Existing Student Flow (audited, pre-change)
 
 | # | Question | Actual behaviour found |
 | --- | --- | --- |
 | 1 | How does a student become enrolled? | Admin assigns `Student.groupId` to an active `Group`; `getEnrollment()` derives the course from it. `syncStudentBatch()` lazily attaches the school-type `Batch`. |
-| 2 | How is the first available Unit determined? | Not a unit-level concept. Ordering is `Part.order → Unit.order → Topic.order → Lesson.order`; the first row is always unlocked (`previousCompleted = true`). |
+| 2 | How is the first available Unit determined? | Not a unit-level concept. Ordering is `Part.order → Unit.order → Topic.order → Lesson.order`; the first row is always unlocked (`previousCompleted = true`). *(Pre-change this ordering only worked through `Topic`; see "Progression Universe".)* |
 | 3 | How is the first Session determined? | First row of that ordering; `currentLessonId` = first `unlocked && !completed`. |
 | 4 | How are locked sessions identified? | Strictly sequential: `unlocked[i] = completed[i-1]`, where `completed = videoDone && quizDone && assignmentDone`. A component that does not exist is not required. |
 | 5 | How is session content access checked? | `canAccessLesson()` inside `GET /api/lessons/[id]`, `POST .../progress`, `POST .../video-progress`. **Not** in the quiz routes (see P1). |
@@ -256,17 +310,17 @@ Node `process` API call. In the Node runtime `globalThis.process` **is**
 
 | File | Change |
 | --- | --- |
-| `src/lib/session-progress.ts` | `AccessReason`/`ResourceAccess` types; `canAccessQuiz`, `canAccessHomework`, `getUnlockedLessonIds`. |
+| `src/lib/session-progress.ts` | `AccessReason`/`ResourceAccess` types; `canAccessQuiz`, `canAccessHomework`, `getUnlockedLessonIds`; **canonical + legacy progression universe** (`LESSON_CHAIN_SELECT`, `resolveLessonCourseId`, `orderCourseLessons`). |
 | `src/lib/api.ts` | `ProgressionDenial` + `denyProgression()` (uniform 403/404, no metadata leak). |
 | `src/app/api/quizzes/[id]/route.ts` | Gate `canAccessQuiz` (P1). |
 | `src/app/api/quizzes/[id]/start/route.ts` | Gate `canAccessQuiz` (P1). |
 | `src/app/api/quizzes/[id]/submit/route.ts` | Gate `canAccessQuiz` (P1). |
 | `src/app/api/quizzes/[id]/evidence/route.ts` | Gate `canAccessQuiz` (defense in depth). |
-| `src/app/api/courses/[slug]/route.ts` | Redact locked sessions; add `hasQuiz`/`hasAssignment` (P2). |
+| `src/app/api/courses/[slug]/route.ts` | Redact locked sessions; add `hasQuiz`/`hasAssignment` (P2); serve canonical `unit.lessons` alongside legacy `unit.topics[].lessons`; single `toLesson` mapper (each key defined exactly once). |
 | `src/app/api/lessons/[id]/route.ts` | 403 via `denyProgression`, no `requirements` echo (P4). |
 | `src/app/api/students/me/dashboard/route.ts` | `continueLesson`/`videoUrl`/`pendingHomework` gated (P5). |
 | `src/app/api/students/me/homework/route.ts` | List gated; **new** `POST` submission (P3). |
-| `src/components/course/student-course.tsx` | Read presence flags. |
+| `src/components/course/student-course.tsx` | Read presence flags; render canonical unit lessons before legacy topic groups. |
 | `src/components/student/student-dashboard.tsx` | `HomeworkSubmitForm`. |
 | `src/lib/i18n-dict-2026.ts` | `api.221`–`api.225`, `student.240`–`student.242` (ar + en). |
 | `src/instrumentation.ts` | Edge-safe process termination; fail-fast unchanged. |
@@ -277,8 +331,14 @@ generated client committed.
 
 ## Tests
 
-New suite `tests/session-progression.test.js`, offline (no DB, no network, no
-server), in the existing repository style:
+New suite `tests/session-progression.test.js` (**144 assertions**), offline (no
+DB, no network, no server), in the existing repository style. Its fixture holds
+three courses so both curriculum chains are covered: a **canonical** one
+(`unitId` set, `topicId = null`, `OFFICIAL`), a **legacy** one (`topicId` set,
+`unitId = null`), and a **mixed** unit carrying canonical lessons, a
+both-linked lesson and a legacy topic — plus an orphan lesson attached to
+neither. The rows are stored scrambled so the ordering under test is provably
+done by `orderCourseLessons()` and not by the store:
 
 * **Behavioural (layers 1–11)** — `src/lib/session-progress.ts` is compiled with
   `tsc` and run against a fake `@/lib/db` (a `Module._resolveFilename` hook
@@ -297,10 +357,11 @@ server), in the existing repository style:
 
 | Reverted | Result |
 | --- | --- |
+| `src/lib/session-progress.ts` (the universe fix) | **exit 1** — "three OFFICIAL sessions are in the progression universe" and "canonical order is Part → Unit → Lesson" fail, then the run aborts on the missing session rows |
+| `src/app/api/courses/[slug]/route.ts` | **exit 1**, 10 failures (canonical tree + duplicate-key assertions) |
 | `src/app/api/quizzes/**` | 12 failures |
-| `src/app/api/courses/[slug]/route.ts` | 9 failures |
 | `src/instrumentation.ts` | 2 failures |
-| restored | **89 passed, 0 failed** |
+| restored | **144 passed, 0 failed** |
 
 Full suite:
 
@@ -313,16 +374,32 @@ tests/platform-upgrade-2026-migration.test.js  98 passed, 0 failed
 tests/registration-validators.test.js          24 passed, 0 failed
 tests/security-hardening.test.js              242 passed, 0 failed
 tests/seed-idempotency.test.js                 18 passed, 0 failed
-tests/session-progression.test.js              89 passed, 0 failed   (new)
-                                             --- 668 passed, 0 failed
+tests/session-progression.test.js             144 passed, 0 failed   (new)
+                                             --- 723 passed, 0 failed
 ```
+
+The canonical-curriculum sections cover, for a lesson with `topicId = null` and
+a valid `unitId`: the first official lesson is unlocked, the next is locked,
+completing the previous one unlocks it, and the video / assignment / quiz gates
+each hold on their own. The legacy sections repeat the same sequence through
+the Topic chain. A further section shuffles, reverses and restores the store
+order and asserts the identical sequence each time, and one parses
+`/api/courses/[slug]/route.ts` with the TypeScript compiler to fail the build if
+a duplicate object key is ever reintroduced.
 
 ## Manual Verification
 
-Fixture: one course (`phase4-progression`) → part → unit → topic → 3 published
-sessions, each with a video URL, a PDF URL, one quiz (1 question, answer
-`opt2`) and one assignment; two students (A, B) in the same active group. Run
-against the **production standalone build** on port 3000.
+Two fixture courses, run against the **production standalone build** on port
+3000:
+
+* `phase4-progression` — **canonical**: Part → Unit → 3 published sessions with
+  `unitId` set, `topicId = null`, `curriculumStatus = OFFICIAL`,
+  `officialCode = P4-OFF-001…003`. The course contains **zero `Topic` rows**,
+  which is precisely the shape the review finding was about. Each session has a
+  video URL, a PDF URL, one quiz (1 question, answer `opt2`) and one
+  assignment. Students A and B share its active group.
+* `phase4-legacy` — **legacy**: Part → Unit → Topic → 2 published sessions with
+  `topicId` set and `unitId = null`. Student C is in its group.
 
 ### Baseline (before the fix) — 8 failures
 
@@ -345,7 +422,36 @@ L2 status=locked quizDone=true    L3 status=locked quizDone=true   ← gate pre-
 POST /api/students/me/homework -> 405                              ← no way to submit
 ```
 
-### After the fix — 62/62
+### After the fix — 87/87
+
+**Canonical (official / unit-linked) universe** — sections 0–11 of the matrix,
+all of which now run against lessons with `topicId = null`:
+
+```
+PASS | the official course has exactly one unit                              | units=1
+PASS | all 3 OFFICIAL sessions hang directly off the Unit (unit.lessons)      | unit.lessons=3
+PASS | the official course needs NO fake Topic                                | topicLessons=0
+PASS | the course tree reports the same 3 sessions as the flat view           | flat=3
+```
+
+**Legacy (topic-linked) backward compatibility** — section 12, student C:
+
+```
+PASS | legacy course: 2 topic-linked sessions returned                        | count=2
+PASS | legacy sessions are still grouped under their Topic                    | topicLessons=2
+PASS | legacy session 1 available (current) / session 2 locked                | current / locked
+PASS | locked legacy session exposes only safe fields                         | keys=id,title,titleAr,order,duration,status,hasQuiz,hasAssignment
+PASS | legacy tree exposes NOTHING from locked legacy session 2               | clean
+PASS | GET locked legacy lesson -> 403                                        | PREVIOUS_SESSION_INCOMPLETE
+PASS | GET locked legacy quiz -> 403                                          | PREVIOUS_SESSION_INCOMPLETE
+PASS | POST locked legacy assignment -> 403                                   | 403
+PASS | legacy video reaches >= 95% after real elapsed time                    | percent=100
+PASS | legacy session 1 completed / LEGACY session 2 UNLOCKS via same rule    | completed / current
+PASS | unlocking a legacy session did not touch the official course           | official s2/s3=current/locked
+PASS | an official-course student cannot open a legacy-course lesson          | 403 NOT_ENROLLED
+```
+
+**Scenario matrix (canonical course):**
 
 | Scenario | Result |
 | --- | --- |
@@ -384,11 +490,14 @@ POST /api/students/me/homework -> 405                              ← no way to
    after the first. Removing the column is a later cleanup.
 3. **`Enrollment` / `Subscription` are not access gates**, by pre-existing
    design (documented in `src/lib/enrollment.ts`). Phase 4 kept that contract.
-4. **Lessons without a `topic` are unreachable by the gate.** `canAccessLesson`
-   returns `LESSON_NOT_FOUND` when a lesson has no `topic → unit → part → course`
-   chain. All 39 seeded lessons have a `topicId`, so this is latent, but the
-   canonical curriculum uses `Lesson.unitId` — a future phase should widen the
-   chain lookup.
+4. ~~Lessons without a `topic` are unreachable by the gate.~~ **Resolved in this
+   phase** (see "Progression Universe"): both `Lesson.unitId` and
+   `Lesson.topicId` now reach the universe. A lesson attached to *neither* still
+   resolves to `LESSON_NOT_FOUND`, which is correct — it belongs to no course.
+   Note that the seeded database already contains 17 such orphan lessons,
+   created by `onDelete: SetNull` on `Lesson.unit`/`Lesson.topic`: deleting a
+   Part/Unit/Topic silently detaches its lessons rather than removing them.
+   Cleaning those rows up is a data task, not an authorization one.
 5. **Assignment submission is text-only.** `HomeworkSubmission.fileUrl` stays
    null; a student file-upload pipeline (private storage + retention) does not
    exist and was out of scope.
@@ -404,8 +513,8 @@ POST /api/students/me/homework -> 405                              ← no way to
 * Teacher analytics, parent dashboard expansion, PDF management redesign,
   calendar fixes, Kodgy redesign.
 * SQLite → PostgreSQL.
-* `Lesson.isLocked` cleanup and the `topic`/`unitId` chain widening (limitations
-  2 and 4).
+* `Lesson.isLocked` cleanup (limitation 2) and a data cleanup for the 17 orphan
+  lessons left behind by `onDelete: SetNull` (limitation 4).
 * Student assignment file uploads (limitation 5).
 * Pre-existing lint debt: 44 problems (43 errors, 1 warning), all in
   `tests/*.test.js` (`@typescript-eslint/no-require-imports`) plus one

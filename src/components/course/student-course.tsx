@@ -78,8 +78,16 @@ type UnitItem = {
   titleAr: string;
   order: number;
   icon: string | null;
+  /** Canonical Unit-linked sessions (Course → Part → Unit → Lesson). */
+  lessons: LessonItem[];
+  /** Legacy grouping, kept only so older content still renders. */
   topics: TopicItem[];
 };
+
+/** Every session of a unit, in the order the progression engine enforces. */
+function unitLessons(unit: UnitItem): LessonItem[] {
+  return [...unit.lessons, ...unit.topics.flatMap((t) => t.lessons)];
+}
 
 type PartItem = {
   id: string;
@@ -239,9 +247,10 @@ export function StudentCourseView() {
       {/* Parts timeline */}
       <div className="space-y-4">
         {data.parts.map((part, pIdx) => {
-          const partLessons = part.units.flatMap((u) =>
-            u.topics.flatMap((t) => t.lessons)
-          );
+          const partLessons = part.units.flatMap((u) => [
+            ...u.lessons,
+            ...u.topics.flatMap((t) => t.lessons),
+          ]);
           const partCompleted = partLessons.filter(
             (l) => l.isCompleted
           ).length;
@@ -310,18 +319,26 @@ export function StudentCourseView() {
                               </div>
                               <div className="text-[11px] text-muted-foreground">
                                 {unit.topics.length} Topics ·{" "}
-                                {unit.topics.reduce(
-                                  (a, t) => a + t.lessons.length,
-                                  0
-                                )}{" "}
-                                Lessons
+                                {unitLessons(unit).length} Lessons
                               </div>
                             </div>
                           </div>
                         </AccordionTrigger>
                         <AccordionContent>
                           <div className="px-5 pb-4 space-y-3">
-                            {unit.topics.map((topic) => (
+                            {unit.lessons.length > 0 && (
+                              <ul className="space-y-1.5">
+                                {unit.lessons.map((lesson) => (
+                                  <LessonRow
+                                    key={lesson.id}
+                                    lesson={lesson}
+                                  />
+                                ))}
+                              </ul>
+                            )}
+                            {unit.topics
+                              .filter((topic) => topic.lessons.length > 0)
+                              .map((topic) => (
                               <div
                                 key={topic.id}
                                 className="rounded-lg bg-muted/30 p-3"

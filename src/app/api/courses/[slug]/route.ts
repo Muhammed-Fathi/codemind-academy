@@ -6,8 +6,41 @@ import { getCourseSessionProgress } from "@/lib/session-progress";
 import { getServerT } from "@/lib/i18n-server";
 
 // GET /api/courses/[slug]
-// Returns course + parts + units + topics + lessons with the current
+// Returns course + parts + units + lessons (+ legacy topics) with the current
 // student's progress.
+//
+// The canonical hierarchy is Course → Part → Unit → Lesson (`Lesson.unitId`);
+// `Topic` is a nullable legacy layer kept only so older content keeps
+// rendering. A unit therefore carries TWO lesson collections:
+//   unit.lessons        — canonical, unit-linked lessons
+//   unit.topics[].lessons — legacy lessons, shown under their Topic
+// A lesson that carries BOTH links is listed under the Unit, because that is
+// where `getCourseSessionProgress` enforces it — the tree must never present a
+// session in a different position from the one the gate uses.
+type LessonRow = {
+  id: string;
+  unitId: string | null;
+  topicId: string | null;
+  title: string;
+  titleAr: string;
+  order: number;
+  duration: number;
+  isLocked: boolean;
+  videoUrl: string | null;
+  pdfUrl: string | null;
+  summary: string | null;
+  description: string | null;
+  quizzes: { id: string; title: string; titleAr: string }[];
+  homeworks: { id: string; title: string; titleAr: string; deadline: Date | null }[];
+};
+
+const LESSON_INCLUDE = {
+  quizzes: { orderBy: { order: "asc" as const }, select: { id: true, titleAr: true, title: true } },
+  homeworks: { select: { id: true, titleAr: true, title: true, deadline: true } },
+};
+
+type LessonStatus = "completed" | "current" | "locked" | "available";
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
@@ -25,16 +58,13 @@ export async function GET(
           units: {
             orderBy: { order: "asc" },
             include: {
+              // Canonical chain: Course → Part → Unit → Lesson.
+              lessons: { orderBy: { order: "asc" }, include: LESSON_INCLUDE },
+              // Legacy chain: … → Unit → Topic → Lesson.
               topics: {
                 orderBy: { order: "asc" },
                 include: {
-                  lessons: {
-                    orderBy: { order: "asc" },
-                    include: {
-                      quizzes: { orderBy: { order: "asc" }, select: { id: true, titleAr: true, title: true } },
-                      homeworks: { select: { id: true, titleAr: true, title: true, deadline: true } },
-                    },
-                  },
+                  lessons: { orderBy: { order: "asc" }, include: LESSON_INCLUDE },
                 },
               },
             },
@@ -64,12 +94,53 @@ export async function GET(
     studentId = s.id;
   }
 
-  // Pull all LessonProgress for this student for the lessons in this course
-  const progressMap: Record<string, { progress: number; isCompleted: boolean; lastViewedAt: string | null }> = {};
-  if (studentId) {
-    const lessonIds = course.parts.flatMap((p) =>
-      p.units.flatMap((u) => u.topics.flatMap((t) => t.lessons.map((l) => l.id)))
-    );
+  // Build the lesson list (ordered, flat) — the single place the tree order is
+  // decided, and the same order `getCourseSessionProgress` uses:
+  //   Part.order → Unit.order → canonical lessons → legacy Topics.
+  type FlatLesson = {
+    lesson: LessonRow;
+    partId: string;
+    unitId: string;
+    topicId: string | null;
+    progress: number;
+    isCompleted: boolean;
+    status: LessonStatus;
+  };
+
+  const flat: FlatLesson[] = [];
+  const progressMap: Record<
+    string,
+    { progress: number; isCompleted: boolean; lastViewedAt: string | null }
+  > = {};
+
+  for (const part of course.parts) {
+    for (const unit of part.units) {
+      const push = (lesson: LessonRow, topicId: string | null) => {
+        flat.push({
+          lesson,
+          partId: part.id,
+          unitId: unit.id,
+          topicId,
+          progress: 0,
+          isCompleted: false,
+          status: "available",
+        });
+      };
+      // Canonical lessons belong to the Unit itself.
+      for (const lesson of unit.lessons) push(lesson, null);
+      // Legacy lessons are shown under their Topic — unless they are also
+      // unit-linked, in which case the Unit already listed them above.
+      for (const topic of unit.topics) {
+        for (const lesson of topic.lessons) {
+          if (lesson.unitId) continue;
+          push(lesson, topic.id);
+        }
+      }
+    }
+  }
+
+  const lessonIds = flat.map((f) => f.lesson.id);
+  if (studentId && lessonIds.length) {
     const progresses = await db.lessonProgress.findMany({
       where: { studentId, lessonId: { in: lessonIds } },
     });
@@ -80,67 +151,10 @@ export async function GET(
         lastViewedAt: p.lastViewedAt ? p.lastViewedAt.toISOString() : null,
       };
     }
-  }
-
-  // Build the lesson list (ordered, flat) — used to determine locked state.
-  // A lesson is "current" if it's the first not-completed lesson.
-  // A lesson is "locked" if either the Lesson.isLocked flag is true AND the
-  // previous lesson (by order) is not yet completed.
-  type FlatLesson = {
-    id: string;
-    title: string;
-    titleAr: string;
-    order: number;
-    duration: number;
-    isLocked: boolean;
-    partId: string;
-    partTitle: string;
-    partTitleAr: string;
-    unitId: string;
-    unitTitle: string;
-    unitTitleAr: string;
-    topicId: string;
-    topicTitle: string;
-    topicTitleAr: string;
-    quizId: string | null;
-    homeworkId: string | null;
-    progress: number;
-    isCompleted: boolean;
-    status: "completed" | "current" | "locked" | "available";
-  };
-
-  const flat: FlatLesson[] = [];
-  for (const part of course.parts) {
-    for (const unit of part.units) {
-      for (const topic of unit.topics) {
-        for (const lesson of topic.lessons) {
-          const lp = progressMap[lesson.id];
-          const progress = lp?.progress || 0;
-          const isCompleted = !!lp?.isCompleted;
-          flat.push({
-            id: lesson.id,
-            title: lesson.title,
-            titleAr: lesson.titleAr,
-            order: lesson.order,
-            duration: lesson.duration,
-            isLocked: lesson.isLocked,
-            partId: part.id,
-            partTitle: part.title,
-            partTitleAr: part.titleAr,
-            unitId: unit.id,
-            unitTitle: unit.title,
-            unitTitleAr: unit.titleAr,
-            topicId: topic.id,
-            topicTitle: topic.title,
-            topicTitleAr: topic.titleAr,
-            quizId: lesson.quizzes[0]?.id || null,
-            homeworkId: lesson.homeworks[0]?.id || null,
-            progress,
-            isCompleted,
-            status: "available",
-          });
-        }
-      }
+    for (const f of flat) {
+      const lp = progressMap[f.lesson.id];
+      f.progress = lp?.progress || 0;
+      f.isCompleted = !!lp?.isCompleted;
     }
   }
 
@@ -148,39 +162,72 @@ export async function GET(
   // progression service, so the UI mirrors exactly what the backend enforces:
   // a session is complete only when its video (>=95%), quiz and assignment
   // requirements are all satisfied; missing components are not required.
-  const requirementsByLesson = new Map<string, any>();
+  const requirementsByLesson = new Map<string, unknown>();
   if (studentId) {
     const sessionProgress = await getCourseSessionProgress(studentId, course.id);
     for (const row of sessionProgress.sessions) {
       requirementsByLesson.set(row.lessonId, row);
     }
     let currentAssigned = false;
-    for (const l of flat) {
-      const req = requirementsByLesson.get(l.id);
+    for (const f of flat) {
+      const req = sessionProgress.byLessonId.get(f.lesson.id);
       if (!req) {
-        l.status = l.isCompleted ? "completed" : "available";
+        f.status = f.isCompleted ? "completed" : "available";
         continue;
       }
       if (!req.unlocked) {
-        l.status = "locked";
+        f.status = "locked";
       } else if (req.completed) {
-        l.status = "completed";
+        f.status = "completed";
       } else if (!currentAssigned) {
-        l.status = "current";
+        f.status = "current";
         currentAssigned = true;
       } else {
-        l.status = "available";
+        f.status = "available";
       }
     }
   } else {
     // Non-student viewers (teacher/admin previews) see everything unlocked.
-    for (const l of flat) l.status = "available";
+    for (const f of flat) f.status = "available";
   }
 
-  // Reshape the parts/units/topics/lessons with progress + status attached
-  const statusById: Record<string, FlatLesson["status"]> = {};
-  for (const l of flat) statusById[l.id] = l.status;
+  const statusById = new Map<string, LessonStatus>(
+    flat.map((f) => [f.lesson.id, f.status])
+  );
 
+  // ONE definition of the lesson payload. A locked session is described by its
+  // title/number/duration only: media URLs, the PDF, the summary/description,
+  // the quiz and assignment identities and the requirement breakdown all stay
+  // server-side — hiding them in the UI is not protection, because the client
+  // can simply read this response.
+  const toLesson = (lesson: LessonRow) => {
+    const locked = statusById.get(lesson.id) === "locked";
+    const lp = progressMap[lesson.id];
+    return {
+      id: lesson.id,
+      title: lesson.title,
+      titleAr: lesson.titleAr,
+      order: lesson.order,
+      duration: lesson.duration,
+      isLocked: lesson.isLocked,
+      videoUrl: locked ? null : lesson.videoUrl,
+      pdfUrl: locked ? null : lesson.pdfUrl,
+      summary: locked ? null : lesson.summary,
+      description: locked ? null : lesson.description,
+      progress: locked ? 0 : lp?.progress || 0,
+      isCompleted: locked ? false : !!lp?.isCompleted,
+      status: statusById.get(lesson.id) ?? "available",
+      requirements: locked ? null : requirementsByLesson.get(lesson.id) ?? null,
+      // Presence flags only — enough for the "Quiz"/"Homework" badges in the
+      // course tree, without naming or linking the protected items.
+      hasQuiz: lesson.quizzes.length > 0,
+      hasAssignment: lesson.homeworks.length > 0,
+      quiz: locked ? null : lesson.quizzes[0] || null,
+      homework: locked ? null : lesson.homeworks[0] || null,
+    };
+  };
+
+  // Reshape the parts/units/(topics)/lessons with progress + status attached.
   const parts = course.parts.map((part) => ({
     id: part.id,
     title: part.title,
@@ -193,43 +240,15 @@ export async function GET(
       titleAr: unit.titleAr,
       order: unit.order,
       icon: unit.icon,
+      lessons: unit.lessons.map(toLesson),
       topics: unit.topics.map((topic) => ({
         id: topic.id,
         title: topic.title,
         titleAr: topic.titleAr,
         order: topic.order,
-        lessons: topic.lessons.map((lesson) => {
-          const lp = progressMap[lesson.id];
-          const status = statusById[lesson.id];
-          // A LOCKED session is described by its title/number/duration only.
-          // Media URLs, the PDF, the summary/description, the quiz and
-          // assignment identities and the requirement breakdown all stay
-          // server-side: hiding them in the UI is not protection, because the
-          // client can simply read this response.
-          const locked = status === "locked";
-          return {
-            id: lesson.id,
-            title: lesson.title,
-            titleAr: lesson.titleAr,
-            order: lesson.order,
-            duration: lesson.duration,
-            isLocked: lesson.isLocked,
-            videoUrl: locked ? null : lesson.videoUrl,
-            pdfUrl: locked ? null : lesson.pdfUrl,
-            summary: locked ? null : lesson.summary,
-            description: locked ? null : lesson.description,
-            progress: locked ? 0 : lp?.progress || 0,
-            isCompleted: locked ? false : !!lp?.isCompleted,
-            status,
-            requirements: locked ? null : requirementsByLesson.get(lesson.id) || null,
-            // Presence flags only — enough for the "Quiz"/"Homework" badges in
-            // the course tree, without naming or linking the protected items.
-            hasQuiz: lesson.quizzes.length > 0,
-            hasAssignment: lesson.homeworks.length > 0,
-            quiz: locked ? null : lesson.quizzes[0] || null,
-            homework: locked ? null : lesson.homeworks[0] || null,
-          };
-        }),
+        lessons: topic.lessons
+          .filter((lesson) => !lesson.unitId)
+          .map(toLesson),
       })),
     })),
   }));
