@@ -149,15 +149,17 @@ reader universe = exactly the 23 official codes.
 **Updated (strengthened, not weakened):**
 `tests/session-progression.test.js` §22 — the two course-tree fetch-shape
 invariants now assert the FULL shape (chain + order + payload + archived
-exclusion) plus the exclusion import: **145/145 pass** (was 144).
+exclusion) plus the exclusion import; §11b adds five behavioral
+archived-universe assertions and §20 asserts the engine universe query
+excludes archived rows: **151/151 pass** (was 144).
 
-**Full offline matrix — 1,804 assertions, 0 failures:**
+**Full offline matrix — 1,810 assertions, 0 failures:**
 
 | Suite | Result |
 |---|---|
 | curriculum-reconciliation-phase11 (new) | 51/51 |
 | seed-idempotency (pinned R1 behavior) | 18/18 |
-| session-progression | 145/145 |
+| session-progression | 151/151 |
 | session-quiz | 70/70 |
 | quiz-analytics | 44/44 |
 | mock-exam-phase8 / grading-isolation | 135/135, 22/22 |

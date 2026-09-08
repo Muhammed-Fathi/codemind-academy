@@ -243,10 +243,12 @@ export async function getCourseSessionProgress(
   // canonical Unit chain OR the legacy Topic chain. `orderCourseLessons` then
   // applies the deterministic Course → Part → Unit → (Topic) → Lesson order,
   // which Prisma `orderBy` cannot express on its own because the Topic link is
-  // nullable.
+  // nullable. Archived lessons are history, not curriculum (Phase 11), so the
+  // universe excludes them: every progression surface derives from `found`.
   const found = await db.lesson.findMany({
     where: {
       isPublished: true,
+      ...EXCLUDE_ARCHIVED_LESSON,
       OR: [
         { unit: { part: { courseId } } },
         { topic: { unit: { part: { courseId } } } },

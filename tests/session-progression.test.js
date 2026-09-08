@@ -213,6 +213,10 @@ const byId = (id) => CATALOGUE.find((l) => l.id === id) || null;
 function matchesWhere(lesson, where) {
   if (!where) return true;
   if (where.isPublished !== undefined && lesson.isPublished !== where.isPublished) return false;
+  // Phase 11: honor the archived-history exclusion. Fixtures without the
+  // field behave like live LEGACY rows (the non-nullable column default):
+  // included, because they are not ARCHIVED.
+  if (where.curriculumStatus?.not !== undefined && lesson.curriculumStatus === where.curriculumStatus.not) return false;
   const viaUnit = (courseId) => !!lesson.unit && lesson.unit.part.courseId === courseId;
   const viaTopic = (courseId) => !!lesson.topic && lesson.topic.unit.part.courseId === courseId;
   if (Array.isArray(where.OR)) {
@@ -412,6 +416,21 @@ async function main() {
   ok(prog.sessions[1].unlocked === true, "the next session unlocks");
   CATALOGUE = defaultCatalogue();
 
+  section("11b. Archived lessons leave the progression universe (Phase 11)");
+  // Swap in a catalogue where the middle session L2 is archived history.
+  CATALOGUE = defaultCatalogue().map((l) =>
+    l.id === "L2" ? { ...l, curriculumStatus: "ARCHIVED" } : l
+  );
+  reset();
+  prog = await SP.getCourseSessionProgress("S1", COURSE);
+  ok(prog.sessions.length === 2, "the archived session is gone from the universe (3 -> 2)");
+  ok(prog.sessions.map((s) => s.lessonId).join(",") === "L1,L3", "L1 and L3 remain in prerequisite order");
+  ok(prog.sessions[0].unlocked === true, "the first surviving session is still unlocked");
+  ok(prog.byLessonId.has("L1") && !prog.byLessonId.has("L2"), "universe membership excludes the archived lesson");
+  const unlockedNoL2 = await SP.getUnlockedLessonIds("S1", COURSE);
+  ok(!unlockedNoL2.has("L2"), "the archived session is never unlocked");
+  CATALOGUE = defaultCatalogue();
+
   // -------------------------------------------------------------------------
   // Curriculum-universe regressions (the Phase 4 review finding).
   // -------------------------------------------------------------------------
@@ -524,6 +543,7 @@ async function main() {
   ok(/\{ unit: \{ part: \{ courseId \} \} \}/.test(sp), "the universe query follows the canonical Unit chain");
   ok(/\{ topic: \{ unit: \{ part: \{ courseId \} \} \} \}/.test(sp), "the universe query still follows the legacy Topic chain");
   ok(/OR: \[/.test(sp), "both chains are combined with OR (one query, one system)");
+  ok(/const found = await db\.lesson\.findMany\(\{\s*where: \{\s*isPublished: true,\s*\.\.\.EXCLUDE_ARCHIVED_LESSON,/.test(sp), "the universe query excludes archived lessons (Phase 11)");
   ok(sp.includes("orderCourseLessons(found, courseId)"), "ordering is applied explicitly, not left to SQL");
   ok(!/orderBy: \[\s*\{ topic:/.test(sp), "the old topic-only orderBy is gone");
   ok(/lesson\.unit\?\.part\.courseId \?\?/.test(sp), "canAccessLesson resolves the course canonical-first");
