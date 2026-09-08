@@ -98,7 +98,7 @@ boots on `http://localhost:3000`.
 | Parent portal         | `src/components/parent/`                              |
 | Teacher portal        | `src/components/teacher/teacher-dashboard.tsx`     |
 | Admin portal          | `src/components/admin/admin-dashboard.tsx`          |
-| AI assistant         | `src/components/ai/ai-assistant.tsx`                |
+| Kodgy AI assistant   | `src/components/kodgy/` + `src/lib/kodgy/`        |
 | shadcn/ui components  | `src/components/ui/`                                 |
 | Error boundary        | `src/components/error-boundary.tsx`                 |
 | App providers         | `src/components/app-providers.tsx`                  |
@@ -120,7 +120,6 @@ files** organized by audience:
 | `src/app/api/lessons/[id]/`       | STUDENT         | lesson content + progress update                |
 | `src/app/api/exams/mock/`         | STUDENT         | randomized mock exam engine                    |
 | `src/app/api/notifications/`      | Any authed      | list + unread-count                             |
-| `src/app/api/ai/chat/`            | Any authed      | z-ai-web-dev-sdk chatbot                       |
 | `src/app/api/enroll/`             | STUDENT         | Course→Group→Plan→Payment POST                 |
 | `src/app/api/coupons/validate/`   | STUDENT         | Coupon validation                              |
 | `src/app/api/groups/`             | Public          | Group capacity + teacher info                  |

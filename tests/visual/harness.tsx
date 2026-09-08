@@ -28,6 +28,8 @@ import { ForgotPasswordForm } from "@/components/auth/forgot-password-form";
 import { SessionVideosView } from "@/components/admin/session-videos-view";
 import { MockExamsView } from "@/components/admin/mock-exams-view";
 import { QuizReviewView } from "@/components/admin/quiz-review-view";
+import { KodgyAssistant } from "@/components/kodgy/kodgy-assistant";
+import { useApp } from "@/lib/store";
 
 const LONG_AR = "ده نص طويل جدا عشان نتأكد إن الفورم مش هيتكسر ولا هيخرج بره الشاشة مهما كان المحتوى طويل أوي";
 const LONG_EN = "This is a deliberately long piece of helper text used to confirm the form never clips or overflows horizontally at any breakpoint";
@@ -259,7 +261,31 @@ const SCENES: Record<string, React.ReactNode> = {
       </DrawerContent>
     </Drawer>
   ),
+  "kodgy": <KodgyScene />,
 };
+
+/** Kodgy scene: the REAL floating assistant, with a fake logged-in user. */
+function KodgyScene() {
+  React.useEffect(() => {
+    // The shell only mounts Kodgy after a session exists; mirror that here.
+    useApp.setState({
+      user: {
+        id: "visual-test-student",
+        email: "student@codemind.academy",
+        name: "Ahmed Hassan",
+        role: "STUDENT",
+      },
+      view: "student-dashboard",
+    });
+    const locale = new URLSearchParams(location.search).get("locale") === "en" ? "en" : "ar";
+    useApp.getState().setLocale(locale);
+  }, []);
+  return (
+    <div className="min-h-dvh bg-background text-foreground">
+      <KodgyAssistant />
+    </div>
+  );
+}
 
 function App() {
   const params = new URLSearchParams(location.search);

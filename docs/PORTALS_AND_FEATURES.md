@@ -205,25 +205,33 @@ Plan · Referral · تقدمي · Leaderboard · Achievements · الشهادة 
 - API POST handler validates code format, finds referrer, creates
   `Referral` record, awards XP, sends notification to referrer
 
-### 1.15 AI Assistant (Student)
-`src/components/ai/ai-assistant.tsx` · `POST/GET/DELETE /api/ai/chat`
-- Floating gradient button (bottom-left, emerald→teal→amber) with pulse
-  indicator — visible on all authenticated views
-- Glass-strong chat panel with:
-  - Header (Bot avatar + "CodeMind Assistant" + clear/close buttons)
-  - Message area with user/assistant bubbles (gradient avatars)
-  - Suggestion chips for quick start (Machine Learning, Programming,
-    Cybersecurity, …)
-  - Typing indicator (animated dots)
-  - Code block rendering (` ``` ` blocks with LTR direction,
-    syntax-highlighted via react-syntax-highlighter)
-  - Auto-scroll to bottom
-  - Session persistence (loads history on mount, keyed by sessionId,
-    max 12 messages)
-  - Enter to send, Shift+Enter for newline
-- Backend uses z-ai-web-dev-sdk with an Egyptian Arabic system prompt
-  framing the assistant as a CodeMind tutor
-- LLM calls take ~30 s; typing indicator makes this acceptable
+### 1.15 Kodgy — AI Assistant (all authenticated roles)
+`src/components/kodgy/` (UI) · `src/lib/kodgy/` (scripted engine + position)
+- **No external AI API.** Kodgy is a fully client-side, deterministic,
+  scripted assistant — the future real AI engine plugs in behind the same
+  `KodgyResponse` contract.
+- Robot character with a glowing energy ring, animated flame/energy burst
+  (appears → grows → shrinks → fades → reappears), rising embers, idle
+  float — code-first SVG, no image assets.
+- Floating over the platform: **Arabic → LEFT side, English → RIGHT
+  side** (locale-dynamic), draggable with mouse/touch, clamped to the
+  viewport, position persisted per locale in localStorage.
+- Chat panel (accessory of the robot) with:
+  - Header (Kodgy robot avatar + "كودجي / Kodgy" + clear/close)
+  - User/assistant bubbles (plain-text rendering — no HTML injection)
+  - Curated bilingual suggestion chips
+  - Lightweight local thinking animation (~500 ms, no fake network)
+  - Auto-scroll, Enter to send, Shift+Enter for newline, Escape closes
+- Scripted knowledge: platform (getting started, courses, lessons,
+  quizzes, session progression, mock exams, study scheduler, progress,
+  certificates, navigation, notifications) + education (variable,
+  function, loop, condition, array, algorithm, programming, data types,
+  I/O, AI, ML, neural networks, LLMs) + curated difference pairs +
+  graceful bilingual fallback for unknown questions.
+- All chrome strings localized via the existing i18n dictionary
+  (`kodgy.001`…`kodgy.015`); answer content is bilingual `{ar,en}`.
+- Reduced-motion support: `prefers-reduced-motion` disables float/flame
+  while keeping Kodgy visible and usable.
 
 ### 1.16 Bookmarks
 `src/components/student/bookmarks-view.tsx` · `GET/POST/DELETE /api/students/me/bookmarks`

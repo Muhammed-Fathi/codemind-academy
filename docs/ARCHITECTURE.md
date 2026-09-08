@@ -30,8 +30,8 @@ model see [`DATABASE_GUIDE.md`](DATABASE_GUIDE.md).
                │ fetch('/api/...') — relative paths only   │
                ▼                                            │
 ┌──────────────────────────────────────────────────────────────────────┐
-│              Next.js 16 API Routes (64 endpoints)                    │
-│   /api/auth/[action]   /api/ai/chat          /api/enroll             │
+│              Next.js 16 API Routes (63 endpoints)                    │
+│   /api/auth/[action]   /api/admin/*          /api/enroll             │
 │   /api/admin/*          /api/teacher/*       /api/students/me/*       │
 │   /api/parents/me/*     /api/courses/*       /api/quizzes/*           │
 │   /api/lessons/*        /api/exams/mock      /api/notifications/*     │
@@ -142,7 +142,6 @@ concern:
 | `/api/lessons/*`       | STUDENT             | lesson content + progress update                   |
 | `/api/exams/mock`      | STUDENT             | randomized mock exam engine                         |
 | `/api/notifications/*` | Any authed user     | list + unread-count                                 |
-| `/api/ai/chat`         | Any authed user     | z-ai-web-dev-sdk chatbot                            |
 | `/api/enroll`          | STUDENT             | Course→Group→Plan→Payment wizard POST              |
 | `/api/coupons/validate`| STUDENT             | Coupon validation before enrollment                |
 | `/api/groups`          | Public              | Group capacity + teacher info                      |
@@ -250,25 +249,30 @@ the role profile:
 
 ## 5. AI Integration
 
-`z-ai-web-dev-sdk` is used **server-side only** (never imported into
-client components). Two consumers:
+**Kodgy (the visual assistant) is NOT connected to an external AI.** Since
+Phase 10 it is a fully client-side, deterministic, scripted assistant:
 
-1. **`src/app/api/ai/chat/route.ts`** — Egyptian-Arabic tutor chatbot.
-   Maintains an in-memory conversation history (keyed by sessionId,
-   max 12 messages). The frontend `AiAssistant` component
-   (`src/components/ai/ai-assistant.tsx`) renders a floating button +
-   glass-strong chat panel with suggestion chips, typing indicator
-   and code-block rendering.
+```text
+Kodgy UI (src/components/kodgy/)
+      ↓
+Kodgy Assistant Controller (use-kodgy-chat.ts)
+      ↓
+Scripted Response Engine (src/lib/kodgy/response-engine.ts)
+      ↓
+Matched Response ({ intent, answer: { ar, en } })
+```
 
-2. **`src/app/api/admin/ai-generate-quiz/route.ts`** — LLM-driven quiz
-   generation. Accepts `lessonId`, `count` (1-10), `difficulty`. Builds
-   context from the lesson's full hierarchy (course → part → unit →
-   topic → lesson), asks the LLM for JSON-formatted questions in
-   Egyptian Arabic, parses + validates, then persists a `Quiz` +
-   `Question` rows.
+There is no `/api/ai/*` route, no AI SDK import, no network call and no
+database dependency in the Kodgy flow. Real external AI/LLM integration is
+intentionally deferred; the engine is the clean replacement boundary.
 
-LLM calls typically take ~30s; the UI surfaces a typing indicator /
-loading state to make this acceptable.
+The only live LLM consumer on the platform is
+**`src/app/api/admin/ai-generate-quiz/route.ts`** — teacher/admin quiz
+generation. It accepts `lessonId`, `count` (1-10), `difficulty`, builds
+context from the lesson's hierarchy (course → part → unit → topic →
+lesson), asks the LLM for JSON questions in Egyptian Arabic, parses +
+validates, then persists `Quiz` + `Question` rows. LLM calls take ~30s;
+the admin UI surfaces a loading state for that.
 
 ---
 

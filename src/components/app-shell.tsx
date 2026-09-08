@@ -20,7 +20,7 @@ import {
 import { AuthView } from "@/components/auth/auth-view";
 import { EnrollView } from "@/components/auth/enroll-view";
 import { DashboardShell } from "@/components/dashboard/shell";
-import { AiAssistant } from "@/components/ai/ai-assistant";
+import { KodgyAssistant } from "@/components/kodgy/kodgy-assistant";
 import { StudentDashboard } from "@/components/student/student-dashboard";
 import { ParentDashboard } from "@/components/parent/parent-dashboard";
 import { TeacherDashboard } from "@/components/teacher/teacher-dashboard";
@@ -159,7 +159,7 @@ export function AppShell() {
           </motion.div>
         </AnimatePresence>
       </DashboardShell>
-      <AiAssistant />
+      <KodgyAssistant />
     </>
   );
 }

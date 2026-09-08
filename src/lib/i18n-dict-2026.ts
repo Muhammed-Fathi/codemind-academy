@@ -285,4 +285,39 @@ export const DICT_2026: Record<string, DictEntry> = {
   "shell.036": { ar: "نظرة عامة", en: "Overview" },
   "shell.037": { ar: "بنك الأسئلة", en: "Question Bank" },
   "shell.038": { ar: "الدعم", en: "Support" },
+
+  // ---------------- Phase 10: Kodgy AI Assistant ----------------
+  // Chrome strings only. Kodgy's scripted answer CONTENT lives in
+  // src/lib/kodgy/response-engine.ts as bilingual {ar,en} pairs, so the
+  // deterministic knowledge set is self-contained and testable offline.
+  "kodgy.001": { ar: "كودجي", en: "Kodgy" },
+  "kodgy.002": {
+    ar: "كودجي — مساعد CodeMind الذكي. اضغط أو اسحبني",
+    en: "Kodgy — CodeMind's smart assistant. Click or drag me",
+  },
+  "kodgy.003": { ar: "أهلاً! أنا كودجي 👋", en: "Hi! I'm Kodgy 👋" },
+  "kodgy.004": {
+    ar: "اسألني عن المنصة — الكورسات، الدروس، الكويزات، امتحانات الموك، التقدم — أو عن مفاهيم البرمجة والذكاء الاصطناعي.",
+    en: "Ask me about the platform — courses, lessons, quizzes, mock exams, progress — or about programming and AI concepts.",
+  },
+  "kodgy.005": {
+    ar: "اكتب سؤالك لكودجي…",
+    en: "Ask Kodgy a question…",
+  },
+  "kodgy.006": { ar: "إرسال", en: "Send" },
+  "kodgy.007": { ar: "إغلاق", en: "Close" },
+  "kodgy.008": { ar: "مسح المحادثة", en: "Clear conversation" },
+  "kodgy.009": { ar: "كودجي بيفكر…", en: "Kodgy is thinking…" },
+  "kodgy.010": { ar: "جاهز للأسئلة", en: "Ready to help" },
+  "kodgy.011": { ar: "جرّب تسأل:", en: "Try asking:" },
+  "kodgy.012": {
+    ar: "إعادة ضبط موضع كودجي",
+    en: "Reset Kodgy's position",
+  },
+  "kodgy.013": { ar: "اسحبني لأي مكان", en: "drag me anywhere" },
+  "kodgy.014": {
+    ar: "كودجي يجاوب حاليًا من قاعدة معرفة جاهزة — مش متصل بذكاء اصطناعي خارجي.",
+    en: "Kodgy currently answers from a prepared scripted knowledge base — not connected to an external AI.",
+  },
+  "kodgy.015": { ar: "أنت", en: "You" },
 };
