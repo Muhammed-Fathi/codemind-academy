@@ -55,10 +55,21 @@ type LessonView = {
     pdfUrl: string | null;
     isLocked: boolean;
   };
-  part: { id: string; title: string; titleAr: string };
-  unit: { id: string; title: string; titleAr: string };
-  topic: { id: string; title: string; titleAr: string };
-  course: { id: string; slug: string; name: string; nameAr: string };
+  part: { id: string; title: string; titleAr: string } | null;
+  unit: { id: string; title: string; titleAr: string } | null;
+  /** Legacy-only: canonical unit-linked lessons have no topic. */
+  topic: { id: string; title: string; titleAr: string } | null;
+  course: { id: string; slug: string; name: string; nameAr: string } | null;
+  /** All quizzes of the session — the progression engine requires every one. */
+  quizzes: {
+    id: string;
+    title: string;
+    titleAr: string;
+    description: string | null;
+    passMark: number;
+    questions: unknown[];
+  }[];
+  /** First quiz (backwards-compatible shorthand for `quizzes[0]`). */
   quiz: {
     id: string;
     title: string;
@@ -227,17 +238,32 @@ export function StudentLessonView() {
             className="px-2 text-muted-foreground"
             onClick={() => {
               setView("student-course");
-              setNavParam(data.course.slug);
+              if (data.course) setNavParam(data.course.slug);
             }}
           >
             <ArrowRight className="w-3.5 h-3.5 ms-1 flip-rtl" />
             {t("course.055")}</Button>
-          <span>›</span>
-          <span>{pickAuto(data.part.titleAr, data.part.title)}</span>
-          <span>›</span>
-          <span>{pickAuto(data.unit.titleAr, data.unit.title)}</span>
-          <span>›</span>
-          <span className="text-foreground">{pickAuto(data.topic.titleAr, data.topic.title)}</span>
+          {data.part && (
+            <>
+              <span>{pickAuto(data.part.titleAr, data.part.title)}</span>
+              <span>›</span>
+            </>
+          )}
+          {data.unit && (
+            <>
+              <span>{pickAuto(data.unit.titleAr, data.unit.title)}</span>
+              <span>›</span>
+            </>
+          )}
+          {data.topic ? (
+            <span className="text-foreground">
+              {pickAuto(data.topic.titleAr, data.topic.title)}
+            </span>
+          ) : (
+            <span className="text-foreground">
+              {pickAuto(data.lesson.titleAr, data.lesson.title)}
+            </span>
+          )}
         </div>
         <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
           <div>
@@ -466,35 +492,43 @@ export function StudentLessonView() {
                 </div>
               </CardHeader>
               <CardContent>
-                {data.quiz ? (
-                  <div className="space-y-3">
-                    <div>
-                      <div className="text-sm font-semibold">
-                        {pickAuto(data.quiz.titleAr, data.quiz.title)}
-                      </div>
-                      {data.quiz.description && (
-                        <div className="text-xs text-muted-foreground mt-1">
-                          {data.quiz.description}
+                {data.quizzes.length > 0 ? (
+                  <div className="space-y-4">
+                    {/* One card per quiz: the Phase 4 engine requires EVERY
+                        quiz of a session to be attempted before the session
+                        completes, so each one must be reachable here. */}
+                    {data.quizzes.map((q) => (
+                      <div key={q.id} className="space-y-3">
+                        <div>
+                          <div className="text-sm font-semibold">
+                            {pickAuto(q.titleAr, q.title)}
+                          </div>
+                          {q.description && (
+                            <div className="text-xs text-muted-foreground mt-1">
+                              {q.description}
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Badge variant="outline" className="bg-muted/50">
-                        {data.quiz.questions.length} Questions
-                      </Badge>
-                      <Badge variant="outline" className="bg-muted/50">
-                        Pass: {data.quiz.passMark}%
-                      </Badge>
-                    </div>
-                    <Button
-                      className="w-full"
-                      onClick={() => {
-                        setView("student-quiz");
-                        setNavParam(data.quiz!.id);
-                      }}
-                    >
-                      <Trophy className="w-4 h-4 ms-1.5" />
-                      {t("course.075")}</Button>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Badge variant="outline" className="bg-muted/50">
+                            {q.questions.length} Questions
+                          </Badge>
+                          <Badge variant="outline" className="bg-muted/50">
+                            Pass: {q.passMark}%
+                          </Badge>
+                        </div>
+                        <Button
+                          className="w-full"
+                          onClick={() => {
+                            setView("student-quiz");
+                            setNavParam(q.id);
+                          }}
+                        >
+                          <Trophy className="w-4 h-4 ms-1.5" />
+                          {t("course.075")}
+                        </Button>
+                      </div>
+                    ))}
                   </div>
                 ) : (
                   <div className="text-center py-3 text-sm text-muted-foreground">

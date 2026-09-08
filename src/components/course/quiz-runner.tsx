@@ -199,10 +199,11 @@ export function QuizRunner() {
         result={result}
         quiz={quiz}
         onRetry={() => {
-          setSubmitted(false);
-          setResult(null);
-          setCurrent(0);
-          setAnswers({});
+          // Retry = a FRESH attempt: reload the quiz (which re-runs the
+          // consent gate and /start, creating a new attempt with a new,
+          // frozen question set) instead of reusing the finished attempt's
+          // client state.
+          load();
         }}
         onBackToCourse={() => {
           setView("student-course");
