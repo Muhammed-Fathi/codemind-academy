@@ -21,6 +21,9 @@ export {
   readStoredLocale,
   getStrings,
   STRINGS,
+  looksLikeDictKey,
+  hasDictKey,
+  dictSize,
 } from "@/lib/i18n-core";
 export type { Locale } from "@/lib/i18n-core";
 

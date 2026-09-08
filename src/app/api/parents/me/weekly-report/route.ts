@@ -1,4 +1,4 @@
-import { getServerT } from "@/lib/i18n-server";
+import { getServerT, serverLocale } from "@/lib/i18n-server";
 // CodeMind Academy — Parent Weekly Report API
 // Returns a weekly summary of each LINKED child's activity (last 7 days).
 // Scope is the server-side Parent → Student links; this route accepts no ids.
@@ -10,9 +10,11 @@ import { NextResponse } from "next/server";
 import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
 import { getVideoProgressForStudents, getVideoProgressInRange } from "@/lib/progress";
+import { fmtDate } from "@/lib/i18n-core";
 
 export async function GET() {
   const tApi = await getServerT();
+  const loc = await serverLocale();
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
   if (user.role !== "PARENT") return err(tApi("api.118"), 403);
@@ -142,8 +144,8 @@ export async function GET() {
       );
 
       dailyActivity.push({
-        day: d.toLocaleDateString("ar-EG", { weekday: "short" }),
-        date: d.toLocaleDateString("ar-EG", { day: "numeric", month: "numeric" }),
+        day: fmtDate(d, loc, { weekday: "short" }),
+        date: fmtDate(d, loc, { day: "numeric", month: "numeric" }),
         lessons: dayLessons,
         quizzes: dayQuizzes,
         homework: dayHomework,
@@ -187,8 +189,8 @@ export async function GET() {
       course: s.group?.course?.nameAr || s.group?.course?.name || "",
       groupName: s.group?.name || "",
       weekRange: {
-        from: weekAgo.toLocaleDateString("ar-EG", { day: "numeric", month: "long" }),
-        to: now.toLocaleDateString("ar-EG", { day: "numeric", month: "long" }),
+        from: fmtDate(weekAgo, loc, { day: "numeric", month: "long" }),
+        to: fmtDate(now, loc, { day: "numeric", month: "long" }),
       },
       summary: {
         lessonsViewed: totalLessons,
@@ -215,13 +217,13 @@ export async function GET() {
         title: qa.quiz?.titleAr || qa.quiz?.title || "Quiz",
         percentage: qa.percentage,
         passed: qa.passed,
-        date: qa.finishedAt?.toLocaleDateString("ar-EG") || "",
+        date: qa.finishedAt ? fmtDate(qa.finishedAt, loc) : "",
       })),
       recentHomework: weeklyHomework.slice(0, 5).map((hw) => ({
         title: hw.homework?.titleAr || hw.homework?.title || "Homework",
         status: hw.status,
         grade: hw.grade,
-        date: hw.submittedAt?.toLocaleDateString("ar-EG") || "",
+        date: hw.submittedAt ? fmtDate(hw.submittedAt, loc) : "",
       })),
     };
   });

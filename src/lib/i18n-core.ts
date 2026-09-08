@@ -11,20 +11,62 @@ export type Locale = "ar" | "en";
 // i18n-dict.ts without dropping the new keys.
 const DICT = { ...GENERATED_DICT, ...DICT_2026 };
 
-/** Translate a dict key with optional {p} interpolation. Pure & isomorphic. */
+/**
+ * True when `s` looks like an internal flat dict key (`ns.NNN` / `ns.name`).
+ * Used so a missing translation never leaks the raw key into the UI.
+ */
+export function looksLikeDictKey(s: string): boolean {
+  return /^[a-z][a-z0-9]*(\.[A-Za-z0-9_]+)+$/.test(s);
+}
+
+/**
+ * Translate a dict key with optional {p}/{p1} interpolation. Pure & isomorphic.
+ *
+ * Fallback order (deterministic):
+ *   1. entry[locale] if non-empty
+ *   2. entry.ar if non-empty (Arabic is the product default)
+ *   3. entry.en if non-empty
+ *   4. empty string — never the raw key (UI must not show `student.198`)
+ *
+ * Empty dictionary values also fall through so a blank `en: ""` does not
+ * blank the UI when Arabic still has a string.
+ */
 export function translate(
   locale: Locale,
   key: string,
   params?: Record<string, unknown>
 ): string {
   const entry = DICT[key];
-  let s = entry ? entry[locale] || entry.ar : key;
+  let s = "";
+  if (entry) {
+    const primary = entry[locale];
+    const secondary = locale === "en" ? entry.ar : entry.en;
+    if (typeof primary === "string" && primary.length > 0) s = primary;
+    else if (typeof secondary === "string" && secondary.length > 0) s = secondary;
+    else if (typeof entry.ar === "string" && entry.ar.length > 0) s = entry.ar;
+    else if (typeof entry.en === "string" && entry.en.length > 0) s = entry.en;
+  }
+  // Last-resort: if a caller somehow passes a human string (not a key), keep it.
+  // Never return a dotted internal key — that is the known Phase 9 leak mode.
+  if (!s) {
+    s = looksLikeDictKey(key) ? "" : key;
+  }
   if (params) {
     for (const [k, v] of Object.entries(params)) {
       s = s.split(`{${k}}`).join(v == null ? "" : String(v));
     }
   }
   return s;
+}
+
+/** Whether a key exists in the merged dictionary (generated + 2026). */
+export function hasDictKey(key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(DICT, key);
+}
+
+/** Expose the merged dict size for diagnostics / tests (read-only). */
+export function dictSize(): number {
+  return Object.keys(DICT).length;
 }
 
 /** Pick between a data-model ar/en field pair (e.g. `titleAr` / `title`). */
