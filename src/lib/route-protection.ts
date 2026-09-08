@@ -29,7 +29,6 @@ export const PROTECTED_API_PREFIXES: readonly string[] = [
   "/api/exams",
   "/api/notifications",
   "/api/enroll",
-  "/api/ai",
   "/api/coupons/validate",
 ];
 

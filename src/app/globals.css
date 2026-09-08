@@ -1247,3 +1247,199 @@
     padding-inline-end: 2.5rem;
   }
 }
+
+/* ============================================================
+   Phase 10 — Kodgy AI Assistant (robot + flame / energy)
+   ------------------------------------------------------------
+   Code-first SVG robot. All motion uses transform/opacity only
+   (GPU-friendly, no layout thrash). Colors adapt to light/dark;
+   prefers-reduced-motion neutralizes every animation while
+   keeping the robot fully visible and usable.
+   ============================================================ */
+
+:root {
+  --kodgy-body-high: #ecfdf5;
+  --kodgy-body-low: #b9ecd3;
+  --kodgy-visor-high: #0f3d2e;
+  --kodgy-visor-low: #052e20;
+  --kodgy-stroke: #059669;
+  --kodgy-ear: #a7e8c6;
+  --kodgy-eye: #6ee7b7;
+  --kodgy-mouth: #d1fae5;
+  --kodgy-ring: #34d399;
+  --kodgy-flame-hot: #f0fdf4;
+  --kodgy-flame-mid: #10b981;
+  --kodgy-flame-cool: #047857;
+}
+
+.dark {
+  --kodgy-body-high: #14532d;
+  --kodgy-body-low: #0b3b23;
+  --kodgy-visor-high: #022c22;
+  --kodgy-visor-low: #011a13;
+  --kodgy-stroke: #34d399;
+  --kodgy-ear: #166534;
+  --kodgy-eye: #6ee7b7;
+  --kodgy-mouth: #d1fae5;
+  --kodgy-ring: #4ade80;
+  --kodgy-flame-hot: #ecfccb;
+  --kodgy-flame-mid: #4ade80;
+  --kodgy-flame-cool: #059669;
+}
+
+/* gentle idle float + micro-tilt (transform only) */
+@keyframes kodgyFloat {
+  0%, 100% { transform: translateY(0) rotate(-1deg); }
+  50% { transform: translateY(-9px) rotate(1.5deg); }
+}
+.kodgy-float { animation: kodgyFloat 3.8s ease-in-out infinite; }
+
+/* hover lift (inner stage so it never fights drag positioning) */
+.kodgy-robot-stage { will-change: transform; }
+.kodgy-anchor[data-kodgy-dragging="false"]:hover .kodgy-robot-stage,
+.kodgy-anchor:focus-visible .kodgy-robot-stage { transform: scale(1.05); }
+
+/* flame / energy: appear → grow → shrink → fade → vanish → reappear */
+@keyframes kodgyFlameCycle {
+  0%   { opacity: 0.1;  transform: scale(0.45) rotate(-5deg); }
+  30%  { opacity: 1; transform: scale(1.2) rotate(2deg); }
+  55%  { opacity: 0.55; transform: scale(0.9) rotate(-1.5deg); }
+  78%  { opacity: 0.98; transform: scale(1.12) rotate(3deg); }
+  100% { opacity: 0.08; transform: scale(0.4) rotate(-4deg); }
+}
+@keyframes kodgyFlameCorePulse {
+  0%, 100% { opacity: 0.3; transform: scale(0.8); }
+  50% { opacity: 0.8; transform: scale(1.06); }
+}
+.kodgy-flame-core {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: kodgyFlameCorePulse 1.7s ease-in-out infinite;
+}
+.kodgy-flame-tongue {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: kodgyFlameCycle 3.4s ease-in-out infinite;
+}
+.kodgy-flame-center { animation-duration: 3.4s; }
+.kodgy-flame-left { animation-duration: 4.2s; }
+.kodgy-flame-right { animation-duration: 3.9s; }
+.kodgy-flame-slim-l { animation-duration: 3.1s; }
+.kodgy-flame-slim-r { animation-duration: 3.6s; }
+.kodgy-flame-petal {
+  transform-origin: 50% 100%;
+  animation-duration: 4.8s;
+}
+.kodgy-flame-spike { transform-origin: 50% 50%; }
+.kodgy-flame-spike-a { animation-duration: 4.6s; }
+.kodgy-flame-spike-b { animation-duration: 5.1s; }
+.kodgy-flame-spike-c { animation-duration: 4.4s; }
+
+/* soft aura breathing */
+@keyframes kodgyAuraPulse {
+  0%, 100% { opacity: 0.7; transform: scale(0.97); }
+  50% { opacity: 1; transform: scale(1.05); }
+}
+.kodgy-aura {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: kodgyAuraPulse 3.8s ease-in-out infinite;
+}
+
+/* spinning energy ring */
+@keyframes kodgyRingSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.kodgy-ring {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: kodgyRingSpin 9s linear infinite;
+}
+@keyframes kodgyRingGlow {
+  0%, 100% { opacity: 0.25; transform: scale(0.985); }
+  50% { opacity: 0.65; transform: scale(1.02); }
+}
+.kodgy-ring-glow {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: kodgyRingGlow 3.4s ease-in-out infinite;
+}
+@keyframes kodgyRingHalo {
+  0%, 100% { opacity: 0.18; transform: scale(0.98); }
+  50% { opacity: 0.5; transform: scale(1.03); }
+}
+.kodgy-ring-halo {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: kodgyRingHalo 3.8s ease-in-out infinite;
+}
+
+/* rising embers */
+@keyframes kodgyEmberRise {
+  0% { opacity: 0; transform: translateY(6px) scale(0.4); }
+  25% { opacity: 0.9; }
+  70% { opacity: 0.5; }
+  100% { opacity: 0; transform: translateY(-30px) scale(0.15); }
+}
+.kodgy-ember {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: kodgyEmberRise 2.9s ease-out infinite;
+}
+.kodgy-ember-2 { animation-delay: 0.9s; animation-duration: 3.3s; }
+.kodgy-ember-3 { animation-delay: 1.7s; animation-duration: 3.1s; }
+
+/* antenna + chest glow */
+@keyframes kodgyGlowPulse {
+  0%, 100% { opacity: 0.7; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.18); }
+}
+.kodgy-antenna-tip,
+.kodgy-chest {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: kodgyGlowPulse 2.6s ease-in-out infinite;
+}
+
+/* chat status dot + thinking dots */
+@keyframes kodgyStatusPulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5); }
+  50% { opacity: 0.6; box-shadow: 0 0 0 4px rgba(16, 185, 129, 0); }
+}
+.kodgy-status-dot { animation: kodgyStatusPulse 2.2s ease-in-out infinite; }
+
+@keyframes kodgyThink {
+  0%, 100% { opacity: 0.25; transform: translateY(0); }
+  50% { opacity: 1; transform: translateY(-3px); }
+}
+.kodgy-thinking-dot {
+  animation: kodgyThink 1.1s ease-in-out infinite;
+}
+
+/* reduced motion: keep Kodgy visible & usable, drop the show */
+@media (prefers-reduced-motion: reduce) {
+  .kodgy-float,
+  .kodgy-flame-tongue,
+  .kodgy-flame-core,
+  .kodgy-aura,
+  .kodgy-ring,
+  .kodgy-ring-glow,
+  .kodgy-ring-halo,
+  .kodgy-ember,
+  .kodgy-antenna-tip,
+  .kodgy-chest,
+  .kodgy-status-dot,
+  .kodgy-thinking-dot {
+    animation: none !important;
+    transition: none !important;
+  }
+  .kodgy-float { transform: none; }
+  .kodgy-flame-tongue,
+  .kodgy-flame-core,
+  .kodgy-aura,
+  .kodgy-ring-glow { opacity: 0.55 !important; }
+  .kodgy-ember { opacity: 0; }
+  .kodgy-thinking-dot { opacity: 0.6; }
+  .kodgy-status-dot { opacity: 1; }
+}

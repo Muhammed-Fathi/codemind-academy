@@ -30,7 +30,8 @@ const EXCLUDE = [
   "src/lib/i18n-dict.ts", "src/lib/i18n-server.ts", "src/lib/db.ts",
   "src/lib/auth.ts", "src/lib/gamification.ts", "src/lib/brand.ts",
   "src/lib/utils.ts", "src/lib/api.ts",
-  "src/app/api/ai/chat/route.ts", // AI system prompt stays Arabic (by design)
+  // Phase 10: the AI chat route was removed — Kodgy is client-side scripted.
+  "src/app/api/ai/chat/route.ts",
   "src/app/api/admin/ai-generate-quiz/route.ts", // quiz-gen prompt stays Arabic
 ];
 

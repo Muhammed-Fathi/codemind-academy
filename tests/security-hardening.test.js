@@ -217,7 +217,8 @@ section("5. Proxy (middleware) defence-in-depth decisions");
     "/api/notifications",
     "/api/notifications/unread-count",
     "/api/enroll",
-    "/api/ai/chat",
+    // Phase 10: /api/ai/* was removed — Kodgy is now a fully client-side
+    // scripted assistant (no AI API endpoint to protect).
     "/api/coupons/validate",
   ];
   for (const p of protectedPaths) {

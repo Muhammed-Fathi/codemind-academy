@@ -83,7 +83,8 @@ The following features are **implemented and verified** (see
 - Course Certificate (print-to-PDF when ≥80% lessons completed)
 - Study Scheduler (calendar + tasks, DONE / SKIPPED status)
 - Referral program (50 XP + 10% discount coupon on completion)
-- AI Assistant (z-ai-web-dev-sdk chat with code blocks + history)
+- Kodgy — scripted AI assistant (animated robot + flame, AR-LT / EN-RT,
+  draggable; no external AI in this phase)
 - Notification Preferences (per-type toggles, quiet hours)
 
 ### Parent Portal
@@ -150,7 +151,7 @@ The following features are **implemented and verified** (see
 | Database            | **SQLite** via **Prisma ORM** 6                     |
 | Auth                | Cookie sessions + **scrypt** hashing                |
 | Forms               | React Hook Form + Zod 4                             |
-| AI                  | **z-ai-web-dev-sdk** (chat + quiz generation)       |
+| AI                  | Kodgy = scripted (offline); **z-ai-web-dev-sdk** only for admin quiz generation |
 | Excel parsing       | **xlsx** 0.18 (bulk payment import + template)      |
 | Markdown editor     | **@mdxeditor/editor**                               |
 | Font                | **Cairo** (Arabic) via `next/font`                  |
@@ -209,8 +210,9 @@ Authorization is enforced server-side via `requireUser()` /
 Zustand `view` state (`src/lib/store.ts`) drives a switch in
 `src/components/app-shell.tsx`. Only `/` is exposed to the browser.
 
-**AI integration**: `z-ai-web-dev-sdk` is used server-side only, in two
-routes — `/api/ai/chat` (Egyptian-Arabic tutor chatbot) and
+**AI integration**: Kodgy, the built-in assistant, is a **fully
+client-side scripted assistant** (no `/api/ai/*`, no external LLM).
+`z-ai-web-dev-sdk` is used server-side only in one route —
 `/api/admin/ai-generate-quiz` (LLM-generated quiz questions from lesson
 content).
 
@@ -232,7 +234,6 @@ my-project/
 │   │   ├── api/                   # 64 Next.js API routes (role-segmented)
 │   │   │   ├── admin/             # Admin-only endpoints
 │   │   │   ├── auth/              # Login / register / logout / me
-│   │   │   ├── ai/                # AI chat (z-ai-web-dev-sdk)
 │   │   │   ├── courses/           # Public course catalog
 │   │   │   ├── exams/             # Mock exam engine
 │   │   │   ├── lessons/           # Lesson content + progress
@@ -247,7 +248,7 @@ my-project/
 │   │   └── page.tsx               # Single entry — renders <AppShell/>
 │   ├── components/
 │   │   ├── admin/                 # admin-dashboard.tsx (3576 lines)
-│   │   ├── ai/                    # ai-assistant.tsx (floating chat)
+│   │   ├── kodgy/                 # Kodgy assistant (robot + chat + state)
 │   │   ├── auth/                  # auth-view.tsx + enroll-view.tsx
 │   │   ├── course/                # student-course, student-lesson, quiz-runner
 │   │   ├── dashboard/             # shell.tsx (sidebar + header + nav)
@@ -351,10 +352,10 @@ NEXT_PUBLIC_URL="http://localhost:3000"
 
 - **No `JWT_SECRET` is required** — auth uses cookie-based sessions
   persisted in the `Setting` table with `scrypt`-hashed passwords.
-- **`z-ai-web-dev-sdk`** is configured automatically in the sandbox
-  environment. For production deployment, ensure SDK credentials are
-  available on the host (no env var needed — the SDK handles auth
-  internally).
+- **`z-ai-web-dev-sdk`** (admin quiz generation only) is configured
+  automatically in the sandbox environment. For production deployment,
+  ensure SDK credentials are available on the host (no env var needed —
+  the SDK handles auth internally). Kodgy itself needs no credentials.
 - **Payment methods** (InstaPay, Vodafone Cash, e& Cash) are
   informational only — there is no payment-gateway integration. Payments
   are verified manually by the admin.
