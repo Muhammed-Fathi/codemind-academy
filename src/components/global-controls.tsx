@@ -62,12 +62,17 @@ export function ThemeToggleButton() {
 
   return (
     <button
+      type="button"
       onClick={onClick}
       aria-label={t("app.007")}
-      title={isDark ? "Light mode" : "Dark mode"}
+      title={t("app.007")}
       className="p-2 rounded-md hover:bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
     >
-      {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+      {isDark ? (
+        <Sun className="w-4 h-4" aria-hidden="true" />
+      ) : (
+        <Moon className="w-4 h-4" aria-hidden="true" />
+      )}
     </button>
   );
 }
@@ -94,27 +99,35 @@ export function LanguageToggle() {
   if (!mounted) {
     return (
       <button
+        type="button"
         aria-label={t("app.008")}
         className="p-2 rounded-md hover:bg-muted transition-colors"
       >
-        <Languages className="w-4 h-4" />
+        <Languages className="w-4 h-4" aria-hidden="true" />
       </button>
     );
   }
 
   const next: Locale = locale === "ar" ? "en" : "ar";
+  // Target-language labels: when UI is Arabic, offer "EN"/"English"; when
+  // English, offer the Arabic label (app.009/010/011). This is intentional
+  // bilingual UX so the control itself is readable in the destination language.
+  const switchLabel = locale === "ar" ? "Switch to English" : t("app.009");
+  const switchTitle = locale === "ar" ? "English" : t("app.010");
+  const switchShort = locale === "ar" ? "EN" : t("app.011");
   return (
     <button
+      type="button"
       onClick={() => {
         setLocale(next);
         applyLocale(next);
       }}
-      aria-label={locale === "ar" ? "Switch to English" : t("app.009")}
-      title={locale === "ar" ? "English" : t("app.010")}
+      aria-label={switchLabel}
+      title={switchTitle}
       className="h-8 px-2.5 rounded-md hover:bg-muted transition-colors flex items-center gap-1.5 text-xs font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
     >
-      <Languages className="w-4 h-4" />
-      <span className="hidden sm:inline">{locale === "ar" ? "EN" : t("app.011")}</span>
+      <Languages className="w-4 h-4" aria-hidden="true" />
+      <span className="hidden sm:inline">{switchShort}</span>
     </button>
   );
 }

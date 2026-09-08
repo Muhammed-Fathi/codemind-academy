@@ -1,13 +1,15 @@
-import { getServerT } from "@/lib/i18n-server";
+import { getServerT, serverLocale } from "@/lib/i18n-server";
 // CodeMind Academy — Course Certificate Eligibility API
 // Returns certificate data if student completed >= 80% of course lessons.
 import { NextResponse } from "next/server";
 import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
 import { brand } from "@/lib/brand";
+import { fmtDate } from "@/lib/i18n-core";
 
 export async function GET() {
   const tApi = await getServerT();
+  const loc = await serverLocale();
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
   if (user.role !== "STUDENT") return err(tApi("api.122"), 403);
@@ -66,7 +68,7 @@ export async function GET() {
           studentName: user.name,
           courseName: course.nameAr || course.name,
           courseSlug: course.slug,
-          completionDate: new Date().toLocaleDateString("ar-EG", {
+          completionDate: fmtDate(new Date(), loc, {
             year: "numeric",
             month: "long",
             day: "numeric",

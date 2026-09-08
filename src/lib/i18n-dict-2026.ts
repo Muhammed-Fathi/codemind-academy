@@ -262,4 +262,27 @@ export const DICT_2026: Record<string, DictEntry> = {
     en: "Title and message are required",
   },
   "notif.sent": { ar: "اترسل الإشعار لـ {p1} مستخدم", en: "Notification sent to {p1} users" },
+
+  // ---------------- Phase 9: Calendar / shell nav i18n ----------------
+  // Study Scheduler page title + month navigation a11y labels.
+  "student.243": { ar: "مخطط الدراسة", en: "Study Scheduler" },
+  "student.244": { ar: "الشهر السابق", en: "Previous month" },
+  "student.245": { ar: "الشهر التالي", en: "Next month" },
+  "student.246": { ar: "اليوم", en: "Today" },
+
+  // Dashboard shell nav items that previously used bare English labels.
+  // tr(label) returned the English string as-is in both locales (missing key),
+  // so Arabic mode showed "Study Plan" / "Dashboard" etc. Dedicated keys:
+  "shell.027": { ar: "لوحة التحكم", en: "Dashboard" },
+  "shell.028": { ar: "امتحانات تجريبية", en: "Mock Exams" },
+  "shell.029": { ar: "المحفوظات", en: "Bookmarks" },
+  "shell.030": { ar: "خطة الدراسة", en: "Study Plan" },
+  "shell.031": { ar: "الإحالات", en: "Referral" },
+  "shell.032": { ar: "لوحة المتصدرين", en: "Leaderboard" },
+  "shell.033": { ar: "الإنجازات", en: "Achievements" },
+  "shell.034": { ar: "الحضور", en: "Attendance" },
+  "shell.035": { ar: "الاختبارات", en: "Quizzes" },
+  "shell.036": { ar: "نظرة عامة", en: "Overview" },
+  "shell.037": { ar: "بنك الأسئلة", en: "Question Bank" },
+  "shell.038": { ar: "الدعم", en: "Support" },
 };

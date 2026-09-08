@@ -69,37 +69,37 @@ type NavItem = {
 
 const NAV_BY_ROLE: Record<string, NavItem[]> = {
   STUDENT: [
-    { key: "student-dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { key: "student-dashboard", label: "shell.027", icon: LayoutDashboard },
     { key: "student-course", label: "shell.001", icon: BookOpen },
     { key: "student-session-videos", label: "admin.204", icon: Video },
-    { key: "student-exam", label: "Mock Exams", icon: Timer },
-    { key: "student-bookmarks", label: "Bookmarks", icon: Bookmark },
-    { key: "student-scheduler", label: "Study Plan", icon: CalendarDays },
-    { key: "student-referral", label: "Referral", icon: Gift },
+    { key: "student-exam", label: "shell.028", icon: Timer },
+    { key: "student-bookmarks", label: "shell.029", icon: Bookmark },
+    { key: "student-scheduler", label: "shell.030", icon: CalendarDays },
+    { key: "student-referral", label: "shell.031", icon: Gift },
     { key: "student-progress", label: "shell.002", icon: Trophy },
-    { key: "student-leaderboard", label: "Leaderboard", icon: Crown },
-    { key: "student-achievements", label: "Achievements", icon: Award },
+    { key: "student-leaderboard", label: "shell.032", icon: Crown },
+    { key: "student-achievements", label: "shell.033", icon: Award },
     { key: "student-certificate", label: "shell.003", icon: Star },
     { key: "student-homework", label: "shell.004", icon: FileText },
     { key: "student-notifications", label: "shell.005", icon: Bell },
   ],
   PARENT: [
-    { key: "parent-dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { key: "parent-dashboard", label: "shell.027", icon: LayoutDashboard },
     { key: "parent-report", label: "shell.006", icon: FileText },
   ],
   TEACHER: [
-    { key: "teacher-dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { key: "teacher-attendance", label: "Attendance", icon: CalendarDays },
-    { key: "teacher-quizzes", label: "Quizzes", icon: Trophy },
-    { key: "teacher-homework", label: "Homework", icon: ClipboardList },
+    { key: "teacher-dashboard", label: "shell.027", icon: LayoutDashboard },
+    { key: "teacher-attendance", label: "shell.034", icon: CalendarDays },
+    { key: "teacher-quizzes", label: "shell.035", icon: Trophy },
+    { key: "teacher-homework", label: "shell.004", icon: ClipboardList },
   ],
   ADMIN: [
-    { key: "admin-overview", label: "Overview", icon: LayoutDashboard },
+    { key: "admin-overview", label: "shell.036", icon: LayoutDashboard },
     { key: "admin-students", label: "shell.007", icon: GraduationCap },
     { key: "admin-teachers", label: "shell.008", icon: Briefcase },
     { key: "admin-groups", label: "shell.009", icon: Users },
     { key: "admin-courses", label: "shell.010", icon: BookOpen },
-    { key: "admin-question-bank", label: "Question Bank", icon: Library },
+    { key: "admin-question-bank", label: "shell.037", icon: Library },
     { key: "admin-session-videos", label: "admin.204", icon: Video },
     { key: "admin-mock-exams", label: "admin.214", icon: Timer },
     { key: "admin-quiz-review", label: "admin.245", icon: Camera },
@@ -184,7 +184,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
               className="inline-flex items-center justify-center w-full px-3 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-bold hover:opacity-90 transition-opacity"
             >
               <HelpCircle className="w-3.5 h-3.5 ms-1.5" />
-              Support
+              {tr("shell.038")}
             </a>
           </div>
         </div>
