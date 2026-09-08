@@ -11,6 +11,14 @@
   - `ignoreBuildErrors` removed — `next build` performs real TypeScript validation (67 pre-existing hidden errors fixed; `tsc --noEmit` now clean).
   - Build script is cross-platform: `prisma generate && next build && node scripts/copy-standalone-assets.mjs` (replaces the Unix-only `cp -r` chain; same standalone layout preserved).
   - Added `bun run typecheck` (`tsc --noEmit`). All 337 test assertions still pass; lint state unchanged (78 pre-existing issues deferred); production startup verified under node and bun.
+- **Production Security Hardening (Phase 3 of current cycle): completed (2026-09-07). Baseline `5bd041c`. See `docs/PHASE_3_SECURITY_HARDENING.md`.**
+  - `SECURITY_HASH_SECRET` is now REQUIRED in production: `src/lib/env.ts` validates it, `next build` and server startup (`src/instrumentation.ts`) fail fast with a value-free message; the hardcoded dev fallback is gone from `security.ts` (M3 closed).
+  - Defense-in-depth proxy added (`src/proxy.ts`, Next 16 name for middleware): cookie-presence 401 for protected `/api/*` namespaces only, no DB, routes remain the authorization source of truth (M4 closed). Baseline security headers + `poweredByHeader: false`.
+  - HIGH fix: public `/api/groups` no longer serialises teachers' full `User` rows (password hash, phone, e-mail).
+  - Dependencies: nodemailer 7→9.1.1, sharp 0.34→0.35.4, next 16.1→16.3.4 (minor; fixes proxy-bypass/DoS advisories); removed 6 unused direct deps (`next-auth`, `next-intl`, `@mdxeditor/editor`, `react-syntax-highlighter`, `uuid`, `@reactuses/core`). `npm audit` 12 → 4 high (only `xlsx` no-fix + prisma-CLI transitive). Prisma unchanged.
+  - Phase 2 carry-over closed: `examples/` excluded from `tsconfig.json`.
+  - `start` script replaced by dependency-free `scripts/start-production.mjs` (Windows-portable, same Linux behaviour).
+  - Tests: 337 baseline + 242 new security assertions = 579 passing; typecheck 0 errors; build PASS.
 - Next planned phase: only after explicit approval.
 
 ## Architecture summary
@@ -46,5 +54,6 @@ Schema additions and migration are complete for the foundation. Documentation is
 ## Known risks
 - SQLite is not suitable for concurrent production use (M2 — deferred).
 - ~~`ignoreBuildErrors: true` suppresses TypeScript errors during build (M1 — deferred).~~ **Resolved (2026-09-07, Phase 2 of current cycle):** the flag was removed; builds type-check for real and all 67 previously hidden errors were fixed.
-- `SECURITY_HASH_SECRET` falls back to a hardcoded value if not set (M3 — deferred).
-- No `middleware.ts` for edge-level route protection (M4 — deferred).
+- ~~`SECURITY_HASH_SECRET` falls back to a hardcoded value if not set (M3 — deferred).~~ **Resolved (2026-09-07, Phase 3):** required in production; build and startup fail fast.
+- ~~No `middleware.ts` for edge-level route protection (M4 — deferred).~~ **Resolved (2026-09-07, Phase 3):** `src/proxy.ts` guards protected API namespaces (defense-in-depth only).
+- `xlsx@0.18.5` has unfixable-on-npm advisories; exposure limited to the admin-only payments import (Phase 3 — documented, deferred).

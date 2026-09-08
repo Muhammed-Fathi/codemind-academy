@@ -93,6 +93,8 @@ WorkingDirectory=/home/codemind/codemind-academy
 Environment=NODE_ENV=production
 Environment=DATABASE_URL=file:/home/codemind/codemind-academy/db/custom.db
 Environment=NEXT_PUBLIC_URL=https://codemind.academy
+# REQUIRED: generate with `openssl rand -hex 32` (never commit the value)
+Environment=SECURITY_HASH_SECRET=<paste-64-hex-chars-here>
 ExecStart=/home/codemind/.bun/bin/bun /home/codemind/codemind-academy/.next/standalone/server.js
 Restart=on-failure
 RestartSec=5
@@ -254,13 +256,28 @@ bun run start
 What `bun run start` does (from `package.json`):
 
 ```bash
-NODE_ENV=production bun .next/standalone/server.js 2>&1 | tee server.log
+bun scripts/start-production.mjs
 ```
 
-- `NODE_ENV=production` enables Next.js production optimizations.
-- `bun` runs the Node-compatible `server.js` (you can swap to `node`
-  if you prefer: `node .next/standalone/server.js`).
-- `tee server.log` captures stdout/stderr for diagnosis.
+`scripts/start-production.mjs` is a dependency-free launcher (Phase 3) that
+replaces the former Unix-only `NODE_ENV=production bun .next/standalone/server.js
+2>&1 | tee server.log` line, so the same command works on Linux, macOS and
+Windows CMD/PowerShell:
+
+- Sets `NODE_ENV=production` for the server (an explicit value already in the
+  environment is kept).
+- Runs `.next/standalone/server.js` with the same runtime that launched the
+  script (`bun run start` → bun; `node scripts/start-production.mjs` → node).
+- Mirrors stdout/stderr to the console **and** appends them to `server.log`
+  (`SERVER_LOG_FILE=/path/to/file` to relocate, `SERVER_LOG_FILE=0` to disable
+  when systemd/PM2 already captures output).
+- Forwards SIGINT/SIGTERM to the server so `Ctrl+C` / `systemctl stop` work.
+
+> **Production requires `SECURITY_HASH_SECRET`.** Both `bun run build` and the
+> server startup refuse to proceed when `NODE_ENV=production` and the variable
+> is missing, shorter than 32 characters, or a placeholder. Generate it with
+> `openssl rand -hex 32` and add it to the server environment (systemd
+> `Environment=`, PM2 ecosystem file, or `.env`). See `.env.example`.
 
 The server listens on port **3000** by default. To change it, set
 `PORT` before running:
@@ -678,6 +695,8 @@ git rev-parse HEAD > .last-deployed-commit
 Add the new variables from `.env.example` to your `.env`. The minimum set that
 must be reviewed before going live:
 
+* `SECURITY_HASH_SECRET` — **required**; the production build and server refuse
+  to start without a real value (`openssl rand -hex 32`).
 * `MEDIA_STORAGE_PATH` — an absolute path on a **persistent** volume, outside
   the web root. Never expose it through nginx; `/api/media/[id]` is the only
   legitimate reader and it authorises every request.
