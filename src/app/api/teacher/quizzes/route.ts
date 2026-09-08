@@ -25,8 +25,17 @@ export async function GET(req: NextRequest) {
 
   if (courseIds.length === 0) return ok({ quizzes: [] });
 
+  // BOTH curriculum chains — canonical (unit-linked) lessons carry their
+  // course through `Lesson.unitId`, legacy lessons through `Lesson.topicId`.
+  // A topic-only query would hide every canonical lesson's quizzes from the
+  // teacher, and those quizzes would be unmanageable.
   const lessons = await db.lesson.findMany({
-    where: { topic: { unit: { part: { courseId: { in: courseIds } } } } },
+    where: {
+      OR: [
+        { unit: { part: { courseId: { in: courseIds } } } },
+        { topic: { unit: { part: { courseId: { in: courseIds } } } } },
+      ],
+    },
     select: { id: true },
   });
   const lessonIds = lessons.map((l) => l.id);
@@ -41,6 +50,15 @@ export async function GET(req: NextRequest) {
               id: true,
               title: true,
               titleAr: true,
+              unit: {
+                select: {
+                  part: {
+                    select: {
+                      course: { select: { id: true, name: true, nameAr: true } },
+                    },
+                  },
+                },
+              },
               topic: {
                 select: {
                   unit: {
@@ -85,10 +103,16 @@ export async function GET(req: NextRequest) {
         ? {
             id: q.lesson.id,
             title: q.lesson.titleAr || q.lesson.title,
-            course: q.lesson.topic?.unit.part.course
+            // Canonical chain first, legacy topic chain as fallback.
+            course: (q.lesson.unit?.part.course ?? q.lesson.topic?.unit.part.course)
               ? {
-                  id: q.lesson.topic.unit.part.course.id,
-                  name: q.lesson.topic.unit.part.course.nameAr || q.lesson.topic.unit.part.course.name,
+                  id: (q.lesson.unit?.part.course ?? q.lesson.topic!.unit.part.course)
+                    .id,
+                  name:
+                    (q.lesson.unit?.part.course ?? q.lesson.topic!.unit.part.course)
+                      .nameAr ||
+                    (q.lesson.unit?.part.course ?? q.lesson.topic!.unit.part.course)
+                      .name,
                 }
               : null,
           }
@@ -136,10 +160,14 @@ export async function POST(req: NextRequest) {
   if (questions.length === 0)
     return err(tApi("api.178"), 400);
 
-  // Verify the lesson belongs to one of the teacher's courses
+  // Verify the lesson belongs to one of the teacher's courses — through the
+  // canonical unit chain OR the legacy topic chain (canonical first), so a
+  // quiz can be created on any lesson of the teacher's course regardless of
+  // which chain attaches it.
   const lesson = await db.lesson.findUnique({
     where: { id: lessonId },
     include: {
+      unit: { select: { part: { select: { courseId: true } } } },
       topic: {
         select: { unit: { select: { part: { select: { courseId: true } } } } },
       },
@@ -147,7 +175,8 @@ export async function POST(req: NextRequest) {
   });
   if (!lesson) return err(tApi("api.179"), 404);
   const teacherCourseIds = teacher.groups.map((g) => g.courseId);
-  const lessonCourseId = lesson.topic?.unit.part.courseId;
+  const lessonCourseId =
+    lesson.unit?.part.courseId ?? lesson.topic?.unit.part.courseId ?? null;
   if (!lessonCourseId || !teacherCourseIds.includes(lessonCourseId)) {
     return err(tApi("api.180"), 403);
   }

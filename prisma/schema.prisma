@@ -374,7 +374,12 @@ model QuizAnswer {
   question   Question    @relation(fields: [questionId], references: [id], onDelete: Cascade)
   attempt    QuizAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
 
+  // One answer per (attempt, question). Phase 5: the attempt's question set
+  // is persisted as QuizAnswer rows the moment the attempt is created, so a
+  // student can never hold two rows for the same question of one attempt.
+  @@unique([attemptId, questionId])
   @@index([attemptId])
+  @@index([questionId])
 }
 
 model Homework {

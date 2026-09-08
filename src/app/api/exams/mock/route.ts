@@ -58,9 +58,18 @@ export async function GET(req: NextRequest) {
   // explicitly shared (schoolType = null), can ever be selected.
   const bankFilter = questionBankFilter(studentSchoolType);
 
-  // Get quiz questions from lessons in the course
+  // Get quiz questions from lessons in the course — BOTH chains: canonical
+  // unit-linked lessons and legacy topic-linked lessons. Phase 5 minimal
+  // compatibility fix: a topic-only pool silently excluded every canonical
+  // lesson's questions from mock exams. Grading (POST) is id-based and
+  // unaffected; nothing else about mock exams changes.
   const lessons = await db.lesson.findMany({
-    where: { topic: { unit: { part: { courseId } } } },
+    where: {
+      OR: [
+        { unit: { part: { courseId } } },
+        { topic: { unit: { part: { courseId } } } },
+      ],
+    },
     select: { id: true },
   });
   const lessonIds = lessons.map((l) => l.id);

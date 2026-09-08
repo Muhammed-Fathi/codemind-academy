@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireUser, getStudentProfile, denyProgression } from "@/lib/api";
 import { canAccessQuiz } from "@/lib/session-progress";
+import { loadAttemptQuestionSet, safeParseOptions } from "@/lib/session-quiz";
 
 // GET /api/quizzes/[id]
 // Returns quiz + questions. Answers and explanations are withheld from
@@ -11,6 +12,14 @@ import { canAccessQuiz } from "@/lib/session-progress";
 // AUTHORIZATION: a student may only read a quiz that belongs to a session they
 // have unlocked. Without this the questions, options and (after any attempt)
 // the answers of every future session are readable straight off the API.
+//
+// Phase 5 — deterministic question set: when the student has an OPEN attempt,
+// the questions returned are that attempt's PERSISTED set (frozen when the
+// attempt was created), not the live quiz questions. A refresh, a navigation
+// away and back, or a logout/login therefore always returns the exact same
+// set, even if the quiz was edited in between. Without an open attempt the
+// live quiz questions are served (they will be frozen when the next attempt
+// starts).
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -22,12 +31,17 @@ export async function GET(
   const quiz = await db.quiz.findUnique({
     where: { id },
     include: {
+      // BOTH curriculum chains: the canonical Lesson.unitId chain and the
+      // legacy Lesson.topicId chain. The canonical link wins when a lesson
+      // carries both (the same rule the Phase 4 progression engine uses);
+      // legacy-only lessons resolve through their topic.
       lesson: {
         include: {
+          unit: { include: { part: { include: { course: true } } } },
           topic: { include: { unit: { include: { part: { include: { course: true } } } } } },
         },
       },
-      questions: { orderBy: { createdAt: "asc" } },
+      questions: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] },
     },
   });
   if (!quiz) return err("Quiz not found", 404);
@@ -42,6 +56,7 @@ export async function GET(
     finishedAt: Date | null;
   } | null = null;
   let studentHasAttempted = false;
+  let attemptQuestionIds: string[] | null = null;
   if (user.role === "STUDENT") {
     const s = await getStudentProfile(user.id);
     if (!s) return err("Student profile not found", 404);
@@ -65,12 +80,30 @@ export async function GET(
       };
       studentHasAttempted = attempts.some((x) => x.finishedAt !== null);
     }
+
+    // Deterministic set: an open attempt pins the exact question list.
+    const open = attempts.find((x) => x.finishedAt === null);
+    if (open) {
+      const set = await loadAttemptQuestionSet(open.id);
+      attemptQuestionIds = set.map((q) => q.questionId);
+    }
   }
 
   // Teachers and admins always see answers (needed for review/creation).
   // Students see answers only after submitting at least one attempt.
+  // (Staff answer visibility is the documented Phase 1 audit decision.)
   const revealAnswers =
     user.role === "ADMIN" || user.role === "TEACHER" || user.role === "PARENT" || studentHasAttempted;
+
+  // Canonical chain first, legacy topic chain as fallback.
+  const courseSlug =
+    quiz.lesson?.unit?.part.course.slug ??
+    quiz.lesson?.topic?.unit.part.course.slug ??
+    null;
+
+  const questions = attemptQuestionIds
+    ? quiz.questions.filter((q) => attemptQuestionIds!.includes(q.id))
+    : quiz.questions;
 
   return ok({
     quiz: {
@@ -86,15 +119,15 @@ export async function GET(
           id: quiz.lesson.id,
           title: quiz.lesson.title,
           titleAr: quiz.lesson.titleAr,
-          courseSlug: quiz.lesson.topic?.unit.part.course.slug ?? null,
+          courseSlug,
         }
       : null,
-    questions: quiz.questions.map((q) => ({
+    questions: questions.map((q) => ({
       id: q.id,
       type: q.type,
       prompt: q.prompt,
       promptAr: q.promptAr,
-      options: JSON.parse(q.options),
+      options: safeParseOptions(q.options),
       answer: revealAnswers ? q.answer : undefined,
       explanation: revealAnswers ? q.explanation : undefined,
       difficulty: q.difficulty,

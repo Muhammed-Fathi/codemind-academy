@@ -20,9 +20,16 @@ export async function POST(req: NextRequest) {
 
   if (!lessonId) return err("Lesson ID مطلوب", 400);
 
+  // BOTH curriculum chains — canonical (unit-linked) first, legacy topic as
+  // fallback — the same resolution rule the progression engine uses.
   const lesson = await db.lesson.findUnique({
     where: { id: lessonId },
     include: {
+      unit: {
+        include: {
+          part: { include: { course: true } },
+        },
+      },
       topic: {
         include: {
           unit: {
@@ -36,16 +43,37 @@ export async function POST(req: NextRequest) {
   });
   if (!lesson) return err("الـLesson مش موجود", 404);
 
+  // TEACHER scope: a teacher may only generate questions for a lesson of one
+  // of their own courses (the same ownership rule as POST /api/teacher/quizzes).
+  // Admins remain unrestricted.
+  const lessonCourseId =
+    lesson.unit?.part.courseId ?? lesson.topic?.unit.part.courseId ?? null;
+  if (user.role === "TEACHER") {
+    if (!lessonCourseId) return err("الـLesson مش مرتبط بكورس", 404);
+    const teacher = await db.teacher.findUnique({
+      where: { userId: user.id },
+      select: { groups: { select: { courseId: true } } },
+    });
+    const teacherCourseIds = teacher?.groups.map((g) => g.courseId) ?? [];
+    if (!teacherCourseIds.includes(lessonCourseId)) {
+      return err("مش مسموح تضيف أسئلة للـLesson ده", 403);
+    }
+  }
+
   const questionCount = Math.min(Math.max(count || 5, 1), 10);
   const diff = difficulty || "MIXED";
 
-  // Build context from lesson
+  // Build context from lesson (canonical chain first, legacy fallback)
+  const chainUnit = lesson.unit ?? lesson.topic?.unit ?? null;
+  const chainPart = lesson.unit?.part ?? lesson.topic?.unit.part ?? null;
+  const chainCourse =
+    lesson.unit?.part.course ?? lesson.topic?.unit.part.course ?? null;
   const context = [
     `Lesson Title: ${lesson.titleAr || lesson.title}`,
     `Topic: ${lesson.topic?.titleAr || lesson.topic?.title || "—"}`,
-    `Unit: ${lesson.topic?.unit.titleAr || lesson.topic?.unit.title || "—"}`,
-    `Part: ${lesson.topic?.unit.part.titleAr || lesson.topic?.unit.part.title || "—"}`,
-    `Course: ${lesson.topic?.unit.part.course.nameAr || lesson.topic?.unit.part.course.name || "—"}`,
+    `Unit: ${chainUnit?.titleAr || chainUnit?.title || "—"}`,
+    `Part: ${chainPart?.titleAr || chainPart?.title || "—"}`,
+    `Course: ${chainCourse?.nameAr || chainCourse?.name || "—"}`,
     lesson.description ? `Description: ${lesson.description}` : "",
     lesson.summary ? `Summary: ${lesson.summary}` : "",
   ]
