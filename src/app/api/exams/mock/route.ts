@@ -1,7 +1,7 @@
 import { getServerT } from "@/lib/i18n-server";
 // CodeMind Academy — Mock Exam API
 // Generates randomized practice exams from Question Bank.
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
 import { normalizeSchoolType, questionBankFilter } from "@/lib/school-type";
@@ -16,6 +16,24 @@ function shuffle<T>(arr: T[]): T[] {
   return a;
 }
 
+const EXAM_TYPES = ["UNIT", "MONTHLY", "MOCK", "FINAL"] as const;
+const MAX_EXAM_QUESTIONS = 100;
+// A submission carries one row per served question; the cap only bounds
+// crafted payloads (GET never serves more than MAX_EXAM_QUESTIONS).
+const MAX_SUBMITTED_ANSWERS = 200;
+
+function normalizeExamType(value: unknown): string {
+  return typeof value === "string" && (EXAM_TYPES as readonly string[]).includes(value)
+    ? value
+    : "MOCK";
+}
+
+function normalizeDifficulty(value: unknown): string {
+  return value === "EASY" || value === "MEDIUM" || value === "HARD"
+    ? value
+    : "mixed";
+}
+
 // GET /api/exams/mock?count=10&difficulty=EASY|MEDIUM|HARD|mixed&examType=MOCK|UNIT|MONTHLY|FINAL
 export async function GET(req: NextRequest) {
   const tApi = await getServerT();
@@ -24,9 +42,15 @@ export async function GET(req: NextRequest) {
   if (user.role !== "STUDENT") return err(tApi("api.094"), 403);
 
   const url = new URL(req.url);
-  let count = parseInt(url.searchParams.get("count") || "10", 10);
-  let difficulty = url.searchParams.get("difficulty") || "mixed";
-  const examType = url.searchParams.get("examType") || "MOCK";
+  // Client-supplied count is untrusted: clamp it into a sane range. (A linked
+  // admin exam overrides it with its own configured count below.)
+  const rawCount = parseInt(url.searchParams.get("count") || "10", 10);
+  let count = Math.min(
+    MAX_EXAM_QUESTIONS,
+    Math.max(1, Number.isNaN(rawCount) ? 10 : rawCount)
+  );
+  let difficulty = normalizeDifficulty(url.searchParams.get("difficulty"));
+  const examType = normalizeExamType(url.searchParams.get("examType"));
   const mockExamId = url.searchParams.get("mockExamId");
 
   const student = await db.student.findUnique({ where: { userId: user.id } });
@@ -50,6 +74,10 @@ export async function GET(req: NextRequest) {
     if (!mockExam || !mockExam.isPublished) return err(tApi("api.211"), 404);
     if (mockExam.schoolType !== studentSchoolType)
       return err(tApi("api.212"), 403);
+    // A course-bound exam is invisible outside that course. 404 (not 403) so
+    // the response never confirms a foreign course's exam exists.
+    if (mockExam.courseId && mockExam.courseId !== courseId)
+      return err(tApi("api.211"), 404);
     count = mockExam.questionCount;
     difficulty = mockExam.difficulty === "MIXED" ? "mixed" : mockExam.difficulty;
   }
@@ -75,21 +103,20 @@ export async function GET(req: NextRequest) {
   const lessonIds = lessons.map((l) => l.id);
 
   // FIXED exams use their pinned set; RANDOM exams sample the matching bank.
-  const pinnedIds =
-    mockExam && mockExam.selectionMode === "FIXED"
-      ? (
-          await db.mockExamQuestion.findMany({
-            where: { mockExamId: mockExam.id },
-            orderBy: { order: "asc" },
-            select: { questionId: true, examQuestionId: true },
-          })
-        )
+  const isFixedExam = !!mockExam && mockExam.selectionMode === "FIXED";
+  const pinned =
+    mockExam && isFixedExam
+      ? await db.mockExamQuestion.findMany({
+          where: { mockExamId: mockExam.id },
+          orderBy: { order: "asc" },
+          select: { questionId: true, examQuestionId: true, order: true },
+        })
       : null;
 
   const quizQuestions = await db.question.findMany({
-    where: pinnedIds
+    where: pinned
       ? {
-          id: { in: pinnedIds.map((p) => p.questionId).filter(Boolean) as string[] },
+          id: { in: pinned.map((p) => p.questionId).filter(Boolean) as string[] },
           ...bankFilter,
         }
       : { quiz: { lessonId: { in: lessonIds } }, ...bankFilter },
@@ -98,10 +125,10 @@ export async function GET(req: NextRequest) {
 
   // Get exam questions (same bank isolation applies)
   const examQuestions = await db.examQuestion.findMany({
-    where: pinnedIds
+    where: pinned
       ? {
           id: {
-            in: pinnedIds.map((p) => p.examQuestionId).filter(Boolean) as string[],
+            in: pinned.map((p) => p.examQuestionId).filter(Boolean) as string[],
           },
           ...bankFilter,
         }
@@ -109,15 +136,19 @@ export async function GET(req: NextRequest) {
     include: { lesson: { select: { titleAr: true, title: true } } },
   });
 
-  // Combine all questions
+  // Combine all questions.
+  //
+  // NOTE: this draft carries NO answer key. The stored `answer` / explanation
+  // stay on the server; the client receives prompts + shuffled options only,
+  // and learns correctness from the POST review payload after submitting.
+  // Shipping the key here would let any student read every correct answer
+  // from the network tab before answering.
   type Q = {
     id: string;
     type: string;
     prompt: string;
     promptAr: string | null;
     options: string;
-    answer: string;
-    explanation: string | null;
     difficulty: string;
     marks: number;
     source: string;
@@ -130,8 +161,6 @@ export async function GET(req: NextRequest) {
       prompt: q.prompt,
       promptAr: q.promptAr,
       options: q.options,
-      answer: q.answer,
-      explanation: q.explanation,
       difficulty: q.difficulty,
       marks: q.marks,
       source: "quiz",
@@ -143,8 +172,6 @@ export async function GET(req: NextRequest) {
       prompt: q.prompt,
       promptAr: q.promptAr,
       options: q.options,
-      answer: q.answer,
-      explanation: q.explanation,
       difficulty: q.difficulty,
       marks: q.marks,
       source: "exam",
@@ -159,34 +186,47 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  // Filter by difficulty if specified
-  let pool = allQs;
-  if (difficulty !== "mixed") {
-    pool = allQs.filter((q) => q.difficulty === difficulty);
-    if (pool.length === 0) pool = allQs; // fallback
+  let selected: Q[];
+  if (pinned) {
+    // FIXED contract: serve the pinned set AS-IS — every pinned in-bank
+    // question, in pinned `order`. No difficulty filter, no shuffle, no
+    // slicing: re-requesting the same exam yields the same questions in the
+    // same order, and pins can never silently fall out of the set.
+    const orderOf = new Map<string, number>();
+    for (const p of pinned) {
+      if (p.questionId) orderOf.set(p.questionId, p.order);
+      if (p.examQuestionId) orderOf.set(p.examQuestionId, p.order);
+    }
+    selected = allQs
+      .filter((q) => orderOf.has(q.id))
+      .sort((a, b) => (orderOf.get(a.id) as number) - (orderOf.get(b.id) as number));
+  } else {
+    // RANDOM contract: filter by difficulty if specified, then shuffle the
+    // pool server-side and serve up to `count`. Every request re-samples —
+    // there is no server-side in-progress state; the attempt is created
+    // atomically at submit (POST), so a refresh before submitting simply
+    // drafts a fresh set.
+    let pool = allQs;
+    if (difficulty !== "mixed") {
+      pool = allQs.filter((q) => q.difficulty === difficulty);
+      if (pool.length === 0) pool = allQs; // fallback
+    }
+
+    // Shuffle + pick N
+    selected = shuffle(pool).slice(0, Math.min(count, pool.length));
   }
 
-  // Shuffle + pick N
-  const selected = shuffle(pool).slice(0, Math.min(count, pool.length));
-
-  // Shuffle options within each question (MCQ only)
+  // Shuffle options within each question (MCQ only). Positional information
+  // is meaningless to the grader — the client answers with the selected
+  // option TEXT and POST re-grades against the stored key.
   const questions = selected.map((q) => {
     const opts: string[] = JSON.parse(q.options);
-    let optsAr = opts;
-    let answerIdx = parseInt(q.answer, 10);
-    if (q.type === "MCQ" && !isNaN(answerIdx)) {
-      const indexed = opts.map((opt, i) => ({ opt, correct: i === answerIdx }));
-      const shuffled = shuffle(indexed);
-      optsAr = shuffled.map((s) => s.opt);
-      answerIdx = shuffled.findIndex((s) => s.correct);
-    }
+    const optsAr = q.type === "MCQ" ? shuffle(opts) : opts;
     return {
       id: q.id,
       type: q.type,
       prompt: q.promptAr || q.prompt,
       options: optsAr,
-      correctIndex: answerIdx,
-      explanation: q.explanation,
       difficulty: q.difficulty,
       marks: q.marks,
       source: q.source,
@@ -222,21 +262,32 @@ export async function POST(req: NextRequest) {
   if (user.role !== "STUDENT") return err(tApi("api.094"), 403);
 
   const body = await req.json().catch(() => ({}));
-  const { examType, durationMin, answers, mockExamId } = body as {
+  const { examType: rawExamType, durationMin: rawDurationMin, answers, mockExamId } = body as {
     examType?: string;
     durationMin?: number;
     mockExamId?: string | null;
     answers: { questionId: string; selected: string; isCorrect: boolean; marks: number }[];
   };
   if (!answers || !Array.isArray(answers)) return err("Answers required", 400);
+  if (answers.length > MAX_SUBMITTED_ANSWERS) return err("Too many answers", 400);
 
   const student = await db.student.findUnique({ where: { userId: user.id } });
   if (!student) return err(tApi("api.095"), 404);
   const studentSchoolType = normalizeSchoolType(student.schoolType);
 
+  // Same enrollment gate as GET: a crafted submission from an unenrolled
+  // student must not create attempt history.
+  const enrollment = await getEnrollment(student.id);
+  if (!enrollment.isEnrolled || !enrollment.courseId)
+    return err(tApi("api.096"), 400);
+
   // Re-grade on the server from the stored answer keys: the client-sent
-  // `isCorrect` / `marks` values are never trusted for scoring.
-  const questionIds = answers.map((a) => a.questionId).filter(Boolean);
+  // `isCorrect` / `marks` values are never trusted for scoring. Non-string
+  // ids are dropped from the key lookup (their rows grade as unknown → 0)
+  // rather than reaching Prisma, where they would only 500.
+  const questionIds = answers
+    .map((a) => a.questionId)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
 
   // Bank isolation applies to GRADING as well as to selection. Without this,
   // a crafted submission could reference questions from the other school's
@@ -255,48 +306,102 @@ export async function POST(req: NextRequest) {
   const [bankQuestions, bankExamQuestions] = await Promise.all([
     db.question.findMany({
       where: { id: { in: questionIds }, ...gradingBankFilter },
-      select: { id: true, answer: true, marks: true, options: true },
+      select: { id: true, answer: true, marks: true, options: true, explanation: true },
     }),
     db.examQuestion.findMany({
       where: { id: { in: questionIds }, ...gradingBankFilter },
-      select: { id: true, answer: true, marks: true, options: true },
+      select: { id: true, answer: true, marks: true, options: true, explanation: true },
     }),
   ]);
-  const keyById = new Map<string, { answer: string; marks: number; options: string }>();
+  const keyById = new Map<string, { answer: string; marks: number; options: string; explanation: string | null }>();
   for (const q of [...bankQuestions, ...bankExamQuestions]) {
-    keyById.set(q.id, { answer: q.answer, marks: q.marks, options: q.options });
+    keyById.set(q.id, { answer: q.answer, marks: q.marks, options: q.options, explanation: q.explanation ?? null });
   }
 
-  const graded = answers.map((a) => {
+  // Grade every row AND build the post-submit review. `correctText` is the
+  // correct option's text (the client shuffled display order, so an index
+  // would be meaningless); it is only ever revealed here, after submit.
+  const graded: { questionId: string; selected: string; isCorrect: boolean; marks: number }[] = [];
+  const review: {
+    questionId: string;
+    selected: string;
+    isCorrect: boolean;
+    marks: number;
+    correctText: string | null;
+    explanation: string | null;
+  }[] = [];
+  for (const a of answers) {
     const key = keyById.get(a.questionId);
     if (!key) {
       // Unknown question id — score it as 0 rather than trusting the client.
-      return { ...a, isCorrect: false, marks: 0 };
+      graded.push({ ...a, isCorrect: false, marks: 0 });
+      review.push({
+        questionId: a.questionId,
+        selected: String(a.selected ?? ""),
+        isCorrect: false,
+        marks: 0,
+        correctText: null,
+        explanation: null,
+      });
+      continue;
     }
     // The client shuffles option order, so it reports the SELECTED TEXT.
     let isCorrect = false;
+    let correctText: string | null = null;
     try {
       const opts: string[] = JSON.parse(key.options);
-      const correctText = opts[parseInt(key.answer, 10)];
+      const correct = opts[parseInt(key.answer, 10)];
+      correctText = correct !== undefined ? String(correct) : null;
       isCorrect =
         String(a.selected) === String(key.answer) ||
-        (correctText !== undefined && String(a.selected) === correctText);
+        (correctText !== null && String(a.selected) === correctText);
     } catch {
       isCorrect = String(a.selected) === String(key.answer);
     }
-    return { ...a, isCorrect, marks: key.marks };
-  });
-
-  // A mock exam may only be attributed to an exam of the student's own type.
-  let linkedExamId: string | null = null;
-  if (mockExamId) {
-    const exam = await db.mockExam.findUnique({ where: { id: mockExamId } });
-    if (exam && exam.schoolType === studentSchoolType) linkedExamId = exam.id;
+    graded.push({ ...a, isCorrect, marks: key.marks });
+    review.push({
+      questionId: a.questionId,
+      selected: String(a.selected ?? ""),
+      isCorrect,
+      marks: key.marks,
+      correctText,
+      explanation: key.explanation,
+    });
   }
-  const passMark = linkedExamId
-    ? (await db.mockExam.findUnique({ where: { id: linkedExamId }, select: { passMark: true } }))
-        ?.passMark ?? 60
-    : 60;
+
+  // A mock exam may only be attributed to a PUBLISHED exam of the student's
+  // own type (and course, when the exam is course-bound). Anything else —
+  // unknown id, unpublished, foreign bank, foreign course — silently falls
+  // back to an unlinked practice attempt rather than failing the submit.
+  let linkedExam: { id: string; durationMin: number; passMark: number } | null = null;
+  if (mockExamId) {
+    const exam = await db.mockExam.findUnique({
+      where: { id: mockExamId },
+      select: {
+        id: true,
+        schoolType: true,
+        courseId: true,
+        isPublished: true,
+        durationMin: true,
+        passMark: true,
+      },
+    });
+    if (
+      exam &&
+      exam.isPublished &&
+      exam.schoolType === studentSchoolType &&
+      (!exam.courseId || exam.courseId === enrollment.courseId)
+    ) {
+      linkedExam = exam;
+    }
+  }
+  const passMark = linkedExam?.passMark ?? 60;
+  // Linked attempts inherit the exam's configured duration; free practice
+  // echoes the client value within sane bounds (display-only either way —
+  // elapsed time is not server-enforced).
+  const durationMin = linkedExam
+    ? linkedExam.durationMin
+    : Math.min(300, Math.max(0, Number(rawDurationMin) || 0));
 
   const totalMarks = graded.reduce((s, a) => s + (a.marks || 0), 0);
   const score = graded.filter((a) => a.isCorrect).reduce((s, a) => s + (a.marks || 0), 0);
@@ -306,11 +411,11 @@ export async function POST(req: NextRequest) {
   const attempt = await db.examAttempt.create({
     data: {
       studentId: student.id,
-      mockExamId: linkedExamId,
+      mockExamId: linkedExam?.id ?? null,
       schoolType: studentSchoolType,
-      examType: examType || "MOCK",
+      examType: normalizeExamType(rawExamType),
       questionCount: graded.length,
-      durationMin: durationMin || 0,
+      durationMin,
       score,
       totalMarks,
       percentage,
@@ -321,5 +426,5 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  return ok({ attempt: { ...attempt, percentage, passed, score, totalMarks } });
+  return ok({ attempt: { ...attempt, percentage, passed, score, totalMarks }, review });
 }
