@@ -542,8 +542,13 @@ async function main() {
   ok(/requirements: locked \? null/.test(courseRoute), "course tree redacts the requirement breakdown");
 
   section("22. Source invariants: the course tree represents BOTH chains");
-  ok(/lessons: \{ orderBy: \{ order: "asc" \}, include: LESSON_INCLUDE \}/.test(courseRoute), "the unit's canonical lessons are fetched");
-  ok(/topics: \{[\s\S]*?lessons: \{ orderBy: \{ order: "asc" \}, include: LESSON_INCLUDE \}/.test(courseRoute), "legacy topics still fetch their lessons");
+  // Phase 11: both fetches additionally exclude archived lessons (the legacy
+  // R1 rows stay in the DB as history but are no longer curriculum). The
+  // patterns below assert the FULL fetch shape — chain + order + payload +
+  // exclusion — so neither the chain coverage nor the exclusion can regress.
+  ok(/EXCLUDE_ARCHIVED_LESSON/.test(courseRoute), "the course tree imports the archived-lesson exclusion");
+  ok(/lessons: \{\s*where: \{ \.\.\.EXCLUDE_ARCHIVED_LESSON \},\s*orderBy: \{ order: "asc" \},\s*include: LESSON_INCLUDE,/.test(courseRoute), "the unit's canonical lessons are fetched (archived history excluded)");
+  ok(/topics: \{[\s\S]*?lessons: \{\s*where: \{ \.\.\.EXCLUDE_ARCHIVED_LESSON \},\s*orderBy: \{ order: "asc" \},\s*include: LESSON_INCLUDE,/.test(courseRoute), "legacy topics still fetch their lessons (archived history excluded)");
   ok(/lessons: unit\.lessons\.map\(toLesson\)/.test(courseRoute), "canonical lessons are serialised at unit level");
   ok(/\.filter\(\(lesson\) => !lesson\.unitId\)/.test(courseRoute), "a both-linked lesson is not rendered twice");
   ok(/if \(lesson\.unitId\) continue;/.test(courseRoute), "the flat status list matches the engine's canonical-first rule");

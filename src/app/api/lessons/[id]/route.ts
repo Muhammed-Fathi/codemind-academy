@@ -3,7 +3,9 @@ import { db } from "@/lib/db";
 import { ok, err, requireUser, getStudentProfile, denyProgression } from "@/lib/api";
 import {
   canAccessLesson,
+  EXCLUDE_ARCHIVED_LESSON,
   LESSON_CHAIN_SELECT,
+  lessonCourseChainOr,
   orderCourseLessons,
   resolveLessonCourseId,
 } from "@/lib/session-progress";
@@ -104,13 +106,14 @@ export async function GET(
       : null,
   });
   if (courseId) {
+    // Prev/next navigate the ACTIVE curriculum only: archived lessons are
+    // history, and the chain must never strand a student on (or hop over to)
+    // a session the engine no longer teaches.
     const found = await db.lesson.findMany({
       where: {
         isPublished: true,
-        OR: [
-          { unit: { part: { courseId } } },
-          { topic: { unit: { part: { courseId } } } },
-        ],
+        ...EXCLUDE_ARCHIVED_LESSON,
+        OR: lessonCourseChainOr(courseId),
       },
       select: LESSON_CHAIN_SELECT,
     });

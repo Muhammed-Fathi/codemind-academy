@@ -59,19 +59,31 @@ async function videoLessonIdsByStudent(
   const courseByGroup = new Map(groups.map((g) => [g.id, g.courseId]));
   const courseIds = [...new Set(groups.map((g) => g.courseId))];
 
-  // One query for all courses at once.
+  // One query for all courses at once. Both curriculum chains (official
+  // lessons are unit-linked) with archived history excluded — the same
+  // predicate as lessonCoursesChainOr + EXCLUDE_ARCHIVED_LESSON in
+  // session-progress.ts, kept inline to avoid a progress ↔ session-progress
+  // import cycle (that module imports VIDEO_COMPLETION_THRESHOLD from here).
   const lessons = await db.lesson.findMany({
     where: {
       isPublished: true,
+      curriculumStatus: { not: "ARCHIVED" },
       videoUrl: { not: null },
-      topic: { unit: { part: { courseId: { in: courseIds } } } },
+      OR: [
+        { unit: { part: { courseId: { in: courseIds } } } },
+        { topic: { unit: { part: { courseId: { in: courseIds } } } } },
+      ],
     },
-    select: { id: true, topic: { select: { unit: { select: { part: { select: { courseId: true } } } } } } },
+    select: {
+      id: true,
+      unit: { select: { part: { select: { courseId: true } } } },
+      topic: { select: { unit: { select: { part: { select: { courseId: true } } } } } },
+    },
   });
 
   const lessonsByCourse = new Map<string, string[]>();
   for (const l of lessons) {
-    const cid = l.topic?.unit.part.courseId;
+    const cid = l.unit?.part.courseId ?? l.topic?.unit.part.courseId;
     if (!cid) continue;
     const arr = lessonsByCourse.get(cid) || [];
     arr.push(l.id);

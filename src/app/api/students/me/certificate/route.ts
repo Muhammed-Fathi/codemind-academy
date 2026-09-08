@@ -4,6 +4,7 @@ import { getServerT, serverLocale } from "@/lib/i18n-server";
 import { NextResponse } from "next/server";
 import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
+import { EXCLUDE_ARCHIVED_LESSON, lessonCourseChainOr } from "@/lib/session-progress";
 import { brand } from "@/lib/brand";
 import { fmtDate } from "@/lib/i18n-core";
 
@@ -25,15 +26,23 @@ export async function GET() {
 
   const course = student.group.course;
 
-  // Count completed lessons
+  // Eligibility runs over the ACTIVE curriculum universe (both chains,
+  // archived history excluded): official lessons are unit-linked, and legacy
+  // history rows stay readable but no longer count toward the 80%.
   const totalLessons = await db.lesson.count({
-    where: { topic: { unit: { part: { courseId: course.id } } } },
+    where: {
+      ...EXCLUDE_ARCHIVED_LESSON,
+      OR: lessonCourseChainOr(course.id),
+    },
   });
   const completedLessons = await db.lessonProgress.count({
     where: {
       studentId: student.id,
       isCompleted: true,
-      lesson: { topic: { unit: { part: { courseId: course.id } } } },
+      lesson: {
+        ...EXCLUDE_ARCHIVED_LESSON,
+        OR: lessonCourseChainOr(course.id),
+      },
     },
   });
 

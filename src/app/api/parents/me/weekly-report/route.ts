@@ -10,6 +10,7 @@ import { NextResponse } from "next/server";
 import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
 import { getVideoProgressForStudents, getVideoProgressInRange } from "@/lib/progress";
+import { EXCLUDE_ARCHIVED_LESSON, lessonCoursesChainOr } from "@/lib/session-progress";
 import { fmtDate } from "@/lib/i18n-core";
 
 export async function GET() {
@@ -53,25 +54,29 @@ export async function GET() {
   if (!parent) return err(tApi("api.119"), 404);
 
   // Course lesson totals, one batched query for every linked child's course
-  // (same universe as the parent dashboard: published lessons, legacy chain).
+  // (same universe as the parent dashboard: published lessons, both chains,
+  // archived history excluded).
+  // The `as string[]` is belt-and-braces: the type predicate above already
+  // narrows to string[], but an un-generated Prisma client leaves the whole
+  // chain untyped and would otherwise fail the helper's signature.
   const weeklyCourseIds = [
     ...new Set(
       parent.children
         .map((l) => l.student.group?.courseId)
         .filter((id): id is string => !!id)
     ),
-  ];
+  ] as string[];
   const weeklyLessonRows =
     weeklyCourseIds.length > 0
       ? await db.lesson.findMany({
           where: {
             isPublished: true,
-            topic: {
-              unit: { part: { courseId: { in: weeklyCourseIds } } },
-            },
+            ...EXCLUDE_ARCHIVED_LESSON,
+            OR: lessonCoursesChainOr(weeklyCourseIds),
           },
           select: {
             id: true,
+            unit: { select: { part: { select: { courseId: true } } } },
             topic: {
               select: { unit: { select: { part: { select: { courseId: true } } } } },
             },
@@ -79,13 +84,18 @@ export async function GET() {
         })
       : [];
   const weeklyLessonTotalByCourse = new Map<string, number>();
+  const weeklyLessonIdsByCourse = new Map<string, Set<string>>();
   for (const row of weeklyLessonRows) {
-    const cid = row.topic?.unit.part.courseId;
+    const cid = row.unit?.part.courseId ?? row.topic?.unit.part.courseId;
     if (!cid) continue;
     weeklyLessonTotalByCourse.set(
       cid,
       (weeklyLessonTotalByCourse.get(cid) || 0) + 1
     );
+    if (!weeklyLessonIdsByCourse.has(cid)) {
+      weeklyLessonIdsByCourse.set(cid, new Set());
+    }
+    weeklyLessonIdsByCourse.get(cid)!.add(row.id);
   }
 
   const now = new Date();
@@ -174,7 +184,14 @@ export async function GET() {
 
     // Overall progress, measured against the child's COURSE (same denominator
     // as the parent dashboard, not the count of progress rows that exist).
-    const completedLessons = s.lessonProgress.filter((lp) => lp.isCompleted).length;
+    // Both sides are restricted to the active universe so archived history
+    // cannot inflate the fraction.
+    const weeklyUniverseIds =
+      (s.group?.courseId && weeklyLessonIdsByCourse.get(s.group.courseId)) ||
+      new Set<string>();
+    const completedLessons = s.lessonProgress.filter(
+      (lp) => lp.isCompleted && weeklyUniverseIds.has(lp.lessonId)
+    ).length;
     const totalCourseLessons = s.group?.courseId
       ? weeklyLessonTotalByCourse.get(s.group.courseId) || 0
       : 0;

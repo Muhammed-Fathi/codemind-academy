@@ -1,6 +1,13 @@
-// CodeMind Academy — Curriculum seeding helper (shared by the API route
-// and the standalone script). Parses CURRICULUM from curriculum.ts and
-// restores it into the database idempotently.
+// CodeMind Academy — Student-code helpers + RETIRED curriculum seeder.
+//
+// ⚠ PHASE 11 — seedCurriculumFromFile is RETIRED (the `/api/admin/courses`
+// `{action:"seed"}` endpoint returns 410 Gone, and the scripts call
+// reconcileOfficialCurriculum instead). It is kept, compiling and behavior-
+// pinned by tests/seed-idempotency.test.js, for historical reference ONLY —
+// never call it against live data.
+//
+// Still SUPPORTED (not deprecated): createStudentWithCode and
+// backfillStudentCodes, used by registration and admin student management.
 //
 // Safety properties (verified by tests/seed-idempotency.test.js):
 //  - CREATE-only: never UPDATEs or DELETEs unrelated rows (the single
@@ -19,6 +26,13 @@ export const COURSE_SLUG = "programming-ai-2nd-sec";
 export type SeedClient = any;
 
 export async function seedCurriculumFromFile(client: SeedClient = db) {
+  // Phase 11: loud trip-wire — this function is retired; any live invocation
+  // (outside the pinning regression test) is a bug. Kept functional ONLY so
+  // tests/seed-idempotency.test.js can pin its historical behavior.
+  console.warn(
+    "[RETIRED] seedCurriculumFromFile must not run against live data — " +
+      "use reconcileOfficialCurriculum (@/lib/official-curriculum) instead."
+  );
   // 1. Upsert the course (matched by UNIQUE slug — never touches other courses)
   const course = await client.course.upsert({
     where: { slug: COURSE_SLUG },

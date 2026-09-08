@@ -320,4 +320,22 @@ export const DICT_2026: Record<string, DictEntry> = {
     en: "Kodgy currently answers from a prepared scripted knowledge base — not connected to an external AI.",
   },
   "kodgy.015": { ar: "أنت", en: "You" },
+
+  // ---------------- Phase 11: official curriculum reconciliation ----------------
+  "api.226": {
+    ar: "زرع المنهج القديم اتوقف نهائياً — استخدم مطابقة المنهج الرسمي بدلاً منه",
+    en: "The legacy curriculum seed is permanently retired — use official reconciliation instead",
+  },
+  "api.227": {
+    ar: "الدرس ده مؤرشف ومش ممكن توليد أسئلة جديدة ليه",
+    en: "This lesson is archived and cannot receive newly generated questions",
+  },
+  "admin.318": { ar: "مطابقة المنهج الرسمي", en: "Reconcile official curriculum" },
+  "admin.319": { ar: "جارٍ المطابقة…", en: "Reconciling…" },
+  "admin.320": {
+    ar: "تمت مطابقة المنهج: {p1} درس نشط ({p2} مؤرشف)",
+    en: "Curriculum reconciled: {p1} active lessons ({p2} archived)",
+  },
+  "admin.321": { ar: "مؤرشف", en: "Archived" },
+  "admin.322": { ar: "دروس الوحدة", en: "Unit lessons" },
 };

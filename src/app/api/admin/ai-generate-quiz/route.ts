@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import ZAI from "z-ai-web-dev-sdk";
 import { requireRole, ok, err } from "@/lib/api";
+import { getServerT } from "@/lib/i18n-server";
 import { db } from "@/lib/db";
 import type { Question } from "@prisma/client";
 
@@ -42,6 +43,14 @@ export async function POST(req: NextRequest) {
     },
   });
   if (!lesson) return err("الـLesson مش موجود", 404);
+
+  // Archived lessons are retired history: generating fresh quizzes for them
+  // would resurrect content the active curriculum no longer teaches. 410
+  // Gone (not 404) so the caller knows the target is intentionally retired.
+  if (lesson.curriculumStatus === "ARCHIVED") {
+    const tApi = await getServerT();
+    return err(tApi("api.227"), 410);
+  }
 
   // TEACHER scope: a teacher may only generate questions for a lesson of one
   // of their own courses (the same ownership rule as POST /api/teacher/quizzes).

@@ -4,6 +4,7 @@ import { getServerT } from "@/lib/i18n-server";
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
+import { EXCLUDE_ARCHIVED_LESSON, lessonCoursesChainOr } from "@/lib/session-progress";
 
 export async function GET(req: NextRequest) {
   const tApi = await getServerT();
@@ -45,25 +46,29 @@ export async function GET(req: NextRequest) {
   if (!parent) return err(tApi("api.099"), 404);
 
   // Course lesson totals, one batched query for every linked child's course
-  // (same universe as the parent dashboard: published lessons, legacy chain).
+  // (same universe as the parent dashboard: published lessons, both chains,
+  // archived history excluded).
+  // The `as string[]` is belt-and-braces: the type predicate above already
+  // narrows to string[], but an un-generated Prisma client leaves the whole
+  // chain untyped and would otherwise fail the helper's signature.
   const analyticsCourseIds = [
     ...new Set(
       parent.children
         .map((l) => l.student.group?.courseId)
         .filter((id): id is string => !!id)
     ),
-  ];
+  ] as string[];
   const analyticsLessonRows =
     analyticsCourseIds.length > 0
       ? await db.lesson.findMany({
           where: {
             isPublished: true,
-            topic: {
-              unit: { part: { courseId: { in: analyticsCourseIds } } },
-            },
+            ...EXCLUDE_ARCHIVED_LESSON,
+            OR: lessonCoursesChainOr(analyticsCourseIds),
           },
           select: {
             id: true,
+            unit: { select: { part: { select: { courseId: true } } } },
             topic: {
               select: { unit: { select: { part: { select: { courseId: true } } } } },
             },
@@ -71,13 +76,18 @@ export async function GET(req: NextRequest) {
         })
       : [];
   const analyticsLessonTotalByCourse = new Map<string, number>();
+  const analyticsLessonIdsByCourse = new Map<string, Set<string>>();
   for (const row of analyticsLessonRows) {
-    const cid = row.topic?.unit.part.courseId;
+    const cid = row.unit?.part.courseId ?? row.topic?.unit.part.courseId;
     if (!cid) continue;
     analyticsLessonTotalByCourse.set(
       cid,
       (analyticsLessonTotalByCourse.get(cid) || 0) + 1
     );
+    if (!analyticsLessonIdsByCourse.has(cid)) {
+      analyticsLessonIdsByCourse.set(cid, new Set());
+    }
+    analyticsLessonIdsByCourse.get(cid)!.add(row.id);
   }
 
   const attended = (status: string) =>
@@ -137,8 +147,14 @@ export async function GET(req: NextRequest) {
 
     // Lesson completion against the child's COURSE (a student who opened one
     // lesson and finished it is not "100% complete" — the denominator is the
-    // course, exactly as on the parent dashboard).
-    const completedLessons = s.lessonProgress.filter((lp) => lp.isCompleted).length;
+    // course, exactly as on the parent dashboard). Both sides are restricted
+    // to the active universe so archived history cannot inflate the fraction.
+    const analyticsUniverseIds =
+      (s.group?.courseId && analyticsLessonIdsByCourse.get(s.group.courseId)) ||
+      new Set<string>();
+    const completedLessons = s.lessonProgress.filter(
+      (lp) => lp.isCompleted && analyticsUniverseIds.has(lp.lessonId)
+    ).length;
     const totalLessons = s.group?.courseId
       ? analyticsLessonTotalByCourse.get(s.group.courseId) || 0
       : 0;

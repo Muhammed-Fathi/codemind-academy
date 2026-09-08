@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireUser, getStudentProfile } from "@/lib/api";
 import { getEnrollment } from "@/lib/enrollment";
-import { getCourseSessionProgress } from "@/lib/session-progress";
+import {
+  EXCLUDE_ARCHIVED_LESSON,
+  getCourseSessionProgress,
+} from "@/lib/session-progress";
 import { isParentAuthorizedForCourse } from "@/lib/parent-access";
 import { getServerT } from "@/lib/i18n-server";
 
@@ -60,12 +63,21 @@ export async function GET(
             orderBy: { order: "asc" },
             include: {
               // Canonical chain: Course → Part → Unit → Lesson.
-              lessons: { orderBy: { order: "asc" }, include: LESSON_INCLUDE },
+              // Archived lessons are history, not curriculum (Phase 11).
+              lessons: {
+                where: { ...EXCLUDE_ARCHIVED_LESSON },
+                orderBy: { order: "asc" },
+                include: LESSON_INCLUDE,
+              },
               // Legacy chain: … → Unit → Topic → Lesson.
               topics: {
                 orderBy: { order: "asc" },
                 include: {
-                  lessons: { orderBy: { order: "asc" }, include: LESSON_INCLUDE },
+                  lessons: {
+                    where: { ...EXCLUDE_ARCHIVED_LESSON },
+                    orderBy: { order: "asc" },
+                    include: LESSON_INCLUDE,
+                  },
                 },
               },
             },
@@ -259,7 +271,11 @@ export async function GET(
       order: unit.order,
       icon: unit.icon,
       lessons: unit.lessons.map(toLesson),
-      topics: unit.topics.map((topic) => ({
+      // Legacy topics whose lessons are all archived (or unit-linked, and so
+      // already listed above) would render as empty sections — drop them.
+      topics: unit.topics
+        .filter((topic) => topic.lessons.some((lesson) => !lesson.unitId))
+        .map((topic) => ({
         id: topic.id,
         title: topic.title,
         titleAr: topic.titleAr,
