@@ -4,6 +4,7 @@ import { getServerT } from "@/lib/i18n-server";
 import { NextResponse } from "next/server";
 import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
+import { attemptInQuizScope } from "@/lib/quiz-analytics";
 
 export async function GET() {
   const tApi = await getServerT();
@@ -21,8 +22,17 @@ export async function GET() {
             include: {
               user: { select: { name: true, email: true } },
               attendances: { select: { status: true } },
+              // Phase 6: quiz analytics must reflect FINISHED attempts only —
+              // an open attempt is ungraded (its stored percentage is still
+              // the pre-submit default) and would deflate averages.
               quizAttempts: {
-                select: { percentage: true, passed: true, finishedAt: true },
+                where: { finishedAt: { not: null } },
+                select: {
+                  percentage: true,
+                  passed: true,
+                  finishedAt: true,
+                  quizId: true,
+                },
               },
               homeworkSubmits: {
                 select: { status: true, grade: true },
@@ -37,6 +47,27 @@ export async function GET() {
     },
   });
   if (!teacher) return err(tApi("api.155"), 404);
+
+  // Phase 6 authorization scope: a teacher may only ever see quiz attempts
+  // that belong to quizzes on courses they actually teach. A student in the
+  // teacher's group may carry historical attempts from a course taught by a
+  // DIFFERENT teacher (e.g. after a group/course change); those must not leak
+  // into this teacher's analytics. Resolve the quizzes of the teacher's
+  // courses through BOTH curriculum chains (canonical unitId + legacy
+  // topicId), the same universe rule the rest of the app uses.
+  const courseIds = teacher.groups.map((g) => g.courseId);
+  const authorizedQuizRows = await db.quiz.findMany({
+    where: {
+      lesson: {
+        OR: [
+          { unit: { part: { courseId: { in: courseIds } } } },
+          { topic: { unit: { part: { courseId: { in: courseIds } } } } },
+        ],
+      },
+    },
+    select: { id: true },
+  });
+  const authorizedQuizIds = new Set(authorizedQuizRows.map((q) => q.id));
 
   // Compute per-group stats
   const groups = teacher.groups.map((g) => {
@@ -54,10 +85,15 @@ export async function GET() {
     const studentStats = g.students.map((s) => {
       const attendanceCount = s.attendances.length;
       const presentCount = s.attendances.filter((a) => a.status === "PRESENT").length;
-      const quizCount = s.quizAttempts.length;
-      const quizPassed = s.quizAttempts.filter((q) => q.passed).length;
+      // Quiz rows are finished (SQL filter above); restrict further to the
+      // teacher's own courses so cross-course history cannot be aggregated in.
+      const quizAttempts = s.quizAttempts.filter((q) =>
+        attemptInQuizScope(q, authorizedQuizIds)
+      );
+      const quizCount = quizAttempts.length;
+      const quizPassed = quizAttempts.filter((q) => q.passed).length;
       const avgPct = quizCount > 0
-        ? Math.round(s.quizAttempts.reduce((sum, q) => sum + q.percentage, 0) / quizCount)
+        ? Math.round(quizAttempts.reduce((sum, q) => sum + q.percentage, 0) / quizCount)
         : 0;
       const hwTotal = s.homeworkSubmits.length;
       const hwGraded = s.homeworkSubmits.filter((h) => h.status === "GRADED").length;
