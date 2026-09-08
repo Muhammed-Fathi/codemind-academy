@@ -37,6 +37,13 @@
   - One focused migration (`20260908120000_phase5_quiz_answer_unique`): `@@unique([attemptId, questionId])` + questionId index on `QuizAnswer`, with a dedup guard that only removes provably duplicate pairs (keeps newest). No other schema change; attempt immutability uses the existing relation, not new columns.
   - Mock Exams untouched except the minimal pool fix (canonical lessons included); `ExamAttempt` stays fully separate from `QuizAttempt` (asserted).
   - Tests: 723 baseline + 70 new (`tests/session-quiz.test.js`) = 793 passing; typecheck 0 errors; lint baseline unchanged (78 pre-existing problems, no new findings); production build PASS with 0 warnings; **46/46 live API/security assertions pass against the standalone production server** (unauthenticated, not-enrolled, locked-session, leak-prevention, freeze-stability, tampering, cross-student isolation, mixed-curriculum, teacher surface, mock-exam separation, malformed input).
+- **Quiz Results & Teacher Analytics (Phase 6 of current cycle): completed (2026-09-08). Baseline `66c2967`. See `docs/PHASE_6_QUIZ_RESULTS_TEACHER_ANALYTICS.md`.** Audit + hardening of the Phase 5 result flow. No Phase 5 grading redesign, no Phase 4 progression change, no Mock Exam change, **no database/schema/migration change**.
+  - **Teacher analytics now aggregate FINISHED attempts only.** `GET /api/teacher/analytics` and `GET /api/teacher/quizzes` previously averaged every `QuizAttempt` including open (ungraded, stored `percentage` still the pre-submit default) attempts, which deflated quiz averages and pass rates. Both routes now filter `finishedAt != null`; per-quiz metrics use the new deterministic helpers in `src/lib/quiz-analytics.ts`.
+  - **Cross-course teacher scope leak closed.** `GET /api/teacher/analytics` aggregated a student's whole attempt history regardless of course, so historical attempts from a course taught by a *different* teacher could leak into this teacher's numbers. It now resolves the quizzes of the teacher's own courses through BOTH curriculum chains and drops any attempt outside that authorized set (`attemptInQuizScope`).
+  - **New pure analytics engine `src/lib/quiz-analytics.ts`** (DB-free, side-effect-free): finished-attempt summarising (attempt-weighted averages/pass rate over finished attempts, participants, best/latest), difficulty breakdown (EASY/MEDIUM/HARD from persisted answers), question performance + weak-question ranking. Surfaced per quiz by `GET /api/teacher/quizzes` (`passRate`, `difficulty`, `weakQuestions`). Aggregation rules are explicit and documented in the module header.
+  - Authoritative source-of-truth, result immutability, answer-leak rules, Mock Exam isolation and Phase 4 progression were audited and verified unchanged.
+  - Tests: 793 baseline + 44 new (`tests/quiz-analytics.test.js`, behavioural + route invariants) = 837 passing; new pure module type-safe under `tsc --strict`; changed files lint-clean. Full `typecheck`/`build`/live-DB verification could not be re-run here because `prisma generate` needs `binaries.prisma.sh`, which is unreachable from this sandbox (environment limitation; see the Phase 6 doc).
+  - Student-performance / session / course analytics dashboards and per-attempt history review are not implemented and are documented as deferred.
 - Next planned phase: only after explicit approval.
 
 ## Architecture summary
@@ -61,6 +68,12 @@ Next.js application with Prisma and SQLite. The database remains SQLite, while t
 - Attempts opened before the Phase 5 deploy (no persisted rows) adopt the live quiz questions until submit — a one-time, backwards-compatible upgrade path, never reachable by new attempts.
 - Session Quiz (`QuizAttempt`/`QuizAnswer`) and Mock Exam (`ExamAttempt`, JSON snapshot) share the Question Bank and nothing else.
 - Quiz completion remains "a finished `QuizAttempt` exists for every quiz of the lesson" — the Phase 4 engine is untouched; Phase 5 only made every quiz of a session reachable (`quizzes` array) so the requirement cannot deadlock.
+
+## Phase 6 analytics decisions
+- Teacher quiz analytics are computed over **finished attempts only**, from the server-graded stored row. `src/lib/quiz-analytics.ts` is the single, pure, deterministic aggregation module (DB-free and side-effect-free so reporting can never mutate assessment state).
+- Averages and pass rates are **attempt-weighted**: every finished attempt is one data point, so retakes each count. Unfinished and Mock Exam attempts are never included. Deleted questions disappear from analytics (their answer rows cascade); edited questions keep historical correctness under current difficulty.
+- Teacher analytics are server-side course-scoped: attempts are restricted to quizzes of the teacher's own courses (both curriculum chains) before aggregation (`attemptInQuizScope`), so a student's cross-course history cannot leak into a teacher they no longer take that course with.
+- No schema change; Phase 4 progression and Mock Exam separation are untouched.
 
 ## Authoritative curriculum
 The four committed PDFs and the Phase 2 knowledge model are authoritative. The canonical hierarchy is Track → Course → Part → Unit → Lesson. The old Topic layer is retained only as a nullable legacy compatibility wrapper; official lessons use `Lesson.unitId`, `officialCode`, and `curriculumStatus=OFFICIAL`.

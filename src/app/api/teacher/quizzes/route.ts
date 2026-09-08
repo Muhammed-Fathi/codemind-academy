@@ -8,6 +8,12 @@ import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireUser, getTeacherProfile } from "@/lib/api";
 import type { QuestionType, Difficulty } from "@prisma/client";
+import {
+  summarizeFinishedAttempts,
+  difficultyBreakdownList,
+  questionPerformance,
+  weakestQuestions,
+} from "@/lib/quiz-analytics";
 
 export async function GET(req: NextRequest) {
   const user = await requireUser();
@@ -76,7 +82,27 @@ export async function GET(req: NextRequest) {
           },
           questions: { select: { id: true, marks: true } },
           attempts: {
-            select: { percentage: true, passed: true },
+            // Phase 6: teacher analytics must reflect FINISHED attempts only.
+            // An open attempt is ungraded (its stored percentage is still the
+            // pre-submit default) and would drag the average and pass rate
+            // down. Difficulty / question analytics are derived from the
+            // persisted QuizAnswer rows of these finished attempts.
+            where: { finishedAt: { not: null } },
+            select: {
+              quizId: true,
+              percentage: true,
+              passed: true,
+              studentId: true,
+              score: true,
+              totalMarks: true,
+              finishedAt: true,
+              answers: {
+                select: {
+                  isCorrect: true,
+                  question: { select: { id: true, difficulty: true } },
+                },
+              },
+            },
           },
         },
       })
@@ -84,13 +110,19 @@ export async function GET(req: NextRequest) {
 
   const quizzesPayload = quizzes.map((q) => {
     const totalMarks = q.questions.reduce((s, x) => s + (x.marks || 0), 0);
-    const avg =
-      q.attempts.length > 0
-        ? Math.round(
-            q.attempts.reduce((s, a) => s + a.percentage, 0) /
-              q.attempts.length
-          )
-        : 0;
+    // Phase 6: deterministic analytics over FINISHED attempts only (see
+    // src/lib/quiz-analytics.ts for the documented aggregation rules).
+    const summary = summarizeFinishedAttempts(q.attempts);
+    const answerData = q.attempts.flatMap((a) =>
+      (a.answers || []).map((ans) => ({
+        questionId: ans.question.id,
+        isCorrect: ans.isCorrect,
+        difficulty: ans.question.difficulty,
+      }))
+    );
+    const difficulty = difficultyBreakdownList(answerData);
+    const questionsAnalytics = questionPerformance(answerData);
+    const weakQuestions = weakestQuestions(questionsAnalytics, 1, 5);
     return {
       id: q.id,
       title: q.titleAr || q.title,
@@ -119,9 +151,24 @@ export async function GET(req: NextRequest) {
         : null,
       questionCount: q.questions.length,
       totalMarks,
-      attemptsCount: q.attempts.length,
-      avgScore: avg,
-      passedCount: q.attempts.filter((a) => a.passed).length,
+      attemptsCount: summary.attemptCount,
+      // Kept under the pre-existing name for UI compatibility: it is the
+      // rounded mean percentage over FINISHED attempts (previously it averaged
+      // every attempt, open ones included, which deflated the number).
+      avgScore: summary.avgPercentage,
+      passedCount: summary.passCount,
+      passRate: summary.passRate,
+      difficulty: difficulty.map((d) => ({
+        difficulty: d.difficulty,
+        attempts: d.attempts,
+        correctPercent: d.correctPercent,
+      })),
+      weakQuestions: weakQuestions.map((w) => ({
+        questionId: w.questionId,
+        difficulty: w.difficulty,
+        attempts: w.attempts,
+        correctPercent: w.correctPercent,
+      })),
     };
   });
 
