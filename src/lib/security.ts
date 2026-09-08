@@ -5,6 +5,7 @@
 
 import { createHash, randomBytes, timingSafeEqual } from "crypto";
 import { db } from "@/lib/db";
+import { getSecurityHashSecret } from "@/lib/env";
 
 // ---------------------------------------------------------------------------
 // Hashing / comparison
@@ -38,7 +39,9 @@ export function generateToken(bytes = 32): string {
  */
 export function hashIp(ip: string | null | undefined): string | null {
   if (!ip) return null;
-  const secret = process.env.SECURITY_HASH_SECRET || "codemind-dev-hash-secret";
+  // Production REQUIRES SECURITY_HASH_SECRET (see src/lib/env.ts) — there is
+  // no hardcoded production fallback.
+  const secret = getSecurityHashSecret();
   return sha256(`${secret}:${ip}`).slice(0, 32);
 }
 
@@ -78,7 +81,7 @@ export function deviceHashFromHeaders(headers: Headers): string {
     /Linux/.test(ua) ? "linux" : "other";
   const mobile = headers.get("sec-ch-ua-mobile") || "";
   const platform = headers.get("sec-ch-ua-platform") || "";
-  const secret = process.env.SECURITY_HASH_SECRET || "codemind-dev-hash-secret";
+  const secret = getSecurityHashSecret();
   return sha256(`${secret}|${browser}|${os}|${mobile}|${platform}`).slice(0, 40);
 }
 
