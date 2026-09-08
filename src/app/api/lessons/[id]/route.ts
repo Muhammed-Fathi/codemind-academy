@@ -9,6 +9,7 @@ import {
 } from "@/lib/session-progress";
 import { VIDEO_COMPLETION_THRESHOLD } from "@/lib/progress";
 import { safeParseOptions } from "@/lib/session-quiz";
+import { isParentAuthorizedForCourse } from "@/lib/parent-access";
 
 // GET /api/lessons/[id]
 // Returns lesson + quizzes + homework + student progress.
@@ -57,6 +58,16 @@ export async function GET(
   const chainPart = lesson.unit?.part ?? lesson.topic?.unit.part ?? null;
   const chainUnit = lesson.unit ?? lesson.topic?.unit ?? null;
   const chainCourse = lesson.unit?.part.course ?? lesson.topic?.unit.part.course ?? null;
+
+  // Phase 7: a parent may open ONLY lessons of courses in which a linked
+  // child is enrolled. Lesson ids are unguessable, so an out-of-scope lesson
+  // looks exactly like a nonexistent one (404) — the response never confirms
+  // that the id is real. (Whether an in-scope parent sees quiz answers stays
+  // governed by the documented Phase 1 `revealQuizAnswers` rule below.)
+  if (user.role === "PARENT") {
+    const allowed = await isParentAuthorizedForCourse(user.id, chainCourse?.id);
+    if (!allowed) return err("Lesson not found", 404);
+  }
 
   // Find prev / next lessons in the same course, in the SAME deterministic
   // order the progression engine and the course tree use

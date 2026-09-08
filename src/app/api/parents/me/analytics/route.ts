@@ -23,7 +23,11 @@ export async function GET(req: NextRequest) {
               attendances: {
                 include: { session: { select: { startAt: true, titleAr: true } } },
               },
+              // Finished only (Phase 6 rule), newest first — the trend below
+              // takes the last 10 and re-orders them chronologically.
               quizAttempts: {
+                where: { finishedAt: { not: null } },
+                orderBy: { finishedAt: "desc" },
                 include: { quiz: { select: { titleAr: true, title: true } } },
               },
               homeworkSubmits: {
@@ -40,12 +44,52 @@ export async function GET(req: NextRequest) {
   });
   if (!parent) return err(tApi("api.099"), 404);
 
+  // Course lesson totals, one batched query for every linked child's course
+  // (same universe as the parent dashboard: published lessons, legacy chain).
+  const analyticsCourseIds = [
+    ...new Set(
+      parent.children
+        .map((l) => l.student.group?.courseId)
+        .filter((id): id is string => !!id)
+    ),
+  ];
+  const analyticsLessonRows =
+    analyticsCourseIds.length > 0
+      ? await db.lesson.findMany({
+          where: {
+            isPublished: true,
+            topic: {
+              unit: { part: { courseId: { in: analyticsCourseIds } } },
+            },
+          },
+          select: {
+            id: true,
+            topic: {
+              select: { unit: { select: { part: { select: { courseId: true } } } } },
+            },
+          },
+        })
+      : [];
+  const analyticsLessonTotalByCourse = new Map<string, number>();
+  for (const row of analyticsLessonRows) {
+    const cid = row.topic?.unit.part.courseId;
+    if (!cid) continue;
+    analyticsLessonTotalByCourse.set(
+      cid,
+      (analyticsLessonTotalByCourse.get(cid) || 0) + 1
+    );
+  }
+
+  const attended = (status: string) =>
+    status === "PRESENT" || status === "LATE";
+
   const childrenAnalytics = parent.children.map((link) => {
     const s = link.student;
 
-    // Quiz performance trend (last 10 attempts)
+    // Quiz performance trend (last 10 FINISHED attempts, chronological).
     const quizTrend = s.quizAttempts
-      .slice(-10)
+      .slice(0, 10)
+      .reverse()
       .map((qa) => ({
         title: qa.quiz?.titleAr || qa.quiz?.title || "Quiz",
         percentage: qa.percentage,
@@ -64,7 +108,7 @@ export async function GET(req: NextRequest) {
         const attDate = a.session?.startAt || a.createdAt;
         return attDate >= monthStart && attDate <= monthEnd;
       });
-      const present = monthAttendances.filter((a) => a.status === "PRESENT").length;
+      const present = monthAttendances.filter((a) => attended(a.status)).length;
       const total = monthAttendances.length;
       attendanceByMonth.push({
         month: d.toLocaleDateString("ar-EG", { month: "short" }),
@@ -91,9 +135,13 @@ export async function GET(req: NextRequest) {
     const strongTopics = topicStats.filter((t) => t.avgPct >= 60).slice(0, 3);
     const weakTopics = topicStats.filter((t) => t.avgPct < 60).slice(0, 3);
 
-    // Lesson completion timeline
+    // Lesson completion against the child's COURSE (a student who opened one
+    // lesson and finished it is not "100% complete" — the denominator is the
+    // course, exactly as on the parent dashboard).
     const completedLessons = s.lessonProgress.filter((lp) => lp.isCompleted).length;
-    const totalLessons = s.lessonProgress.length;
+    const totalLessons = s.group?.courseId
+      ? analyticsLessonTotalByCourse.get(s.group.courseId) || 0
+      : 0;
     const completionPct = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
 
     // Homework stats
@@ -124,7 +172,7 @@ export async function GET(req: NextRequest) {
         ? Math.round(s.quizAttempts.reduce((sum, q) => sum + q.percentage, 0) / s.quizAttempts.length)
         : 0,
       attendancePct: s.attendances.length > 0
-        ? Math.round((s.attendances.filter((a) => a.status === "PRESENT").length / s.attendances.length) * 100)
+        ? Math.round((s.attendances.filter((a) => attended(a.status)).length / s.attendances.length) * 100)
         : 0,
     };
   });

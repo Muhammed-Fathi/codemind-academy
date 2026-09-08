@@ -4,9 +4,21 @@ import { db } from "@/lib/db";
 import { ok, err, requireUser, getParentProfile } from "@/lib/api";
 import type { ParentSubscriptionPayload } from "@/lib/parent-subscription";
 import { getVideoProgressForStudents } from "@/lib/progress";
+import { getCourseSessionProgress } from "@/lib/session-progress";
 
 // GET /api/parents/me/dashboard
 // Returns aggregated analytics for the current parent's children.
+//
+// Phase 7 scope rules (this route accepts NO student/course/quiz ids — every
+// row below is derived from the server-side Parent → Student links, so a
+// parent can only ever receive data of explicitly linked children):
+//   * Session Quiz numbers aggregate FINISHED QuizAttempts only (the Phase 6
+//     rule: an open attempt is ungraded and must never deflate an average).
+//   * Mock Exam numbers come from finished ExamAttempts and are kept in a
+//     separate `mockExams` block — never mixed into the session-quiz stats.
+//   * Session unlock state (`sessionProgress`) is read from the Phase 4
+//     engine (`getCourseSessionProgress`), never computed here.
+//   * Read-only: this handler performs no create/update/upsert/delete.
 export async function GET(_req: NextRequest) {
   const tApi = await getServerT();
   const __loc = await serverLocale();
@@ -31,8 +43,14 @@ export async function GET(_req: NextRequest) {
 
       // --- Course progress: avg of LessonProgress.progress across all lessons in the
       // course (or 0 if no progress). Also count completed lessons.
+      // Unpublished lessons are not sessions (the Phase 4 engine excludes
+      // them), so they are not counted here either. The legacy topic chain
+      // matches the student dashboard's own universe definition.
       const lessonsInCourse = await db.lesson.count({
-        where: { topic: { unit: { part: { courseId: student.group?.courseId || "" } } } },
+        where: {
+          isPublished: true,
+          topic: { unit: { part: { courseId: student.group?.courseId || "" } } },
+        },
       });
 
       const lessonProgressRows = await db.lessonProgress.findMany({
@@ -86,11 +104,14 @@ export async function GET(_req: NextRequest) {
         total: b.total,
       }));
 
-      // --- Quiz average + recent attempts
+      // --- Quiz average + recent attempts (FINISHED attempts only — the Phase 6
+      // aggregation rule. An open attempt is ungraded: its stored percentage
+      // is still the pre-submit default and including it would deflate the
+      // average and fabricate a failure. Counts/averages run over the whole
+      // finished set; only the displayed lists are sliced.)
       const quizAttempts = await db.quizAttempt.findMany({
-        where: { studentId: student.id },
-        orderBy: { startedAt: "desc" },
-        take: 20,
+        where: { studentId: student.id, finishedAt: { not: null } },
+        orderBy: { finishedAt: "desc" },
         include: { quiz: { select: { id: true, title: true, titleAr: true } } },
       });
       const quizAveragePct =
@@ -108,8 +129,90 @@ export async function GET(_req: NextRequest) {
         totalMarks: a.totalMarks,
         percentage: a.percentage,
         passed: a.passed,
+        // finishedAt is non-null here by the query filter; the fallback only
+        // satisfies the type, it is never reached.
         finishedAt: a.finishedAt || a.startedAt,
       }));
+
+      // --- Mock Exam results (finished ExamAttempts, kept STRICTLY separate
+      // from the session-quiz stats above — a mock exam must never move the
+      // quiz average, and a session quiz must never move the mock average).
+      const mockAttempts = await db.examAttempt.findMany({
+        where: { studentId: student.id, finishedAt: { not: null } },
+        orderBy: { finishedAt: "desc" },
+        include: {
+          mockExam: { select: { id: true, title: true, titleAr: true } },
+        },
+      });
+      const mockAveragePct =
+        mockAttempts.length > 0
+          ? Math.round(
+              mockAttempts.reduce((s, a) => s + a.percentage, 0) /
+                mockAttempts.length
+            )
+          : 0;
+      const mockBestPct =
+        mockAttempts.length > 0
+          ? Math.max(...mockAttempts.map((a) => a.percentage))
+          : null;
+      const mockPassedCount = mockAttempts.filter((a) => a.passed).length;
+      const recentMockAttempts = mockAttempts.slice(0, 6).map((a) => ({
+        id: a.id,
+        examType: a.examType,
+        mockExamTitle:
+          sp(a.mockExam?.titleAr, a.mockExam?.title) ||
+          (a.mockExamId ? "Mock Exam" : "Practice Exam"),
+        questionCount: a.questionCount,
+        score: a.score,
+        totalMarks: a.totalMarks,
+        percentage: a.percentage,
+        passed: a.passed,
+        finishedAt: a.finishedAt || a.startedAt,
+      }));
+
+      // --- Session unlock state, read from the Phase 4 engine (the single
+      // source of truth). The parent dashboard never computes its own
+      // completed/current/locked logic: these numbers are exactly what the
+      // student surface enforces for this child and course.
+      const sessionCourseId = student.group?.courseId || null;
+      let sessionProgressPayload: {
+        total: number;
+        completed: number;
+        unlocked: number;
+        locked: number;
+        currentLessonId: string | null;
+        currentLessonTitle: string | null;
+      } | null = null;
+      if (sessionCourseId) {
+        const engine = await getCourseSessionProgress(
+          student.id,
+          sessionCourseId
+        );
+        const completedSessions = engine.sessions.filter(
+          (s) => s.completed
+        ).length;
+        const unlockedSessions = engine.sessions.filter(
+          (s) => s.unlocked
+        ).length;
+        let currentLessonTitle: string | null = null;
+        if (engine.currentLessonId) {
+          const current = await db.lesson.findUnique({
+            where: { id: engine.currentLessonId },
+            select: { title: true, titleAr: true },
+          });
+          currentLessonTitle = current
+            ? sp(current.titleAr, current.title)
+            : null;
+        }
+        sessionProgressPayload = {
+          total: engine.sessions.length,
+          completed: completedSessions,
+          unlocked: unlockedSessions,
+          locked: engine.sessions.length - unlockedSessions,
+          currentLessonId: engine.currentLessonId,
+          currentLessonTitle,
+        };
+      }
 
       // Performance trend (oldest -> newest of last 6 attempts)
       const performanceTrend = [...recentQuizAttempts].reverse().map((a, i) => ({
@@ -122,7 +225,7 @@ export async function GET(_req: NextRequest) {
       // --- Homework completion
       const allHomeworks = await db.homework.findMany({
         where: { lesson: { topic: { unit: { part: { courseId: student.group?.courseId || "" } } } } },
-        select: { id: true, title: true, titleAr: true, deadline: true },
+        select: { id: true, title: true, titleAr: true, deadline: true, maxMarks: true },
       });
       const submissions = await db.homeworkSubmission.findMany({
         where: { studentId: student.id },
@@ -142,7 +245,7 @@ export async function GET(_req: NextRequest) {
           title: hw.titleAr || hw.title,
           status: sub?.status || "PENDING",
           grade: sub?.grade ?? null,
-          maxGrade: 10,
+          maxGrade: hw.maxMarks ?? 10,
           deadline: hw.deadline,
           submittedAt: sub?.submittedAt || null,
           feedback: sub?.feedback || null,
@@ -212,9 +315,10 @@ export async function GET(_req: NextRequest) {
         };
       }
 
-      // --- Strong / weak topics (based on quiz attempts grouped by topic)
+      // --- Strong / weak topics (based on FINISHED quiz attempts grouped by
+      // topic — an ungraded open attempt must not move a topic average).
       const attemptsWithTopic = await db.quizAttempt.findMany({
-        where: { studentId: student.id },
+        where: { studentId: student.id, finishedAt: { not: null } },
         include: {
           quiz: {
             select: {
@@ -396,6 +500,15 @@ export async function GET(_req: NextRequest) {
           failed: quizAttempts.length - passedCount,
           recent: recentQuizAttempts,
         },
+        mockExams: {
+          attempts: mockAttempts.length,
+          average: mockAveragePct,
+          best: mockBestPct,
+          passed: mockPassedCount,
+          failed: mockAttempts.length - mockPassedCount,
+          recent: recentMockAttempts,
+        },
+        sessionProgress: sessionProgressPayload,
         performanceTrend,
         homework: {
           total: allHomeworks.length,

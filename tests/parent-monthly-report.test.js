@@ -109,6 +109,7 @@ function makeMockDb() {
     async findMany() { return []; },
     async count() { return 0; },
     async findFirst() { return null; },
+    async findUnique() { return null; },
   };
 
   const db = {
@@ -216,6 +217,8 @@ function makeMockDb() {
     // Everything else the dashboard aggregates over: empty for a new student.
     lesson: empty, lessonProgress: empty, attendance: empty, quizAttempt: empty,
     homework: empty, homeworkSubmission: empty, teacherNote: empty, liveSession: empty,
+    // Phase 7: the dashboard also aggregates finished mock exams (none here).
+    examAttempt: empty,
 
     // Security/session tables introduced by the 2026 upgrade. These are
     // exercised implicitly by every login in this test (single-device

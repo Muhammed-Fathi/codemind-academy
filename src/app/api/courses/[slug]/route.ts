@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { ok, err, requireUser, getStudentProfile } from "@/lib/api";
 import { getEnrollment } from "@/lib/enrollment";
 import { getCourseSessionProgress } from "@/lib/session-progress";
+import { isParentAuthorizedForCourse } from "@/lib/parent-access";
 import { getServerT } from "@/lib/i18n-server";
 
 // GET /api/courses/[slug]
@@ -92,6 +93,23 @@ export async function GET(
       );
     }
     studentId = s.id;
+  }
+
+  // Phase 7: a parent may preview ONLY the courses of their linked children.
+  // Without this, any authenticated parent could fetch the full content tree
+  // (lesson ids, video/pdf URLs, quiz/homework identities) of every course by
+  // guessing its slug. The slug catalogue is public, so — exactly like the
+  // student denial above — this is a 403, not a 404. Teachers/admins keep
+  // their full preview.
+  if (user.role === "PARENT") {
+    const tApi = await getServerT();
+    const allowed = await isParentAuthorizedForCourse(user.id, course.id);
+    if (!allowed) {
+      return NextResponse.json(
+        { error: tApi("api.208"), code: "NOT_ENROLLED" },
+        { status: 403 }
+      );
+    }
   }
 
   // Build the lesson list (ordered, flat) — the single place the tree order is
