@@ -1635,7 +1635,16 @@ type CourseRow = {
   color: string;
   partsCount: number;
   lessonsCount: number;
+  activeLessonsCount?: number;
   groupsCount: number;
+};
+
+type TreeLesson = {
+  id: string;
+  titleAr: string;
+  title?: string;
+  curriculumStatus?: string;
+  officialCode?: string | null;
 };
 
 type CourseTree = {
@@ -1650,11 +1659,12 @@ type CourseTree = {
       id: string;
       titleAr: string;
       title?: string;
+      lessons?: TreeLesson[];
       topics: {
         id: string;
         titleAr: string;
         title?: string;
-        lessons: { id: string; titleAr: string; title?: string }[];
+        lessons: TreeLesson[];
       }[];
     }[];
   }[];
@@ -1665,7 +1675,7 @@ function CoursesView() {
   const { data, loading, error, reload } = useApi<{ courses: CourseRow[] }>("/api/admin/courses");
   const [tree, setTree] = React.useState<CourseTree | null>(null);
   const [treeLoading, setTreeLoading] = React.useState(false);
-  const [seeding, setSeeding] = React.useState(false);
+  const [reconciling, setReconciling] = React.useState(false);
   const [openAdd, setOpenAdd] = React.useState(false);
 
   const openTree = async (id: string) => {
@@ -1681,23 +1691,50 @@ function CoursesView() {
     }
   };
 
-  const seedNow = async () => {
-    setSeeding(true);
+  // Phase 11: the legacy `{ action: "seed" }` footgun is retired (410) —
+  // this button idempotently reconciles the DB with the official curriculum
+  // (knowledge-model.json), archiving legacy rows instead of deleting them.
+  const reconcileNow = async () => {
+    setReconciling(true);
     try {
       const res = await fetch("/api/admin/courses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "seed" }),
+        body: JSON.stringify({ action: "reconcile-official" }),
       });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || tr("admin.121"));
-      toast.success(j.created ? tr("admin.122") : tr("admin.123"));
+      const report = j.report || {};
+      toast.success(
+        tr("admin.320", {
+          p1: report.officialLessonCodes?.length ?? 0,
+          p2: report.archivedLessonIds?.length ?? 0,
+        })
+      );
       reload();
     } catch (e: any) {
       toast.error(e.message || tr("admin.001"));
     } finally {
-      setSeeding(false);
+      setReconciling(false);
     }
+  };
+
+  // One lesson badge for both chains: archived lessons are dimmed and tagged
+  // (admins see the full catalogue), official lessons carry their code.
+  const lessonBadge = (l: TreeLesson) => {
+    const archived = l.curriculumStatus === "ARCHIVED";
+    return (
+      <Badge
+        key={l.id}
+        variant="outline"
+        className={archived ? "text-[10px] opacity-60" : "text-[10px]"}
+        title={archived ? tr("admin.321") : undefined}
+      >
+        {l.officialCode ? `${l.officialCode} · ` : ""}
+        {pickAuto(l.titleAr, l.title)}
+        {archived ? ` (${tr("admin.321")})` : ""}
+      </Badge>
+    );
   };
 
   return (
@@ -1708,9 +1745,9 @@ function CoursesView() {
           <p className="text-xs text-muted-foreground">{tr("admin.126")}</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={seedNow} disabled={seeding}>
-            {seeding ? <Loader2 className="w-4 h-4 ms-2 animate-spin" /> : <Download className="w-4 h-4 ms-2" />}
-            {seeding ? tr("admin.127") : tr("admin.128")}
+          <Button variant="outline" size="sm" onClick={reconcileNow} disabled={reconciling}>
+            {reconciling ? <Loader2 className="w-4 h-4 ms-2 animate-spin" /> : <Download className="w-4 h-4 ms-2" />}
+            {reconciling ? tr("admin.319") : tr("admin.318")}
           </Button>
           <Button size="sm" onClick={() => setOpenAdd(true)}>
             <Plus className="w-4 h-4 ms-2" />
@@ -1727,9 +1764,9 @@ function CoursesView() {
       ) : !data || data.courses.length === 0 ? (
         <Card className="p-6 text-center">
           <EmptyBlock message={tr("admin.129")} />
-          <Button className="mt-4" onClick={seedNow} disabled={seeding}>
-            {seeding ? <Loader2 className="w-4 h-4 ms-2 animate-spin" /> : <Download className="w-4 h-4 ms-2" />}
-            {seeding ? tr("admin.127") : tr("admin.131")}
+          <Button className="mt-4" onClick={reconcileNow} disabled={reconciling}>
+            {reconciling ? <Loader2 className="w-4 h-4 ms-2 animate-spin" /> : <Download className="w-4 h-4 ms-2" />}
+            {reconciling ? tr("admin.319") : tr("admin.318")}
           </Button>
         </Card>
       ) : (
@@ -1755,8 +1792,16 @@ function CoursesView() {
                   <div className="text-[10px] text-muted-foreground">Parts</div>
                 </div>
                 <div className="rounded-lg border p-2">
-                  <div className="text-lg font-bold text-primary">{c.lessonsCount}</div>
-                  <div className="text-[10px] text-muted-foreground">Lessons</div>
+                  <div className="text-lg font-bold text-primary">
+                    {c.activeLessonsCount ?? c.lessonsCount}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">
+                    Lessons
+                    {c.activeLessonsCount !== undefined &&
+                      c.activeLessonsCount !== c.lessonsCount && (
+                        <span> ({c.lessonsCount} total)</span>
+                      )}
+                  </div>
                 </div>
                 <div className="rounded-lg border p-2">
                   <div className="text-lg font-bold text-primary">{c.groupsCount}</div>
@@ -1799,15 +1844,19 @@ function CoursesView() {
                             {pickAuto(u.titleAr, u.title)}
                           </summary>
                           <div className="px-3 pb-2 space-y-1.5">
+                            {(u.lessons || []).length > 0 && (
+                              <div className="rounded-md border bg-card p-2">
+                                <div className="text-xs font-medium mb-1">{tr("admin.322")}</div>
+                                <div className="flex flex-wrap gap-1">
+                                  {(u.lessons || []).map(lessonBadge)}
+                                </div>
+                              </div>
+                            )}
                             {u.topics.map((t) => (
                               <div key={t.id} className="rounded-md border bg-card p-2">
                                 <div className="text-xs font-medium mb-1">{pickAuto(t.titleAr, t.title)}</div>
                                 <div className="flex flex-wrap gap-1">
-                                  {t.lessons.map((l) => (
-                                    <Badge key={l.id} variant="outline" className="text-[10px]">
-                                      {pickAuto(l.titleAr, l.title)}
-                                    </Badge>
-                                  ))}
+                                  {t.lessons.map(lessonBadge)}
                                   {t.lessons.length === 0 && (
                                     <span className="text-[10px] text-muted-foreground">{tr("admin.134")}</span>
                                   )}
@@ -1976,17 +2025,25 @@ function QuestionBankView() {
     fetch("/api/admin/courses?tree=1")
       .then((r) => r.json())
       .then((d) => {
+        // Both chains: canonical unit lessons AND legacy topic lessons.
+        // Archived lessons are skipped (the API would 410 them anyway) and
+        // dual-linked lessons are deduped by id.
         const all: any[] = [];
+        const seen = new Set<string>();
+        const pushLesson = (l: any, u: any) => {
+          if (!l || seen.has(l.id) || l.curriculumStatus === "ARCHIVED") return;
+          seen.add(l.id);
+          all.push({
+            id: l.id,
+            title: `${pickAuto(l.titleAr, l.title)} — ${pickAuto(u.titleAr, u.title)}`,
+          });
+        };
         for (const c of d.courses || []) {
           for (const p of c.parts || []) {
             for (const u of p.units || []) {
+              for (const l of u.lessons || []) pushLesson(l, u);
               for (const t of u.topics || []) {
-                for (const l of t.lessons || []) {
-                  all.push({
-                    id: l.id,
-                    title: `${pickAuto(l.titleAr, l.title)} — ${pickAuto(u.titleAr, u.title)}`,
-                  });
-                }
+                for (const l of t.lessons || []) pushLesson(l, u);
               }
             }
           }

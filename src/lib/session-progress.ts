@@ -33,6 +33,38 @@ import { VIDEO_COMPLETION_THRESHOLD } from "@/lib/progress";
 // identically by the ordering below and by `/api/courses/[slug]` so a session
 // is always displayed where the engine enforces it.
 
+// ---------------------------------------------------------------------------
+// Active-curriculum filters (Phase 11)
+// ---------------------------------------------------------------------------
+//
+// Archived lessons are history, not curriculum: they keep their rows (so
+// progress, attempts and submissions stay intact) but are excluded from every
+// ACTIVE-curriculum read — the progression universe, the course tree, lesson
+// navigation, dashboards, certificates and parent reports. Teacher
+// management/grading scopes deliberately do NOT exclude archived rows (a
+// pending legacy submission still needs grading); see the Phase 11 doc.
+
+/** Spread into any lesson `where` to exclude archived lessons. */
+export const EXCLUDE_ARCHIVED_LESSON = {
+  curriculumStatus: { not: "ARCHIVED" },
+} as const;
+
+/** Dual-chain course filter: canonical `unitId` chain OR legacy `topicId` chain. */
+export function lessonCourseChainOr(courseId: string) {
+  return [
+    { unit: { part: { courseId } } },
+    { topic: { unit: { part: { courseId } } } },
+  ];
+}
+
+/** Dual-chain filter for a set of courses. */
+export function lessonCoursesChainOr(courseIds: string[]) {
+  return [
+    { unit: { part: { courseId: { in: courseIds } } } },
+    { topic: { unit: { part: { courseId: { in: courseIds } } } } },
+  ];
+}
+
 /** Chain fields needed to place a lesson in its course. Shared by every query. */
 export const LESSON_CHAIN_SELECT = {
   id: true,
@@ -211,10 +243,12 @@ export async function getCourseSessionProgress(
   // canonical Unit chain OR the legacy Topic chain. `orderCourseLessons` then
   // applies the deterministic Course → Part → Unit → (Topic) → Lesson order,
   // which Prisma `orderBy` cannot express on its own because the Topic link is
-  // nullable.
+  // nullable. Archived lessons are history, not curriculum (Phase 11), so the
+  // universe excludes them: every progression surface derives from `found`.
   const found = await db.lesson.findMany({
     where: {
       isPublished: true,
+      ...EXCLUDE_ARCHIVED_LESSON,
       OR: [
         { unit: { part: { courseId } } },
         { topic: { unit: { part: { courseId } } } },

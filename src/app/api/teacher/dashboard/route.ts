@@ -7,6 +7,7 @@ import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { getVideoProgressForStudents } from "@/lib/progress";
 import { ok, err, requireUser, getTeacherProfile } from "@/lib/api";
+import { lessonCourseChainOr, lessonCoursesChainOr } from "@/lib/session-progress";
 
 export async function GET(_req: NextRequest) {
   const tApi = await getServerT();
@@ -59,9 +60,11 @@ export async function GET(_req: NextRequest) {
           : 0;
 
       // Pending homework count: homeworks in this course's lessons that
-      // have submissions still in PENDING or SUBMITTED status
+      // have submissions still in PENDING or SUBMITTED status. Both chains
+      // (official lessons are unit-linked); no archived exclusion — a pending
+      // legacy submission still needs grading.
       const courseLessons = await db.lesson.findMany({
-        where: { topic: { unit: { part: { courseId: g.courseId } } } },
+        where: { OR: lessonCourseChainOr(g.courseId) },
         select: { id: true },
       });
       const lessonIds = courseLessons.map((l) => l.id);
@@ -234,7 +237,7 @@ export async function GET(_req: NextRequest) {
   const allCourseIds = teacher.groups.map((g) => g.courseId);
   const allLessonsForTeacher = allCourseIds.length
     ? await db.lesson.findMany({
-        where: { topic: { unit: { part: { courseId: { in: allCourseIds } } } } },
+        where: { OR: lessonCoursesChainOr(allCourseIds) },
         select: { id: true },
       })
     : [];

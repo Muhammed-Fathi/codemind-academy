@@ -3,6 +3,7 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireUser, getTeacherProfile } from "@/lib/api";
+import { lessonCoursesChainOr } from "@/lib/session-progress";
 
 export async function GET(req: NextRequest) {
   const user = await requireUser();
@@ -20,8 +21,11 @@ export async function GET(req: NextRequest) {
 
   if (courseIds.length === 0) return ok({ homework: [] });
 
+  // Both curriculum chains: homework on unit-linked (official) lessons must
+  // be listed too. No archived exclusion — a pending legacy submission still
+  // needs grading, and teachers manage the full catalogue.
   const lessons = await db.lesson.findMany({
-    where: { topic: { unit: { part: { courseId: { in: courseIds } } } } },
+    where: { OR: lessonCoursesChainOr(courseIds) },
     select: { id: true },
   });
   const lessonIds = lessons.map((l) => l.id);
@@ -36,6 +40,15 @@ export async function GET(req: NextRequest) {
               id: true,
               title: true,
               titleAr: true,
+              unit: {
+                select: {
+                  part: {
+                    select: {
+                      course: { select: { id: true, name: true, nameAr: true } },
+                    },
+                  },
+                },
+              },
               topic: {
                 select: {
                   unit: {
@@ -74,6 +87,9 @@ export async function GET(req: NextRequest) {
     ).length;
     const graded = hw.submissions.filter((s) => s.status === "GRADED").length;
     const pending = hw.submissions.filter((s) => s.status === "PENDING").length;
+    // Canonical chain first; legacy topic chain as fallback.
+    const hwCourse =
+      hw.lesson?.unit?.part.course ?? hw.lesson?.topic?.unit.part.course ?? null;
     return {
       id: hw.id,
       title: hw.titleAr || hw.title,
@@ -87,12 +103,10 @@ export async function GET(req: NextRequest) {
         ? {
             id: hw.lesson.id,
             title: hw.lesson.titleAr || hw.lesson.title,
-            course: hw.lesson.topic?.unit.part.course
+            course: hwCourse
               ? {
-                  id: hw.lesson.topic.unit.part.course.id,
-                  name:
-                    hw.lesson.topic.unit.part.course.nameAr ||
-                    hw.lesson.topic.unit.part.course.name,
+                  id: hwCourse.id,
+                  name: hwCourse.nameAr || hwCourse.name,
                 }
               : null,
           }

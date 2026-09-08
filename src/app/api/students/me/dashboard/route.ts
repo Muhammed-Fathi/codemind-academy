@@ -2,7 +2,10 @@ import { getServerT, serverPick, serverLocale } from "@/lib/i18n-server";
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireUser, getStudentProfile } from "@/lib/api";
-import { getUnlockedLessonIds } from "@/lib/session-progress";
+import {
+  EXCLUDE_ARCHIVED_LESSON,
+  getUnlockedLessonIds,
+} from "@/lib/session-progress";
 
 // GET /api/students/me/dashboard
 // Aggregated student dashboard data.
@@ -18,15 +21,30 @@ export async function GET(_req: NextRequest) {
   if (!student) return err("Student profile not found", 404);
 
   // ----- Course progress + last viewed lesson -----
+  // Course progress runs over the ACTIVE curriculum universe (both chains,
+  // archived history excluded): official lessons are unit-linked, legacy
+  // history rows stay readable but no longer count toward the percentage.
+  const groupMatch = { course: { groups: { some: { id: student.groupId || "_" } } } };
   const lessons = await db.lesson.findMany({
     where: {
-      topic: { unit: { part: { course: { groups: { some: { id: student.groupId || "_" } } } } } },
+      ...EXCLUDE_ARCHIVED_LESSON,
+      OR: [
+        { unit: { part: groupMatch } },
+        { topic: { unit: { part: groupMatch } } },
+      ],
     },
     include: {
+      unit: { include: { part: { include: { course: true } } } },
       topic: { include: { unit: { include: { part: { include: { course: true } } } } } },
       progress: { where: { studentId: student.id } },
     },
-    orderBy: [{ topic: { unit: { part: { order: "asc" } } } }, { order: "asc" }],
+    orderBy: [
+      { topic: { unit: { part: { order: "asc" } } } },
+      { unit: { part: { order: "asc" } } },
+      { unit: { order: "asc" } },
+      { order: "asc" },
+      { id: "asc" },
+    ],
   });
 
   const totalLessons = lessons.length;
@@ -113,12 +131,20 @@ export async function GET(_req: NextRequest) {
   // ----- Pending homework count -----
   // Pending = homework that has no submission yet OR submission status is PENDING
   // and the deadline is in the future
+  // Only assignments from the ACTIVE curriculum universe (both chains,
+  // archived history excluded): archived lessons' homework is history, not a
+  // pending to-do, and official unit-linked lessons must be counted.
+  const groupCourseMatch = {
+    course: { groups: { some: { id: student.groupId || "_" } } },
+  };
   const homeworks = await db.homework.findMany({
     where: {
       lesson: {
-        topic: {
-          unit: { part: { course: { groups: { some: { id: student.groupId || "_" } } } } },
-        },
+        ...EXCLUDE_ARCHIVED_LESSON,
+        OR: [
+          { unit: { part: groupCourseMatch } },
+          { topic: { unit: { part: groupCourseMatch } } },
+        ],
       },
     },
     include: {
@@ -219,6 +245,13 @@ export async function GET(_req: NextRequest) {
     }
   }
 
+  // Canonical chain first (official lessons are unit-linked); legacy
+  // topic chain as fallback. Either may be null for chain-less rows.
+  const continuePart =
+    continueLesson?.unit?.part ?? continueLesson?.topic?.unit.part ?? null;
+  const continueUnit =
+    continueLesson?.unit ?? continueLesson?.topic?.unit ?? null;
+
   return ok({
     student: {
       id: student.id,
@@ -261,12 +294,8 @@ export async function GET(_req: NextRequest) {
       ? {
           id: continueLesson.id,
           title: sp(continueLesson.titleAr, continueLesson.title),
-          part: continueLesson.topic
-            ? sp(continueLesson.topic.unit.part.titleAr, continueLesson.topic.unit.part.title)
-            : null,
-          unit: continueLesson.topic
-            ? sp(continueLesson.topic.unit.titleAr, continueLesson.topic.unit.title)
-            : null,
+          part: continuePart ? sp(continuePart.titleAr, continuePart.title) : null,
+          unit: continueUnit ? sp(continueUnit.titleAr, continueUnit.title) : null,
           topic: continueLesson.topic
             ? sp(continueLesson.topic.titleAr, continueLesson.topic.title)
             : null,
@@ -275,7 +304,7 @@ export async function GET(_req: NextRequest) {
           // continueLesson is always an unlocked session now; the guard is
           // belt-and-braces so a future refactor cannot re-leak a media URL.
           videoUrl: isOpen(continueLesson.id) ? continueLesson.videoUrl : null,
-          courseSlug: continueLesson.topic?.unit.part.course.slug ?? null,
+          courseSlug: continuePart?.course?.slug ?? null,
         }
       : null,
     nextSession: nextSession

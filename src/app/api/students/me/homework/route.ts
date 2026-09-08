@@ -1,7 +1,11 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireUser, getStudentProfile, denyProgression } from "@/lib/api";
-import { canAccessHomework, getUnlockedLessonIds } from "@/lib/session-progress";
+import {
+  canAccessHomework,
+  EXCLUDE_ARCHIVED_LESSON,
+  getUnlockedLessonIds,
+} from "@/lib/session-progress";
 import { getServerT } from "@/lib/i18n-server";
 
 /** Longest accepted free-text answer. Generous, but not an upload channel. */
@@ -42,14 +46,13 @@ export async function GET(_req: NextRequest) {
       ? await getUnlockedLessonIds(s.id, courseId)
       : new Set<string>();
 
+  // The unlocked-lesson set (from the exclusion-aware engine) is the scope;
+  // the legacy topic-chain guard below it used to drop every unit-linked
+  // official lesson, so it is now just an archived-history backstop.
   const homeworks = await db.homework.findMany({
     where: {
       lessonId: { in: [...unlocked] },
-      lesson: {
-        topic: {
-          unit: { part: { course: { groups: { some: { id: s.groupId || "_" } } } } },
-        },
-      },
+      lesson: { ...EXCLUDE_ARCHIVED_LESSON },
     },
     include: {
       lesson: { select: { id: true, titleAr: true, title: true } },

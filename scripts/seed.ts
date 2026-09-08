@@ -2,7 +2,7 @@
 // Run with: bun run scripts/seed.ts
 import { db } from "../src/lib/db";
 import { hashPassword } from "../src/lib/auth";
-import { CURRICULUM } from "../src/lib/curriculum";
+import { reconcileOfficialCurriculum } from "../src/lib/official-curriculum";
 
 async function main() {
   console.log("🌱 Seeding CodeMind Academy...");
@@ -138,129 +138,95 @@ async function main() {
     },
   });
 
-  // 4. Curriculum parts/units/topics/lessons
-  for (let pIdx = 0; pIdx < CURRICULUM.length; pIdx++) {
-    const partData = CURRICULUM[pIdx];
-    const part = await db.part.create({
-      data: {
-        courseId: course.id,
-        title: partData.title,
-        titleAr: partData.titleAr,
-        description: partData.description,
-        order: pIdx + 1,
-      },
+  // 4. Official curriculum (Phase 11: reconciled from
+  // docs/curriculum/knowledge-model.json — the legacy synthetic CURRICULUM
+  // seed is retired and must never run again). Idempotent: re-running never
+  // duplicates content; legacy rows are archived, never deleted.
+  const reconcileReport = await reconcileOfficialCurriculum(db);
+  console.log(
+    `  ✓ Curriculum reconciled: ${reconcileReport.officialLessonCodes.length} official lessons ` +
+      `(${reconcileReport.archivedLessonIds.length} archived)`
+  );
+
+  // Sample quiz + homework on the FIRST official lesson (code 1-1), so the
+  // demo student has something to open. Guarded: re-running the seed must
+  // not stack duplicate quizzes onto the lesson.
+  const firstLesson = await db.lesson.findUnique({
+    where: { officialCode: "1-1" },
+    select: { id: true },
+  });
+  if (firstLesson) {
+    const existingQuiz = await db.quiz.findFirst({
+      where: { lessonId: firstLesson.id },
+      select: { id: true },
     });
-    for (let uIdx = 0; uIdx < partData.units.length; uIdx++) {
-      const unitData = partData.units[uIdx];
-      const unit = await db.unit.create({
+    if (!existingQuiz) {
+      const quiz = await db.quiz.create({
         data: {
-          partId: part.id,
-          title: unitData.title,
-          titleAr: unitData.titleAr,
-          icon: unitData.icon,
-          order: uIdx + 1,
+          lessonId: firstLesson.id,
+          title: "Lesson 1 Quiz",
+          titleAr: "اختبار الـLesson الأولى",
+          description: "اختبار سريع على أساسيات الـIT.",
+          passMark: 60,
+          order: 1,
         },
       });
-      for (let tIdx = 0; tIdx < unitData.topics.length; tIdx++) {
-        const topicData = unitData.topics[tIdx];
-        const topic = await db.topic.create({
-          data: {
-            unitId: unit.id,
-            title: topicData.title,
-            titleAr: topicData.titleAr,
-            order: tIdx + 1,
-          },
-        });
-        for (let lIdx = 0; lIdx < topicData.lessons.length; lIdx++) {
-          const lessonData = topicData.lessons[lIdx];
-          const lesson = await db.lesson.create({
-            data: {
-              topicId: topic.id,
-              title: lessonData.title,
-              titleAr: lessonData.titleAr,
-              description: lessonData.description || "",
-              duration: lessonData.duration,
-              order: lIdx + 1,
-              isLocked: lIdx > 0, // first lesson open
-              videoUrl: lIdx === 0 ? "https://www.youtube.com/embed/dQw4w9WgXcQ" : null,
-              pdfUrl: lIdx === 0 ? "#" : null,
-              summary: lIdx === 0
-                ? "في الـLesson دي هنتعرف على الأساسيات ونفهم المفاهيم الرئيسية بطريقة بسيطة وعملية."
-                : null,
-            },
-          });
+      await db.question.create({
+        data: {
+          quizId: quiz.id,
+          type: "MCQ",
+          prompt: "What does IT stand for?",
+          promptAr: "إيه معنى IT؟",
+          options: JSON.stringify([
+            "Information Technology",
+            "Internet Tech",
+            "Internal Tool",
+            "Input Type",
+          ]),
+          answer: "0",
+          explanation: "IT = Information Technology.",
+          difficulty: "EASY",
+          marks: 1,
+        },
+      });
+      await db.question.create({
+        data: {
+          quizId: quiz.id,
+          type: "TRUE_FALSE",
+          prompt: "Digital citizenship refers to responsible use of technology.",
+          promptAr: "المواطنة الرقمية تعني الاستخدام المسؤول للتكنولوجيا.",
+          options: JSON.stringify(["True", "False"]),
+          answer: "0",
+          explanation: "True — being a good digital citizen means using tech responsibly.",
+          difficulty: "EASY",
+          marks: 1,
+        },
+      });
+      await db.question.create({
+        data: {
+          quizId: quiz.id,
+          type: "MCQ",
+          prompt: "Which is a cybersecurity threat?",
+          promptAr: "إيه من دول يعتبر تهديد للأمن السيبراني؟",
+          options: JSON.stringify(["Phishing", "Backup", "Firewall", "Encryption"]),
+          answer: "0",
+          explanation: "Phishing is a type of social engineering attack.",
+          difficulty: "MEDIUM",
+          marks: 1,
+        },
+      });
 
-          // Add sample quiz to first lesson of first topic
-          if (pIdx === 0 && uIdx === 0 && tIdx === 0 && lIdx === 0) {
-            const quiz = await db.quiz.create({
-              data: {
-                lessonId: lesson.id,
-                title: "Lesson 1 Quiz",
-                titleAr: "اختبار الـLesson الأولى",
-                description: "اختبار سريع على أساسيات الـIT.",
-                passMark: 60,
-                order: 1,
-              },
-            });
-            await db.question.create({
-              data: {
-                quizId: quiz.id,
-                type: "MCQ",
-                prompt: "What does IT stand for?",
-                promptAr: "إيه معنى IT؟",
-                options: JSON.stringify([
-                  "Information Technology",
-                  "Internet Tech",
-                  "Internal Tool",
-                  "Input Type",
-                ]),
-                answer: "0",
-                explanation: "IT = Information Technology.",
-                difficulty: "EASY",
-                marks: 1,
-              },
-            });
-            await db.question.create({
-              data: {
-                quizId: quiz.id,
-                type: "TRUE_FALSE",
-                prompt: "Digital citizenship refers to responsible use of technology.",
-                promptAr: "المواطنة الرقمية تعني الاستخدام المسؤول للتكنولوجيا.",
-                options: JSON.stringify(["True", "False"]),
-                answer: "0",
-                explanation: "True — being a good digital citizen means using tech responsibly.",
-                difficulty: "EASY",
-                marks: 1,
-              },
-            });
-            await db.question.create({
-              data: {
-                quizId: quiz.id,
-                type: "MCQ",
-                prompt: "Which is a cybersecurity threat?",
-                promptAr: "إيه من دول يعتبر تهديد للأمن السيبراني؟",
-                options: JSON.stringify(["Phishing", "Backup", "Firewall", "Encryption"]),
-                answer: "0",
-                explanation: "Phishing is a type of social engineering attack.",
-                difficulty: "MEDIUM",
-                marks: 1,
-              },
-            });
-
-            // Add sample homework
-            await db.homework.create({
-              data: {
-                lessonId: lesson.id,
-                title: "Reflection Essay",
-                titleAr: "تعبير عن الـLesson",
-                instructions: "اكتب فقرة قصيرة عن أهمية الـIT في حياتك اليومية (100 كلمة على الأقل).",
-                deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-                maxMarks: 10,
-              },
-            });
-          }
-        }
-      }
+      // Add sample homework
+      await db.homework.create({
+        data: {
+          lessonId: firstLesson.id,
+          title: "Reflection Essay",
+          titleAr: "تعبير عن الـLesson",
+          instructions: "اكتب فقرة قصيرة عن أهمية الـIT في حياتك اليومية (100 كلمة على الأقل).",
+          deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          maxMarks: 10,
+        },
+      });
     }
   }
 

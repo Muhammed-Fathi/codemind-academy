@@ -1,9 +1,9 @@
 import { getServerT } from "@/lib/i18n-server";
-// /api/admin/courses — list + create courses; seed curriculum from file.
+// /api/admin/courses — list + create courses; reconcile the official curriculum.
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireRole } from "@/lib/api";
-import { seedCurriculumFromFile } from "@/lib/curriculum-seed";
+import { reconcileOfficialCurriculum } from "@/lib/official-curriculum";
 
 export async function POST(req: NextRequest) {
   const tApi = await getServerT();
@@ -12,11 +12,20 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json().catch(() => ({}));
 
-  // Seed action: restore curriculum.ts data into the DB.
+  // Retired action (Phase 11): the legacy synthetic seed re-created the R1
+  // curriculum and must never run against live data again. 410 Gone (not
+  // 404) so old callers learn the endpoint is intentionally retired.
   if (body.action === "seed") {
+    return err(tApi("api.226"), 410);
+  }
+
+  // Reconcile action: idempotently align the DB curriculum with the official
+  // knowledge model (docs/curriculum/knowledge-model.json), archiving legacy
+  // rows instead of deleting them so user history is preserved.
+  if (body.action === "reconcile-official") {
     try {
-      const result = await seedCurriculumFromFile();
-      return ok({ ok: true, ...result });
+      const report = await reconcileOfficialCurriculum(db);
+      return ok({ ok: true, report });
     } catch (e: any) {
       return err(e?.message || tApi("api.017"), 500);
     }
@@ -65,6 +74,10 @@ export async function GET(req: NextRequest) {
             units: {
               orderBy: { order: "asc" },
               include: {
+                // Canonical chain (unit-linked official lessons) plus the
+                // legacy topic chain. Admins manage the FULL catalogue, so
+                // archived rows are included, not filtered.
+                lessons: { orderBy: { order: "asc" } },
                 topics: {
                   orderBy: { order: "asc" },
                   include: {
@@ -91,6 +104,9 @@ export async function GET(req: NextRequest) {
               units: {
                 orderBy: { order: "asc" },
                 include: {
+                  // Canonical chain plus the legacy topic chain (full
+                  // catalogue incl. archived rows — admin management scope).
+                  lessons: { orderBy: { order: "asc" } },
                   topics: {
                     orderBy: { order: "asc" },
                     include: { lessons: { orderBy: { order: "asc" } } },
@@ -108,16 +124,25 @@ export async function GET(req: NextRequest) {
   return ok({
     courses: courses.map((c) => {
       const parts = (c as any).parts || [];
-      const lessonsCount = parts.reduce(
-        (acc: number, p: any) =>
-          acc +
-          p.units.reduce(
-            (a: number, u: any) =>
-              a + u.topics.reduce((b: number, t: any) => b + t.lessons.length, 0),
-            0
-          ),
-        0
-      );
+      // Distinct lessons across BOTH chains (a dual-linked lesson is one
+      // lesson). `lessonsCount` is the full catalogue; `activeLessonsCount`
+      // is what students actually see (archived history excluded).
+      const seenLessonIds = new Set<string>();
+      let activeLessonsCount = 0;
+      for (const p of parts as any[]) {
+        for (const u of (p.units || []) as any[]) {
+          const chainLessons = [
+            ...((u.lessons || []) as any[]),
+            ...((u.topics || []) as any[]).flatMap((t: any) => t.lessons || []),
+          ];
+          for (const l of chainLessons) {
+            if (seenLessonIds.has(l.id)) continue;
+            seenLessonIds.add(l.id);
+            if (l.curriculumStatus !== "ARCHIVED") activeLessonsCount++;
+          }
+        }
+      }
+      const lessonsCount = seenLessonIds.size;
       return {
         id: c.id,
         slug: c.slug,
@@ -127,6 +152,7 @@ export async function GET(req: NextRequest) {
         color: c.color,
         partsCount: parts.length,
         lessonsCount,
+        activeLessonsCount,
         groupsCount: (c as any)._count?.groups || 0,
         parts: withTree ? parts : undefined,
       };

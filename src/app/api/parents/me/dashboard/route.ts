@@ -4,7 +4,11 @@ import { db } from "@/lib/db";
 import { ok, err, requireUser, getParentProfile } from "@/lib/api";
 import type { ParentSubscriptionPayload } from "@/lib/parent-subscription";
 import { getVideoProgressForStudents } from "@/lib/progress";
-import { getCourseSessionProgress } from "@/lib/session-progress";
+import {
+  EXCLUDE_ARCHIVED_LESSON,
+  getCourseSessionProgress,
+  lessonCourseChainOr,
+} from "@/lib/session-progress";
 
 // GET /api/parents/me/dashboard
 // Returns aggregated analytics for the current parent's children.
@@ -44,19 +48,27 @@ export async function GET(_req: NextRequest) {
       // --- Course progress: avg of LessonProgress.progress across all lessons in the
       // course (or 0 if no progress). Also count completed lessons.
       // Unpublished lessons are not sessions (the Phase 4 engine excludes
-      // them), so they are not counted here either. The legacy topic chain
-      // matches the student dashboard's own universe definition.
-      const lessonsInCourse = await db.lesson.count({
+      // them), so they are not counted here either. Both curriculum chains
+      // (official lessons are unit-linked) with archived history excluded —
+      // and progress rows are restricted to the same universe, so legacy
+      // history can neither inflate the average nor push it past 100%.
+      const universeLessonRows = await db.lesson.findMany({
         where: {
           isPublished: true,
-          topic: { unit: { part: { courseId: student.group?.courseId || "" } } },
+          ...EXCLUDE_ARCHIVED_LESSON,
+          OR: lessonCourseChainOr(student.group?.courseId || ""),
         },
+        select: { id: true },
       });
+      const universeLessonIds = new Set(universeLessonRows.map((l) => l.id));
+      const lessonsInCourse = universeLessonIds.size;
 
-      const lessonProgressRows = await db.lessonProgress.findMany({
-        where: { studentId: student.id },
-        select: { progress: true, isCompleted: true, lessonId: true },
-      });
+      const lessonProgressRows = (
+        await db.lessonProgress.findMany({
+          where: { studentId: student.id },
+          select: { progress: true, isCompleted: true, lessonId: true },
+        })
+      ).filter((p) => universeLessonIds.has(p.lessonId));
 
       const completedLessons = lessonProgressRows.filter((p) => p.isCompleted).length;
       const avgProgress =

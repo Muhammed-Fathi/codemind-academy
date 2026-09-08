@@ -1,5 +1,11 @@
-// CodeMind Academy — Official Curriculum Seed Data
+// CodeMind Academy — RETIRED synthetic (R1) curriculum data.
 // Programming & AI for 2nd year Egyptian Baccalaureate
+//
+// ⚠ PHASE 11 — DO NOT USE FOR NEW WORK. This hand-written synthetic tree was
+// superseded by the OFFICIAL curriculum in docs/curriculum/knowledge-model.json
+// (see src/lib/official-curriculum.ts). Nothing in src/ or scripts/ may import
+// CURRICULUM except tests/seed-idempotency.test.js, which pins the historical
+// seed behavior. Kept (not deleted) so that pinned test keeps compiling.
 
 export type CurriculumPart = {
   title: string;
