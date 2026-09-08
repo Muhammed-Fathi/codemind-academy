@@ -35,14 +35,19 @@ export async function PATCH(
 
   // Changing the student type re-binds the exam to the OTHER question bank, so
   // any pinned questions from the previous bank must be dropped — otherwise an
-  // Arabic exam could keep serving Language questions.
+  // Arabic exam could keep serving Language questions. Pins can point at
+  // EITHER question table, so both link types are swept (shared/null pins
+  // survive: `not` never matches NULL, which is exactly the shared semantic).
   const nextSchoolType = normalizeSchoolType(body.schoolType);
   if (nextSchoolType && nextSchoolType !== exam.schoolType) {
     data.schoolType = nextSchoolType;
     const stale = await db.mockExamQuestion.findMany({
       where: {
         mockExamId: id,
-        question: { schoolType: { not: nextSchoolType } },
+        OR: [
+          { question: { schoolType: { not: nextSchoolType } } },
+          { examQuestion: { schoolType: { not: nextSchoolType } } },
+        ],
       },
       select: { id: true },
     });
@@ -53,14 +58,16 @@ export async function PATCH(
     }
   }
 
-  // Do not allow publishing an exam its bank cannot satisfy.
+  // Do not allow publishing an exam its bank cannot satisfy. Both question
+  // tables feed mock exams, so both count toward availability.
   if (data.isPublished === true) {
     const type = (data.schoolType as any) || exam.schoolType;
     const count = (data.questionCount as number) ?? exam.questionCount;
-    const available = await db.question.count({
-      where: questionBankFilter(type),
-    });
-    if (available < count) return err(tApi("api.213"), 400);
+    const [availableQ, availableEQ] = await Promise.all([
+      db.question.count({ where: questionBankFilter(type) }),
+      db.examQuestion.count({ where: questionBankFilter(type) }),
+    ]);
+    if (availableQ + availableEQ < count) return err(tApi("api.213"), 400);
   }
 
   const updated = await db.mockExam.update({ where: { id }, data });

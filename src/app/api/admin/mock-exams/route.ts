@@ -30,11 +30,17 @@ export async function GET(req: NextRequest) {
   });
 
   // Report how many questions each bank can actually offer, so the admin sees
-  // immediately whether an exam is satisfiable.
-  const [arabicPool, languagePool] = await Promise.all([
+  // immediately whether an exam is satisfiable. Mock exams draw from BOTH
+  // question tables (Question + ExamQuestion), so the pool — and the guards
+  // below — must count both, or satisfiable exams get rejected.
+  const [arabicQ, arabicEQ, languageQ, languageEQ] = await Promise.all([
     db.question.count({ where: questionBankFilter("ARABIC") }),
+    db.examQuestion.count({ where: questionBankFilter("ARABIC") }),
     db.question.count({ where: questionBankFilter("LANGUAGE") }),
+    db.examQuestion.count({ where: questionBankFilter("LANGUAGE") }),
   ]);
+  const arabicPool = arabicQ + arabicEQ;
+  const languagePool = languageQ + languageEQ;
 
   return ok({
     exams: exams.map((e) => ({
@@ -80,14 +86,24 @@ export async function POST(req: NextRequest) {
     : "MIXED";
   const selectionMode = body.selectionMode === "FIXED" ? "FIXED" : "RANDOM";
   const courseId = body.courseId ? String(body.courseId) : null;
+  // A course-bound exam gates students by that course, so the binding must
+  // be real — a typo'd id would otherwise make an exam nobody can open.
+  if (courseId && !(await db.course.findUnique({ where: { id: courseId } }))) {
+    return err(tApi("api.211"), 400);
+  }
 
-  // Guard: never create an exam the matching bank cannot satisfy.
-  const available = await db.question.count({
-    where: {
-      ...questionBankFilter(schoolType),
-      ...(difficulty !== "MIXED" ? { difficulty } : {}),
-    },
-  });
+  // Guard: never create an exam the matching bank cannot satisfy. Both
+  // question tables feed mock exams, so both count toward availability.
+  const difficultyFilter = difficulty !== "MIXED" ? { difficulty } : {};
+  const [availableQ, availableEQ] = await Promise.all([
+    db.question.count({
+      where: { ...questionBankFilter(schoolType), ...difficultyFilter },
+    }),
+    db.examQuestion.count({
+      where: { ...questionBankFilter(schoolType), ...difficultyFilter },
+    }),
+  ]);
+  const available = availableQ + availableEQ;
   if (available < questionCount) {
     return err(tApi("api.213"), 400);
   }

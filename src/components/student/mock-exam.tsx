@@ -28,20 +28,44 @@ type Question = {
   type: string;
   prompt: string;
   options: string[];
-  correctIndex: number;
-  explanation: string | null;
   difficulty: string;
   marks: number;
   source: string;
   lessonTitle: string;
 };
 
+// Post-submit review row from the server. Correctness is server truth — the
+// served exam draft carries no answer key, so the client cannot grade.
+type ReviewRow = {
+  questionId: string;
+  selected: string;
+  isCorrect: boolean;
+  marks: number;
+  correctText: string | null;
+  explanation: string | null;
+};
+
 type ExamData = {
+  mockExamId: string | null;
   examType: string;
   questionCount: number;
   durationMin: number;
   totalMarks: number;
   questions: Question[];
+};
+
+type AssignedExam = {
+  id: string;
+  title: string;
+  titleAr: string;
+  description: string | null;
+  questionCount: number;
+  durationMin: number;
+  passMark: number;
+  difficulty: string;
+  selectionMode: string;
+  attempts: number;
+  bestPercentage: number | null;
 };
 
 type Phase = "setup" | "exam" | "result";
@@ -56,11 +80,32 @@ export function MockExamRunner() {
   const [timeLeft, setTimeLeft] = React.useState(0);
   const [loading, setLoading] = React.useState(false);
   const [result, setResult] = React.useState<any>(null);
+  const [assigned, setAssigned] = React.useState<AssignedExam[] | null>(null);
 
-  const startExam = async (count: number, difficulty: string) => {
+  // Admin-published exams this student is eligible for (same bank + course).
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch("/api/students/me/mock-exams");
+        const d = await r.json().catch(() => ({}));
+        if (!cancelled && r.ok) setAssigned(d.exams || []);
+      } catch {
+        if (!cancelled) setAssigned([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const startExam = async (count: number, difficulty: string, mockExamId?: string) => {
     setLoading(true);
     try {
-      const r = await fetch(`/api/exams/mock?count=${count}&difficulty=${difficulty}`);
+      const qs = mockExamId
+        ? `mockExamId=${encodeURIComponent(mockExamId)}`
+        : `count=${count}&difficulty=${difficulty}`;
+      const r = await fetch(`/api/exams/mock?${qs}`);
       const d = await r.json();
       if (!r.ok) {
         toast.error(d.error || tr("student.049"));
@@ -100,12 +145,15 @@ export function MockExamRunner() {
     try {
       const graded = exam.questions.map((q) => {
         const selected = answers[q.id];
-        const isCorrect = selected === q.correctIndex;
         return {
           questionId: q.id,
-          selected: String(selected ?? -1),
-          isCorrect,
-          marks: isCorrect ? q.marks : 0,
+          // The server shuffles display order per request, so an option INDEX
+          // is meaningless to the grader — report the selected option TEXT
+          // (server contract). isCorrect/marks are placeholders the server
+          // always recomputes; they are never trusted.
+          selected: selected !== undefined ? q.options[selected] ?? "-1" : "-1",
+          isCorrect: false,
+          marks: 0,
         };
       });
       const r = await fetch("/api/exams/mock", {
@@ -114,6 +162,7 @@ export function MockExamRunner() {
         body: JSON.stringify({
           examType: exam.examType,
           durationMin: exam.durationMin,
+          mockExamId: exam.mockExamId,
           answers: graded,
         }),
       });
@@ -122,7 +171,9 @@ export function MockExamRunner() {
         toast.error(d.error || tr("student.053"));
         return;
       }
-      setResult({ ...d.attempt, questions: exam.questions, answers });
+      const reviewById: Record<string, ReviewRow> = {};
+      for (const row of d.review || []) reviewById[row.questionId] = row;
+      setResult({ ...d.attempt, questions: exam.questions, answers, review: reviewById });
       setPhase("result");
       if (d.attempt.percentage >= 60) {
         toast.success(tr("student.054", { p1: d.attempt.percentage }));
@@ -165,6 +216,50 @@ export function MockExamRunner() {
               </div>
             </CardHeader>
             <CardContent className="space-y-5">
+              {assigned !== null && (
+                <div>
+                  <div className="text-sm font-bold mb-2">{tr("student.234")}</div>
+                  {assigned.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
+                      {tr("student.238")}
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {assigned.map((e) => (
+                        <div
+                          key={e.id}
+                          className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card p-3"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-semibold">
+                              {pickAuto(e.titleAr, e.title)}
+                            </div>
+                            <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                              <span>
+                                {e.questionCount} {tr("student.060")}
+                              </span>
+                              <span>· {e.durationMin} {tr("student.230")}</span>
+                              <span>· {e.attempts} {tr("student.237")}</span>
+                              {e.bestPercentage !== null && (
+                                <span>
+                                  · {tr("student.236")}: {e.bestPercentage}%
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <Button
+                            size="sm"
+                            onClick={() => startExam(e.questionCount, e.difficulty, e.id)}
+                            disabled={loading}
+                          >
+                            {tr("student.235")}
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               <div>
                 <div className="text-sm font-bold mb-2">{tr("student.059")}</div>
                 <div className="grid grid-cols-3 gap-2">
@@ -417,8 +512,12 @@ export function MockExamRunner() {
         <div className="space-y-3">
           <h3 className="text-lg font-bold">{tr("student.082")}</h3>
           {exam.questions.map((q, i) => {
+            const rev: ReviewRow | undefined = result.review?.[q.id];
             const userAnswer = result.answers[q.id];
-            const correct = userAnswer === q.correctIndex;
+            // Server truth: the draft carried no key, so only the POST review
+            // knows correctness. The correct option is matched by TEXT because
+            // display order was shuffled per request.
+            const correct = rev?.isCorrect === true;
             return (
               <motion.div
                 key={q.id}
@@ -440,7 +539,7 @@ export function MockExamRunner() {
                         </div>
                         <div className="space-y-1.5 text-xs">
                           {q.options.map((opt, j) => {
-                            const isCorrect = j === q.correctIndex;
+                            const isCorrect = rev?.correctText !== null && rev?.correctText !== undefined && opt === rev.correctText;
                             const isUser = j === userAnswer;
                             return (
                               <div
@@ -461,10 +560,10 @@ export function MockExamRunner() {
                             );
                           })}
                         </div>
-                        {q.explanation && (
+                        {rev?.explanation && (
                           <div className="mt-2 p-2.5 rounded-lg bg-muted/40 text-xs text-muted-foreground">
                             <Sparkles className="w-3 h-3 ms-1 inline text-amber-500" />
-                            {q.explanation}
+                            {rev.explanation}
                           </div>
                         )}
                       </div>
