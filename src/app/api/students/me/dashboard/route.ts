@@ -2,6 +2,7 @@ import { getServerT, serverPick, serverLocale } from "@/lib/i18n-server";
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireUser, getStudentProfile } from "@/lib/api";
+import { getUnlockedLessonIds } from "@/lib/session-progress";
 
 // GET /api/students/me/dashboard
 // Aggregated student dashboard data.
@@ -35,25 +36,41 @@ export async function GET(_req: NextRequest) {
   const overallPct =
     totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
 
-  // last viewed lesson
+  // ----- Session gating (shared with every other progression path) -----
+  // The dashboard must never name or link a session the student has not
+  // unlocked. `continueLesson` used to fall back to the FIRST not-completed
+  // lesson, which is a LOCKED session as soon as the previous one is watched
+  // but not finished — and it carried that session's videoUrl with it.
+  const courseId = student.group?.course?.id ?? null;
+  const unlockedLessonIds =
+    courseId && student.group?.isActive
+      ? await getUnlockedLessonIds(student.id, courseId)
+      : new Set<string>();
+  const isOpen = (lessonId: string) => unlockedLessonIds.has(lessonId);
+
+  // last viewed lesson — only when the student may still open it
   const lastViewed = lessons
     .map((l) => ({
       lesson: l,
       progress: l.progress[0],
     }))
-    .filter((x) => x.progress?.lastViewedAt)
+    .filter((x) => x.progress?.lastViewedAt && isOpen(x.lesson.id))
     .sort(
       (a, b) =>
         (b.progress!.lastViewedAt!.getTime() || 0) -
         (a.progress!.lastViewedAt!.getTime() || 0)
     )[0];
 
-  // first not-completed lesson (continue target if no last viewed)
+  // first not-completed lesson the student may actually open
   const firstIncomplete = lessons.find(
-    (l) => !l.progress.some((p) => p.isCompleted)
+    (l) => isOpen(l.id) && !l.progress.some((p) => p.isCompleted)
   );
 
-  const continueLesson = lastViewed?.lesson || firstIncomplete || lessons[0] || null;
+  const continueLesson =
+    lastViewed?.lesson ||
+    firstIncomplete ||
+    lessons.find((l) => isOpen(l.id)) ||
+    null;
 
   // ----- Next live session -----
   const nextSession = student.groupId
@@ -109,7 +126,10 @@ export async function GET(_req: NextRequest) {
       lesson: { select: { titleAr: true, title: true } },
     },
   });
+  // Only assignments belonging to sessions the student has unlocked: a locked
+  // session's assignment is protected content, not a "pending" to-do.
   const pendingHomeworks = homeworks.filter((h) => {
+    if (!isOpen(h.lessonId)) return false;
     if (!h.submissions.length) return true;
     const s = h.submissions[0];
     return s.status === "PENDING";
@@ -252,7 +272,9 @@ export async function GET(_req: NextRequest) {
             : null,
           progress: continueLesson.progress[0]?.progress || 0,
           isCompleted: continueLesson.progress[0]?.isCompleted || false,
-          videoUrl: continueLesson.videoUrl,
+          // continueLesson is always an unlocked session now; the guard is
+          // belt-and-braces so a future refactor cannot re-leak a media URL.
+          videoUrl: isOpen(continueLesson.id) ? continueLesson.videoUrl : null,
           courseSlug: continueLesson.topic?.unit.part.course.slug ?? null,
         }
       : null,

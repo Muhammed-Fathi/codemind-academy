@@ -14,7 +14,8 @@
 
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { ok, err, requireUser, getStudentProfile } from "@/lib/api";
+import { ok, err, requireUser, getStudentProfile, denyProgression } from "@/lib/api";
+import { canAccessQuiz } from "@/lib/session-progress";
 
 const ALLOWED_STATUSES = new Set([
   "NOT_REQUESTED",
@@ -39,6 +40,13 @@ export async function POST(
 
   const quiz = await db.quiz.findUnique({ where: { id }, select: { id: true } });
   if (!quiz) return err("Quiz not found", 404);
+
+  // Backend authorization: a quiz belonging to a locked session cannot be
+  // opened, so no attempt row is ever created for content the student has not
+  // reached. Without this a student could pre-open (and later pre-finish) the
+  // quiz of every future session.
+  const access = await canAccessQuiz(student.id, id);
+  if (!access.allowed) return denyProgression(access.reason, "Quiz not found");
 
   const body = await req.json().catch(() => ({}));
   const requested = String(body.cameraStatus || "NOT_REQUESTED");

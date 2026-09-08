@@ -1,9 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { ok, err, requireUser, getStudentProfile } from "@/lib/api";
+import { ok, err, requireUser, getStudentProfile, denyProgression } from "@/lib/api";
 import { canAccessLesson } from "@/lib/session-progress";
 import { VIDEO_COMPLETION_THRESHOLD } from "@/lib/progress";
-import { getServerT } from "@/lib/i18n-server";
 
 // GET /api/lessons/[id]
 // Returns lesson + quiz + homework + student progress.
@@ -93,18 +92,9 @@ export async function GET(
 
     // AUTHORIZATION: enrollment + previous-session completion are enforced
     // here, so opening the URL directly cannot bypass the lock.
-    const tApi = await getServerT();
     const access = await canAccessLesson(s.id, id);
     if (!access.allowed) {
-      return NextResponse.json(
-        {
-          error:
-            access.reason === "NOT_ENROLLED" ? tApi("api.208") : tApi("api.209"),
-          code: access.reason,
-          requirements: access.status,
-        },
-        { status: 403 }
-      );
+      return denyProgression(access.reason, "Lesson not found");
     }
     requirements = access.status;
 

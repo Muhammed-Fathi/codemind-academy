@@ -1,11 +1,16 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { ok, err, requireUser } from "@/lib/api";
+import { ok, err, requireUser, getStudentProfile, denyProgression } from "@/lib/api";
+import { canAccessQuiz } from "@/lib/session-progress";
 
 // GET /api/quizzes/[id]
 // Returns quiz + questions. Answers and explanations are withheld from
 // students until they have submitted at least one attempt —
 // the runner hides them until submission.
+//
+// AUTHORIZATION: a student may only read a quiz that belongs to a session they
+// have unlocked. Without this the questions, options and (after any attempt)
+// the answers of every future session are readable straight off the API.
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -38,6 +43,12 @@ export async function GET(
   } | null = null;
   let studentHasAttempted = false;
   if (user.role === "STUDENT") {
+    const s = await getStudentProfile(user.id);
+    if (!s) return err("Student profile not found", 404);
+
+    const access = await canAccessQuiz(s.id, id);
+    if (!access.allowed) return denyProgression(access.reason, "Quiz not found");
+
     const attempts = await db.quizAttempt.findMany({
       where: { quizId: id, student: { userId: user.id } },
       orderBy: { percentage: "desc" },

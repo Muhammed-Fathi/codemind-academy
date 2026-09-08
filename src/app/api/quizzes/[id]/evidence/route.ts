@@ -13,7 +13,8 @@
 
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { requireUser, ok, err } from "@/lib/api";
+import { requireUser, ok, err, denyProgression } from "@/lib/api";
+import { canAccessQuiz } from "@/lib/session-progress";
 import {
   MAX_IMAGE_BYTES,
   extFromMime,
@@ -50,6 +51,13 @@ export async function POST(
     select: { id: true },
   });
   if (!student) return err("Student profile not found", 404);
+
+  // Defense in depth: the attempt ownership check below already prevents
+  // attaching evidence to someone else's work, and a locked quiz can no longer
+  // own an attempt — but evidence capture is a privileged, file-writing path,
+  // so it re-verifies the session gate itself.
+  const access = await canAccessQuiz(student.id, quizId);
+  if (!access.allowed) return denyProgression(access.reason, "Quiz not found");
 
   const contentType = req.headers.get("content-type") || "";
   let attemptId = "";

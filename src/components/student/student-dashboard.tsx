@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Textarea } from "@/components/ui/textarea";
 import { useApp } from "@/lib/store";
 import { brand } from "@/lib/brand";
 import { toast } from "sonner";
@@ -1059,6 +1060,73 @@ function SubscriptionPill({
 // ============================================================
 // Sub-views
 // ============================================================
+/**
+ * Minimal in-place assignment submission.
+ *
+ * The progression rule ("assignment submitted" is one of the three gates that
+ * unlock the next session) was unreachable before: the API had no way for a
+ * student to record a submission at all. This posts the student's own answer
+ * to POST /api/students/me/homework, which re-checks the session gate and
+ * writes the HomeworkSubmission server-side.
+ */
+function HomeworkSubmitForm({
+  homeworkId,
+  onSubmitted,
+}: {
+  homeworkId: string;
+  onSubmitted: () => void;
+}) {
+  const t = useT();
+  const [value, setValue] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+
+  const submit = async () => {
+    const content = value.trim();
+    if (!content || busy) return;
+    setBusy(true);
+    try {
+      const r = await fetch("/api/students/me/homework", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ homeworkId, content }),
+      });
+      const data = await r.json().catch(() => null);
+      if (!r.ok) {
+        toast.error(data?.error || t("student.116"));
+        return;
+      }
+      toast.success(data?.message || t("api.225"));
+      setValue("");
+      onSubmitted();
+    } catch {
+      toast.error(t("student.116"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="w-full flex items-start gap-2 pt-1">
+      <Textarea
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder={t("student.240")}
+        rows={2}
+        className="min-h-14 text-xs resize-y"
+      />
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={busy || !value.trim()}
+        onClick={submit}
+        className="shrink-0"
+      >
+        {busy ? t("student.242") : t("student.241")}
+      </Button>
+    </div>
+  );
+}
+
 function HomeworkView() {
   const t = useT();
   const setView = useApp((s) => s.setView);
@@ -1195,6 +1263,12 @@ function HomeworkView() {
                         >
                           {t("student.182")}<ChevronLeft className="w-3.5 h-3.5 flip-rtl" />
                         </Button>
+                      )}
+                      {!isGraded && (
+                        <HomeworkSubmitForm
+                          homeworkId={h.id}
+                          onSubmitted={reload}
+                        />
                       )}
                     </li>
                   );
