@@ -388,7 +388,9 @@ Verified **already safe by construction** rather than assumed:
 - `lessons/[id]/progress` → calls `canAccessLesson`, which carries the track gate;
 - `students/me/session-videos/[id]/progress` → enforces `video.batchId === student.batchId`, and `Batch.schoolType` is non-nullable, so track follows automatically;
 - `students/me/dashboard`'s unlocked-lesson set → comes from `getUnlockedLessonIds`, which inherits the filtered universe;
-- quiz-attempt lists (student, parent, teacher) → restricted to the student's own attempts, which can only exist for quizzes they were allowed to open.
+- quiz-attempt lists (student, parent, teacher) → restricted to the student's own attempts, which can only exist for quizzes they were allowed to open;
+- `quizzes/[id]/evidence` → calls `canAccessQuiz` before any file write, then checks attempt ownership;
+- `exams/mock` → Phase 8 already derives `studentSchoolType` from the database and refuses a `MockExam` whose `schoolType` differs (404); the question pool is restricted by `questionBankFilter(studentSchoolType)`. Its `lessons` query is deliberately **not** track-filtered — it only scopes which lessons may contribute questions, and the operative gate is the question's **own** `schoolType`. A question on an ARABIC-only lesson but tagged `NULL` is shared content by D5, so serving it is correct: `trackScope` governs *lesson access*, not question eligibility.
 
 `teacher/*` and `admin/*` surfaces are deliberately **not** sliced: staff legitimately serve both
 school types.
