@@ -30,6 +30,42 @@
 
 import { db } from "@/lib/db";
 import type { Question } from "@prisma/client";
+import {
+  eligibleQuestionFilter,
+  isQuestionEligible,
+} from "@/lib/track-scope";
+import type { SchoolType } from "@/lib/school-type";
+
+// ---------------------------------------------------------------------------
+// Track eligibility (Phase 12)
+// ---------------------------------------------------------------------------
+//
+// `Question.schoolType` already existed and the MOCK-EXAM flow already
+// honoured it. The SESSION QUIZ flow did not: it froze every question of the
+// quiz into the attempt regardless of the student's school type, and graded
+// all of them. Phase 12 closes that.
+//
+// The rule, applied at BOTH ends so selection and grading cannot drift apart:
+//
+//   schoolType = null   → SHARED question, eligible for every student
+//   schoolType = ARABIC → eligible for ARABIC students only
+//   schoolType = LANGUAGE → eligible for LANGUAGE students only
+//
+//   * SELECTION: `seedAttemptQuestions` only freezes eligible questions, so a
+//     new attempt's immutable set never contains a question the student must
+//     not see.
+//   * SERVING: `loadAttemptQuestionSet` re-applies the same predicate to the
+//     frozen set. That covers attempts opened BEFORE this hardening (whose
+//     rows may hold an ineligible question) and the pre-Phase-5 upgrade path
+//     that adopts the live quiz questions.
+//   * GRADING: `gradeAttemptQuestionSet` re-applies it a third time and drops
+//     the question from the set entirely — it contributes neither marks nor
+//     score, so an ineligible question can never receive credit, even if a
+//     stale answer row exists for it.
+//
+// The attempt's frozen set REMAINS authoritative: this narrows it, it never
+// re-derives it from the live bank.
+
 
 // ---------------------------------------------------------------------------
 // Question-set selection & persistence
@@ -56,6 +92,7 @@ export type AttemptQuestion = {
     | "explanation"
     | "difficulty"
     | "marks"
+    | "schoolType"
   >;
 };
 
@@ -66,13 +103,19 @@ const QUIZ_QUESTION_ORDER = [{ createdAt: "asc" }, { id: "asc" }] as const;
  * Persist the current questions of `quizId` as the frozen question set of
  * attempt `attemptId` (one `QuizAnswer` placeholder per question, unanswered).
  * Called exactly once, at attempt creation.
+ *
+ * Phase 12: only the questions ELIGIBLE for `schoolType` are frozen in. The
+ * attempt set is immutable afterwards, so this is the one moment a
+ * wrong-track question could ever enter an attempt — filtering here is what
+ * makes the guarantee structural rather than a read-time convention.
  */
 export async function seedAttemptQuestions(
   attemptId: string,
-  quizId: string
+  quizId: string,
+  schoolType: SchoolType | null
 ): Promise<void> {
   const questions = await db.question.findMany({
-    where: { quizId },
+    where: { quizId, ...eligibleQuestionFilter(schoolType) },
     select: { id: true },
     orderBy: [...QUIZ_QUESTION_ORDER],
   });
@@ -103,7 +146,8 @@ export async function seedAttemptQuestions(
  * authoritative answer key. New questions never join an existing attempt.
  */
 export async function loadAttemptQuestionSet(
-  attemptId: string
+  attemptId: string,
+  schoolType: SchoolType | null
 ): Promise<AttemptQuestion[]> {
   const rows = await db.quizAnswer.findMany({
     where: { attemptId },
@@ -119,6 +163,11 @@ export async function loadAttemptQuestionSet(
         selected: r.selected,
         question: r.question,
       }))
+      // Phase 12 track gate: an attempt opened before this hardening may hold
+      // an answer row for a question this student must not see. Dropping it
+      // here means it is neither served nor graded — the frozen set stays
+      // authoritative, it is only ever narrowed.
+      .filter((e) => isQuestionEligible(schoolType, e.question.schoolType))
       .sort(
         (a, b) =>
           a.question.createdAt.getTime() - b.question.createdAt.getTime() ||
@@ -133,7 +182,33 @@ export async function loadAttemptQuestionSet(
       quiz: { select: { questions: { orderBy: [...QUIZ_QUESTION_ORDER] } } },
     },
   });
-  return (quiz?.quiz.questions ?? []).map((q) => ({
+  return (quiz?.quiz.questions ?? [])
+    .filter((q) => isQuestionEligible(schoolType, q.schoolType))
+    .map((q) => ({
+      answerId: null,
+      questionId: q.id,
+      selected: "",
+      question: q,
+    }));
+}
+
+/**
+ * The track-eligible questions of a quiz, read live from the bank.
+ *
+ * Used by the direct-submit/retake path, where there is no frozen attempt set
+ * to narrow. It applies exactly the same predicate `seedAttemptQuestions`
+ * uses, so a retake can never grade a wider set than a started attempt would
+ * have frozen.
+ */
+export async function loadQuizQuestionSet(
+  quizId: string,
+  schoolType: SchoolType | null
+): Promise<AttemptQuestion[]> {
+  const questions = await db.question.findMany({
+    where: { quizId, ...eligibleQuestionFilter(schoolType) },
+    orderBy: [...QUIZ_QUESTION_ORDER],
+  });
+  return questions.map((q) => ({
     answerId: null,
     questionId: q.id,
     selected: "",
@@ -193,7 +268,8 @@ export type GradedAttempt = {
 export function gradeAttemptQuestionSet(
   set: AttemptQuestion[],
   submittedAnswers: SubmittedAnswer[],
-  passMark: number
+  passMark: number,
+  schoolType: SchoolType | null = null
 ): GradedAttempt {
   // First occurrence per questionId wins, mirroring the historical
   // `answersRaw.find(...)` semantics.
@@ -205,9 +281,20 @@ export function gradeAttemptQuestionSet(
     }
   }
 
+  // Phase 12 — GRADING enforces the track rule independently of selection.
+  // An ineligible question is removed from the set BEFORE any arithmetic, so
+  // it contributes neither to `totalMarks` nor to `score`: it can never
+  // receive credit, and it can never inflate or deflate the denominator.
+  // `schoolType` defaults to null (SHARED-only) on purpose — a caller that
+  // forgets to pass it grades the narrowest set, never the widest.
+  // Questions with no school type are SHARED and always eligible.
+  const eligibleSet = set.filter((entry) =>
+    isQuestionEligible(schoolType, entry.question.schoolType)
+  );
+
   let score = 0;
   let totalMarks = 0;
-  const graded: GradedAttemptQuestion[] = set.map((entry) => {
+  const graded: GradedAttemptQuestion[] = eligibleSet.map((entry) => {
     const q = entry.question;
     totalMarks += q.marks;
     const selected = selectedByQuestion.get(q.id) ?? "";

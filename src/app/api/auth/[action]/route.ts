@@ -21,6 +21,8 @@ import {
   normalizePhone,
 } from "@/lib/registration";
 import { createStudentWithCode } from "@/lib/curriculum-seed";
+import { requireSchoolType } from "@/lib/school-type";
+import { reconcileStudentBatch } from "@/lib/enrollment";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ action: string }> }) {
   const tApi = await getServerT();
@@ -91,7 +93,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ act
       const parentPhone = String(body.parentPhone || "").trim();
       const nationalId = String(body.nationalId || "").trim();
       const schoolName = String(body.schoolName || "").trim();
-      const schoolType = String(body.schoolType || "").trim().toUpperCase();
+      // Phase 12 — ONE validation mechanism for every school-type write path.
+      // The raw value is never stored: it is normalised here and an
+      // unrecognised value is rejected, so `Student.schoolType` can only ever
+      // hold a canonical enum value.
+      const schoolTypeCheck = requireSchoolType(body.schoolType);
 
       if (!isValidArabicThreePartName(name))
         return err(tApi("api.063"), 400);
@@ -102,8 +108,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ act
       if (!isValidNationalId(nationalId))
         return err(tApi("api.066"), 400);
       if (!schoolName) return err(tApi("api.067"), 400);
-      if (schoolType !== "LANGUAGE" && schoolType !== "ARABIC")
-        return err(tApi("api.068"), 400);
+      if (!schoolTypeCheck.ok) return err(tApi("api.068"), 400);
+      const schoolType = schoolTypeCheck.value;
 
       const nationalTaken = await (db as any).student.findUnique({
         where: { nationalId },
@@ -128,6 +134,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ act
         nationalId,
         parentPhone,
       });
+
+      // Phase 12 — attach the batch at creation time instead of waiting for
+      // the student to open the session-videos page. Deterministic,
+      // idempotent, and a no-op when no matching batch exists yet.
+      await reconcileStudentBatch((student as { id: string }).id);
 
       await createSession(user.id);
       return ok({

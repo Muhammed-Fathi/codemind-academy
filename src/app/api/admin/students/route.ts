@@ -6,7 +6,8 @@ import { db } from "@/lib/db";
 import { ok, err, requireRole } from "@/lib/api";
 import { hashPassword } from "@/lib/auth";
 import { createStudentWithCode } from "@/lib/curriculum-seed";
-import { normalizeSchoolType } from "@/lib/school-type";
+import { normalizeSchoolType, requireSchoolType } from "@/lib/school-type";
+import { reconcileStudentBatch } from "@/lib/enrollment";
 import { getVideoProgressForStudents } from "@/lib/progress";
 
 export async function GET(req: NextRequest) {
@@ -133,7 +134,14 @@ export async function POST(req: NextRequest) {
   const phone = body.phone ? String(body.phone) : null;
   const grade = body.grade ? String(body.grade) : "2nd Secondary";
   const schoolName = body.schoolName ? String(body.schoolName) : null;
-  const schoolType = normalizeSchoolType(body.schoolType);
+  // Phase 12 — an admin creating a student MUST give a valid school type, or
+  // explicitly none. `normalizeSchoolType` alone would silently turn a typo
+  // into "unspecified" and quietly restrict the student to SHARED content.
+  const schoolTypeCheck = requireSchoolType(body.schoolType);
+  if (!schoolTypeCheck.ok && schoolTypeCheck.reason === "INVALID") {
+    return err(tApi("api.210"), 400);
+  }
+  const schoolType = schoolTypeCheck.ok ? schoolTypeCheck.value : null;
   const nationalId = body.nationalId ? String(body.nationalId).trim() : null;
   const parentPhone = body.parentPhone ? String(body.parentPhone).trim() : null;
   const groupId = body.groupId ? String(body.groupId) : null;

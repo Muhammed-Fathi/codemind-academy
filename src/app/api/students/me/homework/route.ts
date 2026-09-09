@@ -7,6 +7,8 @@ import {
   getUnlockedLessonIds,
 } from "@/lib/session-progress";
 import { getServerT } from "@/lib/i18n-server";
+import { getStudentSchoolType } from "@/lib/enrollment";
+import { trackScopeWhere } from "@/lib/track-scope";
 
 /** Longest accepted free-text answer. Generous, but not an upload channel. */
 const MAX_ANSWER_CHARS = 4000;
@@ -46,6 +48,13 @@ export async function GET(_req: NextRequest) {
       ? await getUnlockedLessonIds(s.id, courseId)
       : new Set<string>();
 
+  // Phase 12 — the unlocked-lesson set already excludes the other track's
+  // lessons (the progression engine filters the universe), but a SHARED lesson
+  // may legitimately carry an ARABIC and a LANGUAGE assignment, so the
+  // assignment's OWN trackScope is filtered here too. Server-side, from the
+  // student's row — never from a request parameter.
+  const schoolType = await getStudentSchoolType(s.id);
+
   // The unlocked-lesson set (from the exclusion-aware engine) is the scope;
   // the legacy topic-chain guard below it used to drop every unit-linked
   // official lesson, so it is now just an archived-history backstop.
@@ -53,6 +62,7 @@ export async function GET(_req: NextRequest) {
     where: {
       lessonId: { in: [...unlocked] },
       lesson: { ...EXCLUDE_ARCHIVED_LESSON },
+      ...trackScopeWhere(schoolType),
     },
     include: {
       lesson: { select: { id: true, titleAr: true, title: true } },

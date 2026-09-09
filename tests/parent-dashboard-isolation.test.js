@@ -545,24 +545,24 @@ async function seed() {
   T.unit.push({ id: "u1", partId: "p1", title: "Unit 1", titleAr: "الوحدة الأولى", order: 1, icon: null });
   T.topic.push({ id: "t1t", unitId: "u1", title: "Topic 1", titleAr: "الموضوع الأول", order: 1 });
   T.lesson.push(
-    { id: "l1", topicId: "t1t", unitId: null, officialCode: null, curriculumStatus: "LEGACY", title: "Lesson One", titleAr: "الدرس الأول", order: 1, description: "d1", summary: "s1", duration: 90, isLocked: false, isPublished: true, videoUrl: "https://v/l1", pdfUrl: null },
-    { id: "l2", topicId: "t1t", unitId: null, officialCode: null, curriculumStatus: "LEGACY", title: "Lesson Two", titleAr: "الدرس الثاني", order: 2, description: "d2", summary: "s2", duration: 90, isLocked: true, isPublished: true, videoUrl: null, pdfUrl: null },
-    { id: "l3", topicId: "t1t", unitId: null, officialCode: null, curriculumStatus: "LEGACY", title: "Lesson Three", titleAr: "الدرس الثالث", order: 3, description: "d3", summary: "s3", duration: 90, isLocked: true, isPublished: true, videoUrl: "https://v/l3", pdfUrl: null },
-    { id: "l4", topicId: "t1t", unitId: null, officialCode: null, curriculumStatus: "LEGACY", title: "Draft Lesson", titleAr: "مسودة", order: 4, description: "", summary: "", duration: 90, isLocked: true, isPublished: false, videoUrl: null, pdfUrl: null },
+    { id: "l1", trackScope: "SHARED", topicId: "t1t", unitId: null, officialCode: null, curriculumStatus: "LEGACY", title: "Lesson One", titleAr: "الدرس الأول", order: 1, description: "d1", summary: "s1", duration: 90, isLocked: false, isPublished: true, videoUrl: "https://v/l1", pdfUrl: null },
+    { id: "l2", trackScope: "SHARED", topicId: "t1t", unitId: null, officialCode: null, curriculumStatus: "LEGACY", title: "Lesson Two", titleAr: "الدرس الثاني", order: 2, description: "d2", summary: "s2", duration: 90, isLocked: true, isPublished: true, videoUrl: null, pdfUrl: null },
+    { id: "l3", trackScope: "SHARED", topicId: "t1t", unitId: null, officialCode: null, curriculumStatus: "LEGACY", title: "Lesson Three", titleAr: "الدرس الثالث", order: 3, description: "d3", summary: "s3", duration: 90, isLocked: true, isPublished: true, videoUrl: "https://v/l3", pdfUrl: null },
+    { id: "l4", trackScope: "SHARED", topicId: "t1t", unitId: null, officialCode: null, curriculumStatus: "LEGACY", title: "Draft Lesson", titleAr: "مسودة", order: 4, description: "", summary: "", duration: 90, isLocked: true, isPublished: false, videoUrl: null, pdfUrl: null },
   );
   // Curriculum C2: single lesson, no video/quiz/homework
   T.part.push({ id: "p2", courseId: "c2", title: "Part 1", titleAr: "ج1", order: 1, description: null });
   T.unit.push({ id: "u2", partId: "p2", title: "Unit 1", titleAr: "و1", order: 1, icon: null });
   T.topic.push({ id: "t2t", unitId: "u2", title: "Topic 1", titleAr: "م1", order: 1 });
   T.lesson.push(
-    { id: "l5", topicId: "t2t", unitId: null, officialCode: null, curriculumStatus: "LEGACY", title: "C2 Lesson", titleAr: "درس الكورس الثاني", order: 1, description: "", summary: "", duration: 90, isLocked: false, isPublished: true, videoUrl: null, pdfUrl: null },
+    { id: "l5", trackScope: "SHARED", topicId: "t2t", unitId: null, officialCode: null, curriculumStatus: "LEGACY", title: "C2 Lesson", titleAr: "درس الكورس الثاني", order: 1, description: "", summary: "", duration: 90, isLocked: false, isPublished: true, videoUrl: null, pdfUrl: null },
   );
 
   // Quizzes + questions + homework
   T.quiz.push(
-    { id: "q1", lessonId: "l1", title: "Quiz One", titleAr: "اختبار واحد", description: null, passMark: 60, timeLimit: null, order: 0 },
-    { id: "q2", lessonId: "l2", title: "Quiz Two", titleAr: "اختبار اثنين", description: null, passMark: 60, timeLimit: null, order: 0 },
-    { id: "q3", lessonId: "l5", title: "Quiz C2", titleAr: "اختبار ك2", description: null, passMark: 60, timeLimit: null, order: 0 },
+    { id: "q1", trackScope: "SHARED", lessonId: "l1", title: "Quiz One", titleAr: "اختبار واحد", description: null, passMark: 60, timeLimit: null, order: 0 },
+    { id: "q2", trackScope: "SHARED", lessonId: "l2", title: "Quiz Two", titleAr: "اختبار اثنين", description: null, passMark: 60, timeLimit: null, order: 0 },
+    { id: "q3", trackScope: "SHARED", lessonId: "l5", title: "Quiz C2", titleAr: "اختبار ك2", description: null, passMark: 60, timeLimit: null, order: 0 },
   );
   T.question.push({
     id: "qq1", quizId: "q1", type: "MCQ", prompt: "2+2?", promptAr: "٢+٢؟",
@@ -570,8 +570,8 @@ async function seed() {
     difficulty: "EASY", marks: 1, schoolType: null, createdAt: D(30),
   });
   T.homework.push(
-    { id: "h1", lessonId: "l1", title: "HW One", titleAr: "واجب واحد", instructions: "do", deadline: FUT(3), maxMarks: 20, createdAt: D(10) },
-    { id: "h2", lessonId: "l2", title: "HW Two", titleAr: "واجب اثنين", instructions: "do", deadline: FUT(5), maxMarks: 10, createdAt: D(10) },
+    { id: "h1", trackScope: "SHARED", lessonId: "l1", title: "HW One", titleAr: "واجب واحد", instructions: "do", deadline: FUT(3), maxMarks: 20, createdAt: D(10) },
+    { id: "h2", trackScope: "SHARED", lessonId: "l2", title: "HW Two", titleAr: "واجب اثنين", instructions: "do", deadline: FUT(5), maxMarks: 10, createdAt: D(10) },
   );
 
   // Students

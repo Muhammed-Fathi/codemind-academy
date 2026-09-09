@@ -52,6 +52,10 @@ fs.writeFileSync(
       path.join(REPO, "src/lib/official-curriculum.ts"),
       path.join(REPO, "src/lib/session-progress.ts"),
       path.join(REPO, "src/lib/progress.ts"),
+      // Phase 12: session-progress now imports these.
+      path.join(REPO, "src/lib/track-scope.ts"),
+      path.join(REPO, "src/lib/school-type.ts"),
+      path.join(REPO, "src/lib/enrollment.ts"),
     ],
   })
 );
@@ -79,11 +83,14 @@ const REAL_MODEL_PATH = path.join(REPO, "docs/curriculum/knowledge-model.json");
 const origResolve = Module._resolveFilename;
 Module._resolveFilename = function (request, ...rest) {
   if (request === "@/lib/db") return MOCK_DB_PATH;
-  if (request === "@/lib/progress") return path.join(EMIT, "progress.js");
-  if (request === "@/lib/session-progress")
-    return path.join(EMIT, "session-progress.js");
-  if (request === "@/lib/official-curriculum")
-    return path.join(EMIT, "official-curriculum.js");
+  // Phase 12: any aliased lib resolves to its own compiled output in EMIT, so
+  // newly imported siblings (track-scope, school-type, enrollment) need no
+  // per-file entry here.
+  const alias = /^@\/lib\/([\w-]+)$/.exec(request);
+  if (alias) {
+    const compiled = path.join(EMIT, `${alias[1]}.js`);
+    if (fs.existsSync(compiled)) return compiled;
+  }
   if (request.endsWith("knowledge-model.json")) return REAL_MODEL_PATH;
   return origResolve.call(this, request, ...rest);
 };
@@ -92,6 +99,58 @@ const reconciler = require(path.join(EMIT, "official-curriculum.js"));
 const engine = require(path.join(EMIT, "session-progress.js"));
 
 // ---- In-memory mock Prisma client (evaluates the reconciler's `where`) ----
+// ---------------------------------------------------------------------------
+// Phase 12 REGRESSION GATE for the Phase 11 post-merge defect.
+//
+// `reconcileOfficialCurriculum` used to order Part/Unit by `createdAt` — a
+// column those two models DO NOT HAVE. The real Prisma client rejects that
+// with `PrismaClientValidationError: Unknown argument \`createdAt\``, but this
+// suite's mock client ignored `orderBy` entirely and even fabricated
+// `createdAt` values, so 51 green assertions never caught it: the reconciler
+// only failed against a real database.
+//
+// The mock now validates `orderBy` against the field list parsed straight out
+// of prisma/schema.prisma, so it behaves like the real client for this class
+// of bug. Re-introducing an ordering key that is not a column of the model
+// fails HERE, offline, before it can fail in production.
+// ---------------------------------------------------------------------------
+function parseModelFields(modelName) {
+  const schema = fs.readFileSync(path.join(REPO, "prisma/schema.prisma"), "utf8");
+  const start = schema.indexOf(`model ${modelName} {`);
+  if (start < 0) throw new Error(`prisma/schema.prisma has no model ${modelName}`);
+  const end = schema.indexOf("\n}", start);
+  const body = schema.slice(start, end);
+  const fields = [];
+  for (const rawLine of body.split("\n")) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("//") || line.startsWith("///")) continue;
+    if (line.startsWith("@@") || line.startsWith("model ")) continue;
+    const m = /^(\w+)\s+\S+/.exec(line);
+    if (m) fields.push(m[1]);
+  }
+  return fields;
+}
+
+const SCHEMA_FIELDS = {
+  part: parseModelFields("Part"),
+  unit: parseModelFields("Unit"),
+};
+
+/** Mirror PrismaClientValidationError for an orderBy key that is not a column. */
+function assertOrderByIsSchemaValid(modelName, orderBy) {
+  const entries = Array.isArray(orderBy) ? orderBy : orderBy ? [orderBy] : [];
+  for (const entry of entries) {
+    for (const key of Object.keys(entry || {})) {
+      if (!SCHEMA_FIELDS[modelName].includes(key)) {
+        throw new Error(
+          `Unknown argument \`${key}\` on ${modelName}.orderBy — not a column in ` +
+            `prisma/schema.prisma (available: ${SCHEMA_FIELDS[modelName].join(", ")})`
+        );
+      }
+    }
+  }
+}
+
 function makeMockDb() {
   const tables = { course: [], part: [], unit: [], topic: [], lesson: [] };
   let seq = 1;
@@ -174,7 +233,8 @@ function makeMockDb() {
       },
     },
     part: {
-      async findMany({ where }) {
+      async findMany({ where, orderBy }) {
+        assertOrderByIsSchemaValid("part", orderBy);
         return sortByOrder(
           tables.part.filter((p) => !where || p.courseId === where.courseId)
         ).map((r) => ({ ...r }));
@@ -195,7 +255,8 @@ function makeMockDb() {
       },
     },
     unit: {
-      async findMany({ where }) {
+      async findMany({ where, orderBy }) {
+        assertOrderByIsSchemaValid("unit", orderBy);
         return sortByOrder(
           tables.unit.filter((u) => !where || u.partId === where.partId)
         ).map((r) => ({ ...r }));

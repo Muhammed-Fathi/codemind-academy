@@ -25,6 +25,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const ts = require(path.join(__dirname, "..", "node_modules/typescript/lib/typescript.js"));
+const { Module } = require("module");
 
 const REPO = path.join(__dirname, "..");
 const read = (rel) => fs.readFileSync(path.join(REPO, rel), "utf8");
@@ -62,7 +63,13 @@ fs.writeFileSync(
       types: ["node"],
       outDir: OUT,
     },
-    files: [path.join(REPO, "src/lib/quiz-analytics.ts")],
+    files: [
+      path.join(REPO, "src/lib/quiz-analytics.ts"),
+      // Phase 12: quiz-analytics now imports the track contract for the
+      // track-safe reporting primitives.
+      path.join(REPO, "src/lib/track-scope.ts"),
+      path.join(REPO, "src/lib/school-type.ts"),
+    ],
   })
 );
 try {
@@ -76,6 +83,18 @@ try {
 if (!fs.existsSync(path.join(OUT, "quiz-analytics.js"))) {
   throw new Error("tsc did not emit quiz-analytics.js");
 }
+// Phase 12: quiz-analytics now imports `@/lib/track-scope`. tsc keeps the path
+// alias in the emitted require(), so resolve it to the sibling compiled output
+// — the same hook the other suites use.
+const realResolveP6 = Module._resolveFilename;
+Module._resolveFilename = function (request, ...args) {
+  const m = /^@\/lib\/([\w-]+)$/.exec(request);
+  if (m) {
+    const compiled = path.join(OUT, `${m[1]}.js`);
+    if (fs.existsSync(compiled)) return compiled;
+  }
+  return realResolveP6.call(this, request, ...args);
+};
 const lib = require(path.join(OUT, "quiz-analytics.js"));
 
 // ---------------------------------------------------------------------------

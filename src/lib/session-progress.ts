@@ -12,6 +12,12 @@
 
 import { db } from "@/lib/db";
 import { VIDEO_COMPLETION_THRESHOLD } from "@/lib/progress";
+import {
+  canAccessTrackScope,
+  trackScopeWhere,
+} from "@/lib/track-scope";
+import { normalizeSchoolType, type SchoolType } from "@/lib/school-type";
+import { getStudentSchoolType } from "@/lib/enrollment";
 
 // ---------------------------------------------------------------------------
 // The progression UNIVERSE — how a lesson is attached to a course
@@ -48,6 +54,32 @@ import { VIDEO_COMPLETION_THRESHOLD } from "@/lib/progress";
 export const EXCLUDE_ARCHIVED_LESSON = {
   curriculumStatus: { not: "ARCHIVED" },
 } as const;
+
+// ---------------------------------------------------------------------------
+// Track scope (Phase 12)
+// ---------------------------------------------------------------------------
+//
+// A lesson also belongs to a TRACK: `Lesson.trackScope` is SHARED (both school
+// types), ARABIC or LANGUAGE. The student's side of the comparison is their
+// own `Student.schoolType` row — never a request parameter, never the UI
+// locale.
+//
+// The filter is applied to the progression UNIVERSE, i.e. to the same
+// `findMany` that defines the session sequence. That placement is deliberate
+// and is what makes one rule cover everything at once:
+//
+//   * an ineligible lesson is not in `sessions`, so it can never be an unlock
+//     target, never satisfies completion and never advances progression;
+//   * `canAccessLesson` answers LESSON_NOT_FOUND (a 404, not a 403) for it, so
+//     guessing an id from the other track learns nothing about its existence;
+//   * `canAccessQuiz` / `canAccessHomework` delegate to `canAccessLesson`, so
+//     they inherit the same verdict without a second implementation;
+//   * `getUnlockedLessonIds` (course tree, homework list, dashboard) inherits
+//     it too, so no list endpoint can describe the other track's content.
+//
+// It NARROWS the universe; it never reorders it and never changes what
+// "completed" means. Phase 4 progression semantics are untouched — with every
+// lesson SHARED the result is byte-for-byte the pre-Phase-12 result.
 
 /** Dual-chain course filter: canonical `unitId` chain OR legacy `topicId` chain. */
 export function lessonCourseChainOr(courseId: string) {
@@ -234,21 +266,43 @@ export type CourseSessionProgress = {
 /**
  * Compute the gating state of every lesson of `courseId` for `studentId`.
  * Uses a fixed, small number of queries regardless of the lesson count.
+ *
+ * `schoolType` may be supplied by a caller that has already loaded the student
+ * row; when omitted it is read from the database. It decides the track slice
+ * of the universe (see the Phase 12 block above) and is always normalised
+ * here, so an unrecognised value fails closed to SHARED-only rather than
+ * widening the universe.
  */
 export async function getCourseSessionProgress(
   studentId: string,
-  courseId: string
+  courseId: string,
+  schoolType?: SchoolType | string | null
 ): Promise<CourseSessionProgress> {
+  const resolvedSchoolType = normalizeSchoolType(
+    schoolType === undefined
+      ? (
+          await db.student.findUnique({
+            where: { id: studentId },
+            select: { schoolType: true },
+          })
+        )?.schoolType
+      : schoolType
+  );
+
   // ONE progression universe: a lesson belongs to this course through the
   // canonical Unit chain OR the legacy Topic chain. `orderCourseLessons` then
   // applies the deterministic Course → Part → Unit → (Topic) → Lesson order,
   // which Prisma `orderBy` cannot express on its own because the Topic link is
   // nullable. Archived lessons are history, not curriculum (Phase 11), so the
   // universe excludes them: every progression surface derives from `found`.
+  //
+  // Phase 12 adds the track slice: only lessons whose `trackScope` this
+  // student is eligible for enter the universe at all.
   const found = await db.lesson.findMany({
     where: {
       isPublished: true,
       ...EXCLUDE_ARCHIVED_LESSON,
+      ...trackScopeWhere(resolvedSchoolType),
       OR: [
         { unit: { part: { courseId } } },
         { topic: { unit: { part: { courseId } } } },
@@ -380,7 +434,7 @@ export async function canAccessLesson(
 ): Promise<LessonAccess> {
   const lesson = await db.lesson.findUnique({
     where: { id: lessonId },
-    select: LESSON_CHAIN_SELECT,
+    select: { ...LESSON_CHAIN_SELECT, trackScope: true },
   });
   if (!lesson) return { allowed: false, reason: "LESSON_NOT_FOUND", status: null };
 
@@ -397,7 +451,10 @@ export async function canAccessLesson(
   // inconsistency between two authorization paths is a bug in itself.
   const student = await db.student.findUnique({
     where: { id: studentId },
-    select: { group: { select: { courseId: true, isActive: true } } },
+    select: {
+      schoolType: true,
+      group: { select: { courseId: true, isActive: true } },
+    },
   });
   if (
     !student?.group ||
@@ -407,7 +464,20 @@ export async function canAccessLesson(
     return { allowed: false, reason: "NOT_ENROLLED", status: null };
   }
 
-  const progress = await getCourseSessionProgress(studentId, courseId);
+  // TRACK GATE (Phase 12, check #5 of the authorization contract).
+  //
+  // A lesson belonging to the other school type is refused HERE, before any
+  // progression is computed. The verdict is LESSON_NOT_FOUND — the same
+  // answer an id that does not exist gets — so probing ids from the other
+  // track cannot reveal that the lesson is real. The progression universe
+  // excludes it as well; this explicit gate keeps the rule visible and
+  // correct even if a future reader widens that query.
+  const schoolType = normalizeSchoolType(student.schoolType);
+  if (!canAccessTrackScope(schoolType, lesson.trackScope)) {
+    return { allowed: false, reason: "LESSON_NOT_FOUND", status: null };
+  }
+
+  const progress = await getCourseSessionProgress(studentId, courseId, schoolType);
   const status = progress.byLessonId.get(lessonId) || null;
   if (!status) return { allowed: false, reason: "LESSON_NOT_FOUND", status: null };
   if (!status.unlocked)
@@ -430,14 +500,37 @@ export async function canAccessLesson(
 // Both helpers resolve to the OWNING LESSON and then re-use `canAccessLesson`,
 // so there is exactly one definition of "may this student open this session".
 
-/** Gate any resource that belongs to a lesson, by lesson id. */
-async function gateByLesson(
+/**
+ * Gate a resource that belongs to a lesson AND carries its own trackScope.
+ *
+ * Two independent conditions, both fail-closed:
+ *   1. the owning lesson must be open to this student (`canAccessLesson`,
+ *      which already enforces enrollment, the lesson's own trackScope and the
+ *      progression gate);
+ *   2. the resource's OWN trackScope must be eligible for the student.
+ *
+ * Condition 2 is not redundant: a SHARED lesson may legitimately host an
+ * ARABIC quiz and a LANGUAGE quiz, so the resource scope can be narrower than
+ * the lesson scope. It can never usefully be WIDER — a LANGUAGE quiz on a
+ * LANGUAGE lesson is already refused by condition 1 for an ARABIC student.
+ */
+async function gateTrackedResource(
   studentId: string,
-  lessonId: string | null
+  lessonId: string | null,
+  trackScope: unknown
 ): Promise<ResourceAccess> {
   if (!lessonId) return { allowed: false, reason: "LESSON_NOT_FOUND" };
+
   const access = await canAccessLesson(studentId, lessonId);
-  return { allowed: access.allowed, reason: access.reason };
+  if (!access.allowed) return { allowed: false, reason: access.reason };
+
+  const schoolType = await getStudentSchoolType(studentId);
+  if (!canAccessTrackScope(schoolType, trackScope)) {
+    // Same non-oracle answer as "this resource does not exist": a student
+    // probing the other track's quiz/homework ids learns nothing.
+    return { allowed: false, reason: "LESSON_NOT_FOUND" };
+  }
+  return { allowed: true, reason: null };
 }
 
 /**
@@ -450,10 +543,10 @@ export async function canAccessQuiz(
 ): Promise<ResourceAccess> {
   const quiz = await db.quiz.findUnique({
     where: { id: quizId },
-    select: { lessonId: true },
+    select: { lessonId: true, trackScope: true },
   });
   if (!quiz) return { allowed: false, reason: "LESSON_NOT_FOUND" };
-  return gateByLesson(studentId, quiz.lessonId);
+  return gateTrackedResource(studentId, quiz.lessonId, quiz.trackScope);
 }
 
 /** Server-side authorization for a homework/assignment. */
@@ -463,10 +556,10 @@ export async function canAccessHomework(
 ): Promise<ResourceAccess> {
   const homework = await db.homework.findUnique({
     where: { id: homeworkId },
-    select: { lessonId: true },
+    select: { lessonId: true, trackScope: true },
   });
   if (!homework) return { allowed: false, reason: "LESSON_NOT_FOUND" };
-  return gateByLesson(studentId, homework.lessonId);
+  return gateTrackedResource(studentId, homework.lessonId, homework.trackScope);
 }
 
 /**

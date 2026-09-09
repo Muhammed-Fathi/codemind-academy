@@ -256,6 +256,23 @@ export type ReconcileReport = {
   warnings: string[];
 };
 
+/**
+ * Deterministic read order for `Part` and `Unit` rows.
+ *
+ * Both models carry exactly one ordering column (`order`) plus a stable
+ * immutable primary key (`id`). `order ASC, id ASC` is therefore a TOTAL and
+ * STABLE order: it never depends on a column that does not exist, and it does
+ * not change when the reconciler rewrites `order`/titles in place — which is
+ * what makes positional adoption idempotent across runs.
+ *
+ * Exported so the regression test can assert that every key here really is a
+ * field of the corresponding Prisma model.
+ */
+export const PART_UNIT_ORDER_BY = [
+  { order: "asc" },
+  { id: "asc" },
+] as const;
+
 function sameRecord(row: Record<string, any>, data: Record<string, any>): boolean {
   return Object.keys(data).every((k) => (row[k] ?? null) === (data[k] ?? null));
 }
@@ -265,7 +282,8 @@ function sameRecord(row: Record<string, any>, data: Record<string, any>): boolea
  *
  * Strategy (evidence-based, archive-safe):
  *  1. Upsert the known course by UNIQUE slug (display fields only).
- *  2. Match parts positionally inside the course (sorted by order,createdAt);
+ *  2. Match parts positionally inside the course (sorted by order,id —
+ *     see PART_UNIT_ORDER_BY; Part/Unit have no createdAt column);
  *     update official titles/order or create missing ones. Extra parts (e.g.
  *     from a double-run dev seed) are left untouched — their lessons are
  *     archived by step 5 and the tree skips empty groups.
@@ -310,9 +328,23 @@ export async function reconcileOfficialCurriculum(
   });
 
   // 2+3. Parts and units, matched positionally (see docblock).
+  //
+  // ORDERING CONTRACT (Phase 12 repair). Neither `Part` nor `Unit` has a
+  // `createdAt` column in prisma/schema.prisma — only `id`, the parent fk,
+  // `title`, `titleAr`, `order` (+ `description` / `icon`). An earlier
+  // revision ordered by `{ createdAt: "asc" }`, which the real Prisma client
+  // rejects with `PrismaClientValidationError: Unknown argument \`createdAt\``
+  // the moment this runs against an actual database (it survived review only
+  // because the offline mock client ignored `orderBy`).
+  //
+  // `order ASC, id ASC` is the deterministic replacement: `order` is the
+  // curriculum sequence and `id` (a stable cuid, assigned once at insert and
+  // never rewritten) is a total, stable tie-break. Positional adoption,
+  // determinism and idempotency are all preserved — see
+  // PART_UNIT_ORDER_BY below and tests/curriculum-reconciliation-phase11.test.js.
   const existingParts = await client.part.findMany({
     where: { courseId: course.id },
-    orderBy: [{ order: "asc" }, { createdAt: "asc" }],
+    orderBy: [...PART_UNIT_ORDER_BY],
   });
   let partsCreated = 0;
   let unitsCreated = 0;
@@ -346,7 +378,7 @@ export async function reconcileOfficialCurriculum(
 
     const existingUnits = await client.unit.findMany({
       where: { partId: part.id },
-      orderBy: [{ order: "asc" }, { createdAt: "asc" }],
+      orderBy: [...PART_UNIT_ORDER_BY],
     });
     for (let uIdx = 0; uIdx < partModel.units.length; uIdx++) {
       const unitModel = partModel.units[uIdx];

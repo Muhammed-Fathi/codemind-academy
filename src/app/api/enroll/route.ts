@@ -2,6 +2,7 @@ import { getServerT } from "@/lib/i18n-server";
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
+import { reconcileStudentBatch } from "@/lib/enrollment";
 
 export async function POST(req: NextRequest) {
   const tApi = await getServerT();
@@ -124,5 +125,13 @@ export async function POST(req: NextRequest) {
     return { subscription: sub, payment };
   });
 
-  return ok(result);
+  // Phase 12 — a course change MUST reconcile the batch. This route is the
+  // one place a student's course changes without an admin touching their row,
+  // and it previously left `batchId` pointing at the old course's batch — the
+  // sticky-batchId bug, which silently served the wrong segment's session
+  // videos. Reconciled after the transaction commits, so it always sees the
+  // new group.
+  const reconciliation = await reconcileStudentBatch(student.id);
+
+  return ok({ ...result, batchId: reconciliation.batchId });
 }

@@ -65,6 +65,10 @@ fs.writeFileSync(
     files: [
       path.join(REPO, "src/lib/session-progress.ts"),
       path.join(REPO, "src/lib/progress.ts"),
+      // Phase 12: session-progress now imports these.
+      path.join(REPO, "src/lib/track-scope.ts"),
+      path.join(REPO, "src/lib/school-type.ts"),
+      path.join(REPO, "src/lib/enrollment.ts"),
     ],
   })
 );
@@ -115,6 +119,8 @@ const HOMEWORKS = {
 
 const state = {
   studentGroup: { courseId: COURSE, isActive: true },
+  /** Phase 12: the student's own school type, as stored on their row. */
+  studentSchoolType: "ARABIC",
   /** lessonId -> { videoPercent, videoCompleted, isCompleted } */
   lessonProgress: {},
   /** finished quiz ids */
@@ -125,6 +131,7 @@ const state = {
 
 function reset() {
   state.studentGroup = { courseId: COURSE, isActive: true };
+  state.studentSchoolType = "ARABIC";
   state.lessonProgress = {};
   state.attemptedQuizzes = new Set();
   state.submittedHomeworks = new Set();
@@ -141,6 +148,9 @@ function canonLesson(id, order, courseId, partOrder = 1, unitOrder = 1, unitId =
     id,
     order,
     isPublished: true,
+    // Phase 12: every fixture is SHARED unless a test says otherwise — that is
+    // the non-nullable column default in the real schema.
+    trackScope: "SHARED",
     videoUrl: QUIZZES[id] ? `https://cdn.example.invalid/${id}.mp4` : null,
     pdfUrl: `https://cdn.example.invalid/${id}.pdf`,
     unitId,
@@ -161,6 +171,7 @@ function legacyLesson(id, order, courseId, topicOrder, topicId, unitOrder = 1, p
     id,
     order,
     isPublished: true,
+    trackScope: "SHARED",
     videoUrl: `https://cdn.example.invalid/${id}.mp4`,
     pdfUrl: `https://cdn.example.invalid/${id}.pdf`,
     unitId: null,
@@ -195,7 +206,7 @@ function defaultCatalogue() {
     legacyLesson("LG3", 3, LEGACY_COURSE, 1, "T:legacy:1"),
     canonLesson("MX-C", 5, MIXED_COURSE, 1, 1, "U:mixed:1"),
     canonLesson("L2", 2, COURSE),
-    { id: "ORPHAN", order: 1, isPublished: true, videoUrl: "x", pdfUrl: null, unitId: null, topicId: null, unit: null, topic: null, quizzes: [], homeworks: [] },
+    { id: "ORPHAN", order: 1, isPublished: true, trackScope: "SHARED", videoUrl: "x", pdfUrl: null, unitId: null, topicId: null, unit: null, topic: null, quizzes: [], homeworks: [] },
     legacyLesson("MX-T", 1, MIXED_COURSE, 1, "T:mixed:1"),
     canonLesson("L3", 3, COURSE),
     bothLinks,
@@ -217,6 +228,12 @@ function matchesWhere(lesson, where) {
   // field behave like live LEGACY rows (the non-nullable column default):
   // included, because they are not ARCHIVED.
   if (where.curriculumStatus?.not !== undefined && lesson.curriculumStatus === where.curriculumStatus.not) return false;
+  // Phase 12: honor the track slice. Fixtures without the field behave like
+  // live rows (the non-nullable column default, SHARED).
+  if (Array.isArray(where.trackScope?.in)) {
+    const scope = lesson.trackScope || "SHARED";
+    if (!where.trackScope.in.includes(scope)) return false;
+  }
   const viaUnit = (courseId) => !!lesson.unit && lesson.unit.part.courseId === courseId;
   const viaTopic = (courseId) => !!lesson.topic && lesson.topic.unit.part.courseId === courseId;
   if (Array.isArray(where.OR)) {
@@ -255,18 +272,22 @@ const fakeDb = {
         .map((homeworkId) => ({ homeworkId })),
   },
   student: {
-    findUnique: () => ({ id: "S1", group: state.studentGroup }),
+    findUnique: () => ({
+      id: "S1",
+      schoolType: state.studentSchoolType,
+      group: state.studentGroup,
+    }),
   },
   quiz: {
     findUnique: ({ where }) => {
       const lessonId = Object.keys(QUIZZES).find((l) => QUIZZES[l] === where.id);
-      return lessonId ? { id: where.id, lessonId } : null;
+      return lessonId ? { id: where.id, lessonId, trackScope: "SHARED" } : null;
     },
   },
   homework: {
     findUnique: ({ where }) => {
       const lessonId = Object.keys(HOMEWORKS).find((l) => HOMEWORKS[l] === where.id);
-      return lessonId ? { id: where.id, lessonId } : null;
+      return lessonId ? { id: where.id, lessonId, trackScope: "SHARED" } : null;
     },
   },
 };
@@ -547,7 +568,14 @@ async function main() {
   ok(sp.includes("orderCourseLessons(found, courseId)"), "ordering is applied explicitly, not left to SQL");
   ok(!/orderBy: \[\s*\{ topic:/.test(sp), "the old topic-only orderBy is gone");
   ok(/lesson\.unit\?\.part\.courseId \?\?/.test(sp), "canAccessLesson resolves the course canonical-first");
-  ok(/select: LESSON_CHAIN_SELECT/.test(sp), "the chain shape is shared, so both paths see the same lesson");
+  // Phase 12: `canAccessLesson` still builds its row from the SHARED chain
+  // select (so both paths see the same lesson) and additionally reads the
+  // lesson's trackScope for the track gate. The assertion is tightened, not
+  // relaxed: it now pins both facts.
+  ok(
+    /select: \{ \.\.\.LESSON_CHAIN_SELECT, trackScope: true \}/.test(sp),
+    "the chain shape is shared, so both paths see the same lesson"
+  );
 
   section("21. Source invariants: the course tree redacts locked sessions");
   const courseRoute = read("src/app/api/courses/[slug]/route.ts");
@@ -567,8 +595,11 @@ async function main() {
   // patterns below assert the FULL fetch shape — chain + order + payload +
   // exclusion — so neither the chain coverage nor the exclusion can regress.
   ok(/EXCLUDE_ARCHIVED_LESSON/.test(courseRoute), "the course tree imports the archived-lesson exclusion");
-  ok(/lessons: \{\s*where: \{ \.\.\.EXCLUDE_ARCHIVED_LESSON \},\s*orderBy: \{ order: "asc" \},\s*include: LESSON_INCLUDE,/.test(courseRoute), "the unit's canonical lessons are fetched (archived history excluded)");
-  ok(/topics: \{[\s\S]*?lessons: \{\s*where: \{ \.\.\.EXCLUDE_ARCHIVED_LESSON \},\s*orderBy: \{ order: "asc" \},\s*include: LESSON_INCLUDE,/.test(courseRoute), "legacy topics still fetch their lessons (archived history excluded)");
+  // Phase 12: the course tree additionally narrows to the viewer's track.
+  // Both spreads are asserted, so neither the archived-history exclusion nor
+  // the track slice can silently disappear.
+  ok(/lessons: \{\s*where: \{ \.\.\.EXCLUDE_ARCHIVED_LESSON, \.\.\.viewerTrackFilter \},\s*orderBy: \{ order: "asc" \},\s*include: LESSON_INCLUDE,/.test(courseRoute), "the unit's canonical lessons are fetched (archived history excluded)");
+  ok(/topics: \{[\s\S]*?lessons: \{\s*where: \{ \.\.\.EXCLUDE_ARCHIVED_LESSON, \.\.\.viewerTrackFilter \},\s*orderBy: \{ order: "asc" \},\s*include: LESSON_INCLUDE,/.test(courseRoute), "legacy topics still fetch their lessons (archived history excluded)");
   ok(/lessons: unit\.lessons\.map\(toLesson\)/.test(courseRoute), "canonical lessons are serialised at unit level");
   ok(/\.filter\(\(lesson\) => !lesson\.unitId\)/.test(courseRoute), "a both-linked lesson is not rendered twice");
   ok(/if \(lesson\.unitId\) continue;/.test(courseRoute), "the flat status list matches the engine's canonical-first rule");

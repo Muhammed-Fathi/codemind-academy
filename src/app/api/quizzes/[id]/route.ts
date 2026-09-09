@@ -2,7 +2,12 @@ import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireUser, getStudentProfile, denyProgression } from "@/lib/api";
 import { canAccessQuiz } from "@/lib/session-progress";
+import { getStudentSchoolType } from "@/lib/enrollment";
+import { canAccessTrackScope } from "@/lib/track-scope";
 import { loadAttemptQuestionSet, safeParseOptions } from "@/lib/session-quiz";
+import { isQuestionEligible } from "@/lib/track-scope";
+import { isParentAllowedTrackScope } from "@/lib/parent-access";
+import type { SchoolType } from "@/lib/school-type";
 import { isParentAuthorizedForCourse } from "@/lib/parent-access";
 
 // GET /api/quizzes/[id]
@@ -47,6 +52,15 @@ export async function GET(
   });
   if (!quiz) return err("Quiz not found", 404);
 
+  // Phase 12 — a parent previews through the CHILD's track, never through
+  // their own account attributes or locale. A parent with children in both
+  // school types may see both; a parent of only ARABIC children cannot open a
+  // LANGUAGE quiz. Ids are unguessable, so a refusal is a plain 404.
+  if (user.role === "PARENT") {
+    const allowedScope = await isParentAllowedTrackScope(user.id, quiz.trackScope);
+    if (!allowedScope) return err("Quiz not found", 404);
+  }
+
   // Phase 7: a parent may open ONLY quizzes of courses in which a linked
   // child is enrolled. Quiz ids are unguessable, so an out-of-scope quiz
   // looks exactly like a nonexistent one (404). Teacher/admin preview and
@@ -71,12 +85,18 @@ export async function GET(
   } | null = null;
   let studentHasAttempted = false;
   let attemptQuestionIds: string[] | null = null;
+  let studentSchoolType: SchoolType | null = null;
   if (user.role === "STUDENT") {
     const s = await getStudentProfile(user.id);
     if (!s) return err("Student profile not found", 404);
 
     const access = await canAccessQuiz(s.id, id);
     if (!access.allowed) return denyProgression(access.reason, "Quiz not found");
+
+    // Deterministic set: an open attempt pins the exact question list, and
+    // only the questions eligible for THIS student's school type are served.
+    const schoolType = await getStudentSchoolType(s.id);
+    studentSchoolType = schoolType;
 
     const attempts = await db.quizAttempt.findMany({
       where: { quizId: id, student: { userId: user.id } },
@@ -95,10 +115,11 @@ export async function GET(
       studentHasAttempted = attempts.some((x) => x.finishedAt !== null);
     }
 
-    // Deterministic set: an open attempt pins the exact question list.
+    // Deterministic set: an open attempt pins the exact question list, and
+    // the track filter narrows it to what this student may see.
     const open = attempts.find((x) => x.finishedAt === null);
     if (open) {
-      const set = await loadAttemptQuestionSet(open.id);
+      const set = await loadAttemptQuestionSet(open.id, schoolType);
       attemptQuestionIds = set.map((q) => q.questionId);
     }
   }
@@ -115,9 +136,18 @@ export async function GET(
     quiz.lesson?.topic?.unit.part.course.slug ??
     null;
 
+  // Phase 12 — the served questions are the attempt's frozen set when there is
+  // one, and in BOTH cases only the questions eligible for the student's
+  // school type. Without an open attempt (student previewing before starting)
+  // the live bank is filtered directly.
+  const eligibleQuestions = quiz.questions.filter((q) =>
+    user.role === "STUDENT"
+      ? isQuestionEligible(studentSchoolType, q.schoolType)
+      : true
+  );
   const questions = attemptQuestionIds
-    ? quiz.questions.filter((q) => attemptQuestionIds!.includes(q.id))
-    : quiz.questions;
+    ? eligibleQuestions.filter((q) => attemptQuestionIds!.includes(q.id))
+    : eligibleQuestions;
 
   return ok({
     quiz: {

@@ -5,6 +5,10 @@ import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireRole } from "@/lib/api";
 import { normalizeSchoolType } from "@/lib/school-type";
+import {
+  parseQuestionSchoolTypeInput,
+  resolveQuestionSchoolType,
+} from "@/lib/track-scope";
 
 export async function GET(req: NextRequest) {
   const { error } = await requireRole("ADMIN");
@@ -123,7 +127,26 @@ export async function POST(req: NextRequest) {
   const marks = Number(body.marks || 1);
   const quizId = body.quizId ? String(body.quizId) : null;
   // null => shared question, usable by both the Arabic and Language banks.
-  const questionSchoolType = normalizeSchoolType(body.schoolType);
+  //
+  // Phase 12 — an explicitly supplied value is validated (rejected when
+  // meaningless, never silently downgraded to SHARED) and otherwise the
+  // question inherits the owning quiz's track scope, so a question created
+  // inside an ARABIC-only quiz cannot end up tagged shared. Precedence is
+  // documented in src/lib/track-scope.ts.
+  const parsedSchoolType = parseQuestionSchoolTypeInput(body.schoolType);
+  if (!parsedSchoolType.ok) return err(tApi("api.229"), 400);
+  const owningQuizTrackScope = quizId
+    ? (
+        await db.quiz.findUnique({
+          where: { id: quizId },
+          select: { trackScope: true },
+        })
+      )?.trackScope
+    : undefined;
+  const questionSchoolType =
+    parsedSchoolType.specified
+      ? parsedSchoolType.value
+      : resolveQuestionSchoolType(undefined, owningQuizTrackScope);
 
   let optionsRaw: any = body.options;
   let answer = String(body.answer ?? "0");

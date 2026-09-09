@@ -25,6 +25,7 @@ import { db } from "@/lib/db";
 import { ok, err, requireUser, getStudentProfile, denyProgression } from "@/lib/api";
 import { canAccessQuiz } from "@/lib/session-progress";
 import { loadAttemptQuestionSet, seedAttemptQuestions } from "@/lib/session-quiz";
+import { getStudentSchoolType } from "@/lib/enrollment";
 
 const ALLOWED_STATUSES = new Set([
   "NOT_REQUESTED",
@@ -57,6 +58,10 @@ export async function POST(
   const access = await canAccessQuiz(student.id, id);
   if (!access.allowed) return denyProgression(access.reason, "Quiz not found");
 
+  // Phase 12 — the student's own school type decides which questions are
+  // frozen into the attempt. Read from their row, never from the request.
+  const schoolType = await getStudentSchoolType(student.id);
+
   const body = await req.json().catch(() => ({}));
   const requested = String(body.cameraStatus || "NOT_REQUESTED");
   const cameraStatus = ALLOWED_STATUSES.has(requested) ? requested : "NOT_REQUESTED";
@@ -74,9 +79,9 @@ export async function POST(
     // now (exactly what a fresh attempt would do) so the set becomes stable
     // from this point on. Attempts created after Phase 5 already have rows
     // and keep them untouched.
-    const set = await loadAttemptQuestionSet(existing.id);
+    const set = await loadAttemptQuestionSet(existing.id, schoolType);
     if (set.length > 0 && set.every((q) => q.answerId === null)) {
-      await seedAttemptQuestions(existing.id, id);
+      await seedAttemptQuestions(existing.id, id, schoolType);
     }
     await db.quizAttempt.update({
       where: { id: existing.id },
@@ -100,8 +105,8 @@ export async function POST(
   });
 
   // Freeze this attempt's question set: one unanswered answer row per
-  // current quiz question. The set is immutable from here on.
-  await seedAttemptQuestions(attempt.id, id);
+  // ELIGIBLE current quiz question. The set is immutable from here on.
+  await seedAttemptQuestions(attempt.id, id, schoolType);
 
   return ok({ attemptId: attempt.id, resumed: false });
 }

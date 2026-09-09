@@ -294,3 +294,72 @@ export function attemptInQuizScope(
 ): boolean {
   return authorizedQuizIds.has(a.quizId);
 }
+
+// ---------------------------------------------------------------------------
+// Track-safe reporting primitives (Phase 12)
+// ---------------------------------------------------------------------------
+//
+// MINIMAL BY DESIGN. Phase 12 must not redesign the analytics UI, so nothing
+// above changes: attempt-weighting, the finished-only rule and the
+// question-performance ordering are all exactly as Phase 6 defined them. These
+// helpers only make it possible to CUT an existing aggregate by track, and
+// they do it by RE-USING `summarizeFinishedAttempts` rather than by adding a
+// second arithmetic path — so a track-split number can never disagree with the
+// overall number it was split from.
+//
+// Like the rest of this module they are pure and DB-free: the caller decides
+// which rows are in scope, these functions only group and reduce them.
+
+import {
+  TRACK_SCOPES,
+  normalizeTrackScope,
+  type TrackScope,
+} from "@/lib/track-scope";
+
+/** The three buckets a track-aware report can have, in display order. */
+export const TRACK_BUCKETS: readonly TrackScope[] = TRACK_SCOPES;
+
+/**
+ * The track bucket a row belongs to.
+ *
+ * `null`/`undefined` is SHARED: that is the stored representation of a shared
+ * question (a convention that predates Phase 12 and is relied on by the
+ * mock-exam bank isolation). An UNRECOGNISED non-null value is also reported
+ * as SHARED here — deliberately different from authorization, which fails
+ * closed. A report must never silently drop a row, and bucketing is not an
+ * access decision; the row is still visible, just labelled.
+ */
+export function trackBucketOf(value: unknown): TrackScope {
+  return normalizeTrackScope(value) ?? "SHARED";
+}
+
+/** Group any rows into the three track buckets. Always returns all three keys. */
+export function partitionByTrack<T>(
+  items: readonly T[],
+  getTrack: (item: T) => unknown
+): Record<TrackScope, T[]> {
+  const out: Record<TrackScope, T[]> = { SHARED: [], ARABIC: [], LANGUAGE: [] };
+  for (const item of items) out[trackBucketOf(getTrack(item))].push(item);
+  return out;
+}
+
+/**
+ * The Phase 6 attempt summary, split by track.
+ *
+ * The same `summarizeFinishedAttempts` is applied to each bucket, so the
+ * finished-only rule and the per-attempt weighting hold inside every bucket.
+ * Buckets are not additive by student (a student has exactly one track, but an
+ * attempt set may span quizzes of different scopes) — that is why the split is
+ * returned per bucket rather than being summed back here.
+ */
+export function summarizeFinishedAttemptsByTrack<T extends AttemptDatum>(
+  attempts: readonly T[],
+  getTrack: (attempt: T) => unknown
+): Record<TrackScope, AttemptSummary> {
+  const buckets = partitionByTrack(attempts, getTrack);
+  return {
+    SHARED: summarizeFinishedAttempts(buckets.SHARED),
+    ARABIC: summarizeFinishedAttempts(buckets.ARABIC),
+    LANGUAGE: summarizeFinishedAttempts(buckets.LANGUAGE),
+  };
+}

@@ -14,6 +14,7 @@
 
 import { db } from "@/lib/db";
 import { getEnrollment } from "@/lib/enrollment";
+import { normalizeTrackScope, type TrackScope } from "@/lib/track-scope";
 
 /** Student ids explicitly linked to the parent identified by `parentUserId`. */
 export async function getLinkedStudentIds(
@@ -56,4 +57,55 @@ export async function isParentAuthorizedForCourse(
   if (!courseId) return false;
   const courseIds = await getParentCourseIds(parentUserId);
   return courseIds.has(courseId);
+}
+
+// ---------------------------------------------------------------------------
+// Track scope (Phase 12)
+// ---------------------------------------------------------------------------
+//
+// A parent previews content ON BEHALF OF A CHILD, so the track decision is the
+// CHILD's, not the parent's: never the parent's locale, never the parent's own
+// account attributes, never a request parameter.
+//
+// A parent may of course have more than one child, in different school types,
+// so the parent's eligible set is the UNION of their children's tracks. It is
+// built from exactly the same population as `getParentCourseIds` — LINKED
+// children who are actually ENROLLED — on purpose: a child who is not
+// enrolled contributes no course and must not contribute a track either,
+// otherwise a parent with one enrolled ARABIC child and one unenrolled
+// LANGUAGE child could preview LANGUAGE content that neither child can open.
+//
+// SHARED content is always in scope for a parent; the course check above is
+// what keeps an unauthorised parent out, so these helpers only ever answer the
+// narrower question "is this the right track".
+
+/** Track scopes a parent may preview: SHARED plus every enrolled child's track. */
+export async function getParentTrackScopes(
+  parentUserId: string
+): Promise<Set<TrackScope>> {
+  const studentIds = await getLinkedStudentIds(parentUserId);
+  const scopes = new Set<TrackScope>(["SHARED"]);
+  for (const studentId of studentIds) {
+    const enrollment = await getEnrollment(studentId);
+    if (enrollment.isEnrolled && enrollment.courseId && enrollment.schoolType) {
+      scopes.add(enrollment.schoolType);
+    }
+  }
+  return scopes;
+}
+
+/**
+ * May this parent preview content with `trackScope`?
+ * Fails closed: an unrecognised scope is refused rather than treated as
+ * SHARED.
+ */
+export async function isParentAllowedTrackScope(
+  parentUserId: string,
+  trackScope: unknown
+): Promise<boolean> {
+  const scope = normalizeTrackScope(trackScope);
+  if (!scope) return false;
+  if (scope === "SHARED") return true;
+  const scopes = await getParentTrackScopes(parentUserId);
+  return scopes.has(scope);
 }
