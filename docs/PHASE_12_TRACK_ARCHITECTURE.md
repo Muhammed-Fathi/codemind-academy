@@ -338,7 +338,7 @@ Three source-invariant regexes in `session-progression` were **tightened** to pi
 | session-progression | 151 / 0 | 151 / 0 |
 | session-quiz | 70 / 0 | 70 / 0 |
 | **track-architecture-phase12 (new)** | — | **291 / 0** |
-| **total** | **1810** | **2092 / 0 failures** |
+| **total** | **1810** | **2101 / 0 failures** |
 
 `npm run typecheck` (`tsc --noEmit`) → **0 errors**.
 
