@@ -452,13 +452,35 @@ row exists`; restored → 301/0.
 
 ### Finding 2 — PRE-EXISTING, reported not fixed: a parent can open an unpublished lesson
 
-`GET /api/lessons/IDOR-L-UNPUB` returns **200** to a parent whose child is eligible, with no
-`isPublished` check on the parent branch.
+`GET /api/lessons/<id>` returns **200** to a parent whose child is eligible, with no `isPublished`
+check on the parent branch.
 
-Proven pre-existing, not a Phase 12 regression: `git show 66f56f5:src/app/api/lessons/[id]/route.ts`
-already contained the parent branch with no `isPublished` test; that file's `isPublished` count is
-**1 at base and 1 at HEAD**; Phase 12 removed **zero** `isPublished` lines anywhere (the nine `-`
-lines in the full diff are all modified-not-deleted, and every changed file kept the same count).
+**Measured at both commits, not inferred.** Base `66f56f5` was built in a throwaway worktree and
+run against the same database and the same fixtures, then probed over HTTP alongside HEAD:
+
+| Probe (same cookie, same fixture) | BASE `66f56f5` | HEAD `2206661` | |
+| --- | --- | --- | --- |
+| parent → UNPUBLISHED lesson, `trackScope: SHARED` | **200** | **200** | identical — the finding is unchanged |
+| parent → UNPUBLISHED lesson, `trackScope: LANGUAGE` | **200** | **404** | HEAD is stricter |
+| student → media id that EXISTS (`EXTERNAL_URL`) | **400** | **400** | identical |
+| student → media id that does NOT exist | **404** | **404** | identical |
+
+The exposure is therefore unchanged for the case that matters, and **strictly narrower** for a
+LANGUAGE-tagged draft: Phase 12's new `isParentAllowedTrackScope` guard sits *after* the existing
+`isParentAuthorizedForCourse` check, so it can only turn 200s into 404s. No `isPublished` predicate
+was lost: across all 21 changed route files and all 9 changed lib files the per-file `isPublished`
+count is identical at base and HEAD (delta `+0` everywhere).
+
+*Nuance, stated precisely:* the full diff does contain **nine `-` lines that mention
+`isPublished`** — so "Phase 12 removed zero `isPublished` lines" is literally false and was
+corrected here. What is true is that every one of the nine is a modified-not-deleted line whose
+replacement still enforces the predicate: three in source (`media/[id]` select list, `media/[id]`
+authorization predicate — both *strengthened* by the added track clause; and
+`students/me/session-videos` where `isPublished: true` is retained with the track filter layered
+**on top**), and six in test fixtures where `trackScope: "SHARED"` was added. The fixtures'
+`isPublished` value distributions are byte-identical before and after (`parent-dashboard-isolation`
+1 false / 5 true at both; `session-progression` 4 true at both).
+
 Publishing/lifecycle is explicitly Phase 13+ scope. Left for that phase.
 
 ### Finding 3 — PRE-EXISTING, reported not fixed: media reveals asset existence pre-auth
@@ -467,6 +489,31 @@ Publishing/lifecycle is explicitly Phase 13+ scope. Left for that phase.
 authenticated user can distinguish an existing `EXTERNAL_URL` asset from a nonexistent id. It
 leaks no track information — only that an id exists and is externally stored. Also out of Phase 12
 scope (security Phase 20).
+
+**Measured identical at both commits** (see Finding 2's table): existing `EXTERNAL_URL` id →
+`400` at base and at HEAD; nonexistent id → `404` at base and at HEAD. The oracle is byte-for-byte
+the same. The response sequence in that file is unchanged — `401` unauthenticated → `404` no such
+asset → `400` not a stored asset → the role/track authorization block — at both commits; Phase 12
+did not move the `400` and added nothing before it. Phase 12's only change to that file is inside
+the `STUDENT` branch, *downstream* of the `400`, where it **tightens** the predicate from
+`v.isPublished && v.batchId === student.batchId` to also require
+`v.batch.schoolType === studentSchoolType`. The `PARENT` branch is byte-identical at both commits.
+
+### No additional exposure from either issue
+
+Beyond the two files above, the whole PR was audited for anything that could widen either surface:
+
+- **No new or deleted API routes.** `git diff --name-status --diff-filter=ADR 66f56f5 2206661`
+  lists exactly five additions — two docs, the migration, `src/lib/track-scope.ts` and the new test
+  file. There is no new endpoint that could reach unpublished content or probe an asset id.
+- **No lost publication check anywhere.** Per-file `isPublished` counts are identical at base and
+  HEAD for all 21 changed route files and all 9 changed lib files (delta `+0` in every row).
+- **The migration cannot affect either surface.** It touches only `Student`, `Lesson`, `Quiz` and
+  `Homework` (the `isPublished` mentions in it are column names carried verbatim through the SQLite
+  table rebuilds). It does not touch `MediaAsset` or `SessionVideo`.
+- **Track gating cannot substitute for a publication check.** Every guard Phase 12 adds is an
+  *additional* conjunct on an existing query, never a replacement, and each is keyed on the
+  authenticated user's server-side state.
 
 ### Everything else in the review came back clean
 
