@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { ok, err, requireUser, getParentProfile } from "@/lib/api";
 import type { ParentSubscriptionPayload } from "@/lib/parent-subscription";
 import { getVideoProgressForStudents } from "@/lib/progress";
+import { trackScopeWhere } from "@/lib/track-scope";
 import {
   EXCLUDE_ARCHIVED_LESSON,
   getCourseSessionProgress,
@@ -44,6 +45,10 @@ export async function GET(_req: NextRequest) {
   const children = await Promise.all(
     parent.children.map(async (link) => {
       const student = link.student;
+      // Phase 12: this parent is previewing ONE child, so every universe count
+      // and every content list below is sliced to THAT child's track — the same
+      // slice the child's own dashboard applies.
+      const childTrack = trackScopeWhere(student.schoolType);
 
       // --- Course progress: avg of LessonProgress.progress across all lessons in the
       // course (or 0 if no progress). Also count completed lessons.
@@ -56,6 +61,7 @@ export async function GET(_req: NextRequest) {
         where: {
           isPublished: true,
           ...EXCLUDE_ARCHIVED_LESSON,
+          ...childTrack,
           OR: lessonCourseChainOr(student.group?.courseId || ""),
         },
         select: { id: true },
@@ -236,7 +242,12 @@ export async function GET(_req: NextRequest) {
 
       // --- Homework completion
       const allHomeworks = await db.homework.findMany({
-        where: { lesson: { topic: { unit: { part: { courseId: student.group?.courseId || "" } } } } },
+        // Phase 12: the parent must not be shown assignments from the other
+        // school type — this list returns titles, so it is a content surface.
+        where: {
+          ...childTrack,
+          lesson: { topic: { unit: { part: { courseId: student.group?.courseId || "" } } } },
+        },
         select: { id: true, title: true, titleAr: true, deadline: true, maxMarks: true },
       });
       const submissions = await db.homeworkSubmission.findMany({

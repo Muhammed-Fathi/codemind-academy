@@ -16,7 +16,7 @@ The mandatory prerequisite (the Phase 11 reconciler crash) was reproduced, root-
 | Commit | `585f550` (base `66f56f5`) |
 | PR | **#29 — OPEN, `mergedAt: null`, not a draft** |
 | Files changed | 36 (+2,958 / −125) |
-| Offline test assertions | **2,092 passed, 0 failed** across 17 suites |
+| Offline test assertions | **2,101 passed, 0 failed** across 17 suites |
 | `tsc --noEmit` | **0 errors** |
 | `eslint` on Phase 12 files | **0 findings** |
 | Real-database end-to-end | **37 passed, 0 failed** |
@@ -327,7 +327,7 @@ Every authorization decision is made server-side from a database lookup. Fronten
 
 ## 26. The new test suite
 
-`tests/track-architecture-phase12.test.js` — **1,088 lines, 282 assertions, 0 failures**, four layers:
+`tests/track-architecture-phase12.test.js` — **291 assertions, 0 failures**, four layers:
 
 - **A. Pure contract** — `track-scope` + `school-type` compiled with `tsc` and exercised directly: every accepted spelling, every rejected value, the full matrix, fail-closed on both sides, tagging precedence, Prisma predicates.
 - **B. Behavioural** — the *real* `session-progress`, `session-quiz`, `enrollment`, `parent-access`, `quiz-analytics` compiled and run against a fake `@/lib/db` modelling the Phase 12 schema: the 9-cell lesson matrix, progression-universe exclusion, unlock targets, quiz selection/serving/grading incl. crafted-answer and legacy-frozen-set cases, all batch-reconciliation cases, video semantics, parent scopes, analytics buckets.
@@ -362,12 +362,40 @@ Baselines were captured with `git stash` **before** the changes and are identica
 | seed-idempotency | 18 / 0 | 18 / 0 |
 | session-progression | 151 / 0 | 151 / 0 |
 | session-quiz | 70 / 0 | 70 / 0 |
-| **track-architecture-phase12 (new)** | — | **282 / 0** |
-| **total** | **1,810** | **2,092 / 0 failures** |
+| **track-architecture-phase12 (new)** | — | **291 / 0** |
+| **total** | **1,810** | **2,101 / 0 failures** |
 
 `npm run typecheck` (`tsc --noEmit`) → **0 errors**. `eslint` on the Phase 12 lib files → **0 findings**.
 
 ---
+
+## 27b. Completeness audit — every route that reads track-scoped content
+
+Gating the obvious endpoints is not enough, so **all 80 route files** were audited for reads of
+`Lesson` / `Quiz` / `Homework` / `SessionVideo` / `MediaAsset` / `Question`. Five further surfaces
+needed slicing, and they are precisely the kind that a surface-level pass misses — **denominators
+and embedded lists**:
+
+| surface | defect found |
+|---|---|
+| `students/me/dashboard` | course-progress denominator counted the other track's lessons, and the **embedded homework list returned other-track rows and titles — an outright content leak** |
+| `students/me/certificate` | the 80% threshold divided by lessons the student can never open, making the certificate unreachable in a mixed-track course |
+| `parents/me/dashboard` | per-child universe and homework list unfiltered — now sliced to **that child's** track, not the parent's union |
+| `parents/me/analytics` | universe unfiltered — now sliced to the union of the linked children's tracks |
+| `parents/me/weekly-report` | same defect, same union rule |
+
+Verified **already safe by construction** rather than assumed:
+- `lessons/[id]/progress` → calls `canAccessLesson`, which carries the track gate;
+- `students/me/session-videos/[id]/progress` → enforces `video.batchId === student.batchId`, and `Batch.schoolType` is non-nullable, so track follows automatically;
+- `students/me/dashboard`'s unlocked-lesson set → comes from `getUnlockedLessonIds`, which inherits the filtered universe;
+- quiz-attempt lists (student, parent, teacher) → restricted to the student's own attempts, which can only exist for quizzes they were allowed to open.
+
+`teacher/*` and `admin/*` surfaces are deliberately **not** sliced: staff legitimately serve both
+school types.
+
+Nine new assertions pin all five fixes. **Mutation-verified:** deleting only the dashboard
+homework filter → `FAIL: students/me/dashboard slices BOTH the lesson universe and the homework
+list`; restored → 291/0.
 
 ## 28. Real-database verification, known limitations, and the merge decision
 

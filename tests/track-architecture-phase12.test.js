@@ -1021,6 +1021,56 @@ async function main() {
   const enrollRoute = read("src/app/api/enroll/route.ts");
   ok(/reconcileStudentBatch\(student\.id\)/.test(enrollRoute), "self-enrollment reconciles the batch (course change)");
 
+  section("28b. DENOMINATOR & EMBEDDED-LIST surfaces are track-scoped too");
+  // A completion percentage whose DENOMINATOR counts lessons of the other
+  // school type is wrong the moment any lesson is tagged, and a dashboard that
+  // embeds a homework list is a content surface even though it is not the
+  // homework endpoint. These five were found by auditing every route that
+  // reads track-scoped content, not just the obvious ones.
+  {
+    const studentDash = read("src/app/api/students/me/dashboard/route.ts");
+    ok(
+      /getStudentSchoolType\(student\.id\)/.test(studentDash),
+      "students/me/dashboard derives the viewer track server-side"
+    );
+    ok(
+      (studentDash.match(/\.\.\.viewerTrack,/g) || []).length >= 2,
+      "students/me/dashboard slices BOTH the lesson universe and the homework list"
+    );
+
+    const cert = read("src/app/api/students/me/certificate/route.ts");
+    ok(
+      /const studentTrack = trackScopeWhere\(student\.schoolType\)/.test(cert),
+      "certificate derives the student's track"
+    );
+    ok(
+      (cert.match(/\.\.\.studentTrack,/g) || []).length >= 2,
+      "certificate filters BOTH the total and the completed denominator"
+    );
+    ok(
+      cert.indexOf("...studentTrack,") < cert.indexOf("pct >= 80"),
+      "the 80% threshold is computed from the filtered counts"
+    );
+
+    const parentDash = read("src/app/api/parents/me/dashboard/route.ts");
+    ok(
+      /const childTrack = trackScopeWhere\(student\.schoolType\)/.test(parentDash),
+      "parents/me/dashboard slices per CHILD, not to the parent's union"
+    );
+    ok(
+      (parentDash.match(/\.\.\.childTrack,/g) || []).length >= 2,
+      "parents/me/dashboard slices BOTH the universe and the homework list"
+    );
+
+    for (const rel of ["parents/me/analytics", "parents/me/weekly-report"]) {
+      const src = read(`src/app/api/${rel}/route.ts`);
+      ok(
+        /trackScopeInWhere\(await getParentTrackScopes\(user\.id\)\)/.test(src),
+        `${rel} slices the universe to the union of the linked children's tracks`
+      );
+    }
+  }
+
   section("29. SECURITY BOUNDARY — no track decision trusts the client");
   {
     // The authorization inputs must come from server-side lookups only.

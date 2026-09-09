@@ -150,6 +150,30 @@ earn credit.
 | `/api/lessons/[id]` | `viewerTrackFilter` on quizzes, homework and prev/next; parent preview gated by `isParentAllowedTrackScope` |
 | `/api/quizzes/[id]`, `/start`, `/submit` | `isQuestionEligible` on the served list; `getStudentSchoolType` server-side; parent preview gated |
 
+### 6b. Completeness audit of every route that reads track-scoped content
+
+All 80 route files were audited for reads of `Lesson` / `Quiz` / `Homework` / `SessionVideo` /
+`MediaAsset` / `Question`. Beyond the routes above, five further surfaces were found to need
+slicing — they are **denominators and embedded lists**, which is exactly why an audit was needed
+rather than a list of the obvious endpoints:
+
+| surface | why it needed fixing |
+|---|---|
+| `/api/students/me/dashboard` | the course-progress denominator counted the other track's lessons, and the **embedded homework list returned other-track rows and titles** — an outright content leak |
+| `/api/students/me/certificate` | the 80% threshold divided by lessons the student can never open, making the certificate unreachable in a mixed course |
+| `/api/parents/me/dashboard` | per-child universe and homework list — sliced to **that child's** track, not the parent's union |
+| `/api/parents/me/analytics` | universe sliced to the union of the linked children's tracks |
+| `/api/parents/me/weekly-report` | same union rule |
+
+Already safe by construction, verified rather than assumed:
+- `/api/lessons/[id]/progress` → calls `canAccessLesson`, which carries the track gate;
+- `/api/students/me/session-videos/[id]/progress` → enforces `video.batchId === student.batchId`, and `Batch.schoolType` is non-nullable, so track follows automatically;
+- `/api/students/me/dashboard`'s unlocked-lesson set → comes from `getUnlockedLessonIds`, which inherits the filtered universe;
+- quiz-attempt lists (student, parent, teacher) → restricted to the student's own attempts, which can only exist for quizzes they were allowed to open.
+
+`teacher/*` and `admin/*` surfaces are deliberately **not** sliced: staff legitimately serve both
+school types.
+
 ---
 
 ## 7. Teacher question tagging
@@ -242,7 +266,7 @@ Applied: `npx prisma migrate status` → **"5 migrations found / Database schema
 
 ## 11. Tests
 
-`tests/track-architecture-phase12.test.js` (new) — **282 assertions, 0 failures**. Four layers:
+`tests/track-architecture-phase12.test.js` (new) — **291 assertions, 0 failures**. Four layers:
 
 - **A. Pure contract** — `track-scope` + `school-type` compiled with `tsc` and exercised directly: the full matrix, fail-closed on both sides, question-tagging precedence, Prisma predicates.
 - **B. Behavioural** — the *real* `session-progress`, `session-quiz`, `enrollment`, `parent-access`, `quiz-analytics` compiled and run against a fake `@/lib/db` modelling the Phase 12 schema. Covers the 9-cell lesson matrix, progression-universe exclusion, unlock targets, quiz selection/serving/grading, live-quiz sets, all batch-reconciliation cases incl. idempotency, video semantics, parent scopes, analytics buckets.
@@ -276,7 +300,7 @@ Three source-invariant regexes in `session-progression` were **tightened** to pi
 | seed-idempotency | 18 / 0 | 18 / 0 |
 | session-progression | 151 / 0 | 151 / 0 |
 | session-quiz | 70 / 0 | 70 / 0 |
-| **track-architecture-phase12 (new)** | — | **282 / 0** |
+| **track-architecture-phase12 (new)** | — | **291 / 0** |
 | **total** | **1810** | **2092 / 0 failures** |
 
 `npm run typecheck` (`tsc --noEmit`) → **0 errors**.

@@ -5,6 +5,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
 import { EXCLUDE_ARCHIVED_LESSON, lessonCoursesChainOr } from "@/lib/session-progress";
+import { trackScopeInWhere } from "@/lib/track-scope";
+import { getParentTrackScopes } from "@/lib/parent-access";
 
 export async function GET(req: NextRequest) {
   const tApi = await getServerT();
@@ -64,6 +66,10 @@ export async function GET(req: NextRequest) {
           where: {
             isPublished: true,
             ...EXCLUDE_ARCHIVED_LESSON,
+            // Phase 12: a parent's analytics span their linked children, so the
+            // universe is the UNION of those children's tracks (always plus
+            // SHARED) — never a track none of their children belongs to.
+            ...trackScopeInWhere(await getParentTrackScopes(user.id)),
             OR: lessonCoursesChainOr(analyticsCourseIds),
           },
           select: {
