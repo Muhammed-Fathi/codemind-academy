@@ -436,20 +436,37 @@ export async function reconcileOfficialCurriculum(
           order: lessonModel.order,
           description: lessonModel.description || null,
           curriculumStatus: "OFFICIAL",
+          // Phase 13: lifecycle source of truth is status. Keep isPublished as
+          // a compatibility mirror that stays in sync with status. New official
+          // lessons are published (status=PUBLISHED) so the established 23-
+          // lesson curriculum remains visible after the Phase 13 migration;
+          // future lessons should be created DRAFT and opened via the ceremony.
           isPublished: true,
           isLocked: false,
+          status: "PUBLISHED",
+          // publishedAt is managed by the OPEN ceremony; the reconciler does
+          // not overwrite it on existing rows, and for creates it is set via
+          // the DB default (or left null and backfilled by the status sync).
         };
         const existing = await client.lesson
           .findUnique({ where: { officialCode: lessonModel.code } })
           .catch(() => null);
         if (existing) {
-          if (!sameRecord(existing, data)) {
-            await client.lesson.update({ where: { id: existing.id }, data });
+          // For updates, preserve publishedAt if already set — it is managed by
+          // the OPEN ceremony. Only set it when backfilling a draft.
+          const patch: Record<string, any> = { ...data };
+          if (existing.publishedAt) {
+            delete (patch as any).publishedAt;
+          } else if (patch.status === "PUBLISHED") {
+            patch.publishedAt = new Date();
+          }
+          if (!sameRecord(existing, patch)) {
+            await client.lesson.update({ where: { id: existing.id }, data: patch });
             lessonsUpdated++;
           }
         } else {
           await client.lesson.create({
-            data: { ...data, officialCode: lessonModel.code, topicId: null },
+            data: { ...data, officialCode: lessonModel.code, topicId: null, publishedAt: new Date() },
           });
           lessonsCreated++;
         }

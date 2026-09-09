@@ -4,7 +4,7 @@ import { getServerT } from "@/lib/i18n-server";
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
-import { EXCLUDE_ARCHIVED_LESSON, lessonCoursesChainOr } from "@/lib/session-progress";
+import { EXCLUDE_ARCHIVED_LESSON, PUBLISHED_LESSON_FILTER, lessonCoursesChainOr } from "@/lib/session-progress";
 import { trackScopeInWhere } from "@/lib/track-scope";
 import { getParentTrackScopes } from "@/lib/parent-access";
 
@@ -64,7 +64,7 @@ export async function GET(req: NextRequest) {
     analyticsCourseIds.length > 0
       ? await db.lesson.findMany({
           where: {
-            isPublished: true,
+            ...PUBLISHED_LESSON_FILTER,
             ...EXCLUDE_ARCHIVED_LESSON,
             // Phase 12: a parent's analytics span their linked children, so the
             // universe is the UNION of those children's tracks (always plus

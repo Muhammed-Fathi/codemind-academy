@@ -133,11 +133,11 @@ function world() {
     lessons: {
       // L-SHARED / L-AR / L-LANG all hang off the same Unit of the same course,
       // with L-SHARED first so progression order is deterministic.
-      "L-SHARED": { id: "L-SHARED", order: 1, trackScope: "SHARED", isPublished: true, curriculumStatus: "OFFICIAL", videoUrl: null, unitId: "U1", topicId: null, unit: { id: "U1", order: 1, part: { id: "P1", order: 1, courseId: COURSE } }, topic: null, quizzes: [], homeworks: [] },
-      "L-AR": { id: "L-AR", order: 2, trackScope: "ARABIC", isPublished: true, curriculumStatus: "OFFICIAL", videoUrl: null, unitId: "U1", topicId: null, unit: { id: "U1", order: 1, part: { id: "P1", order: 1, courseId: COURSE } }, topic: null, quizzes: [], homeworks: [] },
-      "L-LANG": { id: "L-LANG", order: 3, trackScope: "LANGUAGE", isPublished: true, curriculumStatus: "OFFICIAL", videoUrl: null, unitId: "U1", topicId: null, unit: { id: "U1", order: 1, part: { id: "P1", order: 1, courseId: COURSE } }, topic: null, quizzes: [], homeworks: [] },
+      "L-SHARED": { id: "L-SHARED", order: 1, trackScope: "SHARED", isPublished: true, status: "PUBLISHED", curriculumStatus: "OFFICIAL", videoUrl: null, unitId: "U1", topicId: null, unit: { id: "U1", order: 1, part: { id: "P1", order: 1, courseId: COURSE } }, topic: null, quizzes: [], homeworks: [] },
+      "L-AR": { id: "L-AR", order: 2, trackScope: "ARABIC", isPublished: true, status: "PUBLISHED", curriculumStatus: "OFFICIAL", videoUrl: null, unitId: "U1", topicId: null, unit: { id: "U1", order: 1, part: { id: "P1", order: 1, courseId: COURSE } }, topic: null, quizzes: [], homeworks: [] },
+      "L-LANG": { id: "L-LANG", order: 3, trackScope: "LANGUAGE", isPublished: true, status: "PUBLISHED", curriculumStatus: "OFFICIAL", videoUrl: null, unitId: "U1", topicId: null, unit: { id: "U1", order: 1, part: { id: "P1", order: 1, courseId: COURSE } }, topic: null, quizzes: [], homeworks: [] },
       // A SHARED lesson in the OTHER course — for course isolation.
-      "L-OTHER": { id: "L-OTHER", order: 1, trackScope: "SHARED", isPublished: true, curriculumStatus: "OFFICIAL", videoUrl: null, unitId: "U9", topicId: null, unit: { id: "U9", order: 1, part: { id: "P9", order: 1, courseId: OTHER_COURSE } }, topic: null, quizzes: [], homeworks: [] },
+      "L-OTHER": { id: "L-OTHER", order: 1, trackScope: "SHARED", isPublished: true, status: "PUBLISHED", curriculumStatus: "OFFICIAL", videoUrl: null, unitId: "U9", topicId: null, unit: { id: "U9", order: 1, part: { id: "P9", order: 1, courseId: OTHER_COURSE } }, topic: null, quizzes: [], homeworks: [] },
     },
     quizzes: {
       "Q-SHARED": { id: "Q-SHARED", lessonId: "L-SHARED", trackScope: "SHARED" },

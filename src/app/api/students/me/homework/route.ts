@@ -4,6 +4,7 @@ import { ok, err, requireUser, getStudentProfile, denyProgression } from "@/lib/
 import {
   canAccessHomework,
   EXCLUDE_ARCHIVED_LESSON,
+  PUBLISHED_LESSON_FILTER,
   getUnlockedLessonIds,
 } from "@/lib/session-progress";
 import { getServerT } from "@/lib/i18n-server";
@@ -61,7 +62,7 @@ export async function GET(_req: NextRequest) {
   const homeworks = await db.homework.findMany({
     where: {
       lessonId: { in: [...unlocked] },
-      lesson: { ...EXCLUDE_ARCHIVED_LESSON },
+      lesson: { ...PUBLISHED_LESSON_FILTER, ...EXCLUDE_ARCHIVED_LESSON },
       ...trackScopeWhere(schoolType),
     },
     include: {

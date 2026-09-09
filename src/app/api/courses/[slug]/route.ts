@@ -4,6 +4,7 @@ import { ok, err, requireUser, getStudentProfile } from "@/lib/api";
 import { getEnrollment, getStudentSchoolType } from "@/lib/enrollment";
 import {
   EXCLUDE_ARCHIVED_LESSON,
+  PUBLISHED_LESSON_FILTER,
   getCourseSessionProgress,
 } from "@/lib/session-progress";
 import {
@@ -63,15 +64,20 @@ export async function GET(
   // response. Teachers and admins are deliberately unrestricted — they manage
   // SHARED, ARABIC and LANGUAGE content and must not be filtered as though
   // they were students.
+  // Phase 13 — student and parent curriculum is PUBLISHED only. DRAFT/READY are
+  // admin-only staging states and must not appear in the student/parent tree.
   let viewerTrackFilter: object = {};
+  let viewerPublishedFilter: object = {};
   if (user.role === "STUDENT") {
     const viewer = await getStudentProfile(user.id);
     viewerTrackFilter = viewer
       ? trackScopeWhere(await getStudentSchoolType(viewer.id))
       : trackScopeWhere(null);
+    viewerPublishedFilter = PUBLISHED_LESSON_FILTER;
   } else if (user.role === "PARENT") {
     // A parent previews through their children's tracks, never their own.
     viewerTrackFilter = trackScopeInWhere(await getParentTrackScopes(user.id));
+    viewerPublishedFilter = PUBLISHED_LESSON_FILTER;
   }
 
   const course = await db.course.findUnique({
@@ -85,8 +91,9 @@ export async function GET(
             include: {
               // Canonical chain: Course → Part → Unit → Lesson.
               // Archived lessons are history, not curriculum (Phase 11).
+              // Phase 13: student/parent see PUBLISHED only.
               lessons: {
-                where: { ...EXCLUDE_ARCHIVED_LESSON, ...viewerTrackFilter },
+                where: { ...EXCLUDE_ARCHIVED_LESSON, ...viewerTrackFilter, ...viewerPublishedFilter },
                 orderBy: { order: "asc" },
                 include: LESSON_INCLUDE,
               },
@@ -95,7 +102,7 @@ export async function GET(
                 orderBy: { order: "asc" },
                 include: {
                   lessons: {
-                    where: { ...EXCLUDE_ARCHIVED_LESSON, ...viewerTrackFilter },
+                    where: { ...EXCLUDE_ARCHIVED_LESSON, ...viewerTrackFilter, ...viewerPublishedFilter },
                     orderBy: { order: "asc" },
                     include: LESSON_INCLUDE,
                   },

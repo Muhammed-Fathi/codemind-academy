@@ -55,6 +55,21 @@ export const EXCLUDE_ARCHIVED_LESSON = {
   curriculumStatus: { not: "ARCHIVED" },
 } as const;
 
+/**
+ * Phase 13 — student curriculum universe requires PUBLISHED status.
+ * DRAFT/READY are not part of the student universe, even if they match
+ * track and course. Spread into any student-facing lesson query.
+ */
+export const PUBLISHED_LESSON_FILTER = {
+  status: "PUBLISHED",
+} as const;
+
+/** Combined active-curriculum + published filter for student routes. */
+export const ACTIVE_PUBLISHED_LESSON = {
+  ...EXCLUDE_ARCHIVED_LESSON,
+  ...PUBLISHED_LESSON_FILTER,
+} as const;
+
 // ---------------------------------------------------------------------------
 // Track scope (Phase 12)
 // ---------------------------------------------------------------------------
@@ -104,6 +119,9 @@ export const LESSON_CHAIN_SELECT = {
   videoUrl: true,
   unitId: true,
   topicId: true,
+  status: true,
+  curriculumStatus: true,
+  trackScope: true,
   unit: {
     select: {
       id: true,
@@ -131,6 +149,9 @@ export type LessonChain = {
   videoUrl: string | null;
   unitId: string | null;
   topicId: string | null;
+  status: string;
+  curriculumStatus: string;
+  trackScope: string;
   unit: {
     id: string;
     order: number;
@@ -144,6 +165,8 @@ export type LessonChain = {
       part: { id: string; order: number; courseId: string };
     };
   } | null;
+  quizzes: { id: string }[];
+  homeworks: { id: string }[];
 };
 
 /**
@@ -298,9 +321,11 @@ export async function getCourseSessionProgress(
   //
   // Phase 12 adds the track slice: only lessons whose `trackScope` this
   // student is eligible for enter the universe at all.
+  // Phase 13 adds the lifecycle slice: only PUBLISHED lessons are part of the
+  // student curriculum. DRAFT/READY are admin-only staging states.
   const found = await db.lesson.findMany({
     where: {
-      isPublished: true,
+      ...PUBLISHED_LESSON_FILTER,
       ...EXCLUDE_ARCHIVED_LESSON,
       ...trackScopeWhere(resolvedSchoolType),
       OR: [
@@ -434,7 +459,7 @@ export async function canAccessLesson(
 ): Promise<LessonAccess> {
   const lesson = await db.lesson.findUnique({
     where: { id: lessonId },
-    select: { ...LESSON_CHAIN_SELECT, trackScope: true },
+    select: { ...LESSON_CHAIN_SELECT },
   });
   if (!lesson) return { allowed: false, reason: "LESSON_NOT_FOUND", status: null };
 
@@ -443,6 +468,18 @@ export async function canAccessLesson(
   // course this gating rule can verify, so access stays closed.
   const courseId = resolveLessonCourseId(lesson);
   if (!courseId) return { allowed: false, reason: "LESSON_NOT_FOUND", status: null };
+
+  // Phase 13 — lifecycle gate: only PUBLISHED lessons are part of the student
+  // curriculum. DRAFT/READY are admin staging and must not be reachable even
+  // by direct ID. Archived lessons are likewise excluded (see EXCLUDE_ARCHIVED).
+  // This check is performed BEFORE any progression is computed, and returns
+  // LESSON_NOT_FOUND so probing cannot distinguish unpublished from nonexistent.
+  if ((lesson as any).curriculumStatus === "ARCHIVED") {
+    return { allowed: false, reason: "LESSON_NOT_FOUND", status: null };
+  }
+  if ((lesson as any).status !== "PUBLISHED") {
+    return { allowed: false, reason: "LESSON_NOT_FOUND", status: null };
+  }
 
   // Enrollment must be judged by exactly the same rule as getEnrollment():
   // membership of an ACTIVE group bound to this course. Omitting `isActive`

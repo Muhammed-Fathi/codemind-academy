@@ -4,7 +4,7 @@ import { getServerT, serverLocale } from "@/lib/i18n-server";
 import { NextResponse } from "next/server";
 import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
-import { EXCLUDE_ARCHIVED_LESSON, lessonCourseChainOr } from "@/lib/session-progress";
+import { EXCLUDE_ARCHIVED_LESSON, PUBLISHED_LESSON_FILTER, lessonCourseChainOr } from "@/lib/session-progress";
 import { trackScopeWhere } from "@/lib/track-scope";
 import { brand } from "@/lib/brand";
 import { fmtDate } from "@/lib/i18n-core";
@@ -41,6 +41,7 @@ export async function GET() {
   const studentTrack = trackScopeWhere(student.schoolType);
   const totalLessons = await db.lesson.count({
     where: {
+      ...PUBLISHED_LESSON_FILTER,
       ...EXCLUDE_ARCHIVED_LESSON,
       ...studentTrack,
       OR: lessonCourseChainOr(course.id),
@@ -51,6 +52,7 @@ export async function GET() {
       studentId: student.id,
       isCompleted: true,
       lesson: {
+        ...PUBLISHED_LESSON_FILTER,
         ...EXCLUDE_ARCHIVED_LESSON,
         ...studentTrack,
         OR: lessonCourseChainOr(course.id),

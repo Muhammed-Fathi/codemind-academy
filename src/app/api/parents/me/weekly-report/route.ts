@@ -10,7 +10,7 @@ import { NextResponse } from "next/server";
 import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
 import { getVideoProgressForStudents, getVideoProgressInRange } from "@/lib/progress";
-import { EXCLUDE_ARCHIVED_LESSON, lessonCoursesChainOr } from "@/lib/session-progress";
+import { EXCLUDE_ARCHIVED_LESSON, PUBLISHED_LESSON_FILTER, lessonCoursesChainOr } from "@/lib/session-progress";
 import { trackScopeInWhere } from "@/lib/track-scope";
 import { getParentTrackScopes } from "@/lib/parent-access";
 import { fmtDate } from "@/lib/i18n-core";
@@ -72,7 +72,7 @@ export async function GET() {
     weeklyCourseIds.length > 0
       ? await db.lesson.findMany({
           where: {
-            isPublished: true,
+            ...PUBLISHED_LESSON_FILTER,
             ...EXCLUDE_ARCHIVED_LESSON,
             // Phase 12: same union-of-children rule as the parent analytics.
             ...trackScopeInWhere(await getParentTrackScopes(user.id)),

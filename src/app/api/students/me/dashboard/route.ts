@@ -6,6 +6,7 @@ import { trackScopeWhere } from "@/lib/track-scope";
 import { getStudentSchoolType } from "@/lib/enrollment";
 import {
   EXCLUDE_ARCHIVED_LESSON,
+  PUBLISHED_LESSON_FILTER,
   getUnlockedLessonIds,
 } from "@/lib/session-progress";
 
@@ -35,6 +36,7 @@ export async function GET(_req: NextRequest) {
   const groupMatch = { course: { groups: { some: { id: student.groupId || "_" } } } };
   const lessons = await db.lesson.findMany({
     where: {
+      ...PUBLISHED_LESSON_FILTER,
       ...EXCLUDE_ARCHIVED_LESSON,
       ...viewerTrack,
       OR: [
@@ -153,6 +155,7 @@ export async function GET(_req: NextRequest) {
       // leaving it unfiltered was an outright cross-track content leak.
       ...viewerTrack,
       lesson: {
+        ...PUBLISHED_LESSON_FILTER,
         ...EXCLUDE_ARCHIVED_LESSON,
         OR: [
           { unit: { part: groupCourseMatch } },

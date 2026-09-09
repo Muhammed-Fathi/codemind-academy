@@ -5,6 +5,7 @@ import {
   canAccessLesson,
   EXCLUDE_ARCHIVED_LESSON,
   LESSON_CHAIN_SELECT,
+  PUBLISHED_LESSON_FILTER,
   lessonCourseChainOr,
   orderCourseLessons,
   resolveLessonCourseId,
@@ -91,12 +92,19 @@ export async function GET(
   // looks exactly like a nonexistent one (404) — the response never confirms
   // that the id is real. (Whether an in-scope parent sees quiz answers stays
   // governed by the documented Phase 1 `revealQuizAnswers` rule below.)
+  // Phase 13 — parent unpublished fix: a parent must also respect lifecycle.
+  // A parent can open a lesson only when it is PUBLISHED, in the child's
+  // course, and matches the child's track. Otherwise the same non-oracle 404.
   if (user.role === "PARENT") {
     const allowed = await isParentAuthorizedForCourse(user.id, chainCourse?.id);
     if (!allowed) return err("Lesson not found", 404);
     // Phase 12 — the parent previews through the CHILD's track. A refusal is a
     // plain 404, indistinguishable from a nonexistent lesson id.
     if (!(await isParentAllowedTrackScope(user.id, lesson.trackScope))) {
+      return err("Lesson not found", 404);
+    }
+    // Phase 13 — lifecycle
+    if ((lesson as any).curriculumStatus === "ARCHIVED" || (lesson as any).status !== "PUBLISHED") {
       return err("Lesson not found", 404);
     }
   }
@@ -113,6 +121,9 @@ export async function GET(
     videoUrl: lesson.videoUrl,
     unitId: lesson.unitId,
     topicId: lesson.topicId,
+    status: (lesson as any).status,
+    curriculumStatus: (lesson as any).curriculumStatus,
+    trackScope: (lesson as any).trackScope,
     unit: lesson.unit
       ? {
           id: lesson.unit.id,
@@ -148,7 +159,7 @@ export async function GET(
     // chain are the same sequence.
     const found = await db.lesson.findMany({
       where: {
-        isPublished: true,
+        ...PUBLISHED_LESSON_FILTER,
         ...EXCLUDE_ARCHIVED_LESSON,
         ...viewerTrackFilter,
         OR: lessonCourseChainOr(courseId),

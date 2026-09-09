@@ -257,8 +257,20 @@ model Lesson {
   description   String?
   summary       String?
   duration      Int              @default(90)
+  /// DEPRECATED — inert legacy metadata. Do NOT use for authorization or
+  /// progression. Retained only for compatibility; will be removed later.
+  /// See src/lib/session-lifecycle.ts and docs/PHASE_13_SESSION_LIFECYCLE.md.
   isLocked      Boolean          @default(false)
+  /// DEPRECATED — kept for compatibility only. Lifecycle source of truth is
+  /// `status` (LessonStatus). `isPublished` is now a READ-ONLY mirror kept
+  /// in sync for old readers and will be removed in a future phase.
+  /// New code MUST use `status` and `isLessonPublished()` / PUBLISHED filter.
   isPublished   Boolean          @default(true)
+  /// Phase 13 — authoritative lifecycle status. One source of truth, replaces
+  /// the conflated boolean. See docs/PHASE_13_SESSION_LIFECYCLE.md.
+  status        LessonStatus     @default(DRAFT)
+  /// Phase 13 — when the lesson was published via the OPEN ceremony.
+  publishedAt   DateTime?
   videoUrl      String?
   pdfUrl        String?
   createdAt     DateTime         @default(now())
@@ -277,6 +289,7 @@ model Lesson {
 
   @@index([topicId])
   @@index([unitId, order])
+  @@index([status])
 }
 
 model Group {
@@ -1000,6 +1013,17 @@ enum TrackScope {
   SHARED
   ARABIC
   LANGUAGE
+}
+
+/// Phase 13 — administrative lifecycle, independent from progression.
+///   DRAFT     → content is being staged, not student-visible
+///   READY     → content passes readiness, still not student-visible
+///   PUBLISHED → eligible for student curriculum (plus track + progression)
+/// See docs/PHASE_13_SESSION_LIFECYCLE.md.
+enum LessonStatus {
+  DRAFT
+  READY
+  PUBLISHED
 }
 
 enum AccountStatus {

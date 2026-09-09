@@ -7,6 +7,7 @@ import { getVideoProgressForStudents } from "@/lib/progress";
 import { trackScopeWhere } from "@/lib/track-scope";
 import {
   EXCLUDE_ARCHIVED_LESSON,
+  PUBLISHED_LESSON_FILTER,
   getCourseSessionProgress,
   lessonCourseChainOr,
 } from "@/lib/session-progress";
@@ -59,7 +60,7 @@ export async function GET(_req: NextRequest) {
       // history can neither inflate the average nor push it past 100%.
       const universeLessonRows = await db.lesson.findMany({
         where: {
-          isPublished: true,
+          ...PUBLISHED_LESSON_FILTER,
           ...EXCLUDE_ARCHIVED_LESSON,
           ...childTrack,
           OR: lessonCourseChainOr(student.group?.courseId || ""),

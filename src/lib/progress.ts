@@ -66,7 +66,7 @@ async function videoLessonIdsByStudent(
   // import cycle (that module imports VIDEO_COMPLETION_THRESHOLD from here).
   const lessons = await db.lesson.findMany({
     where: {
-      isPublished: true,
+      status: "PUBLISHED",
       curriculumStatus: { not: "ARCHIVED" },
       videoUrl: { not: null },
       OR: [

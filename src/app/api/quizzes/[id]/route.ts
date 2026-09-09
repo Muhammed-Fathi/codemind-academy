@@ -72,6 +72,12 @@ export async function GET(
       null;
     const allowed = await isParentAuthorizedForCourse(user.id, quizCourseId);
     if (!allowed) return err("Quiz not found", 404);
+    // Phase 13 — parent unpublished fix: quiz's lesson must be PUBLISHED.
+    // Unpublished/READY/archived lessons are not student-visible, and parent
+    // preview follows the child's curriculum (PUBLISHED + enrolled + track).
+    if (!quiz.lesson || (quiz.lesson as any).curriculumStatus === "ARCHIVED" || (quiz.lesson as any).status !== "PUBLISHED") {
+      return err("Quiz not found", 404);
+    }
   }
 
   // Pull the student's previous attempts (if student)
