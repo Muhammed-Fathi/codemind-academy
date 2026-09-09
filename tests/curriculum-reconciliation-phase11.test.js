@@ -91,6 +91,35 @@ Module._resolveFilename = function (request, ...rest) {
 const reconciler = require(path.join(EMIT, "official-curriculum.js"));
 const engine = require(path.join(EMIT, "session-progress.js"));
 
+// Validate ordering against the checked-out schema, not invented mock fields.
+// This deliberately does not claim to replace the real SQLite release gate.
+const PRISMA_SCHEMA = fs.readFileSync(path.join(REPO, "prisma/schema.prisma"), "utf8");
+function scalarFields(model) {
+  const body = PRISMA_SCHEMA.match(new RegExp(`model ${model} \\{([\\s\\S]*?)\\n\\}`));
+  if (!body) throw new Error(`Missing Prisma model ${model}`);
+  return new Set([...body[1].matchAll(/^\s*(\w+)\s+(?:String|Int|Boolean|DateTime|Float|Decimal|BigInt|Bytes)\??(?=\s|$)/gm)]
+    .map((match) => match[1]));
+}
+function schemaOrderedRows(model, rows, orderBy) {
+  const fields = scalarFields(model);
+  const clauses = Array.isArray(orderBy) ? orderBy : [orderBy];
+  for (const clause of clauses) {
+    for (const [field, direction] of Object.entries(clause ?? {})) {
+      if (!fields.has(field)) throw new Error(`Unknown argument \`${field}\` on ${model}`);
+      if (!["asc", "desc"].includes(direction)) throw new Error("Invalid sort direction");
+    }
+  }
+  return [...rows].sort((a, b) => {
+    for (const clause of clauses) {
+      for (const [field, direction] of Object.entries(clause ?? {})) {
+        const compare = a[field] < b[field] ? -1 : a[field] > b[field] ? 1 : 0;
+        if (compare) return direction === "desc" ? -compare : compare;
+      }
+    }
+    return 0;
+  });
+}
+
 // ---- In-memory mock Prisma client (evaluates the reconciler's `where`) ----
 function makeMockDb() {
   const tables = { course: [], part: [], unit: [], topic: [], lesson: [] };
@@ -143,9 +172,6 @@ function makeMockDb() {
     return true;
   }
 
-  const sortByOrder = (rows) =>
-    [...rows].sort((a, b) => a.order - b.order || (a.createdAt < b.createdAt ? -1 : 1));
-
   const db = {
     __tables: tables,
     __writes: writes,
@@ -174,15 +200,13 @@ function makeMockDb() {
       },
     },
     part: {
-      async findMany({ where }) {
-        return sortByOrder(
-          tables.part.filter((p) => !where || p.courseId === where.courseId)
+      async findMany({ where, orderBy }) {
+        return schemaOrderedRows("Part",
+          tables.part.filter((p) => !where || p.courseId === where.courseId), orderBy
         ).map((r) => ({ ...r }));
       },
       async create({ data }) {
-        const row = { id: nid("part"), createdAt: `t${seq}`, ...data };
-        delete row.createdAt;
-        row.createdAt = `t${seq}`;
+        const row = { id: nid("part"), ...data };
         tables.part.push(row);
         writes.create++;
         return { ...row };
@@ -195,13 +219,13 @@ function makeMockDb() {
       },
     },
     unit: {
-      async findMany({ where }) {
-        return sortByOrder(
-          tables.unit.filter((u) => !where || u.partId === where.partId)
+      async findMany({ where, orderBy }) {
+        return schemaOrderedRows("Unit",
+          tables.unit.filter((u) => !where || u.partId === where.partId), orderBy
         ).map((r) => ({ ...r }));
       },
       async create({ data }) {
-        const row = { id: nid("unit"), ...data, createdAt: `t${seq}` };
+        const row = { id: nid("unit"), ...data };
         tables.unit.push(row);
         writes.create++;
         return { ...row };
@@ -297,6 +321,23 @@ function legacyLesson(topicId, overrides = {}) {
       console.error(`FAIL: ${msg}`);
     }
   };
+
+  // Schema-aware regression: the previous mock accepted nonexistent fields.
+  for (const modelName of ["Part", "Unit"]) {
+    ok(!scalarFields(modelName).has("createdAt"), `${modelName} has no invented createdAt field`);
+    try {
+      schemaOrderedRows(modelName, [], [{ order: "asc" }, { createdAt: "asc" }]);
+      ok(false, `${modelName} invalid ordering must fail even on an empty table`);
+    } catch (error) {
+      ok(/Unknown argument `createdAt`/.test(error.message), `${modelName} rejects invalid createdAt ordering`);
+    }
+    const rows = [{ id: "z", order: 1 }, { id: "a", order: 1 }, { id: "b", order: 0 }];
+    const orderBy = [{ order: "asc" }, { id: "asc" }];
+    ok(schemaOrderedRows(modelName, rows, orderBy).map((r) => r.id).join() === "b,a,z",
+      `${modelName} sorts by order then stable id`);
+    ok(schemaOrderedRows(modelName, [...rows].reverse(), orderBy).map((r) => r.id).join() === "b,a,z",
+      `${modelName} ordering does not depend on insertion order`);
+  }
 
   // ================= 1. Model contract =================
   const model = reconciler.loadOfficialCurriculumModel();
@@ -434,8 +475,8 @@ function legacyLesson(topicId, overrides = {}) {
     color: "#000000",
   });
   legacy.__tables.part.push(
-    { id: "p1", courseId: "course-r1", title: "R1 P1", titleAr: "قديم 1", description: null, order: 1, createdAt: "t1" },
-    { id: "p2", courseId: "course-r1", title: "R1 P2", titleAr: "قديم 2", description: null, order: 2, createdAt: "t2" }
+    { id: "p1", courseId: "course-r1", title: "R1 P1", titleAr: "قديم 1", description: null, order: 1 },
+    { id: "p2", courseId: "course-r1", title: "R1 P2", titleAr: "قديم 2", description: null, order: 2 }
   );
   // P1: 4 legacy units (orders 1..4) x 1 topic x 3 lessons = 12 lessons.
   // P2: 3 legacy units (orders 1,2,3 — the R1 per-part numbering) x 1 topic x 2 = 6.
@@ -447,7 +488,7 @@ function legacyLesson(topicId, overrides = {}) {
       if (partId === "p2") p2UnitIdsBefore.push(uid);
       legacy.__tables.unit.push({
         id: uid, partId, title: `R1 ${uid}`, titleAr: `وحدة ${uid}`,
-        order: i, icon: null, createdAt: `t-${uid}`,
+        order: i, icon: null,
       });
       const tid = `r1-topic-${topicSeq++}`;
       legacy.__tables.topic.push({ id: tid, unitId: uid, title: "T", titleAr: "م", order: 1 });
@@ -466,8 +507,8 @@ function legacyLesson(topicId, overrides = {}) {
   const preArchivedId = legacy.__tables.lesson[1].id;
   // Another course's lesson: must never be touched.
   legacy.__tables.course.push({ id: "course-other", slug: "other-course", name: "O", nameAr: "أ", description: "", color: "#fff" });
-  legacy.__tables.part.push({ id: "op1", courseId: "course-other", title: "OP", titleAr: "أ", description: null, order: 1, createdAt: "t0" });
-  legacy.__tables.unit.push({ id: "ou1", partId: "op1", title: "OU", titleAr: "و", order: 1, icon: null, createdAt: "t0" });
+  legacy.__tables.part.push({ id: "op1", courseId: "course-other", title: "OP", titleAr: "أ", description: null, order: 1 });
+  legacy.__tables.unit.push({ id: "ou1", partId: "op1", title: "OU", titleAr: "و", order: 1, icon: null });
   legacy.__tables.topic.push({ id: "ot1", unitId: "ou1", title: "OT", titleAr: "م", order: 1 });
   legacy.__tables.lesson.push(legacyLesson("ot1", { id: "other-lesson" }));
   // A lesson with an UNKNOWN officialCode on the reconciled course: warned,
@@ -535,18 +576,18 @@ function legacyLesson(topicId, overrides = {}) {
   const extra = makeMockDb();
   extra.__tables.course.push({ id: "c-x", slug: "programming-ai-2nd-sec", name: "C", nameAr: "ك", description: "", color: "#000" });
   extra.__tables.part.push(
-    { id: "xp1", courseId: "c-x", title: "X1", titleAr: "١", description: null, order: 1, createdAt: "t1" },
-    { id: "xp2", courseId: "c-x", title: "X2", titleAr: "٢", description: null, order: 2, createdAt: "t2" },
-    { id: "xp3", courseId: "c-x", title: "EXTRA PART", titleAr: "زائد", description: null, order: 3, createdAt: "t3" }
+    { id: "xp1", courseId: "c-x", title: "X1", titleAr: "١", description: null, order: 1 },
+    { id: "xp2", courseId: "c-x", title: "X2", titleAr: "٢", description: null, order: 2 },
+    { id: "xp3", courseId: "c-x", title: "EXTRA PART", titleAr: "زائد", description: null, order: 3 }
   );
   // xp1 gets 5 units (model wants 4) — the 5th is extra.
   for (let i = 1; i <= 5; i++) {
-    extra.__tables.unit.push({ id: `xu1-${i}`, partId: "xp1", title: `U${i}`, titleAr: `و${i}`, order: i, icon: null, createdAt: `tu${i}` });
+    extra.__tables.unit.push({ id: `xu1-${i}`, partId: "xp1", title: `U${i}`, titleAr: `و${i}`, order: i, icon: null });
   }
   for (let i = 1; i <= 3; i++) {
-    extra.__tables.unit.push({ id: `xu2-${i}`, partId: "xp2", title: `U${i}`, titleAr: `و${i}`, order: i, icon: null, createdAt: `tv${i}` });
+    extra.__tables.unit.push({ id: `xu2-${i}`, partId: "xp2", title: `U${i}`, titleAr: `و${i}`, order: i, icon: null });
   }
-  extra.__tables.unit.push({ id: "xu3-1", partId: "xp3", title: "XU", titleAr: "و", order: 1, icon: null, createdAt: "tx" });
+  extra.__tables.unit.push({ id: "xu3-1", partId: "xp3", title: "XU", titleAr: "و", order: 1, icon: null });
   extra.__tables.topic.push(
     { id: "xtra-unit-topic", unitId: "xu1-5", title: "XT", titleAr: "م", order: 1 },
     { id: "xtra-part-topic", unitId: "xu3-1", title: "XT", titleAr: "م", order: 1 }
@@ -614,6 +655,26 @@ function legacyLesson(topicId, overrides = {}) {
       JSON.stringify([...reconciler.OFFICIAL_LESSON_CODES].sort()),
     "progression universe is exactly the official code set"
   );
+
+  // Reconcile tied legacy positions through the actual query contract.
+  const tied = makeMockDb();
+  await reconciler.reconcileOfficialCurriculum(tied);
+  for (const table of ["part", "unit"]) {
+    tied.__tables[table].reverse();
+    for (const row of tied.__tables[table]) row.order = 1;
+  }
+  const expectedPartIds = tied.__tables.part.map((p) => p.id).sort();
+  const expectedUnitIds = expectedPartIds.flatMap((partId) =>
+    tied.__tables.unit.filter((u) => u.partId === partId).map((u) => u.id).sort());
+  await reconciler.reconcileOfficialCurriculum(tied);
+  ok([...tied.__tables.part].sort((a, b) => a.order - b.order).map((p) => p.id).join() === expectedPartIds.join(),
+    "tied parts adopted by stable id, not insertion order");
+  ok([...tied.__tables.unit].sort((a, b) => a.order - b.order).map((u) => u.id).join() === expectedUnitIds.join(),
+    "tied units adopted by stable id inside each parent");
+  tied.__resetWrites();
+  await reconciler.reconcileOfficialCurriculum(tied);
+  ok(Object.values(tied.__writes).every((count) => count === 0),
+    "reconciliation after tied positional adoption has zero further semantic writes");
 
   console.log(`\ncurriculum reconciliation (phase 11): ${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

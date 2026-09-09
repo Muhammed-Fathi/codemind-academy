@@ -265,7 +265,7 @@ function sameRecord(row: Record<string, any>, data: Record<string, any>): boolea
  *
  * Strategy (evidence-based, archive-safe):
  *  1. Upsert the known course by UNIQUE slug (display fields only).
- *  2. Match parts positionally inside the course (sorted by order,createdAt);
+ *  2. Match parts positionally inside the course (sorted by order,id);
  *     update official titles/order or create missing ones. Extra parts (e.g.
  *     from a double-run dev seed) are left untouched — their lessons are
  *     archived by step 5 and the tree skips empty groups.
@@ -310,9 +310,10 @@ export async function reconcileOfficialCurriculum(
   });
 
   // 2+3. Parts and units, matched positionally (see docblock).
+  // Neither model has createdAt. Their unique ids provide a stable tie-break.
   const existingParts = await client.part.findMany({
     where: { courseId: course.id },
-    orderBy: [{ order: "asc" }, { createdAt: "asc" }],
+    orderBy: [{ order: "asc" }, { id: "asc" }],
   });
   let partsCreated = 0;
   let unitsCreated = 0;
@@ -346,7 +347,7 @@ export async function reconcileOfficialCurriculum(
 
     const existingUnits = await client.unit.findMany({
       where: { partId: part.id },
-      orderBy: [{ order: "asc" }, { createdAt: "asc" }],
+      orderBy: [{ order: "asc" }, { id: "asc" }],
     });
     for (let uIdx = 0; uIdx < partModel.units.length; uIdx++) {
       const unitModel = partModel.units[uIdx];
