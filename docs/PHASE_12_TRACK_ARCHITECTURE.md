@@ -354,6 +354,28 @@ is *printed* during the "Collecting page data" step. This sandbox cannot reach
 output intact. It is nonetheless a strict improvement on Phases 6–10, where `next build` was
 blocked outright.
 
+### Live HTTP verification
+
+The matrix was finally exercised **end to end over real HTTP** against a running production build
+(`next start`, port 3000, real Prisma client, real SQLite, real cookie sessions). Fixtures: three
+published lessons (`SHARED` / `ARABIC` / `LANGUAGE`) in the official course plus one ARABIC and one
+LANGUAGE student, each registered with a real `scrypt` password hash and logged in through
+`POST /api/auth/login`.
+
+**11 checks, 0 failures:**
+
+| request | ARABIC student | LANGUAGE student |
+|---|---|---|
+| `GET /api/lessons/LIVE-shared` | **200** | **200** |
+| `GET /api/lessons/LIVE-ar` | **200** | **404** |
+| `GET /api/lessons/LIVE-lang` | **404** | **200** |
+
+- the cross-track **404 is byte-for-byte the same status as a nonexistent lesson id** — the
+  non-oracle property holds over the wire, not just in unit terms;
+- `GET /api/courses/programming-ai-2nd-sec` **omits** the other track's lesson from the served
+  curriculum for each student while including their own;
+- all fixtures were deleted afterwards (`leftover=0`, curriculum back to 23 lessons).
+
 ### Real-database verification
 
 Because the matrix above runs against a mock, it was also executed end-to-end against a real

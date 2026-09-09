@@ -401,6 +401,23 @@ list`; restored → 291/0.
 
 ## 28. Real-database verification, known limitations, and the merge decision
 
+### Live HTTP verification (11/11)
+
+Finally the matrix was exercised **end to end over real HTTP**: a production build was started
+(`next start`, port 3000) against the real database, three published lessons (`SHARED`/`ARABIC`/
+`LANGUAGE`) and one ARABIC + one LANGUAGE student were created with real `scrypt` password hashes,
+and each logged in through `POST /api/auth/login` to obtain a real session cookie.
+
+| request | ARABIC | LANGUAGE |
+|---|---|---|
+| `GET /api/lessons/LIVE-shared` | 200 | 200 |
+| `GET /api/lessons/LIVE-ar` | 200 | **404** |
+| `GET /api/lessons/LIVE-lang` | **404** | 200 |
+
+Plus: the cross-track 404 is the **same status as a nonexistent lesson id** over the wire, and
+`GET /api/courses/programming-ai-2nd-sec` **omits** the other track's lesson from each student's
+served curriculum while including their own. All fixtures removed afterwards (`leftover=0`).
+
 ### Real-database verification
 
 Because §26 runs against a mock, the whole matrix was also executed **end-to-end against a real SQLite database** through the real Prisma client and the **unmodified** repository source: **37 assertions, 0 failures**. It confirmed:
