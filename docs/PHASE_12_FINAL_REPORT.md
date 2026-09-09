@@ -368,7 +368,13 @@ Baselines were captured with `git stash` **before** the changes and are identica
 | **track-architecture-phase12 (new)** | — | **291 / 0** |
 | **total** | **1,810** | **2,101 / 0 failures** |
 
-`npm run typecheck` (`tsc --noEmit`) → **0 errors**. `eslint` on the Phase 12 lib files → **0 findings**.
+`npm run typecheck` (`tsc --noEmit`) → **0 errors**. `eslint` on the Phase 12 lib files → **0 findings**, and the new test file is clean too (it carries
+the same `no-require-imports` disable the other suites use). Measured properly rather than
+asserted: a `git worktree` at the base commit `66f56f5` reports **83 lint problems**, and linting
+**only the committed files** at HEAD also reports **83** — byte-identical, so Phase 12 introduces
+**zero** new lint problems in anything that ships. (A full `npm run lint` reads 113 only because it
+also scans the untracked local `.verify/` harness, which is not in the PR and not committed.) The
+two pre-existing test files this phase edited are unchanged at 20 problems each.
 
 ---
 
