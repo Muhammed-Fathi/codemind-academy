@@ -269,6 +269,36 @@ step, and a direct-SQL write of a bad value remains a **documented limitation** 
 
 Applied: `npx prisma migrate status` → **"5 migrations found / Database schema is up to date!"**
 
+### 10b. Migration verified against real data
+
+The local development database held **0** `Quiz`, `Homework` and `Student` rows, so a "no rows
+lost" claim checked against it would have been **vacuous** — there was nothing to lose. The
+migration was therefore re-verified on a purpose-built scratch database:
+
+1. the **pre-Phase-12** schema (`git show HEAD:prisma/schema.prisma`) was pushed to a fresh file,
+   the four earlier migrations were marked applied, and `prisma migrate deploy` was left with
+   **only** the Phase 12 migration to run;
+2. real rows were inserted: a course/part/unit, **3 lessons**, **1 quiz**, **1 homework**,
+   1 question, 1 `QuizAnswer`, 1 `QuizAttempt`, 1 `LessonProgress`, 1 `HomeworkSubmission`, and
+   **11 students covering every normalisation case** (`ARABIC`, `arabic`, `AR`, `عربي`,
+   `LANGUAGE`, `LANGUAGES`, `LANG`, `لغات`, `FRENCH`, `NULL`, `"  language  "`);
+3. `prisma migrate deploy` then applied the Phase 12 migration cleanly.
+
+Result — **all 30 checks passed, 0 failed**:
+
+- **row preservation through all three table rebuilds:** 13/13 table counts unchanged, including
+  `Lesson`, `Quiz` and `Homework` themselves;
+- **backfill:** every pre-existing `Lesson`/`Quiz`/`Homework` row carries `trackScope = 'SHARED'`,
+  the column is `NOT NULL` with default literal `'SHARED'`, and a row inserted afterwards with no
+  `trackScope` still gets `SHARED`;
+- **normalisation:** `ARABIC`/`arabic`/`AR`/`عربي` → `ARABIC`; `LANGUAGE`/`LANGUAGES`/`LANG`/`لغات`
+  → `LANGUAGE`; `"  language  "` → `LANGUAGE` (trimmed); **`FRENCH` → `NULL`, never guessed**;
+  `NULL` stays `NULL`; **0 out-of-enum values remain**;
+- **referential integrity through the rebuild:** `LessonProgress`, `QuizAttempt`, `QuizAnswer` and
+  `HomeworkSubmission` all still resolve to live parent rows, the attempt's
+  `score/totalMarks/percentage/passed` payload is byte-identical, official codes intact, and
+  `PRAGMA foreign_key_check` returns an empty set.
+
 ---
 
 ## 11. Tests

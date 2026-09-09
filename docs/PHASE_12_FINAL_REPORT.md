@@ -412,6 +412,36 @@ Because §26 runs against a mock, the whole matrix was also executed **end-to-en
 - the full cross-track matrix through the real `canAccessLesson` / `canAccessQuiz` / `getCourseSessionProgress`, including a `NULL`-school-type student confined to SHARED;
 - referencing rows (`lessonProgress`, `quizAttempt`, students) survived the migration; all fixtures cleaned up.
 
+### Migration verified against REAL data (the earlier claim was vacuous)
+
+The local development database held **0** `Quiz`, **0** `Homework` and **0** `Student` rows, so a
+"no rows lost" claim checked against it proved nothing — there was nothing to lose. The migration
+was therefore re-verified on a purpose-built scratch database:
+
+1. the **pre-Phase-12** schema (`git show HEAD:prisma/schema.prisma`) was pushed to a fresh file,
+   the four earlier migrations marked applied, leaving **only** the Phase 12 migration to run;
+2. real rows were inserted — a course/part/unit, **3 lessons**, **1 quiz**, **1 homework**,
+   1 question, 1 `QuizAnswer`, 1 `QuizAttempt`, 1 `LessonProgress`, 1 `HomeworkSubmission`, and
+   **11 students covering every normalisation case** (`ARABIC`, `arabic`, `AR`, `عربي`,
+   `LANGUAGE`, `LANGUAGES`, `LANG`, `لغات`, `FRENCH`, `NULL`, `"  language  "`);
+3. `npx prisma migrate deploy` then applied the Phase 12 migration cleanly.
+
+**30 checks, 0 failures:**
+
+- **row preservation through all three table rebuilds** — 13/13 table counts unchanged, including
+  `Lesson`, `Quiz` and `Homework` themselves;
+- **backfill** — every pre-existing row carries `trackScope = 'SHARED'`; the column is `NOT NULL`
+  with default literal `'SHARED'`; a row inserted afterwards with no `trackScope` still gets `SHARED`;
+- **normalisation** — `ARABIC`/`arabic`/`AR`/`عربي` → `ARABIC`; `LANGUAGE`/`LANGUAGES`/`LANG`/`لغات`
+  → `LANGUAGE`; `"  language  "` → `LANGUAGE` (trimmed); **`FRENCH` → `NULL`, never guessed**;
+  `NULL` stays `NULL`; **0 out-of-enum values remain**;
+- **referential integrity through the rebuild** — `LessonProgress`, `QuizAttempt`, `QuizAnswer` and
+  `HomeworkSubmission` all still resolve to live parent rows, the attempt payload is byte-identical,
+  official codes intact, `PRAGMA foreign_key_check` returns an empty set.
+
+The scratch database was deleted afterwards and `.env` / `prisma/schema.prisma` were restored; the
+main database was re-verified at 37/0 after the round trip.
+
 ### Known limitations
 
 1. **SQLite enums have no CHECK constraint** — `Student.schoolType` and `trackScope` are plain `TEXT`; the Prisma client is the only gate for values written by raw SQL. The reconciler fails closed (`NO_SCHOOL_TYPE`) rather than guessing.
