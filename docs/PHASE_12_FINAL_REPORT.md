@@ -13,13 +13,16 @@ The mandatory prerequisite (the Phase 11 reconciler crash) was reproduced, root-
 | headline | value |
 |---|---|
 | Branch | `arena/01a085a4-codemind-academy` |
-| Commit | `585f550` (base `66f56f5`) |
-| PR | **#29 — OPEN, `mergedAt: null`, not a draft** |
-| Files changed | 36 (+2,958 / −125) |
+| Commit | `06a5f08` (base `66f56f5`) |
+| PR | **#29 — OPEN, `merged_at: null`, not a draft, 9 commits** |
+| Files changed | 42 (+3,621 / −126) |
 | Offline test assertions | **2,101 passed, 0 failed** across 17 suites |
 | `tsc --noEmit` | **0 errors** |
 | `eslint` on Phase 12 files | **0 findings** |
-| Real-database end-to-end | **37 passed, 0 failed** |
+| Real-database end-to-end (real client, real SQLite, unmodified source) | **37 passed, 0 failed** |
+| Migration re-run against **real data** (scratch DB, pre-Phase-12 schema) | **30 checks, 0 failures** |
+| **Live HTTP** (production build, real sessions, real DB) | **11 passed, 0 failed** |
+| `npm run build` (production build) | **exit 0**, 0 warnings, 62/62 static pages |
 | Merged? | **NO — stopped for pre-merge review, as instructed** |
 
 ---
@@ -458,6 +461,21 @@ was therefore re-verified on a purpose-built scratch database:
 
 The scratch database was deleted afterwards and `.env` / `prisma/schema.prisma` were restored; the
 main database was re-verified at 37/0 after the round trip.
+
+### Production build
+
+`npm run build` (`prisma generate && next build && node scripts/copy-standalone-assets.mjs`) →
+**exit 0**. `next.config.ts` loaded, `✓ Compiled successfully`, the in-build TypeScript pass ran to
+completion, `✓ Generating static pages (62/62)`, and the standalone bundle was produced
+(`server.js`, `public`, `.next/static`). **0 warnings.** It was blocked by the missing
+`SECURITY_HASH_SECRET` fail-fast (Phase 3 behaviour, working as designed) and by the unreachable
+Prisma engine CDN; supplying a secret and a local engine mirror unblocked it. This is the first
+successful production build since Phase 5.
+
+One honest caveat: a `PrismaClientInitializationError` (`libquery_engine-…so.node: file too short`)
+is *printed* during the "Collecting page data" step because this sandbox's query-engine binary is a
+placeholder served by the mirror. **Environmental, not a code defect** — the build still exits 0
+with the standalone output intact.
 
 ### Known limitations
 
