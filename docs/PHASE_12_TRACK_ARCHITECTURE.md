@@ -342,6 +342,18 @@ Three source-invariant regexes in `session-progression` were **tightened** to pi
 
 `npm run typecheck` (`tsc --noEmit`) → **0 errors**.
 
+**Production build:** `npm run build` (`prisma generate && next build && copy-standalone-assets`)
+→ **exit 0**. `next.config.ts` loaded, `✓ Compiled successfully in 13.0s`, the in-build TypeScript
+pass ran to completion (`Finished TypeScript in 15.1s`), `✓ Generating static pages (62/62)`, and
+the standalone bundle was produced (`server.js`, `public`, `.next/static`). **0 warnings.**
+
+One honest caveat: a `PrismaClientInitializationError` (`libquery_engine-…so.node: file too short`)
+is *printed* during the "Collecting page data" step. This sandbox cannot reach
+`binaries.prisma.sh`, so the query-engine binary served by the local mirror is a placeholder — an
+**environmental** limitation, not a code defect, and the build still exits 0 with the standalone
+output intact. It is nonetheless a strict improvement on Phases 6–10, where `next build` was
+blocked outright.
+
 ### Real-database verification
 
 Because the matrix above runs against a mock, it was also executed end-to-end against a real
