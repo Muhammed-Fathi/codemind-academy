@@ -1,6 +1,7 @@
 # CodeMind Academy Project State
 
 ## Phase status
+- **Phase 12 — BLOCKED at mandatory Phase 11 prerequisite (2026-09-09).** See `docs/PHASE_12_TRACK_ARCHITECTURE.md`. Repaired reconciler ordering for `Part`/`Unit` from nonexistent `createdAt` to stable `id` after `order`; no schema/migration changes. Schema-aware regression now rejects the old query; curriculum suite **62/62**, full existing offline matrix **1,821/1,821**. **Real DB verification has NOT passed:** Prisma engine download fails, the client is uninitialized, and this workspace has no configured local SQLite DB. Both reconciler attempts exited 1. Typecheck (22 diagnostics) and lint (50 errors/1 warning) are identical to independently checked baseline `66f56f5`; build stops at Prisma generation. **Track implementation has not started; Phase 12 is not complete or merge-ready.** Historical Phase 11 completion claims below do not supersede this open real-DB prerequisite.
 - **Deployment Readiness Audit (Phase 1):** completed (2026-09-07). Baseline `635de56`. See `docs/DEPLOYMENT_READINESS_AUDIT.md`.
   - 1 CRITICAL security fix (privilege escalation via registration)
   - 2 HIGH security fixes (quiz answer leakage, parent impersonation)
