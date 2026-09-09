@@ -1071,6 +1071,46 @@ async function main() {
     }
   }
 
+  section("28c. EVERY student write path heals the batch");
+  // `reconcileStudentBatch` is the healing primitive. A write path that sets
+  // `Student.schoolType` but forgets the call leaves `batchId = null` until the
+  // student's next login, so batch-scoped content (session videos, media) is
+  // invisible in the meantime — including to a parent reading the child's
+  // dashboard. This was found during pre-merge review: the admin-create route
+  // imported the primitive but never called it. These assertions pin the call
+  // site so the dropped call cannot silently return.
+  {
+    const writePaths = [
+      "src/app/api/admin/students/route.ts",
+      "src/app/api/admin/students/[id]/route.ts",
+      "src/app/api/auth/[action]/route.ts",
+      "src/app/api/enroll/route.ts",
+    ];
+    for (const rel of writePaths) {
+      const src = read(rel);
+      ok(
+        /from "@\/lib\/enrollment"/.test(src) &&
+          /reconcileStudentBatch/.test(src),
+        `${rel} imports the reconciliation primitive`
+      );
+      // An import with no call site is exactly the defect being pinned.
+      const calls = (src.match(/await reconcileStudentBatch\(/g) || []).length;
+      ok(calls >= 1, `${rel} actually CALLS reconcileStudentBatch`, `calls=${calls}`);
+    }
+
+    const adminCreate = read("src/app/api/admin/students/route.ts");
+    const createAt = adminCreate.indexOf("createStudentWithCode(db, {");
+    const healAt = adminCreate.indexOf("await reconcileStudentBatch(");
+    ok(
+      createAt !== -1 && healAt !== -1 && healAt > createAt,
+      "admin/students POST heals AFTER the student row exists (not before)"
+    );
+    ok(
+      /requireSchoolType\(body\.schoolType\)/.test(adminCreate),
+      "admin/students POST validates the school type instead of silently nulling a typo"
+    );
+  }
+
   section("29. SECURITY BOUNDARY — no track decision trusts the client");
   {
     // The authorization inputs must come from server-side lookups only.

@@ -303,7 +303,7 @@ Result — **all 30 checks passed, 0 failed**:
 
 ## 11. Tests
 
-`tests/track-architecture-phase12.test.js` (new) — **291 assertions, 0 failures**. Four layers:
+`tests/track-architecture-phase12.test.js` (new) — **301 assertions, 0 failures**. Four layers:
 
 - **A. Pure contract** — `track-scope` + `school-type` compiled with `tsc` and exercised directly: the full matrix, fail-closed on both sides, question-tagging precedence, Prisma predicates.
 - **B. Behavioural** — the *real* `session-progress`, `session-quiz`, `enrollment`, `parent-access`, `quiz-analytics` compiled and run against a fake `@/lib/db` modelling the Phase 12 schema. Covers the 9-cell lesson matrix, progression-universe exclusion, unlock targets, quiz selection/serving/grading, live-quiz sets, all batch-reconciliation cases incl. idempotency, video semantics, parent scopes, analytics buckets.
@@ -337,8 +337,8 @@ Three source-invariant regexes in `session-progression` were **tightened** to pi
 | seed-idempotency | 18 / 0 | 18 / 0 |
 | session-progression | 151 / 0 | 151 / 0 |
 | session-quiz | 70 / 0 | 70 / 0 |
-| **track-architecture-phase12 (new)** | — | **291 / 0** |
-| **total** | **1810** | **2101 / 0 failures** |
+| **track-architecture-phase12 (new)** | — | **301 / 0** |
+| **total** | **1810** | **2111 / 0 failures** |
 
 `npm run typecheck` (`tsc --noEmit`) → **0 errors**.
 

@@ -16,7 +16,7 @@ The mandatory prerequisite (the Phase 11 reconciler crash) was reproduced, root-
 | Commit | `06a5f08` (base `66f56f5`) |
 | PR | **#29 — OPEN, `merged_at: null`, not a draft, 9 commits** |
 | Files changed | 42 (+3,621 / −126) |
-| Offline test assertions | **2,101 passed, 0 failed** across 17 suites |
+| Offline test assertions | **2,111 passed, 0 failed** across 17 suites |
 | `tsc --noEmit` | **0 errors** |
 | `eslint` on Phase 12 files | **0 findings** |
 | Real-database end-to-end (real client, real SQLite, unmodified source) | **37 passed, 0 failed** |
@@ -230,9 +230,11 @@ Selection and grading use the **same** predicate. Proven by test: grading a set 
 
 ---
 
-## 18. Route-by-route enforcement (16 route files changed)
+## 18. Route-by-route enforcement (21 route files changed)
 
-`admin/ai-generate-quiz`, `admin/batches`, `admin/question-bank`, `admin/students`, `admin/students/[id]`, `auth/[action]`, `courses/[slug]`, `enroll`, `lessons/[id]`, `media/[id]`, `quizzes/[id]`, `quizzes/[id]/start`, `quizzes/[id]/submit`, `students/me/homework`, `students/me/session-videos`, `teacher/quizzes`.
+`admin/ai-generate-quiz`, `admin/batches`, `admin/question-bank`, `admin/students`, `admin/students/[id]`, `auth/[action]`, `courses/[slug]`, `enroll`, `lessons/[id]`, `media/[id]`, `parents/me/analytics`, `parents/me/dashboard`, `parents/me/weekly-report`, `quizzes/[id]`, `quizzes/[id]/start`, `quizzes/[id]/submit`, `students/me/certificate`, `students/me/dashboard`, `students/me/homework`, `students/me/session-videos`, `teacher/quizzes`.
+
+(Count verified against `git diff --name-only main..HEAD -- 'src/app/api/**/route.ts'` → 21.)
 
 Notables:
 - `courses/[slug]` computes one `viewerTrackFilter` (the student's own school type, or `getParentTrackScopes` for a parent) and applies it to **both** curriculum chains;
@@ -330,7 +332,7 @@ Every authorization decision is made server-side from a database lookup. Fronten
 
 ## 26. The new test suite
 
-`tests/track-architecture-phase12.test.js` — **291 assertions, 0 failures**, four layers:
+`tests/track-architecture-phase12.test.js` — **301 assertions, 0 failures**, four layers:
 
 - **A. Pure contract** — `track-scope` + `school-type` compiled with `tsc` and exercised directly: every accepted spelling, every rejected value, the full matrix, fail-closed on both sides, tagging precedence, Prisma predicates.
 - **B. Behavioural** — the *real* `session-progress`, `session-quiz`, `enrollment`, `parent-access`, `quiz-analytics` compiled and run against a fake `@/lib/db` modelling the Phase 12 schema: the 9-cell lesson matrix, progression-universe exclusion, unlock targets, quiz selection/serving/grading incl. crafted-answer and legacy-frozen-set cases, all batch-reconciliation cases, video semantics, parent scopes, analytics buckets.
@@ -365,8 +367,8 @@ Baselines were captured with `git stash` **before** the changes and are identica
 | seed-idempotency | 18 / 0 | 18 / 0 |
 | session-progression | 151 / 0 | 151 / 0 |
 | session-quiz | 70 / 0 | 70 / 0 |
-| **track-architecture-phase12 (new)** | — | **291 / 0** |
-| **total** | **1,810** | **2,101 / 0 failures** |
+| **track-architecture-phase12 (new)** | — | **301 / 0** |
+| **total** | **1,810** | **2,111 / 0 failures** |
 
 `npm run typecheck` (`tsc --noEmit`) → **0 errors**. `eslint` on the Phase 12 lib files → **0 findings**, and the new test file is clean too (it carries
 the same `no-require-imports` disable the other suites use). Measured properly rather than
@@ -406,7 +408,90 @@ school types.
 
 Nine new assertions pin all five fixes. **Mutation-verified:** deleting only the dashboard
 homework filter → `FAIL: students/me/dashboard slices BOTH the lesson universe and the homework
-list`; restored → 291/0.
+list`; restored → 301/0.
+
+## 27c. Pre-merge review — findings and fixes
+
+A 22-section read-only review was run against the real database before the merge decision.
+It reproduced every claim above independently rather than re-reading the report. Three findings.
+
+### Finding 1 — FIXED: the admin-create write path did not heal the batch
+
+`src/app/api/admin/students/route.ts` **imported** `reconcileStudentBatch` but never called it —
+the import appeared exactly once in the file, on the import line. The call had been dropped while
+wiring the write paths.
+
+*Origin:* introduced by Phase 12. `git show 66f56f5:src/app/api/admin/students/route.ts` has no
+occurrence of `reconcileStudentBatch` at all, so the unused import is a Phase 12 artefact, and
+"healing on all write paths" is a Phase 12 deliverable. This was a defect in the Phase 12 work,
+not a pre-existing one.
+
+*Consequence, measured:* creating a student with `schoolType: "ARABIC"` and a valid `groupId`
+persisted the school type correctly and left `batchId = null`. Track-scoped lessons, quizzes and
+homework were unaffected — those are gated by `schoolType` through `eligibleTrackScopes`, which
+still returned `["SHARED","ARABIC"]`. But `batchId` is the key for **batch-scoped** content, so
+session videos and media were unreachable: the query returned `videos=0` for a published video in
+the student's own ARABIC batch. The row healed on the student's next login (`auth/[action]` calls
+the reconciler), but until then a parent reading the child's dashboard saw no videos.
+
+*Fix:* call `reconcileStudentBatch(created.id)` immediately after `createStudentWithCode`, before
+the row is re-read for the response.
+
+*Verified end to end over real HTTP:* a production build was started, an admin session issued, and
+`POST /api/admin/students` called with `schoolType: "ARABIC"` + `groupId`. Result — **9/9**: HTTP
+200; `schoolType = ARABIC`; `batchId = V19H-b-ar` (non-null immediately, no login required); the
+batch's `schoolType` matches the student; the batch belongs to the group's own course; the
+published ARABIC session video is reachable (`videos=1`); the ARABIC lesson is in scope and the
+LANGUAGE lesson is out.
+
+*Pinned:* new section **28c** asserts all four student write paths actually call the primitive,
+that the admin-create call sits **after** the row exists, and that the school type is validated
+rather than silently nulled. **Mutation-verified:** replacing the call with a comment → `FAIL:
+admin/students/route.ts actually CALLS reconcileStudentBatch` and `FAIL: heals AFTER the student
+row exists`; restored → 301/0.
+
+### Finding 2 — PRE-EXISTING, reported not fixed: a parent can open an unpublished lesson
+
+`GET /api/lessons/IDOR-L-UNPUB` returns **200** to a parent whose child is eligible, with no
+`isPublished` check on the parent branch.
+
+Proven pre-existing, not a Phase 12 regression: `git show 66f56f5:src/app/api/lessons/[id]/route.ts`
+already contained the parent branch with no `isPublished` test; that file's `isPublished` count is
+**1 at base and 1 at HEAD**; Phase 12 removed **zero** `isPublished` lines anywhere (the nine `-`
+lines in the full diff are all modified-not-deleted, and every changed file kept the same count).
+Publishing/lifecycle is explicitly Phase 13+ scope. Left for that phase.
+
+### Finding 3 — PRE-EXISTING, reported not fixed: media reveals asset existence pre-auth
+
+`/api/media/[id]` returns `400 "Not a stored asset"` **before** its authorization block, so any
+authenticated user can distinguish an existing `EXTERNAL_URL` asset from a nonexistent id. It
+leaks no track information — only that an id exists and is externally stored. Also out of Phase 12
+scope (security Phase 20).
+
+### Everything else in the review came back clean
+
+| Section | Result |
+| --- | --- |
+| §2 Phase 11 real-DB baseline | 12/12 |
+| §3 `Track`/`Enrollment` removal | 0 live references in `src/` |
+| §4 NULL `schoolType` semantics | 12/12 |
+| §6 progression fixture | 17/17 |
+| §7 quiz selection + grading matrix | 38/38 |
+| §8 frozen attempt | 8/8 |
+| §9 media isolation | 7/7 |
+| §10/§14 list endpoints | verified by body, not status |
+| §11 parent flows | 15/16 (the 16th is Finding 2) |
+| §12 batch healing | 15/15 |
+| §13 analytics | 12/12 |
+| §17 migrations | status up to date, `deploy` no-op, `diff` no drift |
+| §18 data integrity | 15/15 |
+| §19 write-path wiring | 9/9 after Finding 1's fix |
+
+§13 initially read 11/12. The single failure was **the reviewer's fixture, not the code**: both
+attempts were given the same `finishedAt`, so "latest" was a genuine tie and whichever row came
+last in the array won. `latestPercentage` is pre-existing (present at base, lines 93/118/126/138)
+and is timestamp-driven — with distinct timestamps the reversed input produced identical JSON, and
+two attempts at different times yielded the same `latestPercentage` in both orders. 12/12.
 
 ## 28. Real-database verification, known limitations, and the merge decision
 
