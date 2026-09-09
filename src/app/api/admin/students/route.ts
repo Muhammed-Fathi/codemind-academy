@@ -6,7 +6,8 @@ import { db } from "@/lib/db";
 import { ok, err, requireRole } from "@/lib/api";
 import { hashPassword } from "@/lib/auth";
 import { createStudentWithCode } from "@/lib/curriculum-seed";
-import { normalizeSchoolType } from "@/lib/school-type";
+import { normalizeSchoolType, requireSchoolType } from "@/lib/school-type";
+import { reconcileStudentBatch } from "@/lib/enrollment";
 import { getVideoProgressForStudents } from "@/lib/progress";
 
 export async function GET(req: NextRequest) {
@@ -133,7 +134,14 @@ export async function POST(req: NextRequest) {
   const phone = body.phone ? String(body.phone) : null;
   const grade = body.grade ? String(body.grade) : "2nd Secondary";
   const schoolName = body.schoolName ? String(body.schoolName) : null;
-  const schoolType = normalizeSchoolType(body.schoolType);
+  // Phase 12 — an admin creating a student MUST give a valid school type, or
+  // explicitly none. `normalizeSchoolType` alone would silently turn a typo
+  // into "unspecified" and quietly restrict the student to SHARED content.
+  const schoolTypeCheck = requireSchoolType(body.schoolType);
+  if (!schoolTypeCheck.ok && schoolTypeCheck.reason === "INVALID") {
+    return err(tApi("api.210"), 400);
+  }
+  const schoolType = schoolTypeCheck.ok ? schoolTypeCheck.value : null;
   const nationalId = body.nationalId ? String(body.nationalId).trim() : null;
   const parentPhone = body.parentPhone ? String(body.parentPhone).trim() : null;
   const groupId = body.groupId ? String(body.groupId) : null;
@@ -155,7 +163,7 @@ export async function POST(req: NextRequest) {
     },
   });
   // Unique readable student code (CM-XXXXXX), P2002-safe under concurrency.
-  const student = await createStudentWithCode(db, {
+  const created = await createStudentWithCode(db, {
     userId: newUser.id,
     grade,
     schoolName,
@@ -163,12 +171,20 @@ export async function POST(req: NextRequest) {
     nationalId: nationalId || null,
     parentPhone: parentPhone || null,
     groupId,
-  }).then((s: any) =>
-    (db as any).student.findUnique({
-      where: { id: s.id },
-      include: { user: true, group: { select: { name: true } } },
-    })
-  );
+  });
+
+  // Phase 12 — this is a student write path, so it must heal the batch too.
+  // Without it a newly created student keeps `batchId = null` until their
+  // first login, and batch-scoped content (session videos, media) stays
+  // invisible in the meantime — including to a parent reading the child's
+  // dashboard. Track-scoped lessons/quizzes are unaffected because those are
+  // gated by `schoolType`, but the batch link is the video/media key.
+  await reconcileStudentBatch((created as { id: string }).id);
+
+  const student = await (db as any).student.findUnique({
+    where: { id: (created as { id: string }).id },
+    include: { user: true, group: { select: { name: true } } },
+  });
 
   return ok({
     student: {

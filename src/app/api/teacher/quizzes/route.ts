@@ -14,6 +14,11 @@ import {
   questionPerformance,
   weakestQuestions,
 } from "@/lib/quiz-analytics";
+import {
+  normalizeTrackScope,
+  parseQuestionSchoolTypeInput,
+  resolveQuestionSchoolType,
+} from "@/lib/track-scope";
 
 export async function GET(req: NextRequest) {
   const user = await requireUser();
@@ -200,7 +205,18 @@ export async function POST(req: NextRequest) {
     explanation?: string;
     difficulty?: Difficulty;
     marks?: number;
+    /** Phase 12: explicit per-question school type. Absent = inherit. */
+    schoolType?: string | null;
   }> = Array.isArray(body.questions) ? body.questions : [];
+
+  // Phase 12 — the quiz's own track scope. REQUIRED to be valid when given;
+  // absent means SHARED. A track-specific quiz on a SHARED lesson is the
+  // intended way to serve different question banks to the two school types.
+  const quizTrackScope =
+    body.trackScope === undefined
+      ? "SHARED"
+      : normalizeTrackScope(body.trackScope);
+  if (!quizTrackScope) return err(tApi("api.228"), 400);
 
   if (!lessonId) return err(tApi("api.176"), 400);
   if (!title) return err(tApi("api.177"), 400);
@@ -231,6 +247,11 @@ export async function POST(req: NextRequest) {
   // Validate each question
   for (let i = 0; i < questions.length; i++) {
     const q = questions[i];
+    // Phase 12 — a supplied school type must be meaningful. Rejecting beats
+    // silently storing SHARED, which would hand the question to BOTH tracks.
+    if (!parseQuestionSchoolTypeInput(q.schoolType).ok) {
+      return err(tApi("api.229"), 400);
+    }
     if (!q.prompt || !q.prompt.trim()) {
       return err(tApi("api.181", { p1: i + 1 }), 400);
     }
@@ -257,6 +278,7 @@ export async function POST(req: NextRequest) {
       passMark,
       timeLimit: timeLimit ?? null,
       order: 0,
+      trackScope: quizTrackScope,
       questions: {
         create: questions.map((q) => {
           const type: QuestionType = q.type === "TRUE_FALSE" ? "TRUE_FALSE" : "MCQ";
@@ -264,6 +286,19 @@ export async function POST(req: NextRequest) {
             type === "TRUE_FALSE"
               ? ["True", "False"]
               : q.options || [];
+          // Phase 12 — EVERY created question gets an explicit school type.
+          // Precedence (documented in src/lib/track-scope.ts):
+          //   1. the author's explicit value (including explicit SHARED = null)
+          //   2. the OWNING QUIZ's scope when it is track-specific
+          //   3. SHARED (null)
+          // Inheriting from the quiz rather than the lesson is deliberate: a
+          // SHARED lesson may host both an ARABIC and a LANGUAGE quiz, and
+          // inheriting the lesson would collapse that distinction.
+          const parsed = parseQuestionSchoolTypeInput(q.schoolType);
+          const questionSchoolType =
+            parsed.ok && parsed.specified
+              ? parsed.value
+              : resolveQuestionSchoolType(undefined, quizTrackScope);
           return {
             type,
             prompt: q.prompt || "",
@@ -273,6 +308,7 @@ export async function POST(req: NextRequest) {
             explanation: q.explanation || null,
             difficulty: (q.difficulty as Difficulty) || "MEDIUM",
             marks: Number(q.marks ?? 1),
+            schoolType: questionSchoolType,
           };
         }),
       },
@@ -289,6 +325,7 @@ export async function POST(req: NextRequest) {
       description: createdQuiz.description,
       passMark: createdQuiz.passMark,
       timeLimit: createdQuiz.timeLimit,
+      trackScope: createdQuiz.trackScope,
       questions: createdQuiz.questions.map((q) => ({
         id: q.id,
         type: q.type,
@@ -299,6 +336,7 @@ export async function POST(req: NextRequest) {
         explanation: q.explanation,
         difficulty: q.difficulty,
         marks: q.marks,
+        schoolType: q.schoolType,
       })),
     },
   });

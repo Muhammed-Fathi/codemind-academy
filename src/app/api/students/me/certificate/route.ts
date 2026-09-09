@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
 import { EXCLUDE_ARCHIVED_LESSON, lessonCourseChainOr } from "@/lib/session-progress";
+import { trackScopeWhere } from "@/lib/track-scope";
 import { brand } from "@/lib/brand";
 import { fmtDate } from "@/lib/i18n-core";
 
@@ -29,9 +30,19 @@ export async function GET() {
   // Eligibility runs over the ACTIVE curriculum universe (both chains,
   // archived history excluded): official lessons are unit-linked, and legacy
   // history rows stay readable but no longer count toward the 80%.
+  //
+  // Phase 12: the universe is also sliced to the student's own track. Without
+  // this the DENOMINATOR counts lessons of the other school type that this
+  // student can never open, so the 80% threshold would be unreachable for
+  // anyone in a course that carries both ARABIC- and LANGUAGE-only sessions.
+  // The numerator is filtered for the same reason — a progress row left behind
+  // by a school-type change must not count toward a certificate the student is
+  // no longer entitled to.
+  const studentTrack = trackScopeWhere(student.schoolType);
   const totalLessons = await db.lesson.count({
     where: {
       ...EXCLUDE_ARCHIVED_LESSON,
+      ...studentTrack,
       OR: lessonCourseChainOr(course.id),
     },
   });
@@ -41,6 +52,7 @@ export async function GET() {
       isCompleted: true,
       lesson: {
         ...EXCLUDE_ARCHIVED_LESSON,
+        ...studentTrack,
         OR: lessonCourseChainOr(course.id),
       },
     },

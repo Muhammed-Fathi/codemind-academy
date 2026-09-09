@@ -330,6 +330,15 @@ export const DICT_2026: Record<string, DictEntry> = {
     ar: "الدرس ده مؤرشف ومش ممكن توليد أسئلة جديدة ليه",
     en: "This lesson is archived and cannot receive newly generated questions",
   },
+  // ---------------- Phase 12: track architecture ----------------
+  "api.228": {
+    ar: "نطاق المسار غير صالح (مشترك أو عربي أو لغات)",
+    en: "Invalid track scope (Shared, Arabic or Language)",
+  },
+  "api.229": {
+    ar: "نوع المدرسة الخاص بالسؤال غير صالح (مشترك أو عربي أو لغات)",
+    en: "Invalid question school type (Shared, Arabic or Language)",
+  },
   "admin.318": { ar: "مطابقة المنهج الرسمي", en: "Reconcile official curriculum" },
   "admin.319": { ar: "جارٍ المطابقة…", en: "Reconciling…" },
   "admin.320": {

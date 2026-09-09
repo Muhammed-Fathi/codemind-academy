@@ -39,7 +39,13 @@ model Student {
   userId            String               @unique
   grade             String               @default("2nd Secondary")
   schoolName        String?
-  schoolType        String?
+  /// Phase 12: constrained from a free-form String to the `SchoolType` enum.
+  /// Still NULLABLE on purpose — "unspecified" is a real, first-class state
+  /// (the admin students screen has an UNSPECIFIED tab and registration is
+  /// not the only way a student row is born). A NULL school type FAILS CLOSED
+  /// for track purposes: the student sees SHARED content only, never
+  /// ARABIC/LANGUAGE-specific content. See src/lib/track-scope.ts.
+  schoolType        SchoolType?
   nationalId        String?              @unique
   parentPhone       String?
   studentCode       String?              @unique
@@ -118,6 +124,18 @@ model Teacher {
   teacherNotes TeacherNote[]
 }
 
+/// DEPRECATED / FUTURE SCHEMA — NOT USED BY ANY APPLICATION CODE.
+///
+/// Phase 12 verdict (docs/PHASE_12_TRACK_ARCHITECTURE.md): track eligibility
+/// is modelled as `TrackScope` metadata on the shared curriculum, keyed off
+/// `Student.schoolType`. A `Track` ENTITY would only ever hold two rows
+/// (ARABIC / LANGUAGE) that duplicate the `SchoolType` enum, and turning it
+/// into the access gate would mean a second, parallel enrollment system next
+/// to the group-derived one — the exact hybrid the platform must not have.
+///
+/// Kept (not dropped) because dropping it is destructive and buys nothing:
+/// it is referenced by `Course.trackId` / `Enrollment.trackId`, both of which
+/// are NULL/unused. No route, lib or script reads or writes this model.
 model Track {
   id          String       @id @default(cuid())
   code        String       @unique
@@ -130,6 +148,22 @@ model Track {
   enrollments Enrollment[]
 }
 
+/// DEPRECATED / DEAD SCHEMA — NOT USED BY ANY APPLICATION CODE.
+///
+/// Phase 12 verdict: `Group -> Course` remains the SINGLE enrollment gate
+/// (`getEnrollment` / `canAccessCourse` in src/lib/enrollment.ts). This table
+/// is never read or written anywhere in src/ or scripts/, and it has never
+/// been backfilled.
+///
+/// It is deliberately NOT adopted: adopting it would require backfilling every
+/// student and cutting every access check over in one coherent move, and it
+/// would add a second source of truth for "is this student enrolled". Leaving
+/// it half-used is the worse outcome, so it is formally declared dead schema.
+/// Kept (not dropped) because a DROP is destructive and unnecessary.
+///
+/// NOTE: the `Enrollment` TYPE exported by src/lib/enrollment.ts is an
+/// unrelated in-memory projection of the group-derived enrollment — it is not
+/// this model.
 model Enrollment {
   id        String       @id @default(cuid())
   studentId String
@@ -158,6 +192,9 @@ model Course {
   updatedAt   DateTime @updatedAt
   groups      Group[]
   parts       Part[]
+  /// DEAD SCHEMA (Phase 12 verdict): always NULL, never read or written. The
+  /// course is SHARED by both school types by design; track eligibility lives
+  /// on the content (Lesson/Quiz/Homework.trackScope), not on the course.
   trackId     String?
   track       Track?       @relation(fields: [trackId], references: [id], onDelete: SetNull)
   enrollments Enrollment[]
@@ -210,6 +247,10 @@ model Lesson {
   unitId        String?
   officialCode  String?          @unique
   curriculumStatus CurriculumStatus @default(LEGACY)
+  /// Phase 12 — which school type this session belongs to. Track metadata,
+  /// not a second curriculum: officialCode stays UNIQUE, so a track-specific
+  /// lesson can never create a duplicate official row.
+  trackScope    TrackScope       @default(SHARED)
   title         String
   titleAr       String
   order         Int
@@ -311,6 +352,10 @@ model Attendance {
 model Quiz {
   id          String        @id @default(cuid())
   lessonId    String
+  /// Phase 12 — track eligibility of the quiz itself, independent of (but
+  /// never wider than) its lesson's trackScope. A LANGUAGE quiz on a SHARED
+  /// lesson is served to LANGUAGE students only.
+  trackScope  TrackScope    @default(SHARED)
   title       String
   titleAr     String
   description String?
@@ -385,6 +430,8 @@ model QuizAnswer {
 model Homework {
   id           String               @id @default(cuid())
   lessonId     String
+  /// Phase 12 — track eligibility, same contract as Lesson/Quiz.trackScope.
+  trackScope   TrackScope           @default(SHARED)
   title        String
   titleAr      String
   instructions String?
@@ -929,6 +976,28 @@ enum MaterialKind {
 }
 
 enum SchoolType {
+  ARABIC
+  LANGUAGE
+}
+
+/// Phase 12 — the content-eligibility dimension of the ONE shared course.
+///
+/// There is exactly ONE course; `trackScope` decides WHICH students a piece of
+/// session content belongs to. It is metadata on the shared academic skeleton,
+/// NOT a second curriculum universe: the official curriculum stays 2 Parts /
+/// 7 Units / 23 lessons regardless of how many scopes exist.
+///
+///   SHARED   → visible to ARABIC and LANGUAGE students
+///   ARABIC   → visible to ARABIC students only
+///   LANGUAGE → visible to LANGUAGE students only
+///
+/// Matching is enforced SERVER-SIDE and fails closed (see
+/// src/lib/track-scope.ts). `SHARED` is the default because it is the
+/// semantically correct value for every row that predates Phase 12: all
+/// pre-existing content was authored for the whole cohort, with no
+/// track-specific variants in the database at migration time.
+enum TrackScope {
+  SHARED
   ARABIC
   LANGUAGE
 }

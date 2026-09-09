@@ -13,6 +13,7 @@ import { db } from "@/lib/db";
 import { requireUser, err } from "@/lib/api";
 import { readPrivateFile, privateFileStat } from "@/lib/media";
 import { logSecurityEvent } from "@/lib/security";
+import { normalizeSchoolType } from "@/lib/school-type";
 
 export async function GET(
   req: NextRequest,
@@ -25,7 +26,15 @@ export async function GET(
   const asset = await db.mediaAsset.findUnique({
     where: { id },
     include: {
-      sessionVideos: { select: { id: true, batchId: true, isPublished: true } },
+      sessionVideos: {
+        select: {
+          id: true,
+          batchId: true,
+          isPublished: true,
+          // Phase 12: a video's track is its batch's school type.
+          batch: { select: { schoolType: true } },
+        },
+      },
       quizEvidence: { select: { id: true } },
     },
   });
@@ -50,12 +59,26 @@ export async function GET(
     if (user.role === "STUDENT") {
       const student = await db.student.findUnique({
         where: { userId: user.id },
-        select: { batchId: true, user: { select: { isActive: true } } },
+        select: {
+          batchId: true,
+          schoolType: true,
+          user: { select: { isActive: true } },
+        },
       });
+      // Phase 12 — batch membership AND track must both match, and the track
+      // is derived server-side from the student's own schoolType, never from
+      // the batch id in the URL. This closes the sticky-batchId hole at the
+      // media boundary: a student still pointing at the other school type's
+      // batch cannot stream its recordings.
+      const studentSchoolType = normalizeSchoolType(student?.schoolType);
       const allowed =
         !!student?.batchId &&
+        !!studentSchoolType &&
         asset.sessionVideos.some(
-          (v) => v.isPublished && v.batchId === student.batchId
+          (v) =>
+            v.isPublished &&
+            v.batchId === student.batchId &&
+            v.batch.schoolType === studentSchoolType
         );
       if (!allowed) return err("Forbidden", 403);
     } else if (user.role === "PARENT") {

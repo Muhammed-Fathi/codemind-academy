@@ -2,6 +2,8 @@ import { getServerT, serverPick, serverLocale } from "@/lib/i18n-server";
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireUser, getStudentProfile } from "@/lib/api";
+import { trackScopeWhere } from "@/lib/track-scope";
+import { getStudentSchoolType } from "@/lib/enrollment";
 import {
   EXCLUDE_ARCHIVED_LESSON,
   getUnlockedLessonIds,
@@ -20,6 +22,12 @@ export async function GET(_req: NextRequest) {
   const student = await getStudentProfile(user.id);
   if (!student) return err("Student profile not found", 404);
 
+  // Phase 12: every curriculum count and every content list on this dashboard
+  // is sliced to the student's own track. `getStudentSchoolType` re-reads the
+  // row rather than trusting whatever the profile helper happened to select,
+  // so an unrecognised or missing value fails closed to SHARED-only.
+  const viewerTrack = trackScopeWhere(await getStudentSchoolType(student.id));
+
   // ----- Course progress + last viewed lesson -----
   // Course progress runs over the ACTIVE curriculum universe (both chains,
   // archived history excluded): official lessons are unit-linked, legacy
@@ -28,6 +36,7 @@ export async function GET(_req: NextRequest) {
   const lessons = await db.lesson.findMany({
     where: {
       ...EXCLUDE_ARCHIVED_LESSON,
+      ...viewerTrack,
       OR: [
         { unit: { part: groupMatch } },
         { topic: { unit: { part: groupMatch } } },
@@ -139,6 +148,10 @@ export async function GET(_req: NextRequest) {
   };
   const homeworks = await db.homework.findMany({
     where: {
+      // Phase 12: an assignment belonging to the other school type must not be
+      // listed here — this endpoint returns the row and its lesson title, so
+      // leaving it unfiltered was an outright cross-track content leak.
+      ...viewerTrack,
       lesson: {
         ...EXCLUDE_ARCHIVED_LESSON,
         OR: [

@@ -23,6 +23,33 @@ export function isSchoolType(value: unknown): value is SchoolType {
   return normalizeSchoolType(value) !== null;
 }
 
+/**
+ * Strict, REQUIRED parse for every WRITE path (registration, admin create,
+ * admin update). This is the single place that decides whether an incoming
+ * school type may be stored:
+ *
+ *   `{ ok: true, value }` → a canonical SchoolType, safe to persist
+ *   `{ ok: false }`       → absent or unrecognised; the caller MUST reject
+ *                           the request. It must never fall back to a
+ *                           default, because a guessed school type silently
+ *                           changes which track content and which session
+ *                           videos a student receives.
+ *
+ * `Student.schoolType` is nullable in the schema (an "unspecified" student is
+ * a real state), but a write path that was GIVEN a school type is not allowed
+ * to quietly discard it — hence a distinct `{ ok: false }` rather than null.
+ */
+export function requireSchoolType(
+  value: unknown
+): { ok: true; value: SchoolType } | { ok: false; reason: "EMPTY" | "INVALID" } {
+  if (value === null || value === undefined) return { ok: false, reason: "EMPTY" };
+  if (typeof value === "string" && value.trim() === "")
+    return { ok: false, reason: "EMPTY" };
+  const normalized = normalizeSchoolType(value);
+  if (!normalized) return { ok: false, reason: "INVALID" };
+  return { ok: true, value: normalized };
+}
+
 /** Localised label pair for UI (never hardcode these in components). */
 export const SCHOOL_TYPE_LABELS: Record<SchoolType, { ar: string; en: string }> = {
   ARABIC: { ar: "مدارس عربي", en: "Arabic School" },

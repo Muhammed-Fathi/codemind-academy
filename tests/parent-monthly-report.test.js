@@ -219,6 +219,11 @@ function makeMockDb() {
     homework: empty, homeworkSubmission: empty, teacherNote: empty, liveSession: empty,
     // Phase 7: the dashboard also aggregates finished mock exams (none here).
     examAttempt: empty,
+    // Phase 12: registration now reconciles the student's batch. This report
+    // scenario never creates a batch, so the empty stub models "no matching
+    // batch exists" — which is exactly the real outcome for a brand-new
+    // student, and `reconcileStudentBatch` must no-op on it.
+    batch: empty,
 
     // Security/session tables introduced by the 2026 upgrade. These are
     // exercised implicitly by every login in this test (single-device

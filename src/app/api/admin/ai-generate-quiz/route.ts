@@ -6,6 +6,7 @@ import { requireRole, ok, err } from "@/lib/api";
 import { getServerT } from "@/lib/i18n-server";
 import { db } from "@/lib/db";
 import type { Question } from "@prisma/client";
+import { resolveQuestionSchoolType } from "@/lib/track-scope";
 
 export async function POST(req: NextRequest) {
   const { user, error } = await requireRole("ADMIN", "TEACHER");
@@ -202,6 +203,10 @@ ${context}`;
           explanation: q.explanation || "",
           difficulty: (q.difficulty || diff || "MEDIUM").toUpperCase(),
           marks: 1,
+          // Phase 12 — generated questions inherit the owning quiz's track
+          // scope explicitly rather than defaulting to SHARED, so an
+          // ARABIC-only quiz never receives shared-tagged questions.
+          schoolType: resolveQuestionSchoolType(undefined, quiz.trackScope),
         },
       });
       created.push(question);

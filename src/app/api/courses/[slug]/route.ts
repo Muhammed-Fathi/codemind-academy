@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireUser, getStudentProfile } from "@/lib/api";
-import { getEnrollment } from "@/lib/enrollment";
+import { getEnrollment, getStudentSchoolType } from "@/lib/enrollment";
 import {
   EXCLUDE_ARCHIVED_LESSON,
   getCourseSessionProgress,
 } from "@/lib/session-progress";
-import { isParentAuthorizedForCourse } from "@/lib/parent-access";
+import {
+  getParentTrackScopes,
+  isParentAuthorizedForCourse,
+} from "@/lib/parent-access";
+import { trackScopeInWhere, trackScopeWhere } from "@/lib/track-scope";
 import { getServerT } from "@/lib/i18n-server";
 
 // GET /api/courses/[slug]
@@ -53,6 +57,23 @@ export async function GET(
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
 
+  // Phase 12 — resolve the viewer's TRACK SLICE before any content is read, so
+  // the tree can never contain a lesson from the other school type. Hiding it
+  // later in the payload would not be protection: the client can read the
+  // response. Teachers and admins are deliberately unrestricted — they manage
+  // SHARED, ARABIC and LANGUAGE content and must not be filtered as though
+  // they were students.
+  let viewerTrackFilter: object = {};
+  if (user.role === "STUDENT") {
+    const viewer = await getStudentProfile(user.id);
+    viewerTrackFilter = viewer
+      ? trackScopeWhere(await getStudentSchoolType(viewer.id))
+      : trackScopeWhere(null);
+  } else if (user.role === "PARENT") {
+    // A parent previews through their children's tracks, never their own.
+    viewerTrackFilter = trackScopeInWhere(await getParentTrackScopes(user.id));
+  }
+
   const course = await db.course.findUnique({
     where: { slug },
     include: {
@@ -65,7 +86,7 @@ export async function GET(
               // Canonical chain: Course → Part → Unit → Lesson.
               // Archived lessons are history, not curriculum (Phase 11).
               lessons: {
-                where: { ...EXCLUDE_ARCHIVED_LESSON },
+                where: { ...EXCLUDE_ARCHIVED_LESSON, ...viewerTrackFilter },
                 orderBy: { order: "asc" },
                 include: LESSON_INCLUDE,
               },
@@ -74,7 +95,7 @@ export async function GET(
                 orderBy: { order: "asc" },
                 include: {
                   lessons: {
-                    where: { ...EXCLUDE_ARCHIVED_LESSON },
+                    where: { ...EXCLUDE_ARCHIVED_LESSON, ...viewerTrackFilter },
                     orderBy: { order: "asc" },
                     include: LESSON_INCLUDE,
                   },

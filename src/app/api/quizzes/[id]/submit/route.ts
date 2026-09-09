@@ -5,8 +5,10 @@ import { canAccessQuiz } from "@/lib/session-progress";
 import {
   gradeAttemptQuestionSet,
   loadAttemptQuestionSet,
+  loadQuizQuestionSet,
   type SubmittedAnswer,
 } from "@/lib/session-quiz";
+import { getStudentSchoolType } from "@/lib/enrollment";
 
 // POST /api/quizzes/[id]/submit
 // Body: { answers: { questionId, selected }[] }
@@ -50,6 +52,10 @@ export async function POST(
   const access = await canAccessQuiz(s.id, id);
   if (!access.allowed) return denyProgression(access.reason, "Quiz not found");
 
+  // Phase 12 — grading uses the SAME track rule as selection, so a question
+  // the student was never served can never be graded into their score.
+  const schoolType = await getStudentSchoolType(s.id);
+
   const body = await req.json().catch(() => ({}));
   const answersRaw: SubmittedAnswer[] = Array.isArray(body.answers)
     ? body.answers
@@ -69,22 +75,14 @@ export async function POST(
   // quiz questions. A pre-Phase-5 in-flight attempt with no rows adopts the
   // current quiz questions here (one-time upgrade path).
   const set = open
-    ? await loadAttemptQuestionSet(open.id)
-    : await db.question.findMany({
-        where: { quizId: id },
-        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-      }).then((qs) =>
-        qs.map((q) => ({
-          answerId: null,
-          questionId: q.id,
-          selected: "",
-          question: q,
-        }))
-      );
+    ? await loadAttemptQuestionSet(open.id, schoolType)
+    : await loadQuizQuestionSet(id, schoolType);
 
-  // Server-side grading — no client value can influence the result.
+  // Server-side grading — no client value can influence the result. The
+  // student's school type is passed so grading independently refuses any
+  // ineligible question that might still have an answer row.
   const { graded, score, totalMarks, percentage, passed } =
-    gradeAttemptQuestionSet(set, answersRaw, quiz.passMark);
+    gradeAttemptQuestionSet(set, answersRaw, quiz.passMark, schoolType);
 
   const finishedAt = new Date();
   const attemptData = {

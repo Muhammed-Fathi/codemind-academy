@@ -9,7 +9,8 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireRole } from "@/lib/api";
-import { normalizeSchoolType, SCHOOL_TYPE_LABELS } from "@/lib/school-type";
+import { requireSchoolType, SCHOOL_TYPE_LABELS } from "@/lib/school-type";
+import { attachUnassignedStudentsToBatch } from "@/lib/enrollment";
 import { getServerT } from "@/lib/i18n-server";
 
 export async function GET() {
@@ -64,8 +65,12 @@ export async function POST(req: NextRequest) {
   if (error) return error;
 
   const body = await req.json().catch(() => ({}));
-  const schoolType = normalizeSchoolType(body.schoolType);
-  if (!schoolType) return err(tApi("api.210"), 400);
+  // Phase 12 — the shared strict validator: a batch's school type is what
+  // decides which students' recordings it holds, so an unrecognised value is
+  // rejected rather than guessed at.
+  const schoolTypeCheck = requireSchoolType(body.schoolType);
+  if (!schoolTypeCheck.ok) return err(tApi("api.210"), 400);
+  const schoolType = schoolTypeCheck.value;
   const courseId = body.courseId ? String(body.courseId) : null;
 
   const labels = SCHOOL_TYPE_LABELS[schoolType];
@@ -81,16 +86,12 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  // Attach every currently eligible student of this school type. This writes
-  // one small FK per student — it never duplicates course/media data.
-  await db.student.updateMany({
-    where: {
-      schoolType,
-      batchId: null,
-      ...(courseId ? { group: { courseId } } : {}),
-    },
-    data: { batchId: batch.id },
-  });
+  // Attach every still-unattached eligible student of this school type, so a
+  // new batch takes effect immediately instead of only when each student
+  // happens to open the session-videos page. This writes one small FK per
+  // student — it never duplicates course or media data, and it never
+  // reassigns a student who already has a batch (idempotent by construction).
+  const attached = await attachUnassignedStudentsToBatch(batch.id);
 
-  return ok({ batch, created: true });
+  return ok({ batch, created: true, attached });
 }

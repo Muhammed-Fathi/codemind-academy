@@ -64,7 +64,12 @@ fs.writeFileSync(
       paths: { "@/*": ["src/*"] },
       outDir: OUT,
     },
-    files: [path.join(REPO, "src/lib/session-quiz.ts")],
+    files: [
+      path.join(REPO, "src/lib/session-quiz.ts"),
+      // Phase 12: session-quiz now imports the track contract.
+      path.join(REPO, "src/lib/track-scope.ts"),
+      path.join(REPO, "src/lib/school-type.ts"),
+    ],
   })
 );
 // tsc must RESOLVE `@/lib/db` for typing, but the emitted require() keeps the
@@ -199,6 +204,14 @@ function makeFakeDb() {
 const originalResolve = Module._resolveFilename;
 Module._resolveFilename = function (request, ...args) {
   if (request === "@/lib/db") return FAKE_DB_PATH;
+  // Phase 12: session-quiz now imports `@/lib/track-scope` /
+  // `@/lib/school-type`. tsc keeps the alias in the emitted require(), so
+  // resolve it to the sibling compiled output in the temp dir.
+  const m = /^@\/lib\/([\w-]+)$/.exec(request);
+  if (m) {
+    const compiled = path.join(OUT, `${m[1]}.js`);
+    if (fs.existsSync(compiled)) return compiled;
+  }
   return originalResolve.call(this, request, ...args);
 };
 const loadServiceWith = (fakeDb) => {

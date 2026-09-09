@@ -8,6 +8,7 @@ import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
 import { getEnrollment, syncStudentBatch } from "@/lib/enrollment";
 import { VIDEO_COMPLETION_THRESHOLD } from "@/lib/progress";
+import { videoTrackFilter } from "@/lib/track-scope";
 
 export async function GET() {
   const user = await requireUser();
@@ -30,7 +31,16 @@ export async function GET() {
   if (!batchId) return ok({ isEnrolled: true, videos: [] });
 
   const videos = await db.sessionVideo.findMany({
-    where: { batchId, isPublished: true },
+    // Phase 12 — the batch + published authorization above is unchanged; the
+    // track check is layered ON TOP of it, never in place of it. A video's
+    // track IS its batch's schoolType, so this re-derives the segment from the
+    // row itself: even a stale or hand-edited `Student.batchId` can no longer
+    // serve the other school type's recordings.
+    where: {
+      batchId,
+      isPublished: true,
+      ...videoTrackFilter(enrollment.schoolType),
+    },
     orderBy: { publishedAt: "desc" },
     include: {
       media: { select: { id: true, storage: true, externalUrl: true, durationSec: true } },

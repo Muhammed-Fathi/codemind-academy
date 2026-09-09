@@ -11,7 +11,13 @@ import {
 } from "@/lib/session-progress";
 import { VIDEO_COMPLETION_THRESHOLD } from "@/lib/progress";
 import { safeParseOptions } from "@/lib/session-quiz";
-import { isParentAuthorizedForCourse } from "@/lib/parent-access";
+import {
+  getParentTrackScopes,
+  isParentAllowedTrackScope,
+  isParentAuthorizedForCourse,
+} from "@/lib/parent-access";
+import { trackScopeInWhere, trackScopeWhere } from "@/lib/track-scope";
+import { getStudentSchoolType } from "@/lib/enrollment";
 
 // GET /api/lessons/[id]
 // Returns lesson + quizzes + homework + student progress.
@@ -36,6 +42,24 @@ export async function GET(
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
 
+  // Phase 12 — the viewer's TRACK SLICE, resolved once from server-side state
+  // and reused for (a) the quizzes/homeworks listed on the lesson and (b) the
+  // prev/next chain. Both must use the same slice the progression engine uses,
+  // otherwise the page would name a quiz or a "next session" the student can
+  // never open. Teachers/admins are unrestricted: they manage every scope.
+  let viewerTrackFilter: object = {};
+  if (user.role === "STUDENT") {
+    const viewer = await db.student.findUnique({
+      where: { userId: user.id },
+      select: { id: true },
+    });
+    viewerTrackFilter = viewer
+      ? trackScopeWhere(await getStudentSchoolType(viewer.id))
+      : trackScopeWhere(null);
+  } else if (user.role === "PARENT") {
+    viewerTrackFilter = trackScopeInWhere(await getParentTrackScopes(user.id));
+  }
+
   const lesson = await db.lesson.findUnique({
     where: { id },
     include: {
@@ -48,10 +72,11 @@ export async function GET(
         },
       },
       quizzes: {
+        where: { ...viewerTrackFilter },
         orderBy: [{ order: "asc" }, { id: "asc" }],
         include: { questions: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] } },
       },
-      homeworks: { orderBy: { deadline: "asc" } },
+      homeworks: { where: { ...viewerTrackFilter }, orderBy: { deadline: "asc" } },
     },
   });
   if (!lesson) return err("Lesson not found", 404);
@@ -69,6 +94,11 @@ export async function GET(
   if (user.role === "PARENT") {
     const allowed = await isParentAuthorizedForCourse(user.id, chainCourse?.id);
     if (!allowed) return err("Lesson not found", 404);
+    // Phase 12 — the parent previews through the CHILD's track. A refusal is a
+    // plain 404, indistinguishable from a nonexistent lesson id.
+    if (!(await isParentAllowedTrackScope(user.id, lesson.trackScope))) {
+      return err("Lesson not found", 404);
+    }
   }
 
   // Find prev / next lessons in the same course, in the SAME deterministic
@@ -109,10 +139,18 @@ export async function GET(
     // Prev/next navigate the ACTIVE curriculum only: archived lessons are
     // history, and the chain must never strand a student on (or hop over to)
     // a session the engine no longer teaches.
+    //
+    // Phase 12 — and only the viewer's own TRACK (`viewerTrackFilter`,
+    // resolved above). Without this, "next" would hand an ARABIC student the
+    // id of a LANGUAGE session (and vice versa), which is both a cross-track
+    // pointer and a progression hole. The slice matches the one
+    // `getCourseSessionProgress` uses, so the navigation chain and the unlock
+    // chain are the same sequence.
     const found = await db.lesson.findMany({
       where: {
         isPublished: true,
         ...EXCLUDE_ARCHIVED_LESSON,
+        ...viewerTrackFilter,
         OR: lessonCourseChainOr(courseId),
       },
       select: LESSON_CHAIN_SELECT,

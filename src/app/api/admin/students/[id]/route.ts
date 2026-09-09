@@ -3,7 +3,8 @@ import { getServerT } from "@/lib/i18n-server";
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireRole } from "@/lib/api";
-import { normalizeSchoolType } from "@/lib/school-type";
+import { requireSchoolType } from "@/lib/school-type";
+import { reconcileStudentBatch } from "@/lib/enrollment";
 import { logSecurityEvent } from "@/lib/security";
 import { revokeAllSessions } from "@/lib/auth";
 
@@ -42,11 +43,13 @@ export async function PATCH(
       });
     }
   }
+  let groupChanged = false;
   if (typeof body.groupId === "string" || body.groupId === null) {
     await db.student.update({
       where: { id },
       data: { groupId: body.groupId || null },
     });
+    groupChanged = true;
   }
   if (typeof body.grade === "string") {
     await db.student.update({ where: { id }, data: { grade: body.grade } });
@@ -56,18 +59,32 @@ export async function PATCH(
   }
   // Changing the school type moves the student to the matching batch, so the
   // correct session videos and question bank apply from now on.
-  const nextSchoolType = normalizeSchoolType(body.schoolType);
-  if (nextSchoolType && nextSchoolType !== student.schoolType) {
-    const batch = await db.batch.findFirst({
-      where: { schoolType: nextSchoolType, isActive: true },
-      orderBy: { courseId: "desc" },
-      select: { id: true },
-    });
-    await db.student.update({
-      where: { id },
-      data: { schoolType: nextSchoolType, batchId: batch?.id ?? null },
-    });
+  //
+  // Phase 12 — the value is validated, never normalised-then-guessed: an
+  // unrecognised school type is a 400 rather than a silent "unspecified".
+  let schoolTypeChanged = false;
+  if (body.schoolType !== undefined) {
+    const check = requireSchoolType(body.schoolType);
+    if (!check.ok) return err(tApi("api.210"), 400);
+    if (check.value !== student.schoolType) {
+      await db.student.update({
+        where: { id },
+        data: { schoolType: check.value },
+      });
+      schoolTypeChanged = true;
+    }
   }
 
-  return ok({ ok: true });
+  // Phase 12 — ONE shared reconciliation helper, called from every write path
+  // that can change the outcome. It is deterministic and idempotent, so it is
+  // safe to call even when nothing relevant changed, and it fixes the sticky
+  // batchId on a COURSE change too (which this route previously ignored —
+  // moving a student to a group in another course left them in the old
+  // course's batch).
+  const reconciliation =
+    schoolTypeChanged || groupChanged
+      ? await reconcileStudentBatch(id)
+      : null;
+
+  return ok({ ok: true, batchId: reconciliation?.batchId ?? student.batchId });
 }
