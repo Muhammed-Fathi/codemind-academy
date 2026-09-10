@@ -117,7 +117,7 @@ markup uses logical properties only and responsive stacks (pinned).
   all green: parser matrix, visibility matrix, fake-DB gate, skeleton vs
   redaction pins, cached-state pins, deep-link wiring pins, unified-page
   pins, no-second-engine pins, parent pins, i18n contract, RTL/mobile pins.
-- Full regression: all 21 suites green (3 489 assertions total).
+- Full regression: all 21 suites green (3 322 assertions total).
 - Render verification: `npx tsx scripts/verify-phase16-render.mts` —
   **34/34** real-DOM assertions (AR/EN skeleton, locked/missing/full
   lesson, notification navigation, homework + recording landings).
