@@ -54,6 +54,8 @@ const SCENES = [
   "admin-session-videos",
   "admin-mock-exams",
   "admin-quiz-review",
+  "admin-session-workflow",
+  "admin-session-detail",
   "dialog-form",
   "dialog-long",
   "sheet-form",
@@ -177,6 +179,56 @@ for (const vp of VIEWPORTS) {
       // Deterministic data for components that fetch on mount, so their real
       // populated layout is measured rather than an empty skeleton.
       const json = (d) => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(d) });
+      const WF_IDENTITY = { course: { id: "c1", slug: "math", name: "Mathematics", nameAr: "الرياضيات" },
+        part: { id: "p1", title: "Algebra", titleAr: "الجبر", order: 1 },
+        unit: { id: "u1", title: "Linear equations", titleAr: "المعادلات الخطية", order: 1 }, topic: null };
+      const WF_READY_SNAPSHOT = { lessonId: "l1", officialCode: null, status: "DRAFT", curriculumStatus: "LEGACY",
+        archived: false, trackScope: "ARABIC",
+        items: [
+          { key: "VIDEO", required: true, present: true, valid: true, state: "OK", code: "VIDEO_OK", count: 1 },
+          { key: "PDF", required: false, present: true, valid: true, state: "NOT_APPLICABLE", code: "PDF_PRESENT_NOT_REQUIRED", count: 1 },
+          { key: "QUIZ", required: false, present: true, valid: true, state: "OK", code: "QUIZ_OK", count: 1 },
+          { key: "HOMEWORK", required: false, present: true, valid: true, state: "OK", code: "HOMEWORK_OK", count: 1 } ],
+        canBeReady: true, canPublish: true, blocking: [], notes: [], isPublished: false, publication: null };
+      const WORKFLOW_LIST = { lessons: [
+        { id: "l1", officialCode: null, title: "Linear equations — foundations", titleAr: "المعادلات الخطية — الأساسيات", order: 1,
+          status: "DRAFT", trackScope: "ARABIC", curriculumStatus: "LEGACY", duration: 90, identity: WF_IDENTITY,
+          counts: { quizzes: 1, homeworks: 1, materials: 1, sessionVideos: 1, sessionVideosPublished: 1 },
+          legacy: { hasVideoUrl: false, hasPdfUrl: false }, publication: null, isPublishedCompat: false, readiness: WF_READY_SNAPSHOT },
+        { id: "l2", officialCode: "M1-U2-L3", title: "Quadratic equations with a deliberately very long English title to stress wrapping and clipping", titleAr: "المعادلات التربيعية بعنوان عربي طويل جدا جدا لاختبار الالتفاف وعدم الخروج عن الشاشة", order: 2,
+          status: "READY", trackScope: "SHARED", curriculumStatus: "OFFICIAL", duration: 90, identity: WF_IDENTITY,
+          counts: { quizzes: 0, homeworks: 0, materials: 0, sessionVideos: 0, sessionVideosPublished: 0 },
+          legacy: { hasVideoUrl: false, hasPdfUrl: false }, publication: null, isPublishedCompat: false,
+          readiness: { ...WF_READY_SNAPSHOT, lessonId: "l2", status: "READY", curriculumStatus: "OFFICIAL", trackScope: "SHARED",
+            canBeReady: false, canPublish: false, blocking: ["VIDEO_MISSING"],
+            items: WF_READY_SNAPSHOT.items.map((i) => i.key === "VIDEO" ? { ...i, present: false, valid: false, state: "MISSING", code: "VIDEO_MISSING", count: 0 } : i) } },
+        { id: "l3", officialCode: null, title: "Systems of equations", titleAr: "أنظمة المعادلات", order: 3,
+          status: "PUBLISHED", trackScope: "LANGUAGE", curriculumStatus: "LEGACY", duration: 90, identity: WF_IDENTITY,
+          counts: { quizzes: 2, homeworks: 1, materials: 2, sessionVideos: 2, sessionVideosPublished: 2 },
+          legacy: { hasVideoUrl: true, hasPdfUrl: false },
+          publication: { id: "pub1", segment: "LANGUAGE", publishedAt: "2026-09-05T10:00:00Z" }, isPublishedCompat: true,
+          readiness: { ...WF_READY_SNAPSHOT, lessonId: "l3", status: "PUBLISHED", trackScope: "LANGUAGE", isPublished: true,
+            publication: { id: "pub1", segment: "LANGUAGE", publishedAt: "2026-09-05T10:00:00Z" } } } ],
+        pagination: { page: 1, pageSize: 50, total: 3, totalPages: 1, hasMore: false } };
+      const WORKFLOW_DETAIL = { id: "l1", officialCode: null,
+        title: "Linear equations — foundations, with an extra long tail to stress the detail header layout", titleAr: "المعادلات الخطية — الأساسيات مع ذيل طويل لاختبار ترويسة التفاصيل",
+        order: 1, description: "A thorough treatment of linear equations in one variable, with worked examples and graded exercises.",
+        summary: null, duration: 90, status: "DRAFT", trackScope: "ARABIC", curriculumStatus: "LEGACY", isPublishedCompat: false,
+        identity: WF_IDENTITY, legacy: { videoUrl: null, pdfUrl: null },
+        quizzes: [{ id: "q1", title: "Checkpoint quiz", titleAr: "اختبار قصير", trackScope: "SHARED", order: 0, passMark: 60, timeLimit: 20, questionCount: 12 }],
+        homeworks: [{ id: "h1", title: "Problem set 1", titleAr: "الواجب الأول", trackScope: "SHARED", deadline: "2026-09-20T23:59:00Z",
+          maxMarks: 10, instructions: "Solve exercises 1 through 12 on pages 40-41. Show every step of your working; final answers alone earn no marks.",
+          hasInstructions: true, submissionsCount: 0 }],
+        sessionVideos: [{ id: "v1", title: "Session recording", titleAr: "تسجيل الحصة",
+          batch: { id: "b1", name: "Batch AR", nameAr: "دفعة عربي", schoolType: "ARABIC" },
+          requiredPercent: 95, isPublished: true, publishedAt: "2026-09-08T10:00:00Z", createdAt: "2026-09-08T09:00:00Z" }],
+        materials: [{ id: "m1", title: "Session notes", kind: "ADMIN_UPLOADED", trackScope: "ARABIC", isActive: true,
+          mediaAssetId: "a1", downloadUrl: "/api/materials/m1", mimeType: "application/pdf", sizeBytes: 48210,
+          originalName: "notes.pdf", createdAt: "2026-09-08T09:00:00Z", updatedAt: "2026-09-08T09:00:00Z" }],
+        readiness: WF_READY_SNAPSHOT, publication: null,
+        history: [
+          { id: "al1", action: "LESSON_CREATE", details: null, createdAt: "2026-09-07T10:00:00Z", user: { id: "u9", name: "Admin", email: "admin@x.com" } },
+          { id: "al2", action: "LESSON_MATERIAL_UPLOAD", details: null, createdAt: "2026-09-08T09:00:00Z", user: { id: "u9", name: "Admin", email: "admin@x.com" } } ] };
       window.fetch = (url) => {
         const u = String(url);
         if (u.includes("/api/admin/batches"))
@@ -204,6 +256,18 @@ for (const vp of VIEWPORTS) {
               quiz: { id: "q1", title: "Quiz 1", titleAr: "اختبار ١" },
               evidence: [{ id: "ev1", kind: "SNAPSHOT", status: null, capturedAt: "2026-09-01T10:05:00Z", retainUntil: null, url: null }] }],
             pagination: { totalPages: 3 } });
+        // --- Phase 15 admin publishing workflow (shapes mirror the real
+        // GET /api/admin/lessons[?includeReadiness=1] and GET .../[id] payloads).
+        if (u.includes("/api/admin/courses?tree=1"))
+          return json({ courses: [
+            { id: "c1", name: "Mathematics", nameAr: "الرياضيات", parts: [
+              { id: "p1", title: "Algebra", titleAr: "الجبر", units: [
+                { id: "u1", title: "Linear equations", titleAr: "المعادلات الخطية" },
+                { id: "u2", title: "Quadratic equations with a very long unit title to stress the create dialog layout", titleAr: "المعادلات التربيعية بعنوان طويل جدا لاختبار اتساع الحوار" } ] } ] } ] });
+        if (u.includes("/api/admin/lessons/"))
+          return json(WORKFLOW_DETAIL);
+        if (u.includes("/api/admin/lessons"))
+          return json(WORKFLOW_LIST);
         return json({});
       };
     });

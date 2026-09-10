@@ -129,7 +129,10 @@ function buildRelations(models) {
         for (const tf of target.fields) {
           if (tf.type !== name || !tf.relationFields?.length) continue;
           relations.get(name).set(f.name, {
-            kind: "many",
+            // Prisma-side cardinality comes from THIS field: a non-list
+            // back-reference (e.g. Lesson.publication) is to-one and must
+            // project as object-or-null, never as an array.
+            kind: f.isList ? "many" : "one",
             to: f.type,
             localFields: tf.relationRefs,
             foreignFields: tf.relationFields,
@@ -394,14 +397,15 @@ export function createSqlitePrisma({ db, schemaPath }) {
           if (sel !== true) throw new UnsupportedQuery("_count projection other than true");
           const rel = relations.get(model).get(relName);
           if (!rel) throw new UnsupportedQuery(`_count of unknown relation ${model}.${relName}`);
-          const conds = rel.foreignFields.map(
-            (ff, i) => `"${rel.to}"."${ff}" = "${row[rel.localFields[i]]}"`
+          const conds = rel.foreignFields.map((ff) => `"${rel.to}"."${ff}" = ?`);
+          const countParams = rel.foreignFields.map(
+            (ff, i) => toSqlValue(fieldOf(model, rel.localFields[i]), row[rel.localFields[i]])
           );
           obj._count[relName] = db
             .prepare(
               `SELECT COUNT(*) AS c FROM "${rel.to}" WHERE ${conds.join(" AND ")}`
             )
-            .get().c;
+            .get(...countParams).c;
         }
         continue;
       }
@@ -428,8 +432,13 @@ export function createSqlitePrisma({ db, schemaPath }) {
           : relInclude
             ? project(rel.to, r, relInclude, "include")
             : hydrateScalars(rel.to, r);
-      if (rel.kind === "many" || rel.uniqueOnForeign === undefined && rel.kind !== "one") {
-        obj[key] = rel.kind === "many" ? rows.map(map) : (rows[0] ? map(rows[0]) : null);
+      // To-many projects as an array; to-one (own FK or 1-1 back-reference
+      // such as Lesson.publication) as object-or-null. Returning `[]` for a
+      // missing to-one used to fake every consumer into believing the row
+      // exists (found via the Phase 15 e2e: a phantom
+      // `{ segment: "undefined" }` publication on unpublished lessons).
+      if (rel.kind === "many") {
+        obj[key] = rows.map(map);
       } else {
         obj[key] = rows[0] ? map(rows[0]) : null;
       }
@@ -446,6 +455,72 @@ export function createSqlitePrisma({ db, schemaPath }) {
     return out;
   }
 
+  let orderAliasCounter = 0;
+
+  /**
+   * Flatten a relation orderBy (`{ unit: { part: { order: "asc" } } }`) into
+   * correlated scalar subselects — one ORDER BY term per leaf. To-one steps
+   * only (mirroring what Prisma allows here); anything else stays an honest
+   * UnsupportedQuery. Previously EVERY nested shape threw, so this extends
+   * without changing any previously-working query.
+   */
+  function nestedOrderTerms(baseModel, baseAlias, relName, spec) {
+    const rel = relations.get(baseModel)?.get(relName);
+    if (!rel || rel.kind !== "one") {
+      throw new UnsupportedQuery(`orderBy relation ${baseModel}.${relName}`);
+    }
+    const terms = [];
+    const walk = (curModel, segs, obj) => {
+      for (const [k, v] of Object.entries(obj)) {
+        if (typeof v === "string") {
+          const f = fieldOf(curModel, k);
+          if (!f || f.isRelation) {
+            throw new UnsupportedQuery(`orderBy leaf ${curModel}.${k}`);
+          }
+          const dir = v.toLowerCase() === "desc" ? "DESC" : "ASC";
+          terms.push(
+            `(${orderSubselect(baseModel, baseAlias, segs, curModel, k)}) ${dir} NULLS LAST`
+          );
+        } else if (v && typeof v === "object") {
+          const next = relations.get(curModel)?.get(k);
+          if (!next || next.kind !== "one") {
+            throw new UnsupportedQuery(`orderBy relation ${curModel}.${k}`);
+          }
+          walk(next.to, [...segs, { from: curModel, rel: next }], v);
+        } else {
+          throw new UnsupportedQuery(`orderBy value on ${curModel}.${k}`);
+        }
+      }
+    };
+    walk(rel.to, [{ from: baseModel, rel }], spec);
+    return terms;
+  }
+
+  /**
+   * `SELECT … FROM "<to1>" "s1" WHERE <join to base>` wrapped per extra step,
+   * innermost-first. The join formula is the same one the EXISTS relation
+   * filter uses (`target."ff" = prev."local"`), which holds for both
+   * own-FK and back-reference to-one steps.
+   */
+  function orderSubselect(baseModel, baseAlias, segs, leafModel, leafCol) {
+    const aliases = segs.map(() => `s${(orderAliasCounter += 1)}`);
+    let inner = `"${aliases[aliases.length - 1]}"."${leafCol}"`;
+    for (let i = segs.length - 1; i >= 0; i--) {
+      const { rel } = segs[i];
+      const toAlias = aliases[i];
+      const prevAlias = i === 0 ? baseAlias : aliases[i - 1];
+      const conds = rel.foreignFields.map(
+        (ff, j) => `"${toAlias}"."${ff}" = ${prevAlias}."${rel.localFields[j]}"`
+      );
+      // Parenthesise the inner query: for steps after the first it is itself
+      // a SELECT, which is only valid as a scalar subquery in parens.
+      inner =
+        `SELECT (${inner}) FROM "${rel.to}" "${toAlias}"` +
+        (conds.length ? ` WHERE ${conds.join(" AND ")}` : "");
+    }
+    return inner;
+  }
+
   function translateOrderBy(model, orderBy) {
     if (!orderBy) return "";
     const list = Array.isArray(orderBy) ? orderBy : [orderBy];
@@ -458,8 +533,17 @@ export function createSqlitePrisma({ db, schemaPath }) {
             throw new UnsupportedQuery(`orderBy on non-column ${model}.${key}`);
           }
           parts.push(`"${model}"."${key}" ${dir === "desc" ? "DESC" : "ASC"} NULLS LAST`);
+        } else if (dir && typeof dir === "object") {
+          // Prisma's explicit scalar form (`{ col: { sort: "asc" } }`).
+          if (isColumn(model, key) && typeof dir.sort === "string") {
+            parts.push(
+              `"${model}"."${key}" ${String(dir.sort).toLowerCase() === "desc" ? "DESC" : "ASC"} NULLS LAST`
+            );
+            continue;
+          }
+          parts.push(...nestedOrderTerms(model, `"${model}"`, key, dir));
         } else {
-          throw new UnsupportedQuery(`nested orderBy on ${model}.${key}`);
+          throw new UnsupportedQuery(`orderBy value on ${model}.${key}`);
         }
       }
     }
@@ -657,8 +741,109 @@ export function createSqlitePrisma({ db, schemaPath }) {
             ? project(model, row, args.include, "include")
             : hydrateScalars(model, row);
       },
-      groupBy: async () => {
-        throw new UnsupportedQuery("group");
+      groupBy: async (args = {}) => {
+        const by =
+          args.by === undefined ? [] : Array.isArray(args.by) ? args.by : [args.by];
+        if (!by.length) throw new UnsupportedQuery("groupBy without by");
+        for (const c of by) {
+          if (!isColumn(model, c)) {
+            throw new UnsupportedQuery(`groupBy on non-column ${model}.${c}`);
+          }
+        }
+        if (args.having || args.skip !== undefined || args.take !== undefined || args.orderBy) {
+          throw new UnsupportedQuery("groupBy with having/orderBy/pagination");
+        }
+        const countSpec = args._count;
+        if (
+          countSpec !== undefined &&
+          (countSpec === null || typeof countSpec !== "object")
+        ) {
+          throw new UnsupportedQuery("groupBy _count shape");
+        }
+        const out = [];
+        const params = [];
+        translateWhere(model, args.where, `"${model}"`, out, params);
+        const whereSql = out.length ? ` WHERE ${out.join(" AND ")}` : "";
+        const selectCols = by.map((c) => `"${c}"`);
+        const countCols = [];
+        if (countSpec) {
+          for (const k of Object.keys(countSpec)) {
+            if (k === "_all") countCols.push(`COUNT(*) AS "__count_all"`);
+            else {
+              if (!isColumn(model, k)) {
+                throw new UnsupportedQuery(`groupBy _count on non-column ${model}.${k}`);
+              }
+              countCols.push(`COUNT("${k}") AS "__count_${k}"`);
+            }
+          }
+        }
+        const sql =
+          `SELECT ${[...selectCols, ...countCols].join(", ")} FROM "${model}"` +
+          `${whereSql} GROUP BY ${by.map((c) => `"${c}"`).join(", ")}`;
+        return db
+          .prepare(sql)
+          .all(...params)
+          .map((row) => {
+            const grouped = {};
+            for (const c of by) grouped[c] = fromSqlValue(fieldOf(model, c), row[c]);
+            if (countSpec) {
+              grouped._count = {};
+              for (const k of Object.keys(countSpec)) {
+                grouped._count[k] =
+                  k === "_all" ? Number(row.__count_all) : Number(row[`__count_${k}`]);
+              }
+            }
+            return grouped;
+          });
+      },
+      aggregate: async (args = {}) => {
+        const out = [];
+        const params = [];
+        translateWhere(model, args.where, `"${model}"`, out, params);
+        const whereSql = out.length ? ` WHERE ${out.join(" AND ")}` : "";
+        const result = {};
+        if (args._count !== undefined) {
+          if (args._count === true) {
+            result._count = Number(
+              db.prepare(`SELECT COUNT(*) AS n FROM "${model}"${whereSql}`).get(...params)?.n ?? 0
+            );
+          } else if (args._count && typeof args._count === "object") {
+            result._count = {};
+            for (const k of Object.keys(args._count)) {
+              result._count[k] =
+                k === "_all"
+                  ? Number(
+                      db.prepare(`SELECT COUNT(*) AS n FROM "${model}"${whereSql}`).get(...params)
+                        ?.n ?? 0
+                    )
+                  : Number(
+                      db.prepare(`SELECT COUNT("${k}") AS n FROM "${model}"${whereSql}`).get(
+                        ...params
+                      )?.n ?? 0
+                    );
+            }
+          } else {
+            throw new UnsupportedQuery("aggregate _count shape");
+          }
+        }
+        for (const kind of ["_avg", "_sum", "_min", "_max"]) {
+          const spec = args[kind];
+          if (spec === undefined) continue;
+          if (!spec || typeof spec !== "object") {
+            throw new UnsupportedQuery(`aggregate ${kind} shape`);
+          }
+          const fn = { _avg: "AVG", _sum: "SUM", _min: "MIN", _max: "MAX" }[kind];
+          result[kind] = {};
+          for (const k of Object.keys(spec)) {
+            const f = fieldOf(model, k);
+            const v =
+              db.prepare(`SELECT ${fn}("${k}") AS v FROM "${model}"${whereSql}`).get(...params)
+                ?.v ?? null;
+            result[kind][k] =
+              v === null ? null : f.type === "DateTime" && typeof v === "number" ? new Date(v) : v;
+          }
+        }
+        return result;
       },
     };
   }

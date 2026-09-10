@@ -36,6 +36,7 @@ export type ViewKey =
   | "admin-teachers"
   | "admin-groups"
   | "admin-courses"
+  | "admin-sessions"
   | "admin-payments"
   | "admin-subscriptions"
   | "admin-coupons"

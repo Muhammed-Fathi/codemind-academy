@@ -311,9 +311,20 @@ function usableUrl(value: string | null | undefined): boolean {
   return v.length > 0 && !PLACEHOLDER_MARKERS.has(v.toLowerCase());
 }
 
-function questionCountOf(q: { questionCount?: number | null; questions?: readonly unknown[] | null }): number | null {
+function questionCountOf(q: {
+  questionCount?: number | null;
+  questions?: readonly unknown[] | null;
+  _count?: { questions?: number | null } | null;
+}): number | null {
   if (typeof q.questionCount === "number" && Number.isFinite(q.questionCount)) {
     return Math.max(0, Math.floor(q.questionCount));
+  }
+  // The `READINESS_LESSON_INCLUDE` shape: `{ _count: { questions: N } }`.
+  // Checked before the `questions` array so the loader's own projection is
+  // authoritative whenever it is present.
+  const counted = q?._count?.questions;
+  if (typeof counted === "number" && Number.isFinite(counted)) {
+    return Math.max(0, Math.floor(counted));
   }
   if (Array.isArray(q.questions)) return q.questions.length;
   return null;
@@ -833,6 +844,7 @@ export async function transitionLesson(params: {
   }
 
   // Readiness is computed from the LIVE rows at the moment of the ceremony —
+  // never from a client-sup  // Readiness is computed from the LIVE rows at the moment of the ceremony —
   // never from a client-supplied flag, and never from the snapshot the READY
   // stamp was earned with. A lesson that lost its video since staging cannot
   // be opened.

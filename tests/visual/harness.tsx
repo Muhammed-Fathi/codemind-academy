@@ -26,6 +26,7 @@ import { Search, Eye, Mail, Upload, Link2, AlertCircle } from "lucide-react";
 // --- Real feature components under test ------------------------------------
 import { ForgotPasswordForm } from "@/components/auth/forgot-password-form";
 import { SessionVideosView } from "@/components/admin/session-videos-view";
+import { SessionWorkflowView } from "@/components/admin/session-workflow-view";
 import { MockExamsView } from "@/components/admin/mock-exams-view";
 import { QuizReviewView } from "@/components/admin/quiz-review-view";
 import { KodgyAssistant } from "@/components/kodgy/kodgy-assistant";
@@ -219,6 +220,10 @@ const SCENES: Record<string, React.ReactNode> = {
   "admin-session-videos": <SessionVideosView />,
   "admin-mock-exams": <MockExamsView />,
   "admin-quiz-review": <QuizReviewView />,
+  "admin-session-workflow": (
+    <div className="w-full max-w-6xl mx-auto"><SessionWorkflowView /></div>
+  ),
+  "admin-session-detail": <SessionDetailScene />,
   "dialog-form": (
     <Dialog open modal={false}>
       <DialogContent className="sm:max-w-lg" data-testid="dialog-panel">
@@ -263,6 +268,18 @@ const SCENES: Record<string, React.ReactNode> = {
   ),
   "kodgy": <KodgyScene />,
 };
+
+/** Detail scene: the REAL workflow with a lesson pre-selected via the store. */
+function SessionDetailScene() {
+  React.useEffect(() => {
+    useApp.setState({ navParam: "l1" });
+    const locale = new URLSearchParams(location.search).get("locale") === "en" ? "en" : "ar";
+    useApp.getState().setLocale(locale);
+  }, []);
+  return (
+    <div className="w-full max-w-6xl mx-auto"><SessionWorkflowView /></div>
+  );
+}
 
 /** Kodgy scene: the REAL floating assistant, with a fake logged-in user. */
 function KodgyScene() {

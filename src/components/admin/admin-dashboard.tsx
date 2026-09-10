@@ -112,6 +112,7 @@ import {
 import { SessionVideosView } from "@/components/admin/session-videos-view";
 import { MockExamsView } from "@/components/admin/mock-exams-view";
 import { QuizReviewView } from "@/components/admin/quiz-review-view";
+import { SessionWorkflowView } from "@/components/admin/session-workflow-view";
 
 const BRAND_COLORS = ["#10b981", "#14b8a6", "#f59e0b", "#0d9488", "#84cc16"];
 
@@ -266,6 +267,7 @@ export function AdminDashboard() {
       {view === "admin-teachers" && <TeachersView />}
       {view === "admin-groups" && <GroupsView />}
       {view === "admin-courses" && <CoursesView />}
+      {view === "admin-sessions" && <SessionWorkflowView />}
       {view === "admin-question-bank" && <QuestionBankView />}
       {view === "admin-session-videos" && <SessionVideosView />}
       {view === "admin-mock-exams" && <MockExamsView />}
@@ -2014,7 +2016,10 @@ function QuestionBankView() {
   const [bank, setBank] = React.useState<string>("ARABIC");
   const [openAdd, setOpenAdd] = React.useState(false);
   const [showAiGen, setShowAiGen] = React.useState(false);
-  const [aiLesson, setAiLesson] = React.useState("");
+  // Phase 15: the session detail deep-links here with the lesson id, so AI
+  // generation starts preselected on the session the admin came from.
+  const bankNavParam = useApp((s) => s.navParam);
+  const [aiLesson, setAiLesson] = React.useState(bankNavParam || "");
   const [aiCount, setAiCount] = React.useState("5");
   const [aiDifficulty, setAiDifficulty] = React.useState("MIXED");
   const [aiGenerating, setAiGenerating] = React.useState(false);
