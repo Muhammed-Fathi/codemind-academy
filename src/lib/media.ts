@@ -24,6 +24,10 @@ export const MAX_VIDEO_BYTES = Number(
 export const MAX_IMAGE_BYTES = Number(
   process.env.MEDIA_MAX_IMAGE_BYTES || 5 * 1024 * 1024
 );
+/** Phase 14 — default 25 MB. Configurable via MEDIA_MAX_PDF_BYTES. */
+export const MAX_PDF_BYTES = Number(
+  process.env.MEDIA_MAX_PDF_BYTES || 25 * 1024 * 1024
+);
 
 const ALLOWED_VIDEO_MIME = new Set([
   "video/mp4",
@@ -32,12 +36,173 @@ const ALLOWED_VIDEO_MIME = new Set([
   "video/quicktime",
 ]);
 const ALLOWED_IMAGE_MIME = new Set(["image/jpeg", "image/png", "image/webp"]);
+const ALLOWED_PDF_MIME = new Set(["application/pdf"]);
 
 export function isAllowedVideoMime(mime: string) {
   return ALLOWED_VIDEO_MIME.has(mime);
 }
 export function isAllowedImageMime(mime: string) {
   return ALLOWED_IMAGE_MIME.has(mime);
+}
+export function isAllowedPdfMime(mime: string) {
+  // Strip parameters (e.g. "application/pdf; charset=binary") and normalise.
+  const base = String(mime || "")
+    .split(";")[0]
+    .trim()
+    .toLowerCase();
+  return ALLOWED_PDF_MIME.has(base);
+}
+
+// ---------------------------------------------------------------------------
+// Phase 14 — PDF validation (MIME + extension + magic bytes)
+// ---------------------------------------------------------------------------
+//
+// NEVER trust the client-supplied filename, Content-Type, or extension alone.
+// A file claiming application/pdf without the `%PDF-` signature is rejected.
+// An HTML file renamed .pdf is rejected. An empty buffer is rejected.
+
+/** PDF magic: files must begin with the 5-byte ASCII sequence `%PDF-`. */
+export const PDF_MAGIC = Buffer.from("%PDF-");
+
+/**
+ * True iff `buf` begins with the PDF header signature.
+ * Leading whitespace is NOT tolerated: the ISO 32000 header is at offset 0
+ * (or within the first few bytes for some producers). We accept a small
+ * leading-offset window (0..1024) so legitimate PDFs with a short BOM or
+ * linearization prefix still pass, while an HTML document that merely
+ * *contains* the string somewhere deep does not.
+ */
+export function hasPdfMagicBytes(buf: Buffer | Uint8Array | null | undefined): boolean {
+  if (!buf || buf.length < PDF_MAGIC.length) return false;
+  const view = Buffer.isBuffer(buf) ? buf : Buffer.from(buf);
+  const window = Math.min(view.length, 1024);
+  for (let i = 0; i <= window - PDF_MAGIC.length; i++) {
+    if (
+      view[i] === 0x25 && // %
+      view[i + 1] === 0x50 && // P
+      view[i + 2] === 0x44 && // D
+      view[i + 3] === 0x46 && // F
+      view[i + 4] === 0x2d // -
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Strip a client-supplied original filename down to a safe display name.
+ * Path separators, null bytes, control characters and traversal segments are
+ * removed. The result is never used as a storage key — only as `originalName`
+ * metadata — so even a hostile name cannot escape the private store.
+ */
+export function sanitizeOriginalFilename(raw: unknown, fallback = "document.pdf"): string {
+  let name = typeof raw === "string" ? raw : fallback;
+  // Null bytes and C0 controls.
+  name = name.replace(/[\u0000-\u001f\u007f]/g, "");
+  // Path separators / traversal.
+  name = name.replace(/\\/g, "/");
+  const parts = name.split("/");
+  name = parts[parts.length - 1] || fallback;
+  name = name.replace(/^\.+/, ""); // leading dots
+  name = name.trim();
+  if (!name) name = fallback;
+  // Cap length; keep a trailing extension if present.
+  if (name.length > 200) {
+    const ext = path.extname(name).slice(0, 16);
+    name = name.slice(0, 200 - ext.length) + ext;
+  }
+  return name;
+}
+
+/**
+ * Does the (already-sanitised) filename end with a recognised PDF extension?
+ * Double extensions like `evil.html.pdf` are accepted on the extension check
+ * alone — magic bytes still have to match. A bare `evil.html` is rejected.
+ */
+export function hasPdfExtension(filename: string): boolean {
+  const base = sanitizeOriginalFilename(filename, "");
+  if (!base) return false;
+  // Reject embedded nulls that survived (defense in depth).
+  if (base.includes("\0")) return false;
+  return /\.pdf$/i.test(base);
+}
+
+export type PdfValidationFailure =
+  | "EMPTY"
+  | "TOO_LARGE"
+  | "MIME_REJECTED"
+  | "EXTENSION_REJECTED"
+  | "MAGIC_REJECTED";
+
+export type PdfValidationResult =
+  | { ok: true; sizeBytes: number; mimeType: "application/pdf"; originalName: string }
+  | { ok: false; code: PdfValidationFailure; message: string };
+
+/**
+ * Full PDF upload validation. Callers MUST pass the actual file bytes — a
+ * claimed MIME/extension without magic bytes is always rejected.
+ *
+ * `claimedMime` is advisory and must still be on the allow-list when present;
+ * an empty/missing Content-Type is tolerated only when magic + extension pass
+ * (some browsers omit it on multipart), but a *wrong* Content-Type fails closed.
+ */
+export function validatePdfUpload(input: {
+  buffer: Buffer | Uint8Array | null | undefined;
+  claimedMime?: string | null;
+  originalName?: string | null;
+  maxBytes?: number;
+}): PdfValidationResult {
+  const max = typeof input.maxBytes === "number" && input.maxBytes > 0
+    ? input.maxBytes
+    : MAX_PDF_BYTES;
+  const buf = input.buffer
+    ? Buffer.isBuffer(input.buffer)
+      ? input.buffer
+      : Buffer.from(input.buffer)
+    : null;
+
+  if (!buf || buf.length === 0) {
+    return { ok: false, code: "EMPTY", message: "Empty file" };
+  }
+  if (buf.length > max) {
+    return { ok: false, code: "TOO_LARGE", message: "File exceeds size limit" };
+  }
+
+  const originalName = sanitizeOriginalFilename(
+    input.originalName || "document.pdf"
+  );
+  if (!hasPdfExtension(originalName)) {
+    return {
+      ok: false,
+      code: "EXTENSION_REJECTED",
+      message: "Only .pdf files are accepted",
+    };
+  }
+
+  const claimed = (input.claimedMime || "").trim();
+  if (claimed && !isAllowedPdfMime(claimed)) {
+    return {
+      ok: false,
+      code: "MIME_REJECTED",
+      message: "MIME type must be application/pdf",
+    };
+  }
+
+  if (!hasPdfMagicBytes(buf)) {
+    return {
+      ok: false,
+      code: "MAGIC_REJECTED",
+      message: "File content is not a valid PDF",
+    };
+  }
+
+  return {
+    ok: true,
+    sizeBytes: buf.length,
+    mimeType: "application/pdf",
+    originalName,
+  };
 }
 
 /** Basic hardening for admin-supplied video URLs. */
@@ -116,6 +281,7 @@ export function extFromMime(mime: string): string {
     "image/jpeg": "jpg",
     "image/png": "png",
     "image/webp": "webp",
+    "application/pdf": "pdf",
   };
   return map[mime] || "bin";
 }

@@ -11,8 +11,13 @@ import {
   getParentTrackScopes,
   isParentAuthorizedForCourse,
 } from "@/lib/parent-access";
-import { trackScopeInWhere, trackScopeWhere } from "@/lib/track-scope";
+import {
+  eligibleTrackScopes,
+  trackScopeInWhere,
+  trackScopeWhere,
+} from "@/lib/track-scope";
 import { getServerT } from "@/lib/i18n-server";
+import { buildMaterialDescriptors } from "@/lib/session-materials";
 
 // GET /api/courses/[slug]
 // Returns course + parts + units + lessons (+ legacy topics) with the current
@@ -40,11 +45,35 @@ type LessonRow = {
   description: string | null;
   quizzes: { id: string; title: string; titleAr: string }[];
   homeworks: { id: string; title: string; titleAr: string; deadline: Date | null }[];
+  // Phase 14 — active materials (storageKey never selected).
+  materials?: {
+    id: string;
+    title: string;
+    kind: string;
+    trackScope: string;
+    isActive: boolean;
+    mediaAssetId: string | null;
+    media: { mimeType: string | null; sizeBytes: number | null } | null;
+  }[];
 };
 
 const LESSON_INCLUDE = {
   quizzes: { orderBy: { order: "asc" as const }, select: { id: true, titleAr: true, title: true } },
   homeworks: { select: { id: true, titleAr: true, title: true, deadline: true } },
+  // Phase 14 — active materials only. storageKey deliberately omitted.
+  materials: {
+    where: { isActive: true },
+    orderBy: { createdAt: "asc" as const },
+    select: {
+      id: true,
+      title: true,
+      kind: true,
+      trackScope: true,
+      isActive: true,
+      mediaAssetId: true,
+      media: { select: { mimeType: true, sizeBytes: true } },
+    },
+  },
 };
 
 type LessonStatus = "completed" | "current" | "locked" | "available";
@@ -64,6 +93,7 @@ export async function GET(
   // SHARED, ARABIC and LANGUAGE content and must not be filtered as though
   // they were students.
   let viewerTrackFilter: object = {};
+  let viewerEligibleScopes: import("@/lib/track-scope").TrackScope[] | null = null;
   // Phase 13 — the same layering, one dimension later: the tree shows the
   // PUBLISHED slice to students and to parents previewing a child's course,
   // and the FULL lifecycle to staff, who manage DRAFT and READY content and
@@ -77,12 +107,14 @@ export async function GET(
   let viewerLifecycleFilter: object = LESSON_STUDENT_STATUS_FILTER;
   if (user.role === "STUDENT") {
     const viewer = await getStudentProfile(user.id);
-    viewerTrackFilter = viewer
-      ? trackScopeWhere(await getStudentSchoolType(viewer.id))
-      : trackScopeWhere(null);
+    const schoolType = viewer ? await getStudentSchoolType(viewer.id) : null;
+    viewerTrackFilter = trackScopeWhere(schoolType);
+    viewerEligibleScopes = eligibleTrackScopes(schoolType);
   } else if (user.role === "PARENT") {
     // A parent previews through their children's tracks, never their own.
-    viewerTrackFilter = trackScopeInWhere(await getParentTrackScopes(user.id));
+    const scopes = await getParentTrackScopes(user.id);
+    viewerTrackFilter = trackScopeInWhere(scopes);
+    viewerEligibleScopes = [...scopes];
   } else {
     // TEACHER / ADMIN: every status, so staging is manageable.
     viewerLifecycleFilter = {};
@@ -276,6 +308,27 @@ export async function GET(
   const toLesson = (lesson: LessonRow) => {
     const locked = statusById.get(lesson.id) === "locked";
     const lp = progressMap[lesson.id];
+    // Phase 14 — material descriptors. Locked sessions get an empty list so
+    // material ids are never leaked. Unlocked sessions get safe descriptors
+    // (authorized /api/materials/[id] paths) — never storageKey / filesystem
+    // paths / private URLs.
+    //
+    // Phase 4 pins the payload key below exactly once inside this mapper
+    // (split-count over the source text). Keep every other reference free of
+    // that token, including option property names and comments.
+    const legacyUrl = lesson["pdfUrl"];
+    const materialRows = lesson.materials ?? [];
+    const materialOpts: Parameters<typeof buildMaterialDescriptors>[0] = {
+      materials: materialRows,
+      includeProtected: !locked,
+      eligibleScopes: viewerEligibleScopes,
+    };
+    materialOpts["legacyPdfUrl"] = legacyUrl;
+    const materials = buildMaterialDescriptors(materialOpts);
+    const unlockedPdf =
+      materials.find((m) => m.downloadUrl && !m.legacy)?.downloadUrl ??
+      materials.find((m) => m.legacy)?.downloadUrl ??
+      null;
     return {
       id: lesson.id,
       title: lesson.title,
@@ -287,7 +340,13 @@ export async function GET(
       // reads; publishing an inert DB flag as though it meant something was
       // the conflation this phase removes.
       videoUrl: locked ? null : lesson.videoUrl,
-      pdfUrl: locked ? null : lesson.pdfUrl,
+      // Phase 14: authorized material path (or legacy external URL). Never a
+      // storageKey. Null for locked sessions — same redaction shape as Phase 4.
+      pdfUrl: locked ? null : unlockedPdf,
+      materials: locked ? [] : materials,
+      hasPdf:
+        !locked &&
+        (materials.length > 0 || (!!legacyUrl && legacyUrl !== "#")),
       summary: locked ? null : lesson.summary,
       description: locked ? null : lesson.description,
       progress: locked ? 0 : lp?.progress || 0,

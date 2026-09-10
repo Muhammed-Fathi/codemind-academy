@@ -211,6 +211,8 @@ section("5. Proxy (middleware) defence-in-depth decisions");
     "/api/students/me/dashboard",
     "/api/parents/me/dashboard",
     "/api/media/some-id",
+    // Phase 14 — authorized session PDF downloads.
+    "/api/materials/some-id",
     "/api/quizzes/q1/evidence",
     "/api/lessons/l1/progress",
     "/api/exams/mock",

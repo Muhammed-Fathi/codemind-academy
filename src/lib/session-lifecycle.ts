@@ -272,6 +272,8 @@ export type ReadinessLessonInput = {
     kind?: string | null;
     isActive?: boolean | null;
     mediaAssetId?: string | null;
+    /** Phase 14 — material track eligibility. */
+    trackScope?: unknown;
   }[];
 };
 
@@ -414,7 +416,11 @@ export function computeLessonReadiness(
     count: legacyVideo ? publishedForTrack.length + 1 : publishedForTrack.length,
   });
 
-  // ---- PDF (deferred to Phase 14: never required, never faked) -----------
+  // ---- PDF (Phase 14: present via Material+MediaAsset or legacy pdfUrl) ---
+  // Still OPTIONAL for READY — a session without a PDF is a valid session.
+  // When materials exist they must apply to the lesson's trackScope (same rule
+  // as quiz/homework); a LANGUAGE PDF on an ARABIC lesson is a note, not a
+  // credit. Legacy `pdfUrl` remains a read-only compatibility path.
   const legacyPdf = usableUrl(input.pdfUrl);
   const materials = (Array.isArray(input.materials) ? input.materials : []).filter(
     (m) => m?.isActive !== false
@@ -422,19 +428,27 @@ export function computeLessonReadiness(
   const documentMaterials = materials.filter(
     (m) => m?.kind === "ADMIN_UPLOADED" || m?.kind === "DOCUMENT" || !!m?.mediaAssetId
   );
-  const pdfPresent = legacyPdf || documentMaterials.length > 0;
+  const applicableDocuments = documentMaterials.filter((m) =>
+    // Materials without a trackScope are treated as SHARED (schema default).
+    resourceAppliesToScope(trackScope, m?.trackScope ?? "SHARED")
+  );
+  const foreignDocuments = documentMaterials.length - applicableDocuments.length;
+  if (foreignDocuments > 0) {
+    notes.push(`PDF_PRESENT_BUT_OTHER_TRACK:${foreignDocuments}`);
+  }
+  const pdfPresent = legacyPdf || applicableDocuments.length > 0;
   items.push({
     key: "PDF",
     required: false,
     present: pdfPresent,
-    // Informational by design: `valid` mirrors `present` so a future Phase 14
-    // can flip `required` without touching any caller.
+    // Informational by design: PDF never blocks READY. `valid` mirrors
+    // `present` so a later phase can flip `required` without touching callers.
     valid: pdfPresent,
     state: "NOT_APPLICABLE",
     code: pdfPresent
       ? "PDF_PRESENT_NOT_REQUIRED"
-      : "PDF_READINESS_DEFERRED_TO_PHASE_14",
-    count: (legacyPdf ? 1 : 0) + documentMaterials.length,
+      : "PDF_ABSENT_NOT_REQUIRED",
+    count: (legacyPdf ? 1 : 0) + applicableDocuments.length,
   });
 
   // ---- QUIZ --------------------------------------------------------------
@@ -558,7 +572,7 @@ export const READINESS_LESSON_INCLUDE = {
   },
   materials: {
     where: { isActive: true },
-    select: { id: true, kind: true, mediaAssetId: true },
+    select: { id: true, kind: true, mediaAssetId: true, trackScope: true },
   },
   publication: { select: { id: true, segment: true, publishedAt: true } },
 } as const;

@@ -113,7 +113,7 @@ Per resource:
 | resource | required? | satisfied when | blocking cases |
 |---|---|---|---|
 | `VIDEO` | **yes** | a published `SessionVideo` whose `batch.schoolType` matches the lesson's track — **or** for lessons still carrying the legacy string `Lesson.videoUrl`, a usable URL | `VIDEO_MISSING` (nothing usable) · `VIDEO_TRACK_INCOMPLETE` (present, but not for the whole audience the lesson claims) |
-| `PDF` | **no** — deferred to Phase 14 | informational only | never blocks; `PDF_READINESS_DEFERRED_TO_PHASE_14` when absent, `PDF_PRESENT_NOT_REQUIRED` when present |
+| `PDF` | **no** — Phase 14 owns upload/auth; still optional for READY | informational only | never blocks; `PDF_ABSENT_NOT_REQUIRED` when absent, `PDF_PRESENT_NOT_REQUIRED` when a Material or usable legacy url is present |
 | `QUIZ` | no | — | `QUIZ_EMPTY`: a quiz **with zero questions** (or an unreadable count) is *invalid*, not absent — an empty quiz is a live bug the admin must fix before opening |
 | `HOMEWORK` | no | — | `HOMEWORK_INSTRUCTIONS_EMPTY`: homework whose `instructions` are empty/placeholder |
 

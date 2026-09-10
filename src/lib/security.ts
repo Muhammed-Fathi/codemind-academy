@@ -167,7 +167,9 @@ export type SecurityEventType =
   | "ACCOUNT_SUSPENDED_MULTI_DEVICE"
   | "ACCOUNT_REACTIVATED"
   | "SESSION_REVOKED"
-  | "QUIZ_EVIDENCE_ACCESSED";
+  | "QUIZ_EVIDENCE_ACCESSED"
+  /** Phase 14 — staff review of a private session PDF. */
+  | "MATERIAL_ACCESSED";
 
 /**
  * Append a security event. Callers must pass only redacted details — this

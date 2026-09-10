@@ -610,7 +610,9 @@ eq(
 section("5. readiness — PDF is deferred, never faked");
 const pdf = (input) => R(input).items.find((i) => i.key === "PDF");
 eq(pdf({}).state, "NOT_APPLICABLE", "absent PDF is NOT_APPLICABLE");
-eq(pdf({}).code, "PDF_READINESS_DEFERRED_TO_PHASE_14", "and says so with a stable code");
+// Phase 14 adopted PDF handling; the deferred code is retired in favour of
+// the stable "absent, not required" code. PDF still never blocks READY.
+eq(pdf({}).code, "PDF_ABSENT_NOT_REQUIRED", "and says so with a stable code");
 eq(pdf({}).required, false, "never required in this phase");
 eq(pdf({ pdfUrl: "#" }).present, false, "the '#' placeholder is not a document");
 eq(pdf({ pdfUrl: "https://cdn/p.pdf" }).present, true, "a real url is present");

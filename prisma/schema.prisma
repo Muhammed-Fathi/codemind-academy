@@ -382,11 +382,18 @@ model Material {
   storageKey  String?
   mediaAssetId String?
   isActive    Boolean      @default(true)
+  /// Phase 14 — track eligibility of this material, independent of (but never
+  /// wider than is useful for) its lesson's trackScope. A LANGUAGE PDF on a
+  /// SHARED lesson is served to LANGUAGE students only; SHARED material is
+  /// visible to both tracks. Matching is enforced server-side via
+  /// `src/lib/session-materials.ts` and fails closed.
+  trackScope  TrackScope   @default(SHARED)
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   lesson      Lesson       @relation(fields: [lessonId], references: [id], onDelete: Cascade)
   media       MediaAsset?  @relation(fields: [mediaAssetId], references: [id], onDelete: SetNull)
   @@index([lessonId, isActive])
+  @@index([lessonId, trackScope, isActive])
 }
 
 model LiveSession {
