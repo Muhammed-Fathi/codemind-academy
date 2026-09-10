@@ -9,6 +9,12 @@ import {
   attemptInQuizScope,
   summarizeFinishedAttemptsByTrack,
 } from "@/lib/quiz-analytics";
+import { LESSON_STUDENT_STATUS_FILTER } from "@/lib/session-lifecycle";
+import {
+  EXCLUDE_ARCHIVED_LESSON,
+  lessonCoursesChainOr,
+} from "@/lib/session-progress";
+import { canAccessTrackScope } from "@/lib/track-scope";
 
 export async function GET() {
   const tApi = await getServerT();
@@ -49,7 +55,10 @@ export async function GET() {
                 select: { status: true, grade: true },
               },
               lessonProgress: {
-                select: { isCompleted: true },
+                // Phase 19: lessonId travels so completion can be measured
+                // against the student's official curriculum universe instead
+                // of raw history rows.
+                select: { isCompleted: true, lessonId: true },
               },
             },
           },
@@ -98,6 +107,45 @@ export async function GET() {
     finishedAt: Date | null;
   }> = [];
 
+  // Phase 19 — the lesson-completion universe. "Lessons completed" and the
+  // group average used to run over each student's RAW LessonProgress rows:
+  // every archived legacy lesson and every out-of-track lesson the student
+  // ever touched moved the number, while official unit-linked lessons simply
+  // never had a row and were invisible. The teacher now measures exactly the
+  // student's own curriculum — PUBLISHED, non-archived lessons of the GROUP's
+  // course (dual chain), sliced to the STUDENT's track — the same universe
+  // rule the student dashboard, the certificate and the parent reports apply.
+  const universeLessonRows = courseIds.length
+    ? await db.lesson.findMany({
+        where: {
+          ...LESSON_STUDENT_STATUS_FILTER,
+          ...EXCLUDE_ARCHIVED_LESSON,
+          OR: lessonCoursesChainOr(courseIds),
+        },
+        select: {
+          id: true,
+          trackScope: true,
+          unit: { select: { part: { select: { courseId: true } } } },
+          topic: {
+            select: {
+              unit: { select: { part: { select: { courseId: true } } } },
+            },
+          },
+        },
+      })
+    : [];
+  const universeLessonsByCourse = new Map<
+    string,
+    { id: string; trackScope: unknown }[]
+  >();
+  for (const row of universeLessonRows) {
+    const cid = row.unit?.part.courseId ?? row.topic?.unit.part.courseId;
+    if (!cid) continue;
+    const arr = universeLessonsByCourse.get(cid) || [];
+    arr.push({ id: row.id, trackScope: row.trackScope });
+    universeLessonsByCourse.set(cid, arr);
+  }
+
   // Compute per-group stats
   const groups = teacher.groups.map((g) => {
     const totalStudents = g.students.length;
@@ -129,8 +177,19 @@ export async function GET() {
         : 0;
       const hwTotal = s.homeworkSubmits.length;
       const hwGraded = s.homeworkSubmits.filter((h) => h.status === "GRADED").length;
-      const lessonTotal = s.lessonProgress.length;
-      const lessonCompleted = s.lessonProgress.filter((l) => l.isCompleted).length;
+      // Phase 19: completion runs over the student's OWN curriculum universe
+      // (their group's course, their track), never over raw progress rows —
+      // archived legacy and out-of-track history can no longer move the
+      // teacher's numbers.
+      const studentUniverseIds = new Set(
+        (universeLessonsByCourse.get(g.courseId) || [])
+          .filter((l) => canAccessTrackScope(s.schoolType, l.trackScope))
+          .map((l) => l.id)
+      );
+      const lessonTotal = studentUniverseIds.size;
+      const lessonCompleted = s.lessonProgress.filter(
+        (l) => l.isCompleted && studentUniverseIds.has(l.lessonId)
+      ).length;
 
       totalAttendance += attendanceCount;
       presentAttendance += presentCount;

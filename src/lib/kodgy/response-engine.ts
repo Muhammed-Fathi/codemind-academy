@@ -19,6 +19,14 @@
 // IMPORTANT SECURITY: user input is NEVER rendered as HTML anywhere in
 // Kodgy. This module only *normalizes* input for matching; it never
 // echoes raw input back into responses.
+//
+// GROUNDING (Phase 19): every curriculum reference in this knowledge set
+// points at the OFFICIAL 23-session curriculum (2 parts / 7 units, sessions
+// coded 1-1 … 7-3 — see docs/curriculum/knowledge-model.json and
+// `CURRICULUM_GROUNDING` below). Only the grounding DATA changed; the
+// response-engine contract (`match`, `pickAnswer`, `suggestedPrompts`,
+// `supportedIntents`, scoring rules) is untouched and no LLM/network/DB was
+// introduced.
 
 export type KodgyLocale = "ar" | "en";
 
@@ -101,6 +109,53 @@ export function tokens(normalized: string): string[] {
 }
 
 // ---------------------------------------------------------------------------
+// Official-curriculum grounding data (Phase 19)
+// ---------------------------------------------------------------------------
+//
+// The response engine never talks to the database, so the official session
+// set is duplicated here as DATA, not queried. Keep this list in sync with
+// `docs/curriculum/knowledge-model.json` — the Phase 19 regression test
+// cross-checks every code below against `OFFICIAL_LESSON_CODES` and every
+// title against the knowledge model, so drift fails CI rather than
+// shipping to students.
+
+export interface KodgyCurriculumSession {
+  /** Official session code: 1-1 … 7-3. */
+  code: string;
+  /** The intent whose answer teaches this session's concepts. */
+  intent: string;
+  titleAr: string;
+  titleEn: string;
+}
+
+/** The exact 23 official sessions, in curriculum order. */
+export const CURRICULUM_GROUNDING: readonly KodgyCurriculumSession[] = [
+  { code: "1-1", intent: "edu.it-society", titleAr: "تطور تكنولوجيا المعلومات والتحول الاجتماعي", titleEn: "Development of Information Technology and Social Transformation" },
+  { code: "1-2", intent: "edu.ai-basics", titleAr: "كيف يعمل الذكاء الاصطناعي", titleEn: "How AI Works" },
+  { code: "1-3", intent: "edu.ai-basics", titleAr: "الذكاء الاصطناعي في الحياة اليومية والصناعة", titleEn: "AI in Daily Life and Industry" },
+  { code: "1-4", intent: "edu.ai-basics", titleAr: "القضايا الأخلاقية للذكاء الاصطناعي", titleEn: "Ethical Issues with AI" },
+  { code: "2-1", intent: "edu.cybersecurity", titleAr: "تقنيات التشفير والمصادقة", titleEn: "Cryptographic Technologies and Authentication" },
+  { code: "2-2", intent: "edu.cybersecurity", titleAr: "تصميم أمن الشبكات", titleEn: "Network Security Design" },
+  { code: "2-3", intent: "edu.cybersecurity", titleAr: "الاستجابة للحوادث وإدارة المخاطر", titleEn: "Incident Response and Risk Management" },
+  { code: "3-1", intent: "edu.web-applications", titleAr: "البنية العامة لتطبيقات الويب", titleEn: "The Overall Structure of Web Applications" },
+  { code: "3-2", intent: "edu.web-applications", titleAr: "طرق الاتصال في تطبيقات الويب", titleEn: "Web Application Communication Methods" },
+  { code: "3-3", intent: "edu.web-applications", titleAr: "أساسيات تكنولوجيا الواجهة الأمامية", titleEn: "Fundamentals of Frontend Technology" },
+  { code: "4-1", intent: "edu.web-media-design", titleAr: "أنواع الوسائط وخصائصها", titleEn: "Types and Characteristics of Media" },
+  { code: "4-2", intent: "edu.web-media-design", titleAr: "تصميم المعلومات وتجربة المستخدم للمواقع", titleEn: "Information Design and User Experience for Websites" },
+  { code: "4-3", intent: "edu.web-media-design", titleAr: "أساليب تقييم المواقع الإلكترونية", titleEn: "Methods for Evaluating Websites" },
+  { code: "4-4", intent: "edu.web-media-design", titleAr: "عملية التحسين التكراري للمواقع", titleEn: "The Iterative Improvement Process for Websites" },
+  { code: "5-1", intent: "edu.data", titleAr: "طرق جمع البيانات", titleEn: "Methods of Data Collection" },
+  { code: "5-2", intent: "edu.data", titleAr: "تنقية البيانات وتحويلها", titleEn: "Data Cleaning and Transformation" },
+  { code: "5-3", intent: "edu.data", titleAr: "البيانات المفتوحة وواجهات برمجة التطبيقات", titleEn: "Open Data and APIs" },
+  { code: "6-1", intent: "edu.statistics", titleAr: "الاستدلال الإحصائي", titleEn: "Statistical Inference" },
+  { code: "6-2", intent: "edu.statistics", titleAr: "استخدام تحليل الانحدار وتقييمه", titleEn: "Use and Evaluation of Regression Analysis" },
+  { code: "6-3", intent: "edu.statistics", titleAr: "تصور البيانات والتواصل", titleEn: "Data Visualization and Communication" },
+  { code: "7-1", intent: "edu.ml-basics", titleAr: "أساسيات التعلم الآلي", titleEn: "The Basics of Machine Learning" },
+  { code: "7-2", intent: "edu.neural-network", titleAr: "الشبكات العصبية والتعلم العميق", titleEn: "Neural Networks and Deep Learning" },
+  { code: "7-3", intent: "edu.llm", titleAr: "نماذج اللغة الكبيرة (LLM) والذكاء الاصطناعي التوليدي", titleEn: "Large Language Models (LLM) and Generative AI" },
+];
+
+// ---------------------------------------------------------------------------
 // Knowledge set (curated, initial Phase 10 coverage)
 // ---------------------------------------------------------------------------
 
@@ -147,8 +202,8 @@ const ENTRIES: readonly KnowledgeEntry[] = [
     ],
     keywords: ["مساعدة", "help"],
     answer: T(
-      "أقدر أساعدك في حاجتين:\n1️⃣ المنصة — بداية التعلم، الكورسات، الدروس، الكويزات، تقدم الجلسات، امتحانات الموك، جدول المذاكرة، التقدم والشهادات.\n2️⃣ التعليم — متغير، دالة، حلقة، شرط، مصفوفة، خوارزمية، برمجة، ذكاء اصطناعي، تعلم الآلة، شبكات عصبية.\nلو سؤالك خارج النطاق ده، هقولك بأمانة إن معرفتي الحالية محدودة.",
-      "I can help with two things:\n1️⃣ The platform — getting started, courses, lessons, quizzes, session progression, mock exams, study scheduler, progress and certificates.\n2️⃣ Education — variables, functions, loops, conditions, arrays, algorithms, programming, AI, machine learning and neural networks.\nIf your question is outside that scope, I'll honestly tell you my current knowledge is limited."
+      "أقدر أساعدك في حاجتين:\n1️⃣ المنصة — بداية التعلم، الكورس، الجلسات، الكويزات، تقدم الجلسات، امتحانات الموك، جدول المذاكرة، التقدم والشهادات.\n2️⃣ مفاهيم المنهج الرسمي — 23 جلسة مرقمة من 1-1 لحد 7-3: تكنولوجيا المعلومات والمجتمع، الأمن السيبراني، تطبيقات الويب، تصميم الويب والوسائط، جمع البيانات وتنقيتها، التحليل الإحصائي، والذكاء الاصطناعي وتعلم الآلة.\nلو سؤالك خارج النطاق ده، هقولك بأمانة إن معرفتي الحالية محدودة.",
+      "I can help with two things:\n1️⃣ The platform — getting started, the course, sessions, quizzes, session progression, mock exams, study scheduler, progress and certificates.\n2️⃣ The official curriculum concepts — 23 sessions coded 1-1 through 7-3: IT and society, cybersecurity, web applications, web and media design, data collection and cleaning, statistical analysis, and AI/machine learning.\nIf your question is outside that scope, I'll honestly tell you my current knowledge is limited."
     ),
   },
   {
@@ -168,8 +223,8 @@ const ENTRIES: readonly KnowledgeEntry[] = [
     ],
     keywords: ["ابدأ", "بداية", "مبتدئ", "start", "beginner", "أول خطوة"],
     answer: T(
-      "ابدأ من صفحة «الرئيسية»: هتلاقي «الكورس» بمنهج Programming & AI مقسم لأجزاء ووحدات ودروس بالترتيب. افتح أول درس، شوف الفيديو (95% على الأقل)، وخلّص الواجب والكويز بتاعه — كده هيفتحلك الدرس اللي بعده تلقائياً. لو لسه مسجلتش، دور أول على خطوات التسجيل من صفحة «الاشتراك».",
-      "Start on the Home page: you'll find the Programming & AI course split into parts, units and lessons in order. Open the first lesson, watch the video (at least 95%), and finish its homework and quiz — the next lesson unlocks automatically. If you haven't enrolled yet, complete the subscription steps first."
+      "ابدأ من صفحة «الرئيسية»: هتلاقي «الكورس» بالمنهج الرسمي Programming & AI — جزأين، 7 وحدات، 23 جلسة مرقمة من 1-1 لحد 7-3 بالترتيب. افتح أول جلسة 1-1، شوف الفيديو (95% على الأقل)، وخلّص الواجب والكويز بتاعها — كده هتفتحلك الجلسة اللي بعدها تلقائياً. لو لسه مسجلتش، دور أول على خطوات التسجيل من صفحة «الاشتراك».",
+      "Start on the Home page: you'll find the official Programming & AI curriculum — 2 parts, 7 units, 23 sessions coded 1-1 through 7-3 in order. Open the first session 1-1, watch the video (at least 95%), and finish its homework and quiz — the next session unlocks automatically. If you haven't enrolled yet, complete the subscription steps first."
     ),
   },
   {
@@ -178,8 +233,8 @@ const ENTRIES: readonly KnowledgeEntry[] = [
     phrases: ["الدورات", "الكورسات", "courses", "course catalog"],
     keywords: ["كورس", "كورسات", "دوره", "دورات", "course", "courses"],
     answer: T(
-      "الكورسات موجودة من القائمة الجانبية تحت «الكورس». المنصة بتشتغل على منهج واحد أساسي: Programming & Artificial Intelligence لطلاب الثانوية العامة — مقسم لأجزاء ووحدات ودروس، وكل جزء ليه كويزات وواجبات مرتبطة بيه.",
-      "Courses live in the sidebar under Course. The platform runs one core curriculum: Programming & Artificial Intelligence for secondary school students — split into parts, units and lessons, each with its own quizzes and homework."
+      "الكورسات موجودة من القائمة الجانبية تحت «الكورس». المنصة بتشتغل على منهج واحد رسمي: Programming & AI لطلاب الصف الثاني الثانوي — جزأين، 7 وحدات (تكنولوجيا المعلومات والمجتمع، الأمن السيبراني، تطبيقات الويب، تصميم الويب والوسائط، جمع البيانات وتنقيتها، التحليل والتواصل، والتعلم الآلي والذكاء الاصطناعي)، و23 جلسة مرقمة من 1-1 لحد 7-3، وكل جلسة ليها كويز وواجب مرتبطين بيها.",
+      "Courses live in the sidebar under Course. The platform runs one official curriculum: Programming & AI for 2nd secondary students — 2 parts, 7 units (IT & Society, Cybersecurity, Web Applications, Web & Media Design, Data Collection & Cleaning, Analysis & Communication, Machine Learning & AI) and 23 sessions coded 1-1 through 7-3, each with its own quiz and homework."
     ),
   },
   {
@@ -188,8 +243,8 @@ const ENTRIES: readonly KnowledgeEntry[] = [
     phrases: ["الدروس", "الجلسات", "الدرس", "lessons", "the lessons"],
     keywords: ["درس", "دروس", "جلسه", "جلسات", "محاضره", "محاضرات", "lesson", "lessons", "session", "sessions"],
     answer: T(
-      "دروس الكورس بتظهر جوه «الكورس» من القائمة الجانبية — كل درس بيفتح في ترتيب معين. عشان تخلص درس لازم: تشوف الفيديو بنسبة 95% على الأقل، تسلّم الواجب، وتجاوب على الكويز. بعد كده الدرس اللي بعده هيفتح.",
-      "Course lessons appear inside Course in the sidebar — each lesson opens in order. To complete one you must: watch the video to at least 95%, submit the homework, and answer the quiz. The next lesson then unlocks."
+      "جلسات الكورس بتظهر جوه «الكورس» من القائمة الجانبية — 23 جلسة مرقمة من 1-1 لحد 7-3، وكل جلسة بتفتح في ترتيبها. عشان تخلص جلسة لازم: تشوف الفيديو بنسبة 95% على الأقل، تسلّم الواجب، وتجاوب على الكويز. بعد كده الجلسة اللي بعدها بتفتح.",
+      "Course sessions appear inside Course in the sidebar — 23 sessions coded 1-1 through 7-3, each unlocking in order. To complete one you must: watch the video to at least 95%, submit the homework, and answer the quiz. The next session then unlocks."
     ),
   },
   {
@@ -384,8 +439,8 @@ const ENTRIES: readonly KnowledgeEntry[] = [
     ],
     keywords: ["برمجه", "كود", "coding", "programming", "مبتدئ برمجه"],
     answer: T(
-      "البرمجة هي كتابة تعليمات للكمبيوتر عشان ينفذ مهمة. أول خطواتك: فكر في المشكلة، اكتب الخوارزمية (الخطوات)، وبعدين ترجمها لكود بلغة زي Python.\nفي CodeMind بتتعلم بالترتيب: المتغيرات ← الشروط ← الحلقات ← الدوال ← المصفوفات، وبعدين تنتقل لمواضيع الذكاء الاصطناعي. أهم حاجة هو التدريب العملي — اكتب كود بنفسك وقرب من أخطائك.",
-      "Programming is writing instructions for a computer to perform a task. First steps: think about the problem, write the algorithm (steps), then translate it into code in a language like Python.\nAt CodeMind you learn in order: variables → conditions → loops → functions → arrays, then AI topics. Hands-on practice is everything — write code yourself and learn from your mistakes."
+      "البرمجة هي كتابة تعليمات للكمبيوتر عشان ينفذ مهمة. أول خطواتك: فكر في المشكلة، اكتب الخوارزمية (الخطوات)، وبعدين ترجمها لكود بلغة زي Python.\nالمنهج الرسمي في CodeMind (Programming & AI) بيمشي بالترتيب ده: تكنولوجيا المعلومات والمجتمع (1-1 لحد 1-4)، الأمن السيبراني (2-1 لحد 2-3)، تطبيقات الويب (3-1 لحد 3-3)، تصميم الويب والوسائط (4-1 لحد 4-4)، جمع البيانات وتنقيتها (5-1 لحد 5-3)، التحليل والتواصل (6-1 لحد 6-3)، وأخيراً التعلم الآلي والذكاء الاصطناعي (7-1 لحد 7-3). أهم حاجة هو التدريب العملي — اكتب كود بنفسك وقرب من أخطائك.",
+      "Programming is writing instructions for a computer to perform a task. First steps: think about the problem, write the algorithm (steps), then translate it into code in a language like Python.\nThe official CodeMind curriculum (Programming & AI) runs in this order: IT & Society (1-1 to 1-4), Cybersecurity (2-1 to 2-3), Web Applications (3-1 to 3-3), Web & Media Design (4-1 to 4-4), Data Collection & Cleaning (5-1 to 5-3), Analysis & Communication (6-1 to 6-3), and finally Machine Learning & AI (7-1 to 7-3). Hands-on practice is everything — write code yourself and learn from your mistakes."
     ),
   },
   {
@@ -419,8 +474,8 @@ const ENTRIES: readonly KnowledgeEntry[] = [
     ],
     keywords: ["ذكاء اصطناعي", "الذكاء", "artificial intelligence", "ai"],
     answer: T(
-      "الذكاء الاصطناعي (AI) هو فرع من علوم الكمبيوتر بيبني أنظمة تقدر تتعلم من البيانات وتاخد قرارات أو تتنبأ — بدل ما تتبع تعليمات مكتوبة حرفياً لكل حالة.\nمن تطبيقاته: التعرف على الصور والصوت، الترجمة، التوصيات، والمحادثة. في CodeMind بتدرس أساسياته: تعلم الآلة، الشبكات العصبية، ونماذج اللغة الكبيرة.",
-      "Artificial Intelligence (AI) is a branch of computer science that builds systems able to learn from data and make decisions or predictions — instead of following hand-written instructions for every case.\nApplications include image and speech recognition, translation, recommendations and conversation. At CodeMind you study its foundations: machine learning, neural networks and large language models."
+      "الذكاء الاصطناعي (AI) هو فرع من علوم الكمبيوتر بيبني أنظمة تقدر تتعلم من البيانات وتاخد قرارات أو تتنبأ — بدل ما تتبع تعليمات مكتوبة حرفياً لكل حالة.\nمن تطبيقاته: التعرف على الصور والصوت، الترجمة، التوصيات، والمحادثة. المنهج بيغطيه في: الجلسة 1-2 «كيف يعمل الذكاء الاصطناعي»، 1-3 «الذكاء الاصطناعي في الحياة اليومية والصناعة»، 1-4 «القضايا الأخلاقية للذكاء الاصطناعي»، وبيتعمق أكتر في الوحدة السابعة (7-1 لحد 7-3).",
+      "Artificial Intelligence (AI) is a branch of computer science that builds systems able to learn from data and make decisions or predictions — instead of following hand-written instructions for every case.\nApplications include image and speech recognition, translation, recommendations and conversation. The curriculum covers it in: session 1-2 'How AI Works', 1-3 'AI in Daily Life and Industry', 1-4 'Ethical Issues with AI', and goes deeper in unit 7 (7-1 to 7-3)."
     ),
   },
   {
@@ -434,8 +489,8 @@ const ENTRIES: readonly KnowledgeEntry[] = [
     ],
     keywords: ["تعلم الاله", "machine learning", "machine", "ml"],
     answer: T(
-      "تعلم الآلة (Machine Learning) هو طريقة بيشتغل بيها الذكاء الاصطناعي: بدل ما نكتب القواعد يدوي، بندي النظام بيانات وأمثلة، وهو بيستنتج النمط بنفسه.\nأنواعه الأساسية: تعلم بإشراف (Supervised) ببيانات ليها إجابات، وتعلم بدون إشراف (Unsupervised) ببيانات من غير إجابات، وتعلم بالتعزيز (Reinforcement) بالمكافآت.",
-      "Machine Learning (ML) is how AI often works: instead of writing rules by hand, we give the system data and examples, and it learns the pattern itself.\nMain types: supervised learning (data with answers), unsupervised learning (data without answers), and reinforcement learning (learning by rewards)."
+      "تعلم الآلة (Machine Learning) هو طريقة بيشتغل بيها الذكاء الاصطناعي: بدل ما نكتب القواعد يدوي، بندي النظام بيانات وأمثلة، وهو بيستنتج النمط بنفسه.\nأنواعه الأساسية: تعلم بإشراف (Supervised) ببيانات ليها إجابات، وتعلم بدون إشراف (Unsupervised) ببيانات من غير إجابات، وتعلم بالتعزيز (Reinforcement) بالمكافآت. ده موضوع الجلسة 7-1 «أساسيات التعلم الآلي» في المنهج.",
+      "Machine Learning (ML) is how AI often works: instead of writing rules by hand, we give the system data and examples, and it learns the pattern itself.\nMain types: supervised learning (data with answers), unsupervised learning (data without answers), and reinforcement learning (learning by rewards). This is the subject of session 7-1 'The Basics of Machine Learning' in the curriculum."
     ),
   },
   {
@@ -444,8 +499,105 @@ const ENTRIES: readonly KnowledgeEntry[] = [
     phrases: ["الشبكه العصبيه", "شبكه عصبيه", "neural network", "neural networks"],
     keywords: ["شبكه عصبيه", "شبكات عصبيه", "neural network", "neural networks", "neuron"],
     answer: T(
-      "الشبكة العصبية (Neural Network) نموذج مستوحى من خلايا المخ: طبقات من «عُقد» (neurons) كل واحدة بتاخد أرقام، وتضربها في أوزان، وتمرر النتيجة لدالة تفعيل.\nأثناء التدريب الأوزان بتتعدل بحيث تقل الأخطاء تدريجياً. أول طبقة بتاخد المدخلات، وآخر طبقة بتطلع النتيجة، واللي بينهم بتتعلم تمثيلات أعمق للمشكلة.",
-      "A neural network is a model inspired by brain cells: layers of nodes (neurons) that take numbers, multiply them by weights, and pass the result through an activation function.\nDuring training the weights adjust so errors shrink gradually. The first layer takes inputs, the last produces the output, and the layers in between learn deeper representations."
+      "الشبكة العصبية (Neural Network) نموذج مستوحى من خلايا المخ: طبقات من «عُقد» (neurons) كل واحدة بتاخد أرقام، وتضربها في أوزان، وتمرر النتيجة لدالة تفعيل.\nأثناء التدريب الأوزان بتتعدل بحيث تقل الأخطاء تدريجياً. أول طبقة بتاخد المدخلات، وآخر طبقة بتطلع النتيجة، واللي بينهم بتتعلم تمثيلات أعمق للمشكلة. الموضوع ده مشروح بالتفصيل في الجلسة 7-2 «الشبكات العصبية والتعلم العميق».",
+      "A neural network is a model inspired by brain cells: layers of nodes (neurons) that take numbers, multiply them by weights, and pass the result through an activation function.\nDuring training the weights adjust so errors shrink gradually. The first layer takes inputs, the last produces the output, and the layers in between learn deeper representations. This is covered in detail in session 7-2 'Neural Networks and Deep Learning'."
+    ),
+  },
+  // ------- Phase 19 grounding: official curriculum units (1-1 … 7-3) -------
+  {
+    id: "it-society",
+    intent: "edu.it-society",
+    phrases: [
+      "تكنولوجيا المعلومات والمجتمع",
+      "تطور تكنولوجيا المعلومات",
+      "التحول الاجتماعي",
+      "information technology and society",
+      "social transformation",
+    ],
+    keywords: ["تكنولوجيا المعلومات", "information technology", "التحول الرقمي", "digital transformation"],
+    answer: T(
+      "تكنولوجيا المعلومات تطورت بسرعة كبيرة وغيّرت شكل المجتمع — من التجارة والتعليم للتواصل والشغل. التحول الاجتماعي ده معناه إن التكنولوجيا مش بس أدوات، لكنها بتعيد تشكيل طريقة عيش الناس.\nده مدخل المنهج كله: الجلسة 1-1 «تطور تكنولوجيا المعلومات والتحول الاجتماعي» في وحدة «تكنولوجيا المعلومات والمجتمع».",
+      "Information technology evolved rapidly and reshaped society — from commerce and education to communication and work. 'Social transformation' means technology is not just tools; it restructures how people live.\nThis is the entry point of the whole curriculum: session 1-1 'Development of Information Technology and Social Transformation' in the unit 'Information Technology and Society'."
+    ),
+  },
+  {
+    id: "cybersecurity",
+    intent: "edu.cybersecurity",
+    phrases: [
+      "الأمن السيبراني",
+      "cybersecurity",
+      "cyber security",
+      "ما هو التشفير",
+      "cryptography",
+    ],
+    keywords: ["تشفير", "encryption", "مصادقة", "authentication", "أمن الشبكات", "network security", "إدارة المخاطر", "risk management", "الاستجابة للحوادث", "incident response"],
+    answer: T(
+      "الأمن السيبراني هو حماية الأنظمة والشبكات والبيانات من الاختراق وسوء الاستخدام. أهم أدواته: التشفير (تحويل البيانات لصيغة مش مقروءة غير بمفتاح صح) والمصادقة (التأكد من هوية المستخدم).\nالمنهج بيغطي ده كله في وحدة «الأمن السيبراني»: الجلسة 2-1 «تقنيات التشفير والمصادقة»، 2-2 «تصميم أمن الشبكات»، و2-3 «الاستجابة للحوادث وإدارة المخاطر».",
+      "Cybersecurity is the protection of systems, networks and data from breach and misuse. Its key tools are encryption (turning data into a form readable only with the right key) and authentication (verifying a user's identity).\nThe curriculum covers it fully in the Cybersecurity unit: session 2-1 'Cryptographic Technologies and Authentication', 2-2 'Network Security Design', and 2-3 'Incident Response and Risk Management'."
+    ),
+  },
+  {
+    id: "web-applications",
+    intent: "edu.web-applications",
+    phrases: [
+      "تطبيقات الويب",
+      "تطبيق الويب",
+      "web applications",
+      "web application",
+    ],
+    keywords: ["web app", "web apps", "frontend", "front end", "الواجهة الأمامية", "بنية تطبيقات الويب", "الاتصال في تطبيقات الويب", "http"],
+    answer: T(
+      "تطبيق الويب هو برنامج بتستخدمه من المتصفح من غير تثبيت — الواجهة (Frontend) بتشتغل على جهازك والخادم (Backend) بيعالج البيانات ويرد عليها.\nوحدة «تطبيقات الويب» بتشرح الموضوع ده في 3 جلسات: 3-1 «البنية العامة لتطبيقات الويب»، 3-2 «طرق الاتصال في تطبيقات الويب»، و3-3 «أساسيات تكنولوجيا الواجهة الأمامية».",
+      "A web application is a program you use from the browser with no installation — the frontend runs on your device while the backend processes data and responds.\nThe Web Applications unit explains it in 3 sessions: 3-1 'The Overall Structure of Web Applications', 3-2 'Web Application Communication Methods', and 3-3 'Fundamentals of Frontend Technology'."
+    ),
+  },
+  {
+    id: "web-media-design",
+    intent: "edu.web-media-design",
+    phrases: [
+      "تصميم الويب والوسائط",
+      "تصميم المواقع",
+      "تجربة المستخدم",
+      "website design",
+      "web design",
+      "user experience",
+    ],
+    keywords: ["أنواع الوسائط", "media types", "تصميم المعلومات", "information design", "تقييم المواقع", "website evaluation", "ux"],
+    answer: T(
+      "تصميم الويب والوسائط بيهتم بشكل الموقع وتجربة استخدامه: أنواع الوسائط (نص، صورة، صوت، فيديو) وليها خصائص مختلفة، وتصميم المعلومات بيرتب المحتوى بحيث المستخدم يلاقي اللي محتاجه بسرعة، وتجربة المستخدم (UX) بتقيس سهولة الاستخدام.\nده موضوع وحدة «تصميم الويب والوسائط» كلها: الجلسات 4-1 «أنواع الوسائط وخصائصها»، 4-2 «تصميم المعلومات وتجربة المستخدم للمواقع»، 4-3 «أساليب تقييم المواقع الإلكترونية»، و4-4 «عملية التحسين التكراري للمواقع».",
+      "Web and media design is about how a website looks and feels: media types (text, image, audio, video) each have their own characteristics, information design organises content so users find what they need fast, and user experience (UX) measures ease of use.\nThis is the whole 'Web and Media Design' unit: sessions 4-1 'Types and Characteristics of Media', 4-2 'Information Design and User Experience for Websites', 4-3 'Methods for Evaluating Websites', and 4-4 'The Iterative Improvement Process for Websites'."
+    ),
+  },
+  {
+    id: "data",
+    intent: "edu.data",
+    phrases: [
+      "جمع البيانات وتنقيتها",
+      "جمع البيانات",
+      "تنقية البيانات",
+      "data collection",
+      "data cleaning",
+    ],
+    keywords: ["بيانات", "تحويل البيانات", "البيانات المفتوحة", "open data", "واجهات برمجة التطبيقات", "api"],
+    answer: T(
+      "أي تحليل كويس بيبدأ ببيانات كويسة: الأول بندور على البيانات ونجمعها من مصادر مختلفة (استبيانات، سجلات، واجهات برمجة تطبيقات)، وبعدين بننقيها — نشيل التكرار والقيم الناقصة والأخطاء — ونحولها لشكل صالح للتحليل.\nده موضوع وحدة «جمع البيانات وتنقيتها»: الجلسة 5-1 «طرق جمع البيانات»، 5-2 «تنقية البيانات وتحويلها»، و5-3 «البيانات المفتوحة وواجهات برمجة التطبيقات».",
+      "Every good analysis starts with good data: first we gather data from different sources (surveys, logs, APIs), then we clean it — removing duplicates, missing values and errors — and transform it into an analysis-ready shape.\nThis is the 'Data Collection and Cleaning' unit: session 5-1 'Methods of Data Collection', 5-2 'Data Cleaning and Transformation', and 5-3 'Open Data and APIs'."
+    ),
+  },
+  {
+    id: "statistics",
+    intent: "edu.statistics",
+    phrases: [
+      "التحليل والتواصل",
+      "الاستدلال الإحصائي",
+      "تحليل الانحدار",
+      "statistical inference",
+      "regression analysis",
+    ],
+    keywords: ["إحصاء", "statistics", "انحدار", "regression", "تصور البيانات", "data visualization", "التحليل الإحصائي"],
+    answer: T(
+      "الإحصاء بيحوّل البيانات لقرارات: الاستدلال الإحصائي بيستنتج خواص مجتمع كامل من عينة، وتحليل الانحدار بيوصف العلاقة بين متغيرات ويتنبأ بقيم جديدة، وتصور البيانات (charts) بيخلي النتائج مفهومة للناس.\nده موضوع وحدة «التحليل والتواصل»: الجلسة 6-1 «الاستدلال الإحصائي»، 6-2 «استخدام تحليل الانحدار وتقييمه»، و6-3 «تصور البيانات والتواصل».",
+      "Statistics turns data into decisions: statistical inference draws conclusions about a whole population from a sample, regression analysis describes relationships between variables and predicts new values, and data visualization (charts) makes results understandable.\nThis is the 'Analysis and Communication' unit: session 6-1 'Statistical Inference', 6-2 'Use and Evaluation of Regression Analysis', and 6-3 'Data Visualization and Communication'."
     ),
   },
   {
@@ -480,8 +632,8 @@ const ENTRIES: readonly KnowledgeEntry[] = [
     phrases: ["نماذج اللغه", "نموذج لغوي", "large language model", "llm", "language model"],
     keywords: ["لغوي", "language model", "llm", "large language"],
     answer: T(
-      "نموذج اللغة الكبير (LLM) هو شبكة عصبية ضخمة اتدربت على كميات هائلة من النصوص، فاتعلمت أنماط اللغة. لما تديله سؤال، بيتنبأ بالكلمة التالية الأكثر احتمالاً ويبني رد كامل.\nمن أشهر الأمثلة ChatGPT و Gemini. مهم تعرف إنه ممكن يغلط — دايماً تحقق من المعلومات المهمة. (وهنا في CodeMind، مساعد كودجي نفسها بيجاوب دلوقتي من قاعدة معرفة جاهزة! 😉)",
-      "A Large Language Model (LLM) is a huge neural network trained on massive amounts of text, so it learned language patterns. Give it a prompt and it predicts the most likely next word, building a full reply.\nFamous examples are ChatGPT and Gemini. Remember it can be wrong — always verify important information. (And right here at CodeMind, Kodgy herself answers from a prepared scripted knowledge base! 😉)"
+      "نموذج اللغة الكبير (LLM) هو شبكة عصبية ضخمة اتدربت على كميات هائلة من النصوص، فاتعلمت أنماط اللغة. لما تديله سؤال، بيتنبأ بالكلمة التالية الأكثر احتمالاً ويبني رد كامل.\nمن أشهر الأمثلة ChatGPT و Gemini. مهم تعرف إنه ممكن يغلط — دايماً تحقق من المعلومات المهمة. ده آخر درس في المنهج: الجلسة 7-3 «نماذج اللغة الكبيرة (LLM) والذكاء الاصطناعي التوليدي». (وهنا في CodeMind، مساعد كودجي نفسها بيجاوب دلوقتي من قاعدة معرفة جاهزة! 😉)",
+      "A Large Language Model (LLM) is a huge neural network trained on massive amounts of text, so it learned language patterns. Give it a prompt and it predicts the most likely next word, building a full reply.\nFamous examples are ChatGPT and Gemini. Remember it can be wrong — always verify important information. It is the final session of the curriculum: 7-3 'Large Language Models (LLM) and Generative AI'. (And right here at CodeMind, Kodgy herself answers from a prepared scripted knowledge base! 😉)"
     ),
   },
 ];
@@ -549,8 +701,8 @@ const DIFFERENCE_PHRASES = [
 // ---------------------------------------------------------------------------
 
 const FALLBACK = T(
-  "معرفتي الحالية محدودة في النقطة دي — لسه بشتغل بقاعدة معرفة جاهزة ومش متصل بأي ذكاء اصطناعي خارجي. 😊\nاسألني عن المنصة (الكورسات، الدروس، الكويزات، امتحانات الموك، التقدم، الشهادات، الجدول) أو عن مفاهيم: المتغير، الدالة، الحلقة، الشرط، المصفوفة، الخوارزمية، البرمجة، الذكاء الاصطناعي، تعلم الآلة، والشبكات العصبية.",
-  "My knowledge is limited on that one — I currently work from a prepared scripted knowledge base and I'm not connected to any external AI. 😊\nAsk me about the platform (courses, lessons, quizzes, mock exams, progress, certificates, scheduler) or about concepts like: variables, functions, loops, conditions, arrays, algorithms, programming, AI, machine learning and neural networks."
+  "معرفتي الحالية محدودة في النقطة دي — لسه بشتغل بقاعدة معرفة جاهزة ومش متصل بأي ذكاء اصطناعي خارجي. 😊\nاسألني عن المنصة (الكورس، الجلسات، الكويزات، امتحانات الموك، التقدم، الشهادات، الجدول) أو عن مفاهيم المنهج: الذكاء الاصطناعي، الأمن السيبراني، تطبيقات الويب، تصميم المواقع، جمع البيانات، الإحصاء، تعلم الآلة، والشبكات العصبية.",
+  "My knowledge is limited on that one — I currently work from a prepared scripted knowledge base and I'm not connected to any external AI. 😊\nAsk me about the platform (the course, sessions, quizzes, mock exams, progress, certificates, scheduler) or about curriculum concepts like: AI, cybersecurity, web applications, website design, data collection, statistics, machine learning and neural networks."
 );
 
 const MAX_SAFE_INPUT = 500;

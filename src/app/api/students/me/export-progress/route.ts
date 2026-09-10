@@ -28,7 +28,19 @@ export async function GET() {
         orderBy: { submittedAt: "desc" },
       },
       lessonProgress: {
-        include: { lesson: { select: { titleAr: true, title: true, topic: { select: { titleAr: true } } } } },
+        // Phase 19: official lessons are UNIT-linked (topicId = null) — the
+        // CSV's "Topic/Lesson" column fell permanently blank for them. The
+        // unit title now travels as the canonical fallback.
+        include: {
+          lesson: {
+            select: {
+              titleAr: true,
+              title: true,
+              topic: { select: { titleAr: true, title: true } },
+              unit: { select: { titleAr: true, title: true } },
+            },
+          },
+        },
         orderBy: { lastViewedAt: "desc" },
       },
     },
@@ -51,7 +63,12 @@ export async function GET() {
     rows.push([
       "Lesson",
       lp.lesson.titleAr || lp.lesson.title,
-      lp.lesson.topic?.titleAr || "",
+      // Canonical curriculum group: topic for legacy rows, unit for official.
+      lp.lesson.topic?.titleAr ||
+        lp.lesson.topic?.title ||
+        lp.lesson.unit?.titleAr ||
+        lp.lesson.unit?.title ||
+        "",
       lp.lastViewedAt ? lp.lastViewedAt.toLocaleDateString("en-GB") : "",
       lp.isCompleted ? "Completed" : "In Progress",
       `${lp.progress}%`,

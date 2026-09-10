@@ -1079,9 +1079,20 @@ async function main() {
 
     for (const rel of ["parents/me/analytics", "parents/me/weekly-report"]) {
       const src = read(`src/app/api/${rel}/route.ts`);
+      // Phase 19 supersedes the Phase 12 union rule on these two routes. The
+      // union of every linked child's track made SIBLINGS share one
+      // denominator — a parent with one ARABIC and one LANGUAGE child saw
+      // each kid measured against SHARED+ARABIC+LANGUAGE, i.e. against
+      // sessions of a track that kid can never open. The reports now
+      // resolve the universe PER CHILD from that child's own schoolType,
+      // exactly like parents/me/dashboard already did.
       ok(
-        /trackScopeInWhere\(await getParentTrackScopes\(user\.id\)\)/.test(src),
-        `${rel} slices the universe to the union of the linked children's tracks`
+        /trackScopeWhere\(s\.schoolType\)/.test(src),
+        `${rel} slices the universe per CHILD (the child's own track — Phase 19)`
+      );
+      ok(
+        !/trackScopeInWhere\(await getParentTrackScopes/.test(src),
+        `${rel} no longer collapses siblings into a union track scope`
       );
     }
   }
