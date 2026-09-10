@@ -6,6 +6,7 @@ import {
   EXCLUDE_ARCHIVED_LESSON,
   getCourseSessionProgress,
 } from "@/lib/session-progress";
+import { LESSON_STUDENT_STATUS_FILTER } from "@/lib/session-lifecycle";
 import {
   getParentTrackScopes,
   isParentAuthorizedForCourse,
@@ -33,7 +34,6 @@ type LessonRow = {
   titleAr: string;
   order: number;
   duration: number;
-  isLocked: boolean;
   videoUrl: string | null;
   pdfUrl: string | null;
   summary: string | null;
@@ -64,6 +64,17 @@ export async function GET(
   // SHARED, ARABIC and LANGUAGE content and must not be filtered as though
   // they were students.
   let viewerTrackFilter: object = {};
+  // Phase 13 — the same layering, one dimension later: the tree shows the
+  // PUBLISHED slice to students and to parents previewing a child's course,
+  // and the FULL lifecycle to staff, who manage DRAFT and READY content and
+  // must be able to see what has not been opened yet.
+  //
+  // Before Phase 13 the tree had NO lifecycle clause at all while the
+  // progression engine required `isPublished`, so a staged lesson was listed
+  // as an ordinary "available" session (its title, videoUrl and pdfUrl with
+  // it) even though the engine refused it. Visibility and availability were
+  // then two different answers to one question. They are now the same filter.
+  let viewerLifecycleFilter: object = LESSON_STUDENT_STATUS_FILTER;
   if (user.role === "STUDENT") {
     const viewer = await getStudentProfile(user.id);
     viewerTrackFilter = viewer
@@ -72,6 +83,9 @@ export async function GET(
   } else if (user.role === "PARENT") {
     // A parent previews through their children's tracks, never their own.
     viewerTrackFilter = trackScopeInWhere(await getParentTrackScopes(user.id));
+  } else {
+    // TEACHER / ADMIN: every status, so staging is manageable.
+    viewerLifecycleFilter = {};
   }
 
   const course = await db.course.findUnique({
@@ -86,7 +100,11 @@ export async function GET(
               // Canonical chain: Course → Part → Unit → Lesson.
               // Archived lessons are history, not curriculum (Phase 11).
               lessons: {
-                where: { ...EXCLUDE_ARCHIVED_LESSON, ...viewerTrackFilter },
+                where: {
+                  ...viewerLifecycleFilter,
+                  ...EXCLUDE_ARCHIVED_LESSON,
+                  ...viewerTrackFilter,
+                },
                 orderBy: { order: "asc" },
                 include: LESSON_INCLUDE,
               },
@@ -95,7 +113,11 @@ export async function GET(
                 orderBy: { order: "asc" },
                 include: {
                   lessons: {
-                    where: { ...EXCLUDE_ARCHIVED_LESSON, ...viewerTrackFilter },
+                    where: {
+                      ...viewerLifecycleFilter,
+                      ...EXCLUDE_ARCHIVED_LESSON,
+                      ...viewerTrackFilter,
+                    },
                     orderBy: { order: "asc" },
                     include: LESSON_INCLUDE,
                   },
@@ -260,7 +282,10 @@ export async function GET(
       titleAr: lesson.titleAr,
       order: lesson.order,
       duration: lesson.duration,
-      isLocked: lesson.isLocked,
+      // Phase 13: the retired `isLocked` column is no longer serialised. The
+      // UI's lock badge is `status` (progression), which is what it already
+      // reads; publishing an inert DB flag as though it meant something was
+      // the conflation this phase removes.
       videoUrl: locked ? null : lesson.videoUrl,
       pdfUrl: locked ? null : lesson.pdfUrl,
       summary: locked ? null : lesson.summary,

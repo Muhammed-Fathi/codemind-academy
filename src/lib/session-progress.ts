@@ -11,6 +11,10 @@
 // the UI merely mirrors the result.
 
 import { db } from "@/lib/db";
+import {
+  LESSON_STUDENT_STATUS_FILTER,
+  isStudentVisibleStatus,
+} from "@/lib/session-lifecycle";
 import { VIDEO_COMPLETION_THRESHOLD } from "@/lib/progress";
 import {
   canAccessTrackScope,
@@ -49,6 +53,14 @@ import { getStudentSchoolType } from "@/lib/enrollment";
 // navigation, dashboards, certificates and parent reports. Teacher
 // management/grading scopes deliberately do NOT exclude archived rows (a
 // pending legacy submission still needs grading); see the Phase 11 doc.
+//
+// Phase 13 adds the sibling filter `LESSON_STUDENT_STATUS_FILTER`
+// (`status = PUBLISHED`) to the SAME set of reads. The two are always applied
+// together and neither implies the other:
+//
+//   DRAFT / READY     → not in the student curriculum at all (invisible)
+//   PUBLISHED         → in the curriculum; progression decides LOCKED/UNLOCKED
+//   ARCHIVED          → history, never curriculum, whatever its status says
 
 /** Spread into any lesson `where` to exclude archived lessons. */
 export const EXCLUDE_ARCHIVED_LESSON = {
@@ -290,7 +302,8 @@ export async function getCourseSessionProgress(
   );
 
   // ONE progression universe: a lesson belongs to this course through the
-  // canonical Unit chain OR the legacy Topic chain. `orderCourseLessons` then
+  // canonical Unit chain OR the legacy Topic chain, and (Phase 13) is
+  // PUBLISHED in the administrative lifecycle. `orderCourseLessons` then
   // applies the deterministic Course → Part → Unit → (Topic) → Lesson order,
   // which Prisma `orderBy` cannot express on its own because the Topic link is
   // nullable. Archived lessons are history, not curriculum (Phase 11), so the
@@ -298,9 +311,15 @@ export async function getCourseSessionProgress(
   //
   // Phase 12 adds the track slice: only lessons whose `trackScope` this
   // student is eligible for enter the universe at all.
+  // Phase 13 adds the LIFECYCLE slice: only PUBLISHED sessions are part of a
+  // student's curriculum at all. A DRAFT/READY lesson is not a locked session
+  // — it does not exist for students — and an unpublished lesson must never
+  // enter the sequence, because a lesson in the sequence is a lesson the next
+  // one waits for. `isPublished` is gone from this predicate on purpose: the
+  // mirror must not drive progression.
   const found = await db.lesson.findMany({
     where: {
-      isPublished: true,
+      ...LESSON_STUDENT_STATUS_FILTER,
       ...EXCLUDE_ARCHIVED_LESSON,
       ...trackScopeWhere(resolvedSchoolType),
       OR: [
@@ -434,9 +453,28 @@ export async function canAccessLesson(
 ): Promise<LessonAccess> {
   const lesson = await db.lesson.findUnique({
     where: { id: lessonId },
-    select: { ...LESSON_CHAIN_SELECT, trackScope: true },
+    select: {
+      ...LESSON_CHAIN_SELECT,
+      trackScope: true,
+      status: true,
+      curriculumStatus: true,
+    },
   });
   if (!lesson) return { allowed: false, reason: "LESSON_NOT_FOUND", status: null };
+
+  // LIFECYCLE GATE (Phase 13, the same structural choice as the track gate
+  // below): refusal happens HERE, before progression is computed, and the
+  // verdict is LESSON_NOT_FOUND — indistinguishable from a nonexistent id, so
+  // probing lesson ids cannot enumerate what an admin has staged but not
+  // opened. The progression universe already excludes non-PUBLISHED lessons;
+  // this explicit gate keeps the rule visible and keeps the answer correct if
+  // a future reader ever widens that query.
+  if (
+    !isStudentVisibleStatus(lesson.status) ||
+    String(lesson.curriculumStatus).toUpperCase() === "ARCHIVED"
+  ) {
+    return { allowed: false, reason: "LESSON_NOT_FOUND", status: null };
+  }
 
   // Canonical `unitId` chain first, legacy `topicId` chain as fallback (see
   // `resolveLessonCourseId`). A lesson attached to neither is not part of any

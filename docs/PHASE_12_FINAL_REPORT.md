@@ -450,7 +450,9 @@ rather than silently nulled. **Mutation-verified:** replacing the call with a co
 admin/students/route.ts actually CALLS reconcileStudentBatch` and `FAIL: heals AFTER the student
 row exists`; restored → 301/0.
 
-### Finding 2 — PRE-EXISTING, reported not fixed: a parent can open an unpublished lesson
+### Finding 2 — ~~PRE-EXISTING, reported not fixed~~: a parent can open an unpublished lesson
+
+> **CLOSED by Phase 13 (2026-09-10).** `isParentLessonPreviewAllowed` in `src/lib/parent-access.ts` now combines the lifecycle clause with the track and course clauses, and is the single gate for `lessons/[id]` and `quizzes/[id]`. See `docs/PHASE_13_SESSION_LIFECYCLE.md` §5 and the `REAL CODE — the parent preview gate` section of `scripts/verify-phase13-db.mjs`. The analysis below is kept verbatim as the record of what was measured.
 
 `GET /api/lessons/<id>` returns **200** to a parent whose child is eligible, with no `isPublished`
 check on the parent branch.

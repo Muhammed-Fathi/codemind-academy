@@ -27,6 +27,7 @@
 //    see reconcileOfficialCurriculum).
 
 import { db } from "@/lib/db";
+import { LESSON_NEW_LIFECYCLE } from "@/lib/session-lifecycle";
 import knowledgeModelFile from "../../docs/curriculum/knowledge-model.json";
 
 /** Minimal surface of the Prisma client used here (allows mock injection in tests). */
@@ -250,6 +251,15 @@ export type ReconcileReport = {
   unitsReconciled: number;
   unitsCreated: number;
   lessonsCreated: number;
+  /**
+   * Phase 13: how many of the created rows started life DRAFT (all of them —
+   * the reconciler never publishes). Surfaced so the admin screen can say
+   * "N sessions staged, open them when ready" instead of looking broken.
+   */
+  lessonsCreatedAsDraft: number;
+  /** PUBLISHED vs still-staged split of the official set after reconciling. */
+  lessonsPublished: number;
+  lessonsAwaitingOpen: number;
   lessonsUpdated: number;
   officialLessonCodes: string[];
   archivedLessonIds: string[];
@@ -429,6 +439,12 @@ export async function reconcileOfficialCurriculum(
       if (!unitId) throw new Error(`Internal error: unresolved unit ${unitModel.code}`);
       for (const lessonModel of unitModel.lessons) {
         officialCodes.push(lessonModel.code);
+        // Phase 13: `data` is the CURRICULUM contract only. The reconciler no
+        // longer writes `isPublished` (nor the retired `isLocked`): an
+        // idempotent structural sync that also forced the lifecycle flag would
+        // make it a second publisher, silently re-opening a session an admin
+        // had unpublished and flipping a staged one open without the
+        // ceremony. `status` belongs to the OPEN ceremony alone.
         const data = {
           unitId,
           title: lessonModel.title,
@@ -436,8 +452,6 @@ export async function reconcileOfficialCurriculum(
           order: lessonModel.order,
           description: lessonModel.description || null,
           curriculumStatus: "OFFICIAL",
-          isPublished: true,
-          isLocked: false,
         };
         const existing = await client.lesson
           .findUnique({ where: { officialCode: lessonModel.code } })
@@ -448,8 +462,18 @@ export async function reconcileOfficialCurriculum(
             lessonsUpdated++;
           }
         } else {
+          // A brand-new official session starts DRAFT and invisible: content
+          // is published by an admin decision (readiness + ceremony), never as
+          // a side effect of a structural sync. This is the R2 mitigation in
+          // the roadmap ("default-DRAFT for new lessons") — without it the
+          // first admin click that runs a reconcile would publish a syllabus.
           await client.lesson.create({
-            data: { ...data, officialCode: lessonModel.code, topicId: null },
+            data: {
+              ...data,
+              officialCode: lessonModel.code,
+              topicId: null,
+              ...LESSON_NEW_LIFECYCLE,
+            },
           });
           lessonsCreated++;
         }
@@ -482,7 +506,15 @@ export async function reconcileOfficialCurriculum(
   // 6. Post-state assertions (fail-closed: a partial reconcile never reports success).
   const officialRows = await client.lesson.findMany({
     where: { officialCode: { in: officialCodes } },
-    select: { id: true, officialCode: true, unitId: true, curriculumStatus: true },
+    select: {
+      id: true,
+      officialCode: true,
+      unitId: true,
+      curriculumStatus: true,
+      // Phase 13: read for reporting only. The reconciler NEVER writes
+      // lifecycle state, and nothing here derives access from it.
+      status: true,
+    },
   });
   const seen = new Set(officialRows.map((r: { officialCode: string }) => r.officialCode));
   const missing = officialCodes.filter((c) => !seen.has(c));
@@ -508,6 +540,10 @@ export async function reconcileOfficialCurriculum(
     );
   }
 
+  const lessonsPublished = officialRows.filter(
+    (r: { status?: unknown }) => String(r.status).toUpperCase() === "PUBLISHED"
+  ).length;
+
   return {
     courseId: course.id,
     courseSlug: OFFICIAL_COURSE_SLUG,
@@ -518,6 +554,9 @@ export async function reconcileOfficialCurriculum(
     unitsReconciled: model.parts.reduce((n, p) => n + p.units.length, 0),
     unitsCreated,
     lessonsCreated,
+    lessonsCreatedAsDraft: lessonsCreated,
+    lessonsPublished,
+    lessonsAwaitingOpen: officialRows.length - lessonsPublished,
     lessonsUpdated,
     officialLessonCodes: officialCodes,
     archivedLessonIds,

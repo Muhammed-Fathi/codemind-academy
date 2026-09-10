@@ -9,6 +9,7 @@ import {
 import { getServerT } from "@/lib/i18n-server";
 import { getStudentSchoolType } from "@/lib/enrollment";
 import { trackScopeWhere } from "@/lib/track-scope";
+import { LESSON_STUDENT_STATUS_FILTER } from "@/lib/session-lifecycle";
 
 /** Longest accepted free-text answer. Generous, but not an upload channel. */
 const MAX_ANSWER_CHARS = 4000;
@@ -61,7 +62,10 @@ export async function GET(_req: NextRequest) {
   const homeworks = await db.homework.findMany({
     where: {
       lessonId: { in: [...unlocked] },
-      lesson: { ...EXCLUDE_ARCHIVED_LESSON },
+      // Phase 13: the lifecycle clause is not redundant bookkeeping — it is
+      // what keeps this list correct if `unlocked` is ever widened, and it is
+      // the same predicate the engine that produced `unlocked` uses.
+      lesson: { ...LESSON_STUDENT_STATUS_FILTER, ...EXCLUDE_ARCHIVED_LESSON },
       ...trackScopeWhere(schoolType),
     },
     include: {

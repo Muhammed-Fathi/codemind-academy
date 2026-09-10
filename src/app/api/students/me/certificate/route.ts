@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
 import { EXCLUDE_ARCHIVED_LESSON, lessonCourseChainOr } from "@/lib/session-progress";
+import { LESSON_STUDENT_STATUS_FILTER } from "@/lib/session-lifecycle";
 import { trackScopeWhere } from "@/lib/track-scope";
 import { brand } from "@/lib/brand";
 import { fmtDate } from "@/lib/i18n-core";
@@ -39,8 +40,12 @@ export async function GET() {
   // by a school-type change must not count toward a certificate the student is
   // no longer entitled to.
   const studentTrack = trackScopeWhere(student.schoolType);
+  // Phase 13: the denominator is the student universe, so it requires
+  // PUBLISHED exactly like the engine does. Counting a staged lesson here
+  // would demand 80% of sessions the student can never reach.
   const totalLessons = await db.lesson.count({
     where: {
+      ...LESSON_STUDENT_STATUS_FILTER,
       ...EXCLUDE_ARCHIVED_LESSON,
       ...studentTrack,
       OR: lessonCourseChainOr(course.id),
@@ -51,6 +56,7 @@ export async function GET() {
       studentId: student.id,
       isCompleted: true,
       lesson: {
+        ...LESSON_STUDENT_STATUS_FILTER,
         ...EXCLUDE_ARCHIVED_LESSON,
         ...studentTrack,
         OR: lessonCourseChainOr(course.id),

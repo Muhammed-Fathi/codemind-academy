@@ -148,6 +148,12 @@ function canonLesson(id, order, courseId, partOrder = 1, unitOrder = 1, unitId =
     id,
     order,
     isPublished: true,
+    // Phase 13: the student universe is decided by `Lesson.status`, so a
+    // fixture the student is meant to see must be PUBLISHED (exactly as Phase 12
+    // required `trackScope: "SHARED"`). `isPublished` stays set to prove nothing
+    // reads it any more: flip the two against each other and the behavior below
+    // is unchanged (there is a test for that).
+    status: "PUBLISHED",
     // Phase 12: every fixture is SHARED unless a test says otherwise — that is
     // the non-nullable column default in the real schema.
     trackScope: "SHARED",
@@ -171,6 +177,7 @@ function legacyLesson(id, order, courseId, topicOrder, topicId, unitOrder = 1, p
     id,
     order,
     isPublished: true,
+    status: "PUBLISHED", // Phase 13 — see canonLesson
     trackScope: "SHARED",
     videoUrl: `https://cdn.example.invalid/${id}.mp4`,
     pdfUrl: `https://cdn.example.invalid/${id}.pdf`,
@@ -206,7 +213,7 @@ function defaultCatalogue() {
     legacyLesson("LG3", 3, LEGACY_COURSE, 1, "T:legacy:1"),
     canonLesson("MX-C", 5, MIXED_COURSE, 1, 1, "U:mixed:1"),
     canonLesson("L2", 2, COURSE),
-    { id: "ORPHAN", order: 1, isPublished: true, trackScope: "SHARED", videoUrl: "x", pdfUrl: null, unitId: null, topicId: null, unit: null, topic: null, quizzes: [], homeworks: [] },
+    { id: "ORPHAN", order: 1, isPublished: true, status: "PUBLISHED", trackScope: "SHARED", videoUrl: "x", pdfUrl: null, unitId: null, topicId: null, unit: null, topic: null, quizzes: [], homeworks: [] },
     legacyLesson("MX-T", 1, MIXED_COURSE, 1, "T:mixed:1"),
     canonLesson("L3", 3, COURSE),
     bothLinks,
@@ -223,7 +230,21 @@ const byId = (id) => CATALOGUE.find((l) => l.id === id) || null;
 /** Minimal, honest implementation of the two `where` shapes the service uses. */
 function matchesWhere(lesson, where) {
   if (!where) return true;
+  // Phase 13: the lifecycle clause is honored strictly. An unknown clause is a
+  // HARD ERROR rather than a silent pass — a fake that ignores a filter would
+  // happily "prove" that a DRAFT lesson is invisible.
+  const KNOWN = new Set(["isPublished", "status", "curriculumStatus", "trackScope", "OR", "unit", "topic", "id"]);
+  for (const key of Object.keys(where)) {
+    if (!KNOWN.has(key)) throw new Error(`mock: unsupported where clause '${key}'`);
+  }
   if (where.isPublished !== undefined && lesson.isPublished !== where.isPublished) return false;
+  if (where.status !== undefined) {
+    const expected = typeof where.status === "object" && where.status !== null ? where.status.in : where.status;
+    const actual = lesson.status;
+    if (Array.isArray(expected)) {
+      if (!expected.includes(actual)) return false;
+    } else if (actual !== expected) return false;
+  }
   // Phase 11: honor the archived-history exclusion. Fixtures without the
   // field behave like live LEGACY rows (the non-nullable column default):
   // included, because they are not ARCHIVED.
@@ -243,8 +264,14 @@ function matchesWhere(lesson, where) {
       return false;
     });
   }
+  if (where.id !== undefined) return lesson.id === where.id;
   if (where.unit?.part?.courseId) return viaUnit(where.unit.part.courseId);
   if (where.topic?.unit?.part?.courseId) return viaTopic(where.topic.unit.part.courseId);
+  // A where that only carried universe clauses matched above (status /
+  // curriculumStatus / trackScope) means "everything that got this far".
+  if (Object.keys(where).every((k) => ["status", "curriculumStatus", "trackScope", "isPublished"].includes(k))) {
+    return true;
+  }
   return false;
 }
 
@@ -509,6 +536,49 @@ async function main() {
   ok(prog.sessions[1].unlocked === true, "the next session of a mixed unit unlocks");
   ok(prog.sessions[2].unlocked === false, "and the one after it stays locked");
 
+  section("14b. Phase 13: the lifecycle field decides visibility, not the mirror");
+  reset();
+  // A PUBLISHED row whose mirror says false is still student-visible, because
+  // nothing that decides access reads `isPublished` any more…
+  CATALOGUE = defaultCatalogue().map((l) => ({ ...l, isPublished: false }));
+  {
+    const p = await SP.getCourseSessionProgress("S1", COURSE);
+    ok(ids(p) === "L1,L2,L3", `status wins over the mirror (got ${ids(p)})`);
+    const a2 = await SP.canAccessLesson("S1", "L2");
+    ok(a2.reason === "PREVIOUS_SESSION_INCOMPLETE", "…and the same for the direct gate");
+  }
+  // …and a DRAFT row whose mirror says true is invisible. This is the exact
+  // drift the migration repairs, so it is worth pinning in both directions.
+  CATALOGUE = defaultCatalogue().map((l) => ({ ...l, status: "DRAFT" }));
+  {
+    const p = await SP.getCourseSessionProgress("S1", COURSE);
+    ok(p.sessions.length === 0, "a whole cohort staged as DRAFT is invisible (mirror ignored)");
+    const a1 = await SP.canAccessLesson("S1", "L1");
+    ok(a1.allowed === false && a1.reason === "LESSON_NOT_FOUND", "DRAFT answers 404, not 403");
+  }
+  // READY (staged but unopened) is invisible too — the state that must never
+  // leak by id.
+  CATALOGUE = defaultCatalogue().map((l) => ({ ...l, status: l.id === "L1" ? "READY" : "PUBLISHED" }));
+  {
+    const p = await SP.getCourseSessionProgress("S1", COURSE);
+    ok(ids(p) === "L2,L3", `READY is excluded, and the next lesson becomes the head (got ${ids(p)})`);
+    const a1 = await SP.canAccessLesson("S1", "L1");
+    ok(a1.allowed === false && a1.reason === "LESSON_NOT_FOUND", "READY answers 404 by id");
+  }
+  // ARCHIVED rows are excluded by the curriculum clause, not the lifecycle one:
+  // an archived lesson stays PUBLISHED in the data (history keeps its state).
+  CATALOGUE = defaultCatalogue().map((l) =>
+    l.id === "L2" ? { ...l, curriculumStatus: "ARCHIVED" } : l
+  );
+  {
+    const p = await SP.getCourseSessionProgress("S1", COURSE);
+    ok(ids(p) === "L1,L3", "an archived PUBLISHED lesson leaves the universe");
+    const a2 = await SP.canAccessLesson("S1", "L2");
+    ok(a2.allowed === false && a2.reason === "LESSON_NOT_FOUND", "and is invisible by id (Phase 11 rule intact)");
+  }
+  CATALOGUE = defaultCatalogue();
+  ok((await SP.getCourseSessionProgress("S1", COURSE)).sessions.length === 3, "the fixture restores cleanly");
+
   section("15. Ordering is deterministic regardless of storage order");
   reset();
   const forward = ids(await SP.getCourseSessionProgress("S1", COURSE));
@@ -564,7 +634,14 @@ async function main() {
   ok(/\{ unit: \{ part: \{ courseId \} \} \}/.test(sp), "the universe query follows the canonical Unit chain");
   ok(/\{ topic: \{ unit: \{ part: \{ courseId \} \} \} \}/.test(sp), "the universe query still follows the legacy Topic chain");
   ok(/OR: \[/.test(sp), "both chains are combined with OR (one query, one system)");
-  ok(/const found = await db\.lesson\.findMany\(\{\s*where: \{\s*isPublished: true,\s*\.\.\.EXCLUDE_ARCHIVED_LESSON,/.test(sp), "the universe query excludes archived lessons (Phase 11)");
+  ok(
+    /const found = await db\.lesson\.findMany\(\{\s*where: \{\s*\.\.\.LESSON_STUDENT_STATUS_FILTER,\s*\.\.\.EXCLUDE_ARCHIVED_LESSON,/.test(sp),
+    "the universe query is lifecycle-scoped first and excludes archived lessons (Phases 11 + 13)"
+  );
+  ok(
+    !/const found = await db\.lesson\.findMany\(\{\s*where: \{\s*isPublished:/.test(sp),
+    "the universe no longer reads the demoted isPublished mirror"
+  );
   ok(sp.includes("orderCourseLessons(found, courseId)"), "ordering is applied explicitly, not left to SQL");
   ok(!/orderBy: \[\s*\{ topic:/.test(sp), "the old topic-only orderBy is gone");
   ok(/lesson\.unit\?\.part\.courseId \?\?/.test(sp), "canAccessLesson resolves the course canonical-first");
@@ -573,8 +650,8 @@ async function main() {
   // lesson's trackScope for the track gate. The assertion is tightened, not
   // relaxed: it now pins both facts.
   ok(
-    /select: \{ \.\.\.LESSON_CHAIN_SELECT, trackScope: true \}/.test(sp),
-    "the chain shape is shared, so both paths see the same lesson"
+    /select: \{\s*\.\.\.LESSON_CHAIN_SELECT,\s*trackScope: true,\s*status: true,\s*curriculumStatus: true,/.test(sp),
+    "the chain shape is shared, so both paths see the same lesson — and it now also carries the lifecycle state the gate reads"
   );
 
   section("21. Source invariants: the course tree redacts locked sessions");
@@ -598,8 +675,31 @@ async function main() {
   // Phase 12: the course tree additionally narrows to the viewer's track.
   // Both spreads are asserted, so neither the archived-history exclusion nor
   // the track slice can silently disappear.
-  ok(/lessons: \{\s*where: \{ \.\.\.EXCLUDE_ARCHIVED_LESSON, \.\.\.viewerTrackFilter \},\s*orderBy: \{ order: "asc" \},\s*include: LESSON_INCLUDE,/.test(courseRoute), "the unit's canonical lessons are fetched (archived history excluded)");
-  ok(/topics: \{[\s\S]*?lessons: \{\s*where: \{ \.\.\.EXCLUDE_ARCHIVED_LESSON, \.\.\.viewerTrackFilter \},\s*orderBy: \{ order: "asc" \},\s*include: LESSON_INCLUDE,/.test(courseRoute), "legacy topics still fetch their lessons (archived history excluded)");
+  // Phase 13: each lesson list in the tree now carries a THIRD clause — the
+  // viewer's lifecycle scope (students and parents see PUBLISHED only, staff see
+  // everything). Both spreads are pinned, so neither the archived-history
+  // exclusion, the track slice, nor the lifecycle slice can silently vanish.
+  // Phase 13: each lesson list in the tree now carries a THIRD clause — the
+  // viewer's lifecycle scope (students and parents see PUBLISHED only, staff see
+  // everything). All three spreads are pinned, so neither the archived-history
+  // exclusion, the track slice, nor the lifecycle slice can silently vanish.
+  ok(
+    /lessons: \{\s*where: \{\s*\.\.\.viewerLifecycleFilter,\s*\.\.\.EXCLUDE_ARCHIVED_LESSON,\s*\.\.\.viewerTrackFilter,\s*\},\s*orderBy: \{ order: "asc" \},\s*include: LESSON_INCLUDE,/.test(
+      courseRoute
+    ),
+    "the unit's canonical lessons are fetched (lifecycle + archived history excluded)"
+  );
+  ok(
+    /topics: \{[\s\S]*?lessons: \{\s*where: \{\s*\.\.\.viewerLifecycleFilter,\s*\.\.\.EXCLUDE_ARCHIVED_LESSON,\s*\.\.\.viewerTrackFilter,\s*\},\s*orderBy: \{ order: "asc" \},\s*include: LESSON_INCLUDE,/.test(
+      courseRoute
+    ),
+    "legacy topics still fetch their lessons (lifecycle + archived history excluded)"
+  );
+  ok(
+    /viewerLifecycleFilter: object = LESSON_STUDENT_STATUS_FILTER/.test(courseRoute) &&
+      /viewerLifecycleFilter = \{\};/.test(courseRoute),
+    "the lifecycle scope defaults to students' PUBLISHED and is widened only for staff"
+  );
   ok(/lessons: unit\.lessons\.map\(toLesson\)/.test(courseRoute), "canonical lessons are serialised at unit level");
   ok(/\.filter\(\(lesson\) => !lesson\.unitId\)/.test(courseRoute), "a both-linked lesson is not rendered twice");
   ok(/if \(lesson\.unitId\) continue;/.test(courseRoute), "the flat status list matches the engine's canonical-first rule");

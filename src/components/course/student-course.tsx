@@ -49,7 +49,10 @@ type LessonItem = {
   titleAr: string;
   order: number;
   duration: number;
-  isLocked: boolean;
+  // Phase 13: the retired `Lesson.isLocked` column is no longer serialised by
+  // the API, and this component never needed it — "locked" here is a
+  // *progression* state computed by the server (`status`, from
+  // getCourseSessionProgress), which is why the field is gone from the type.
   videoUrl: string | null;
   pdfUrl: string | null;
   summary: string | null;

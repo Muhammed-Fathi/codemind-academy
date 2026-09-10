@@ -3,6 +3,7 @@ import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireUser, getStudentProfile } from "@/lib/api";
 import { trackScopeWhere } from "@/lib/track-scope";
+import { LESSON_STUDENT_STATUS_FILTER } from "@/lib/session-lifecycle";
 import { getStudentSchoolType } from "@/lib/enrollment";
 import {
   EXCLUDE_ARCHIVED_LESSON,
@@ -33,8 +34,14 @@ export async function GET(_req: NextRequest) {
   // archived history excluded): official lessons are unit-linked, legacy
   // history rows stay readable but no longer count toward the percentage.
   const groupMatch = { course: { groups: { some: { id: student.groupId || "_" } } } };
+  // Phase 13: the lifecycle clause joins the archived one, so every count on
+  // this dashboard is computed over the sessions that actually exist for the
+  // student. A staged lesson is not a lesson "not yet done" — it is not in
+  // their curriculum, and counting it would deflate the percentage and name a
+  // session in `continueLesson` that no student can open.
   const lessons = await db.lesson.findMany({
     where: {
+      ...LESSON_STUDENT_STATUS_FILTER,
       ...EXCLUDE_ARCHIVED_LESSON,
       ...viewerTrack,
       OR: [
@@ -153,6 +160,10 @@ export async function GET(_req: NextRequest) {
       // leaving it unfiltered was an outright cross-track content leak.
       ...viewerTrack,
       lesson: {
+        // Phase 13: the lifecycle clause mirrors the unlocked-set post-filter
+        // below (`isOpen`), so the SQL and the engine state can never
+        // disagree about which assignments exist for this student.
+        ...LESSON_STUDENT_STATUS_FILTER,
         ...EXCLUDE_ARCHIVED_LESSON,
         OR: [
           { unit: { part: groupCourseMatch } },

@@ -545,17 +545,17 @@ async function seed() {
   T.unit.push({ id: "u1", partId: "p1", title: "Unit 1", titleAr: "الوحدة الأولى", order: 1, icon: null });
   T.topic.push({ id: "t1t", unitId: "u1", title: "Topic 1", titleAr: "الموضوع الأول", order: 1 });
   T.lesson.push(
-    { id: "l1", trackScope: "SHARED", topicId: "t1t", unitId: null, officialCode: null, curriculumStatus: "LEGACY", title: "Lesson One", titleAr: "الدرس الأول", order: 1, description: "d1", summary: "s1", duration: 90, isLocked: false, isPublished: true, videoUrl: "https://v/l1", pdfUrl: null },
-    { id: "l2", trackScope: "SHARED", topicId: "t1t", unitId: null, officialCode: null, curriculumStatus: "LEGACY", title: "Lesson Two", titleAr: "الدرس الثاني", order: 2, description: "d2", summary: "s2", duration: 90, isLocked: true, isPublished: true, videoUrl: null, pdfUrl: null },
-    { id: "l3", trackScope: "SHARED", topicId: "t1t", unitId: null, officialCode: null, curriculumStatus: "LEGACY", title: "Lesson Three", titleAr: "الدرس الثالث", order: 3, description: "d3", summary: "s3", duration: 90, isLocked: true, isPublished: true, videoUrl: "https://v/l3", pdfUrl: null },
-    { id: "l4", trackScope: "SHARED", topicId: "t1t", unitId: null, officialCode: null, curriculumStatus: "LEGACY", title: "Draft Lesson", titleAr: "مسودة", order: 4, description: "", summary: "", duration: 90, isLocked: true, isPublished: false, videoUrl: null, pdfUrl: null },
+    { id: "l1", trackScope: "SHARED", topicId: "t1t", unitId: null, officialCode: null, curriculumStatus: "LEGACY", status: "PUBLISHED", title: "Lesson One", titleAr: "الدرس الأول", order: 1, description: "d1", summary: "s1", duration: 90, isLocked: false, isPublished: true, videoUrl: "https://v/l1", pdfUrl: null },
+    { id: "l2", trackScope: "SHARED", topicId: "t1t", unitId: null, officialCode: null, curriculumStatus: "LEGACY", status: "PUBLISHED", title: "Lesson Two", titleAr: "الدرس الثاني", order: 2, description: "d2", summary: "s2", duration: 90, isLocked: true, isPublished: true, videoUrl: null, pdfUrl: null },
+    { id: "l3", trackScope: "SHARED", topicId: "t1t", unitId: null, officialCode: null, curriculumStatus: "LEGACY", status: "PUBLISHED", title: "Lesson Three", titleAr: "الدرس الثالث", order: 3, description: "d3", summary: "s3", duration: 90, isLocked: true, isPublished: true, videoUrl: "https://v/l3", pdfUrl: null },
+    { id: "l4", trackScope: "SHARED", topicId: "t1t", unitId: null, officialCode: null, curriculumStatus: "LEGACY", status: "DRAFT", title: "Draft Lesson", titleAr: "مسودة", order: 4, description: "", summary: "", duration: 90, isLocked: true, isPublished: false, videoUrl: null, pdfUrl: null },
   );
   // Curriculum C2: single lesson, no video/quiz/homework
   T.part.push({ id: "p2", courseId: "c2", title: "Part 1", titleAr: "ج1", order: 1, description: null });
   T.unit.push({ id: "u2", partId: "p2", title: "Unit 1", titleAr: "و1", order: 1, icon: null });
   T.topic.push({ id: "t2t", unitId: "u2", title: "Topic 1", titleAr: "م1", order: 1 });
   T.lesson.push(
-    { id: "l5", trackScope: "SHARED", topicId: "t2t", unitId: null, officialCode: null, curriculumStatus: "LEGACY", title: "C2 Lesson", titleAr: "درس الكورس الثاني", order: 1, description: "", summary: "", duration: 90, isLocked: false, isPublished: true, videoUrl: null, pdfUrl: null },
+    { id: "l5", trackScope: "SHARED", topicId: "t2t", unitId: null, officialCode: null, curriculumStatus: "LEGACY", status: "PUBLISHED", title: "C2 Lesson", titleAr: "درس الكورس الثاني", order: 1, description: "", summary: "", duration: 90, isLocked: false, isPublished: true, videoUrl: null, pdfUrl: null },
   );
 
   // Quizzes + questions + homework

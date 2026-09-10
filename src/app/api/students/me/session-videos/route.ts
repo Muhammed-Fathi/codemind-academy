@@ -9,6 +9,7 @@ import { db } from "@/lib/db";
 import { getEnrollment, syncStudentBatch } from "@/lib/enrollment";
 import { VIDEO_COMPLETION_THRESHOLD } from "@/lib/progress";
 import { videoTrackFilter } from "@/lib/track-scope";
+import { LESSON_STUDENT_STATUS_FILTER } from "@/lib/session-lifecycle";
 
 export async function GET() {
   const user = await requireUser();
@@ -40,6 +41,18 @@ export async function GET() {
       batchId,
       isPublished: true,
       ...videoTrackFilter(enrollment.schoolType),
+      // Phase 13 — a recording LINKED TO A SESSION that has not been opened
+      // must not name that session: this payload carries
+      // `lesson: { id, title, titleAr }`, so without the clause a staged
+      // lesson's title (and a clickable id) reaches the student through the
+      // video list. A video with no lesson link is unaffected — batch
+      // recordings stand on their own publication lifecycle
+      // (`SessionVideo.isPublished`), which this phase deliberately does not
+      // merge into lesson progression (see the Phase 12 video contract).
+      OR: [
+        { lessonId: null },
+        { lesson: LESSON_STUDENT_STATUS_FILTER },
+      ],
     },
     orderBy: { publishedAt: "desc" },
     include: {

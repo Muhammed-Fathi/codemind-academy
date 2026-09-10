@@ -14,6 +14,7 @@
 
 import { db } from "@/lib/db";
 import { getEnrollment } from "@/lib/enrollment";
+import { isStudentVisibleStatus } from "@/lib/session-lifecycle";
 import { normalizeTrackScope, type TrackScope } from "@/lib/track-scope";
 
 /** Student ids explicitly linked to the parent identified by `parentUserId`. */
@@ -108,4 +109,53 @@ export async function isParentAllowedTrackScope(
   if (scope === "SHARED") return true;
   const scopes = await getParentTrackScopes(parentUserId);
   return scopes.has(scope);
+}
+
+// ---------------------------------------------------------------------------
+// Lifecycle (Phase 13)
+// ---------------------------------------------------------------------------
+//
+// A parent previews a CHILD's curriculum, and a child's curriculum is the
+// PUBLISHED slice. So the parent surface must apply the SAME lifecycle clause
+// the student surface does — "an in-scope parent" is not a reason to hand over
+// a session an admin has staged but never opened. This is the gap Phase 12
+// measured and left to Phase 13 (PHASE_12_FINAL_REPORT, Finding 2).
+//
+// The three clauses live in this one function on purpose: a preview that
+// checks the course but forgets the lifecycle is the bug class being closed.
+
+/**
+ * The complete parent preview predicate for a lesson (or for the lesson a
+ * quiz/homework belongs to): child's course + child's track + PUBLISHED +
+ * not archived.
+ *
+ * Fails closed on every missing/unknown field, and — importantly — takes the
+ * lesson fields as DATA rather than an id, so a caller that has already loaded
+ * the row cannot be tricked into a second, looser lookup.
+ */
+export async function isParentLessonPreviewAllowed(
+  parentUserId: string,
+  lesson:
+    | {
+        status?: unknown;
+        curriculumStatus?: unknown;
+        trackScope?: unknown;
+      }
+    | null
+    | undefined,
+  courseId: string | null | undefined
+): Promise<boolean> {
+  if (!lesson) return false;
+  // 1. Lifecycle: only an OPENED session exists for the child at all.
+  if (!isStudentVisibleStatus(lesson.status)) return false;
+  // 2. Phase 11: archived history is not curriculum, whatever its status says.
+  if (String(lesson.curriculumStatus ?? "").toUpperCase() === "ARCHIVED") {
+    return false;
+  }
+  // 3. Phase 12: the child's track, never the parent's locale.
+  if (!(await isParentAllowedTrackScope(parentUserId, lesson.trackScope))) {
+    return false;
+  }
+  // 4. Phase 7: the course must be one a linked, enrolled child is in.
+  return isParentAuthorizedForCourse(parentUserId, courseId);
 }

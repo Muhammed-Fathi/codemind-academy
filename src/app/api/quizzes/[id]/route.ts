@@ -6,9 +6,11 @@ import { getStudentSchoolType } from "@/lib/enrollment";
 import { canAccessTrackScope } from "@/lib/track-scope";
 import { loadAttemptQuestionSet, safeParseOptions } from "@/lib/session-quiz";
 import { isQuestionEligible } from "@/lib/track-scope";
-import { isParentAllowedTrackScope } from "@/lib/parent-access";
+import {
+  isParentAllowedTrackScope,
+  isParentLessonPreviewAllowed,
+} from "@/lib/parent-access";
 import type { SchoolType } from "@/lib/school-type";
-import { isParentAuthorizedForCourse } from "@/lib/parent-access";
 
 // GET /api/quizzes/[id]
 // Returns quiz + questions. Answers and explanations are withheld from
@@ -52,26 +54,38 @@ export async function GET(
   });
   if (!quiz) return err("Quiz not found", 404);
 
-  // Phase 12 — a parent previews through the CHILD's track, never through
-  // their own account attributes or locale. A parent with children in both
-  // school types may see both; a parent of only ARABIC children cannot open a
-  // LANGUAGE quiz. Ids are unguessable, so a refusal is a plain 404.
-  if (user.role === "PARENT") {
-    const allowedScope = await isParentAllowedTrackScope(user.id, quiz.trackScope);
-    if (!allowedScope) return err("Quiz not found", 404);
-  }
-
-  // Phase 7: a parent may open ONLY quizzes of courses in which a linked
-  // child is enrolled. Quiz ids are unguessable, so an out-of-scope quiz
-  // looks exactly like a nonexistent one (404). Teacher/admin preview and
-  // the student session gate below are unchanged.
+  // Phase 7 + 12 + 13, in ONE predicate (see `isParentLessonPreviewAllowed`):
+  // a parent may open a quiz only when a linked, ENROLLED child is in the
+  // quiz's course, the quiz and its lesson are on that child's TRACK, and the
+  // OWNING LESSON IS PUBLISHED. The lifecycle clause is the gap Phase 12
+  // recorded and left to this phase: the answers of a session an admin has
+  // staged but never opened were readable by a parent — and a quiz GET reveals
+  // `revealAnswers` to a parent, so that was an answer-key leak for content no
+  // student is meant to have. Quiz ids are unguessable, so every refusal is a
+  // plain 404, identical to a nonexistent id.
   if (user.role === "PARENT") {
     const quizCourseId =
       quiz.lesson?.unit?.part.courseId ??
       quiz.lesson?.topic?.unit.part.courseId ??
       null;
-    const allowed = await isParentAuthorizedForCourse(user.id, quizCourseId);
-    if (!allowed) return err("Quiz not found", 404);
+    const lessonAllowed = await isParentLessonPreviewAllowed(
+      user.id,
+      quiz.lesson
+        ? {
+            status: quiz.lesson.status,
+            curriculumStatus: quiz.lesson.curriculumStatus,
+            trackScope: quiz.lesson.trackScope,
+          }
+        : null,
+      quizCourseId
+    );
+    if (!lessonAllowed) return err("Quiz not found", 404);
+    // The QUIZ's own scope can be narrower than its lesson's (a SHARED lesson
+    // may host an ARABIC-only quiz), so it is checked separately — the same
+    // two-layer rule `gateTrackedResource` applies to students.
+    if (!(await isParentAllowedTrackScope(user.id, quiz.trackScope))) {
+      return err("Quiz not found", 404);
+    }
   }
 
   // Pull the student's previous attempts (if student)

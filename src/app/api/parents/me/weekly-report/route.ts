@@ -12,6 +12,7 @@ import { db } from "@/lib/db";
 import { getVideoProgressForStudents, getVideoProgressInRange } from "@/lib/progress";
 import { EXCLUDE_ARCHIVED_LESSON, lessonCoursesChainOr } from "@/lib/session-progress";
 import { trackScopeInWhere } from "@/lib/track-scope";
+import { LESSON_STUDENT_STATUS_FILTER } from "@/lib/session-lifecycle";
 import { getParentTrackScopes } from "@/lib/parent-access";
 import { fmtDate } from "@/lib/i18n-core";
 
@@ -72,7 +73,11 @@ export async function GET() {
     weeklyCourseIds.length > 0
       ? await db.lesson.findMany({
           where: {
-            isPublished: true,
+            // Phase 13: the report denominator is the child's curriculum, so
+            // it requires PUBLISHED exactly like the student universe does —
+            // a staged session must neither be counted nor named. Replaces the
+            // legacy `isPublished` flag, which no longer gates anything.
+            ...LESSON_STUDENT_STATUS_FILTER,
             ...EXCLUDE_ARCHIVED_LESSON,
             // Phase 12: same union-of-children rule as the parent analytics.
             ...trackScopeInWhere(await getParentTrackScopes(user.id)),
