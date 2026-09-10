@@ -58,6 +58,7 @@ import {
   FileQuestion,
   Home,
   UserCircle,
+  Rocket,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -99,6 +100,7 @@ const NAV_BY_ROLE: Record<string, NavItem[]> = {
     { key: "admin-teachers", label: "shell.008", icon: Briefcase },
     { key: "admin-groups", label: "shell.009", icon: Users },
     { key: "admin-courses", label: "shell.010", icon: BookOpen },
+    { key: "admin-sessions", label: "admin.323", icon: Rocket },
     { key: "admin-question-bank", label: "shell.037", icon: Library },
     { key: "admin-session-videos", label: "admin.204", icon: Video },
     { key: "admin-mock-exams", label: "admin.214", icon: Timer },

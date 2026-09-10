@@ -225,6 +225,7 @@ function renderView(view: string, role?: string | null) {
     case "admin-teachers":
     case "admin-groups":
     case "admin-courses":
+    case "admin-sessions":
     case "admin-payments":
     case "admin-subscriptions":
     case "admin-coupons":
@@ -284,6 +285,7 @@ function isViewForRole(view: string, role: string): boolean {
       "admin-teachers",
       "admin-groups",
       "admin-courses",
+      "admin-sessions",
       "admin-payments",
       "admin-subscriptions",
       "admin-coupons",

@@ -174,6 +174,26 @@ export function MockExamsView() {
                     <Badge variant="outline" className="text-[10px]">
                       {tr(e.schoolType === "ARABIC" ? "admin.200" : "admin.201")}
                     </Badge>
+                    <Badge variant="outline" className="text-[10px]">
+                      {tr("admin.463")}:{" "}
+                      {tr(e.selectionMode === "FIXED" ? "admin.464" : "admin.465")}
+                    </Badge>
+                    {e.selectionMode === "FIXED" && (
+                      <span
+                        className={
+                          e.pinnedQuestions < e.questionCount
+                            ? "text-amber-700 dark:text-amber-300 font-semibold"
+                            : ""
+                        }
+                        title={
+                          e.pinnedQuestions < e.questionCount ? tr("admin.462") : undefined
+                        }
+                      >
+                        {tr("admin.460")}:{" "}
+                        {tr("admin.461", { p1: e.pinnedQuestions, p2: e.questionCount })}
+                        {e.pinnedQuestions < e.questionCount && ` · ${tr("admin.462")}`}
+                      </span>
+                    )}
                     <span>
                       {tr("admin.217")}: {e.questionCount}
                     </span>
@@ -416,8 +436,8 @@ function CreateMockExamDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="RANDOM">Random</SelectItem>
-                  <SelectItem value="FIXED">Fixed</SelectItem>
+                  <SelectItem value="RANDOM">{tr("admin.465")}</SelectItem>
+                  <SelectItem value="FIXED">{tr("admin.464")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
