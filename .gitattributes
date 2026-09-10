@@ -1,0 +1,4 @@
+# Normalize all text files to LF on checkout so source-pinning tests and
+# diffs behave identically on Windows (CRLF via core.autocrlf=true) and
+# Unix (LF) machines.
+* text=auto eol=lf
