@@ -10,10 +10,9 @@ import { NextResponse } from "next/server";
 import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
 import { getVideoProgressForStudents, getVideoProgressInRange } from "@/lib/progress";
-import { EXCLUDE_ARCHIVED_LESSON, lessonCoursesChainOr } from "@/lib/session-progress";
-import { trackScopeInWhere } from "@/lib/track-scope";
+import { EXCLUDE_ARCHIVED_LESSON, lessonCourseChainOr } from "@/lib/session-progress";
+import { trackScopeWhere } from "@/lib/track-scope";
 import { LESSON_STUDENT_STATUS_FILTER } from "@/lib/session-lifecycle";
-import { getParentTrackScopes } from "@/lib/parent-access";
 import { fmtDate } from "@/lib/i18n-core";
 
 export async function GET() {
@@ -56,55 +55,41 @@ export async function GET() {
   });
   if (!parent) return err(tApi("api.119"), 404);
 
-  // Course lesson totals, one batched query for every linked child's course
-  // (same universe as the parent dashboard: published lessons, both chains,
-  // archived history excluded).
-  // The `as string[]` is belt-and-braces: the type predicate above already
-  // narrows to string[], but an un-generated Prisma client leaves the whole
-  // chain untyped and would otherwise fail the helper's signature.
-  const weeklyCourseIds = [
-    ...new Set(
-      parent.children
-        .map((l) => l.student.group?.courseId)
-        .filter((id): id is string => !!id)
-    ),
-  ] as string[];
-  const weeklyLessonRows =
-    weeklyCourseIds.length > 0
-      ? await db.lesson.findMany({
-          where: {
-            // Phase 13: the report denominator is the child's curriculum, so
-            // it requires PUBLISHED exactly like the student universe does —
-            // a staged session must neither be counted nor named. Replaces the
-            // legacy `isPublished` flag, which no longer gates anything.
-            ...LESSON_STUDENT_STATUS_FILTER,
-            ...EXCLUDE_ARCHIVED_LESSON,
-            // Phase 12: same union-of-children rule as the parent analytics.
-            ...trackScopeInWhere(await getParentTrackScopes(user.id)),
-            OR: lessonCoursesChainOr(weeklyCourseIds),
-          },
-          select: {
-            id: true,
-            unit: { select: { part: { select: { courseId: true } } } },
-            topic: {
-              select: { unit: { select: { part: { select: { courseId: true } } } } },
-            },
-          },
-        })
-      : [];
-  const weeklyLessonTotalByCourse = new Map<string, number>();
-  const weeklyLessonIdsByCourse = new Map<string, Set<string>>();
-  for (const row of weeklyLessonRows) {
-    const cid = row.unit?.part.courseId ?? row.topic?.unit.part.courseId;
-    if (!cid) continue;
-    weeklyLessonTotalByCourse.set(
-      cid,
-      (weeklyLessonTotalByCourse.get(cid) || 0) + 1
-    );
-    if (!weeklyLessonIdsByCourse.has(cid)) {
-      weeklyLessonIdsByCourse.set(cid, new Set());
+  // Per-child curriculum universes.
+  //
+  // Phase 19: a child is measured against THEIR OWN course × schoolType —
+  // never against the union of their siblings' tracks. The previous batched
+  // query was keyed by courseId only and filtered by
+  // `trackScopeInWhere(getParentTrackScopes(...))` — the UNION of every
+  // linked child's track — so a parent with one ARABIC and one LANGUAGE
+  // child saw BOTH children measured against SHARED+ARABIC+LANGUAGE lessons:
+  // each kid's denominator silently counted sessions of a track that kid can
+  // never open. The universe is now resolved per child with the SAME
+  // predicate pair the child-scoped dashboards use (`trackScopeWhere` on the
+  // child's own schoolType + the dual curriculum chain), completing the
+  // "independently scoped by child id → course → track" contract.
+  const weeklyUniverseByStudent = new Map<string, Set<string>>();
+  for (const link of parent.children) {
+    const s = link.student;
+    const courseId = s.group?.courseId;
+    if (!courseId) {
+      weeklyUniverseByStudent.set(s.id, new Set());
+      continue;
     }
-    weeklyLessonIdsByCourse.get(cid)!.add(row.id);
+    // Phase 13: the report denominator is the child's curriculum, so it
+    // requires PUBLISHED exactly like the student universe does — a staged
+    // session must neither be counted nor named. Replaces the legacy
+    // `isPublished` flag, which no longer gates anything.
+    const rows = await db.lesson.findMany({
+      where: {
+        ...LESSON_STUDENT_STATUS_FILTER,
+        ...EXCLUDE_ARCHIVED_LESSON,
+        ...trackScopeWhere(s.schoolType),
+        OR: lessonCourseChainOr(courseId),
+      },
+      select: { id: true },
+    });
+    weeklyUniverseByStudent.set(s.id, new Set(rows.map((r) => r.id)));
   }
 
   const now = new Date();
@@ -191,20 +176,21 @@ export async function GET() {
       ? Math.round(weeklyQuizAttempts.reduce((sum, q) => sum + q.percentage, 0) / weeklyQuizAttempts.length)
       : 0;
 
-    // Overall progress, measured against the child's COURSE (same denominator
-    // as the parent dashboard, not the count of progress rows that exist).
-    // Both sides are restricted to the active universe so archived history
-    // cannot inflate the fraction.
+    // Overall progress, measured against the child's OWN course × track
+    // universe (same denominator the parent dashboard computes for this
+    // child, not the count of progress rows that exist). Both sides are
+    // restricted to that active universe so archived history or a sibling's
+    // track cannot inflate the fraction.
     const weeklyUniverseIds =
-      (s.group?.courseId && weeklyLessonIdsByCourse.get(s.group.courseId)) ||
-      new Set<string>();
+      weeklyUniverseByStudent.get(s.id) || new Set<string>();
     const completedLessons = s.lessonProgress.filter(
       (lp) => lp.isCompleted && weeklyUniverseIds.has(lp.lessonId)
     ).length;
-    const totalCourseLessons = s.group?.courseId
-      ? weeklyLessonTotalByCourse.get(s.group.courseId) || 0
-      : 0;
-    const completionPct = totalCourseLessons > 0 ? Math.round((completedLessons / totalCourseLessons) * 100) : 0;
+    const totalCourseLessons = weeklyUniverseIds.size;
+    const completionPct =
+      totalCourseLessons > 0
+        ? Math.min(100, Math.round((completedLessons / totalCourseLessons) * 100))
+        : 0;
 
     // Active days (days with any activity)
     const activeDays = dailyActivity.filter((d) => d.lessons > 0 || d.quizzes > 0 || d.homework > 0).length;

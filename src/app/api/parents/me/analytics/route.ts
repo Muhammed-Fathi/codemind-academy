@@ -4,10 +4,9 @@ import { getServerT } from "@/lib/i18n-server";
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
-import { EXCLUDE_ARCHIVED_LESSON, lessonCoursesChainOr } from "@/lib/session-progress";
-import { trackScopeInWhere } from "@/lib/track-scope";
+import { EXCLUDE_ARCHIVED_LESSON, lessonCourseChainOr } from "@/lib/session-progress";
+import { trackScopeWhere } from "@/lib/track-scope";
 import { LESSON_STUDENT_STATUS_FILTER } from "@/lib/session-lifecycle";
-import { getParentTrackScopes } from "@/lib/parent-access";
 
 export async function GET(req: NextRequest) {
   const tApi = await getServerT();
@@ -32,13 +31,41 @@ export async function GET(req: NextRequest) {
               quizAttempts: {
                 where: { finishedAt: { not: null } },
                 orderBy: { finishedAt: "desc" },
-                include: { quiz: { select: { titleAr: true, title: true } } },
+                include: {
+                  quiz: {
+                    select: {
+                      titleAr: true,
+                      title: true,
+                      // Phase 19: strong/weak grouping reads the canonical
+                      // curriculum container (topic for legacy, unit for
+                      // official) instead of the quiz title.
+                      lesson: {
+                        select: {
+                          topic: { select: { titleAr: true, title: true } },
+                          unit: { select: { titleAr: true, title: true } },
+                        },
+                      },
+                    },
+                  },
+                },
               },
               homeworkSubmits: {
                 include: { homework: { select: { titleAr: true, title: true } } },
               },
               lessonProgress: {
-                include: { lesson: { select: { titleAr: true, title: true, topic: { select: { titleAr: true } } } } },
+                include: {
+                  lesson: {
+                    select: {
+                      titleAr: true,
+                      title: true,
+                      // Phase 19: canonical chain first — official lessons are
+                      // unit-linked, so the unit title must ride along or the
+                      // analytics of an official lesson render empty.
+                      topic: { select: { titleAr: true, title: true } },
+                      unit: { select: { titleAr: true, title: true } },
+                    },
+                  },
+                },
               },
             },
           },
@@ -48,57 +75,41 @@ export async function GET(req: NextRequest) {
   });
   if (!parent) return err(tApi("api.099"), 404);
 
-  // Course lesson totals, one batched query for every linked child's course
-  // (same universe as the parent dashboard: published lessons, both chains,
-  // archived history excluded).
-  // The `as string[]` is belt-and-braces: the type predicate above already
-  // narrows to string[], but an un-generated Prisma client leaves the whole
-  // chain untyped and would otherwise fail the helper's signature.
-  const analyticsCourseIds = [
-    ...new Set(
-      parent.children
-        .map((l) => l.student.group?.courseId)
-        .filter((id): id is string => !!id)
-    ),
-  ] as string[];
-  const analyticsLessonRows =
-    analyticsCourseIds.length > 0
-      ? await db.lesson.findMany({
-          where: {
-            // Phase 13: the report denominator is the child's curriculum, so
-            // it requires PUBLISHED exactly like the student universe does —
-            // a staged session must neither be counted nor named. Replaces the
-            // legacy `isPublished` flag, which no longer gates anything.
-            ...LESSON_STUDENT_STATUS_FILTER,
-            ...EXCLUDE_ARCHIVED_LESSON,
-            // Phase 12: a parent's analytics span their linked children, so the
-            // universe is the UNION of those children's tracks (always plus
-            // SHARED) — never a track none of their children belongs to.
-            ...trackScopeInWhere(await getParentTrackScopes(user.id)),
-            OR: lessonCoursesChainOr(analyticsCourseIds),
-          },
-          select: {
-            id: true,
-            unit: { select: { part: { select: { courseId: true } } } },
-            topic: {
-              select: { unit: { select: { part: { select: { courseId: true } } } } },
-            },
-          },
-        })
-      : [];
-  const analyticsLessonTotalByCourse = new Map<string, number>();
-  const analyticsLessonIdsByCourse = new Map<string, Set<string>>();
-  for (const row of analyticsLessonRows) {
-    const cid = row.unit?.part.courseId ?? row.topic?.unit.part.courseId;
-    if (!cid) continue;
-    analyticsLessonTotalByCourse.set(
-      cid,
-      (analyticsLessonTotalByCourse.get(cid) || 0) + 1
-    );
-    if (!analyticsLessonIdsByCourse.has(cid)) {
-      analyticsLessonIdsByCourse.set(cid, new Set());
+  // Per-child curriculum universes.
+  //
+  // Phase 19: each child is measured against THEIR OWN course × schoolType —
+  // never against the UNION of every linked child's track. The old batched
+  // query keyed by courseId only and filtered by
+  // `trackScopeInWhere(getParentTrackScopes(...))`, so a parent with one
+  // ARABIC and one LANGUAGE child saw both children measured against
+  // SHARED+ARABIC+LANGUAGE — each kid's denominator silently counted sessions
+  // of a track that kid can never open. The universe is now resolved per
+  // child with the SAME predicate pair the child-scoped dashboards use
+  // (`trackScopeWhere` on the child's own schoolType + the dual curriculum
+  // chain) — the "independently scoped by child id → course → track"
+  // contract, applied to every derived number below.
+  const analyticsUniverseByStudent = new Map<string, Set<string>>();
+  for (const link of parent.children) {
+    const s = link.student;
+    const courseId = s.group?.courseId;
+    if (!courseId) {
+      analyticsUniverseByStudent.set(s.id, new Set());
+      continue;
     }
-    analyticsLessonIdsByCourse.get(cid)!.add(row.id);
+    // Phase 13: the report denominator is the child's curriculum, so it
+    // requires PUBLISHED exactly like the student universe does — a staged
+    // session must neither be counted nor named. Replaces the legacy
+    // `isPublished` flag, which no longer gates anything.
+    const rows = await db.lesson.findMany({
+      where: {
+        ...LESSON_STUDENT_STATUS_FILTER,
+        ...EXCLUDE_ARCHIVED_LESSON,
+        ...trackScopeWhere(s.schoolType),
+        OR: lessonCourseChainOr(courseId),
+      },
+      select: { id: true },
+    });
+    analyticsUniverseByStudent.set(s.id, new Set(rows.map((r) => r.id)));
   }
 
   const attended = (status: string) =>
@@ -139,10 +150,17 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Subject strengths/weaknesses by topic
+    // Subject strengths/weaknesses — Phase 19: grouped by the quiz's
+    // CURRICULUM CONTAINER, canonical chain first (topic for legacy rows,
+    // unit for official unit-linked lessons). The old code grouped by the
+    // quiz TITLE, so a child with two quizzes on the same unit appeared to
+    // have two unrelated "topics", and the result could never line up with
+    // the curriculum the rest of the report measures.
     const topicMap = new Map<string, { title: string; sumPct: number; count: number }>();
     s.quizAttempts.forEach((qa) => {
-      const topicTitle = qa.quiz?.titleAr || qa.quiz?.title || "Unknown";
+      const container = qa.quiz?.lesson?.topic ?? qa.quiz?.lesson?.unit;
+      const topicTitle =
+        container?.titleAr || container?.title || qa.quiz?.titleAr || qa.quiz?.title || "Unknown";
       const existing = topicMap.get(topicTitle) || { title: topicTitle, sumPct: 0, count: 0 };
       existing.sumPct += qa.percentage;
       existing.count += 1;
@@ -156,20 +174,21 @@ export async function GET(req: NextRequest) {
     const strongTopics = topicStats.filter((t) => t.avgPct >= 60).slice(0, 3);
     const weakTopics = topicStats.filter((t) => t.avgPct < 60).slice(0, 3);
 
-    // Lesson completion against the child's COURSE (a student who opened one
-    // lesson and finished it is not "100% complete" — the denominator is the
-    // course, exactly as on the parent dashboard). Both sides are restricted
-    // to the active universe so archived history cannot inflate the fraction.
+    // Lesson completion against the child's OWN course × track universe (a
+    // student who opened one lesson and finished it is not "100% complete" —
+    // the denominator is the child's curriculum, exactly as on the parent
+    // dashboard). Both sides are restricted to that active universe so
+    // archived history or a sibling's track cannot inflate the fraction.
     const analyticsUniverseIds =
-      (s.group?.courseId && analyticsLessonIdsByCourse.get(s.group.courseId)) ||
-      new Set<string>();
+      analyticsUniverseByStudent.get(s.id) || new Set<string>();
     const completedLessons = s.lessonProgress.filter(
       (lp) => lp.isCompleted && analyticsUniverseIds.has(lp.lessonId)
     ).length;
-    const totalLessons = s.group?.courseId
-      ? analyticsLessonTotalByCourse.get(s.group.courseId) || 0
-      : 0;
-    const completionPct = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
+    const totalLessons = analyticsUniverseIds.size;
+    const completionPct =
+      totalLessons > 0
+        ? Math.min(100, Math.round((completedLessons / totalLessons) * 100))
+        : 0;
 
     // Homework stats
     const hwSubmitted = s.homeworkSubmits.filter((h) => h.status !== "PENDING").length;

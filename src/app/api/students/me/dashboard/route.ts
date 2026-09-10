@@ -8,6 +8,7 @@ import { getStudentSchoolType } from "@/lib/enrollment";
 import {
   EXCLUDE_ARCHIVED_LESSON,
   getUnlockedLessonIds,
+  orderCourseLessons,
 } from "@/lib/session-progress";
 
 // GET /api/students/me/dashboard
@@ -39,7 +40,7 @@ export async function GET(_req: NextRequest) {
   // student. A staged lesson is not a lesson "not yet done" — it is not in
   // their curriculum, and counting it would deflate the percentage and name a
   // session in `continueLesson` that no student can open.
-  const lessons = await db.lesson.findMany({
+  const fetchedLessons = await db.lesson.findMany({
     where: {
       ...LESSON_STUDENT_STATUS_FILTER,
       ...EXCLUDE_ARCHIVED_LESSON,
@@ -54,14 +55,20 @@ export async function GET(_req: NextRequest) {
       topic: { include: { unit: { include: { part: { include: { course: true } } } } } },
       progress: { where: { studentId: student.id } },
     },
-    orderBy: [
-      { topic: { unit: { part: { order: "asc" } } } },
-      { unit: { part: { order: "asc" } } },
-      { unit: { order: "asc" } },
-      { order: "asc" },
-      { id: "asc" },
-    ],
   });
+
+  // Phase 19: the display order is the ENGINE's deterministic curriculum
+  // order (Course → Part → Unit → (Topic) → Lesson, canonical `unitId` chain
+  // first when a lesson carries both links — the one rule every progression
+  // surface applies). The previous Prisma `orderBy` walked the LEGACY topic
+  // chain first, so a dual-linked official lesson could be offered out of
+  // sequence relative to the engine the gating actually uses. Sorting in JS
+  // through `orderCourseLessons` makes "what the dashboard offers next" and
+  // "what the engine unlocks next" the same sequence by construction.
+  const orderingCourseId = student.group?.course?.id ?? null;
+  const lessons = orderingCourseId
+    ? orderCourseLessons(fetchedLessons, orderingCourseId)
+    : fetchedLessons;
 
   const totalLessons = lessons.length;
   const completedLessons = lessons.filter((l) =>

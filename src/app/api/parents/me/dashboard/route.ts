@@ -245,33 +245,51 @@ export async function GET(_req: NextRequest) {
       }));
 
       // --- Homework completion
+      // Phase 12: the parent must not be shown assignments from the other
+      // school type — this list returns titles, so it is a content surface.
+      // Phase 13 adds the lifecycle clause for the same reason: the
+      // assignment of a session that has not been opened is not a title the
+      // parent may read.
+      // Phase 19 closes the Phase 12 chain debt that used to live here: the
+      // legacy `topic:` filter made every OFFICIAL (unit-linked) lesson's
+      // homework invisible, so the denominator was the legacy half of the
+      // universe only. The universe is now the SAME dual-chain, archived-
+      // excluded, track-sliced lesson set as `courseProgress` above, and the
+      // numerator is restricted to that same universe — a submission left on
+      // an archived or out-of-track homework is history, not active
+      // reporting, and can never push the percentage past 100.
       const allHomeworks = await db.homework.findMany({
-        // Phase 12: the parent must not be shown assignments from the other
-        // school type — this list returns titles, so it is a content surface.
-        // Phase 13 adds the lifecycle clause for the same reason: the
-        // assignment of a session that has not been opened is not a title the
-        // parent may read. The legacy-chain `lesson:` filter below is left
-        // exactly as it was (its chain limitation is a documented Phase 12
-        // limitation, not a lifecycle matter).
         where: {
           ...childTrack,
           lesson: {
             ...LESSON_STUDENT_STATUS_FILTER,
-            topic: { unit: { part: { courseId: student.group?.courseId || "" } } },
+            ...EXCLUDE_ARCHIVED_LESSON,
+            OR: lessonCourseChainOr(student.group?.courseId || ""),
           },
         },
         select: { id: true, title: true, titleAr: true, deadline: true, maxMarks: true },
       });
-      const submissions = await db.homeworkSubmission.findMany({
+      const universeHomeworkIds = new Set(allHomeworks.map((h) => h.id));
+      const allSubmissions = await db.homeworkSubmission.findMany({
         where: { studentId: student.id },
         include: { homework: { select: { id: true, title: true, titleAr: true, deadline: true } } },
       });
+      // Numerator = the child's submissions on the SAME homework universe.
+      const submissions = allSubmissions.filter((s) =>
+        universeHomeworkIds.has(s.homeworkId)
+      );
       const submittedCount = submissions.filter(
         (s) => s.status === "SUBMITTED" || s.status === "GRADED" || s.status === "LATE"
       ).length;
+      const gradedCount = submissions.filter(
+        (s) => s.status === "GRADED"
+      ).length;
       const homeworkCompletionPct =
         allHomeworks.length > 0
-          ? Math.round((submittedCount / allHomeworks.length) * 100)
+          ? Math.min(
+              100,
+              Math.round((submittedCount / allHomeworks.length) * 100)
+            )
           : 0;
       const recentHomework = allHomeworks.slice(0, 6).map((hw) => {
         const sub = submissions.find((s) => s.homeworkId === hw.id);
@@ -352,6 +370,13 @@ export async function GET(_req: NextRequest) {
 
       // --- Strong / weak topics (based on FINISHED quiz attempts grouped by
       // topic — an ungraded open attempt must not move a topic average).
+      // Phase 19: the grouping container is CANONICAL-first — an official
+      // lesson is unit-linked (`topicId = null`), so `lesson.topic` alone
+      // silently dropped every official attempt from strong/weak lists. The
+      // topic is used when present (legacy rows), otherwise the UNIT — the
+      // canonical sibling layer topics used to subdivide. The payload keys
+      // stay `strongTopics` / `weakTopics`; only the resolution chain moved
+      // from legacy-only to the real curriculum.
       const attemptsWithTopic = await db.quizAttempt.findMany({
         where: { studentId: student.id, finishedAt: { not: null } },
         include: {
@@ -360,6 +385,7 @@ export async function GET(_req: NextRequest) {
               lesson: {
                 select: {
                   topic: { select: { id: true, title: true, titleAr: true } },
+                  unit: { select: { id: true, title: true, titleAr: true } },
                 },
               },
             },
@@ -373,12 +399,12 @@ export async function GET(_req: NextRequest) {
         { title: string; titleAr: string; sumPct: number; count: number }
       >();
       for (const a of attemptsWithTopic) {
-        const topic = a.quiz?.lesson?.topic;
-        if (!topic) continue;
-        const key = topic.id;
+        const container = a.quiz?.lesson?.topic ?? a.quiz?.lesson?.unit;
+        if (!container) continue;
+        const key = container.id;
         const existing = topicMap.get(key) || {
-          title: topic.title,
-          titleAr: topic.titleAr,
+          title: container.title,
+          titleAr: container.titleAr,
           sumPct: 0,
           count: 0,
         };
@@ -548,6 +574,10 @@ export async function GET(_req: NextRequest) {
         homework: {
           total: allHomeworks.length,
           submitted: submittedCount,
+          // Phase 19: graded now travels in the payload — the monthly report
+          // contract reads `homework.graded`, which previously did not exist
+          // in this payload at all.
+          graded: gradedCount,
           pending: allHomeworks.length - submittedCount,
           completionPct: homeworkCompletionPct,
           recent: recentHomework,
