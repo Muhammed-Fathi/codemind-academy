@@ -1536,11 +1536,16 @@ function compileRealCode() {
       2
     )
   );
-  // Windows cannot spawn the `npx` shim without its extension (ENOENT), so
-  // resolve the platform-correct runner while keeping args/cwd identical.
-  const npmRunner = process.platform === "win32" ? "npx.cmd" : "npx";
+  // Invoke the repository's own TypeScript compiler through the current Node
+  // executable. Neither `npx` nor `npx.cmd` is a reliable `execFileSync`
+  // target on Windows (`spawnSync npx ENOENT`, `spawnSync npx.cmd EINVAL`),
+  // but `process.execPath` is always a real, spawnable executable, and
+  // `require.resolve` pins the exact `typescript` this repo installed — no
+  // `.cmd` shim is involved on any platform. Compiler args and cwd are
+  // unchanged.
+  const tscBin = require.resolve("typescript/bin/tsc");
   try {
-    execFileSync(npmRunner, ["tsc", "-p", path.join(out, "tsconfig.json")], {
+    execFileSync(process.execPath, [tscBin, "-p", path.join(out, "tsconfig.json")], {
       cwd: REPO,
       stdio: "pipe",
     });
