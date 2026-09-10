@@ -3,13 +3,32 @@ import { getServerT } from "@/lib/i18n-server";
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
+import {
+  LESSON_VISIBILITY_SELECT,
+  canStudentSeeLesson,
+  isLessonVisibleToViewer,
+} from "@/lib/curriculum-visibility";
 
 // GET /api/students/me/notes?lessonId=X — list notes (optionally filtered)
+//
+// Phase 16: the note CONTENT is the student's own words and stays readable,
+// but the attached lesson TITLE is curriculum data, so it is redacted (`null`)
+// whenever the lesson is outside the student's visible curriculum (DRAFT /
+// READY / ARCHIVED / wrong track / wrong course / unenrolled). A note taken
+// on a session that is later unpublished therefore keeps the student's words
+// while revealing nothing about the session itself.
 export async function GET(req: NextRequest) {
   const tApi = await getServerT();
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
-  const student = await db.student.findUnique({ where: { userId: user.id } });
+  const student = await db.student.findUnique({
+    where: { userId: user.id },
+    select: {
+      id: true,
+      schoolType: true,
+      group: { select: { courseId: true, isActive: true } },
+    },
+  });
   if (!student) return err(tApi("api.137"), 404);
 
   const url = new URL(req.url);
@@ -21,9 +40,21 @@ export async function GET(req: NextRequest) {
     where,
     orderBy: { updatedAt: "desc" },
     include: {
-      lesson: { select: { id: true, title: true, titleAr: true } },
+      lesson: {
+        select: {
+          ...LESSON_VISIBILITY_SELECT,
+          title: true,
+          titleAr: true,
+        },
+      },
     },
   });
+
+  const viewer = {
+    schoolType: student.schoolType,
+    courseId:
+      student.group && student.group.isActive ? student.group.courseId : null,
+  };
 
   return ok({
     notes: notes.map((n) => ({
@@ -33,12 +64,20 @@ export async function GET(req: NextRequest) {
       color: n.color,
       createdAt: n.createdAt,
       updatedAt: n.updatedAt,
-      lesson: n.lesson,
+      lesson:
+        n.lesson && isLessonVisibleToViewer(n.lesson, viewer)
+          ? { id: n.lesson.id, title: n.lesson.title, titleAr: n.lesson.titleAr }
+          : null,
     })),
   });
 }
 
 // POST — create note
+//
+// Phase 16: notes may only be attached to visible lessons. Creating a note on
+// a DRAFT/READY session would otherwise let the notes list (or a future
+// surface that joins it) confirm the session exists. The refusal is a plain
+// 404, identical to a nonexistent id.
 export async function POST(req: NextRequest) {
   const tApi = await getServerT();
   const user = await requireUser();
@@ -54,6 +93,9 @@ export async function POST(req: NextRequest) {
   };
   if (!lessonId || !content) return err(tApi("api.138"), 400);
 
+  const visible = await canStudentSeeLesson(student.id, lessonId);
+  if (!visible) return err("Lesson not found", 404);
+
   const note = await db.lessonNote.create({
     data: {
       studentId: student.id,
@@ -66,6 +108,11 @@ export async function POST(req: NextRequest) {
 }
 
 // PATCH — update note
+//
+// Phase 16 IDOR fix: the update is scoped to (noteId, studentId). The previous
+// shape updated by note id alone, so any authenticated student could rewrite
+// any other student's note by guessing its id. A note that is not the
+// caller's own answers exactly like a nonexistent one.
 export async function PATCH(req: NextRequest) {
   const tApi = await getServerT();
   const user = await requireUser();
@@ -84,6 +131,12 @@ export async function PATCH(req: NextRequest) {
   const data: any = {};
   if (content) data.content = content;
   if (color) data.color = color;
+
+  const owned = await db.lessonNote.findFirst({
+    where: { id: noteId, studentId: student.id },
+    select: { id: true },
+  });
+  if (!owned) return err("Not found", 404);
 
   const note = await db.lessonNote.update({
     where: { id: noteId },

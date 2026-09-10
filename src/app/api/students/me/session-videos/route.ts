@@ -1,9 +1,16 @@
-// GET /api/students/me/session-videos
+// GET /api/students/me/session-videos[?lessonId=...]
 //
 // Returns the PUBLISHED session videos of the student's own batch only.
 // Access control is entirely server-side: a student of the Arabic batch can
 // never see a Language-batch video, regardless of what the client requests.
+//
+// Phase 16 — the optional `lessonId` narrows the list to the recordings linked
+// to one session, so the unified lesson page can embed its recordings without
+// a second authorization path. It is a pure NARROWING filter: every clause
+// below still applies, and a lessonId from another track, another course, or
+// an unpublished session simply matches nothing.
 
+import { NextRequest } from "next/server";
 import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
 import { getEnrollment, syncStudentBatch } from "@/lib/enrollment";
@@ -11,10 +18,12 @@ import { VIDEO_COMPLETION_THRESHOLD } from "@/lib/progress";
 import { videoTrackFilter } from "@/lib/track-scope";
 import { LESSON_STUDENT_STATUS_FILTER } from "@/lib/session-lifecycle";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
   if (user.role !== "STUDENT") return err("Forbidden", 403);
+
+  const lessonId = new URL(req.url).searchParams.get("lessonId") || null;
 
   const student = await db.student.findUnique({
     where: { userId: user.id },
@@ -40,6 +49,10 @@ export async function GET() {
     where: {
       batchId,
       isPublished: true,
+      // Phase 16 narrowing filter (see the header): no authorization is
+      // derived from it — it only ever removes rows from an already-authorized
+      // set, so a hostile or stale lessonId degrades to an empty list.
+      ...(lessonId ? { lessonId } : {}),
       ...videoTrackFilter(enrollment.schoolType),
       // Phase 13 — a recording LINKED TO A SESSION that has not been opened
       // must not name that session: this payload carries
