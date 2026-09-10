@@ -52,7 +52,19 @@ type LessonView = {
     duration: number;
     order: number;
     videoUrl: string | null;
+    /** Phase 14: authorized material path or legacy external URL. Never a storageKey. */
     pdfUrl: string | null;
+    /** Phase 14: safe material descriptors (id + downloadUrl only). */
+    materials?: {
+      id: string;
+      title: string;
+      kind: string;
+      trackScope: string;
+      downloadUrl: string | null;
+      mimeType: string | null;
+      sizeBytes: number | null;
+      legacy: boolean;
+    }[];
     // Phase 13: `isLocked` removed — the retired column is no longer sent, and
     // gating is decided by the server (`access.allowed`), never by the client.
   };
@@ -381,33 +393,64 @@ export function StudentLessonView() {
             </motion.div>
           )}
 
-          {/* PDF */}
-          {data.lesson.pdfUrl && (
+          {/* PDF / session materials (Phase 14 — authorized download paths) */}
+          {((data.lesson.materials && data.lesson.materials.length > 0) ||
+            data.lesson.pdfUrl) && (
             <motion.div
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.12 }}
             >
               <Card className="glass">
-                <CardContent className="flex items-center gap-3 py-4">
-                  <div className="grid place-items-center w-10 h-10 rounded-lg bg-amber-400/15 text-amber-500">
-                    <FileText className="w-5 h-5" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-semibold">{t("course.063")}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {t("course.064")}</div>
-                  </div>
-                  <a
-                    href={data.lesson.pdfUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex"
-                  >
-                    <Button variant="outline">
-                      <FileText className="w-4 h-4 ms-1.5" />
-                      {t("course.065")}</Button>
-                  </a>
+                <CardContent className="space-y-3 py-4">
+                  {(data.lesson.materials && data.lesson.materials.length > 0
+                    ? data.lesson.materials
+                    : [
+                        {
+                          id: "legacy",
+                          title: t("course.063"),
+                          kind: "LEGACY_URL",
+                          trackScope: "SHARED",
+                          downloadUrl: data.lesson.pdfUrl,
+                          mimeType: "application/pdf",
+                          sizeBytes: null,
+                          legacy: true,
+                        },
+                      ]
+                  ).map((m) => {
+                    const href = m.downloadUrl
+                      ? m.legacy
+                        ? m.downloadUrl
+                        : `${m.downloadUrl}?download=1`
+                      : null;
+                    if (!href) return null;
+                    return (
+                      <div key={m.id} className="flex items-center gap-3">
+                        <div className="grid place-items-center w-10 h-10 rounded-lg bg-amber-400/15 text-amber-500">
+                          <FileText className="w-5 h-5" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-semibold">
+                            {m.title || t("course.063")}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {t("course.064")}
+                          </div>
+                        </div>
+                        <a
+                          href={href}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex"
+                        >
+                          <Button variant="outline">
+                            <FileText className="w-4 h-4 ms-1.5" />
+                            {t("course.065")}
+                          </Button>
+                        </a>
+                      </div>
+                    );
+                  })}
                 </CardContent>
               </Card>
             </motion.div>

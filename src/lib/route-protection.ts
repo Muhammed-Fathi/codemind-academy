@@ -24,6 +24,9 @@ export const PROTECTED_API_PREFIXES: readonly string[] = [
   "/api/students",
   "/api/parents",
   "/api/media",
+  // Phase 14 — authorized session PDF downloads. Cookie presence only here;
+  // the route still runs the full 10-check contract server-side.
+  "/api/materials",
   "/api/quizzes",
   "/api/lessons",
   "/api/exams",

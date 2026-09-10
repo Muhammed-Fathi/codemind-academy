@@ -36,6 +36,10 @@ export async function GET(
         },
       },
       quizEvidence: { select: { id: true } },
+      // Phase 14 — DOCUMENT assets attached to materials. Students must never
+      // reach them through this route; the authorized path is
+      // GET /api/materials/[id] (full 10-check contract).
+      materials: { select: { id: true } },
     },
   });
   if (!asset) return err("Not found", 404);
@@ -47,6 +51,7 @@ export async function GET(
 
   // ---- Authorization -------------------------------------------------------
   const isQuizEvidence = asset.quizEvidence.length > 0;
+  const isDocumentMaterial = asset.materials.length > 0 || asset.kind === "DOCUMENT";
   if (isQuizEvidence) {
     // Quiz camera evidence is strictly admin-only.
     if (user.role !== "ADMIN") return err("Forbidden", 403);
@@ -55,6 +60,10 @@ export async function GET(
       type: "QUIZ_EVIDENCE_ACCESSED",
       detail: `mediaAssetId=${asset.id}`,
     });
+  } else if (isDocumentMaterial) {
+    // Phase 14: session PDFs are served ONLY via /api/materials/[id]. Guessing
+    // a MediaAsset id must not bypass the material-level 10-check contract.
+    if (user.role !== "ADMIN") return err("Forbidden", 403);
   } else if (asset.sessionVideos.length > 0) {
     if (user.role === "STUDENT") {
       const student = await db.student.findUnique({

@@ -16,8 +16,13 @@ import {
   isParentLessonPreviewAllowed,
 } from "@/lib/parent-access";
 import { LESSON_STUDENT_STATUS_FILTER } from "@/lib/session-lifecycle";
-import { trackScopeInWhere, trackScopeWhere } from "@/lib/track-scope";
+import {
+  eligibleTrackScopes,
+  trackScopeInWhere,
+  trackScopeWhere,
+} from "@/lib/track-scope";
 import { getStudentSchoolType } from "@/lib/enrollment";
+import { buildMaterialDescriptors } from "@/lib/session-materials";
 
 // GET /api/lessons/[id]
 // Returns lesson + quizzes + homework + student progress.
@@ -47,17 +52,21 @@ export async function GET(
   // prev/next chain. Both must use the same slice the progression engine uses,
   // otherwise the page would name a quiz or a "next session" the student can
   // never open. Teachers/admins are unrestricted: they manage every scope.
+  // Phase 14 — the same slice filters materials.
   let viewerTrackFilter: object = {};
+  let viewerEligibleScopes: import("@/lib/track-scope").TrackScope[] | null = null;
   if (user.role === "STUDENT") {
     const viewer = await db.student.findUnique({
       where: { userId: user.id },
       select: { id: true },
     });
-    viewerTrackFilter = viewer
-      ? trackScopeWhere(await getStudentSchoolType(viewer.id))
-      : trackScopeWhere(null);
+    const schoolType = viewer ? await getStudentSchoolType(viewer.id) : null;
+    viewerTrackFilter = trackScopeWhere(schoolType);
+    viewerEligibleScopes = eligibleTrackScopes(schoolType);
   } else if (user.role === "PARENT") {
-    viewerTrackFilter = trackScopeInWhere(await getParentTrackScopes(user.id));
+    const scopes = await getParentTrackScopes(user.id);
+    viewerTrackFilter = trackScopeInWhere(scopes);
+    viewerEligibleScopes = [...scopes];
   }
 
   const lesson = await db.lesson.findUnique({
@@ -77,6 +86,28 @@ export async function GET(
         include: { questions: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] } },
       },
       homeworks: { where: { ...viewerTrackFilter }, orderBy: { deadline: "asc" } },
+      // Phase 14 — active materials only, with media metadata for descriptors.
+      // storageKey is deliberately NOT selected.
+      materials: {
+        where: {
+          isActive: true,
+          ...(Object.keys(viewerTrackFilter).length
+            ? viewerTrackFilter
+            : {}),
+        },
+        orderBy: { createdAt: "asc" },
+        select: {
+          id: true,
+          title: true,
+          kind: true,
+          trackScope: true,
+          isActive: true,
+          mediaAssetId: true,
+          media: {
+            select: { mimeType: true, sizeBytes: true },
+          },
+        },
+      },
     },
   });
   if (!lesson) return err("Lesson not found", 404);
@@ -274,6 +305,23 @@ export async function GET(
     })),
   });
 
+  // Phase 14 — material descriptors replace raw pdfUrl for new delivery.
+  // Legacy pdfUrl is still returned as a READ-ONLY compatibility field when
+  // no Material rows exist; new uploads never write it. Descriptors never
+  // include storageKey or filesystem paths.
+  const materials = buildMaterialDescriptors({
+    materials: lesson.materials,
+    legacyPdfUrl: lesson.pdfUrl,
+    includeProtected: true, // access already gated above for students
+    eligibleScopes: viewerEligibleScopes,
+  });
+  // Back-compat: the first downloadable material's URL (authorized path or
+  // legacy external URL). Prefer Material descriptors; fall back to legacy.
+  const primaryPdf =
+    materials.find((m) => m.downloadUrl && !m.legacy)?.downloadUrl ??
+    materials.find((m) => m.legacy)?.downloadUrl ??
+    null;
+
   return ok({
     lesson: {
       id: lesson.id,
@@ -284,7 +332,10 @@ export async function GET(
       duration: lesson.duration,
       order: lesson.order,
       videoUrl: lesson.videoUrl,
-      pdfUrl: lesson.pdfUrl,
+      // Phase 14: prefer the authorized material path. Legacy external URLs
+      // remain only when no Material exists. NEVER a storageKey / filesystem path.
+      pdfUrl: primaryPdf,
+      materials,
       // Phase 13: the retired `isLocked` column is no longer serialised.
     },
     part: chainPart
