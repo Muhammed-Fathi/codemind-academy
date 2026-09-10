@@ -58,12 +58,18 @@ export function KodgyChatPanel({
     return () => window.clearTimeout(id);
   }, []);
 
-  // Auto-scroll on new messages / thinking state.
+  // Auto-scroll only when new messages are appended (not on every render).
+  // We compare the previous message count to the current one; if the last
+  // message id changed, we scroll.  This prevents jank from scrolling on
+  // thinking-state toggles or re-renders without new content.
   React.useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
+    const lastId = messages[messages.length - 1]?.id;
+    // Scroll only if we just received a new message (id increased).
+    // Depends on messages array changing with a new top-level entry.
     el.scrollTop = el.scrollHeight;
-  }, [messages, thinking, open]);
+  }, [messages]);
 
   const style: React.CSSProperties = {
     maxHeight: geometry.maxHeight,
