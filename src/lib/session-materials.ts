@@ -385,7 +385,7 @@ export async function uploadLessonPdfMaterial(
     select: { id: true, mediaAssetId: true },
   });
 
-  const apply = async (tx: typeof db) => {
+  const apply = async (tx: any) => {
     if (prior.length > 0) {
       await tx.material.updateMany({
         where: { id: { in: prior.map((p) => p.id) } },
