@@ -68,7 +68,13 @@ function section(title) {
   console.log(`\n${title}`);
 }
 function read(rel) {
-  return fs.readFileSync(path.join(REPO, rel), "utf8");
+  // Source pins below contain multi-line literal needles written with LF
+  // (e.g. J15's "\n    }\n    return ("). Git's core.autocrlf=true converts
+  // text files to CRLF on Windows checkouts, which would otherwise make those
+  // needles miss. Normalize CRLF → LF once here so every pin is
+  // line-ending agnostic; the assertions and their negative controls are
+  // otherwise unchanged.
+  return fs.readFileSync(path.join(REPO, rel), "utf8").replace(/\r\n/g, "\n");
 }
 
 /**
