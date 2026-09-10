@@ -6,6 +6,7 @@ import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
 import { normalizeSchoolType, questionBankFilter } from "@/lib/school-type";
 import { getEnrollment } from "@/lib/enrollment";
+import { LESSON_STUDENT_STATUS_FILTER } from "@/lib/session-lifecycle";
 
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
@@ -91,8 +92,17 @@ export async function GET(req: NextRequest) {
   // compatibility fix: a topic-only pool silently excluded every canonical
   // lesson's questions from mock exams. Grading (POST) is id-based and
   // unaffected; nothing else about mock exams changes.
+  // Phase 13: the pool is the student universe, so a question that belongs to
+  // a session an admin has staged but not opened can never be served into a
+  // mock exam. Without this clause the retired `isPublished` flag — which no
+  // longer gates anything — would be the only barrier, and staged material
+  // would reach students through the back door of the shared question bank.
+  // NOTE: this route does not exclude ARCHIVED lessons and still does not:
+  // that is Phase 11's deliberate scope choice for the exam pool, not a
+  // lifecycle question, so it is left untouched here.
   const lessons = await db.lesson.findMany({
     where: {
+      ...LESSON_STUDENT_STATUS_FILTER,
       OR: [
         { unit: { part: { courseId } } },
         { topic: { unit: { part: { courseId } } } },

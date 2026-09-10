@@ -473,14 +473,14 @@ async function seed() {
   T.unit.push({ id: "u1", partId: "p1", title: "U1", titleAr: "و١", order: 1 });
   T.topic.push({ id: "t1", unitId: "u1", title: "T1", titleAr: "م١", order: 1 });
   T.lesson.push(
-    { id: "lc1", topicId: null, unitId: "u1", title: "Canonical", titleAr: "كانوني", order: 1 },
-    { id: "ll1", topicId: "t1", unitId: null, title: "Legacy", titleAr: "قديم", order: 2 },
+    { id: "lc1", topicId: null, unitId: "u1", title: "Canonical", titleAr: "كانوني", order: 1 , status: "PUBLISHED"},
+    { id: "ll1", topicId: "t1", unitId: null, title: "Legacy", titleAr: "قديم", order: 2 , status: "PUBLISHED"},
   );
   // C2 curriculum: one canonical lesson.
   T.part.push({ id: "p2", courseId: "c2", title: "P1", titleAr: "ج١", order: 1 });
   T.unit.push({ id: "u2", partId: "p2", title: "U1", titleAr: "و١", order: 1 });
   T.lesson.push(
-    { id: "lc2", topicId: null, unitId: "u2", title: "C2 lesson", titleAr: "درس ٢", order: 1 },
+    { id: "lc2", topicId: null, unitId: "u2", title: "C2 lesson", titleAr: "درس ٢", order: 1 , status: "PUBLISHED"},
   );
 
   T.quiz.push(

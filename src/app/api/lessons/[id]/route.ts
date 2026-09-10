@@ -13,9 +13,9 @@ import { VIDEO_COMPLETION_THRESHOLD } from "@/lib/progress";
 import { safeParseOptions } from "@/lib/session-quiz";
 import {
   getParentTrackScopes,
-  isParentAllowedTrackScope,
-  isParentAuthorizedForCourse,
+  isParentLessonPreviewAllowed,
 } from "@/lib/parent-access";
+import { LESSON_STUDENT_STATUS_FILTER } from "@/lib/session-lifecycle";
 import { trackScopeInWhere, trackScopeWhere } from "@/lib/track-scope";
 import { getStudentSchoolType } from "@/lib/enrollment";
 
@@ -91,14 +91,28 @@ export async function GET(
   // looks exactly like a nonexistent one (404) — the response never confirms
   // that the id is real. (Whether an in-scope parent sees quiz answers stays
   // governed by the documented Phase 1 `revealQuizAnswers` rule below.)
+  //
+  // Phase 13 CLOSES the parent gap the Phase 12 report recorded as Finding 2:
+  // the parent branch checked the COURSE and the TRACK but never the
+  // LIFECYCLE, so an in-scope parent could open a lesson an admin had staged
+  // and not published — reading its body, its quiz questions and its video/PDF
+  // urls, i.e. the very content the child cannot see. A parent previews what a
+  // child is allowed to see, and a child's curriculum is by definition the
+  // PUBLISHED, non-archived slice, so "parent preview" is not a publication
+  // bypass. The three clauses now live in ONE helper
+  // (`isParentLessonPreviewAllowed`) shared with the quiz surface, so they
+  // cannot drift apart.
   if (user.role === "PARENT") {
-    const allowed = await isParentAuthorizedForCourse(user.id, chainCourse?.id);
+    const allowed = await isParentLessonPreviewAllowed(
+      user.id,
+      {
+        status: lesson.status,
+        curriculumStatus: lesson.curriculumStatus,
+        trackScope: lesson.trackScope,
+      },
+      chainCourse?.id
+    );
     if (!allowed) return err("Lesson not found", 404);
-    // Phase 12 — the parent previews through the CHILD's track. A refusal is a
-    // plain 404, indistinguishable from a nonexistent lesson id.
-    if (!(await isParentAllowedTrackScope(user.id, lesson.trackScope))) {
-      return err("Lesson not found", 404);
-    }
   }
 
   // Find prev / next lessons in the same course, in the SAME deterministic
@@ -148,7 +162,14 @@ export async function GET(
     // chain are the same sequence.
     const found = await db.lesson.findMany({
       where: {
-        isPublished: true,
+        // Phase 13: the chain walks the STUDENT curriculum (PUBLISHED only),
+        // in place of the legacy `isPublished` flag — the same predicate the
+        // progression universe uses, so "next session" is always a session the
+        // engine can actually gate. Prev/next never hops to a DRAFT/READY
+        // sibling for any viewer, staff included: the alternative is a second
+        // ordering rule for staging, which is exactly the drift Phase 13
+        // removes.
+        ...LESSON_STUDENT_STATUS_FILTER,
         ...EXCLUDE_ARCHIVED_LESSON,
         ...viewerTrackFilter,
         OR: lessonCourseChainOr(courseId),
@@ -264,7 +285,7 @@ export async function GET(
       order: lesson.order,
       videoUrl: lesson.videoUrl,
       pdfUrl: lesson.pdfUrl,
-      isLocked: lesson.isLocked,
+      // Phase 13: the retired `isLocked` column is no longer serialised.
     },
     part: chainPart
       ? {

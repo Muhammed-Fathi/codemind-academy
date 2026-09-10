@@ -97,6 +97,11 @@ Module._resolveFilename = function (request, ...rest) {
 
 const reconciler = require(path.join(EMIT, "official-curriculum.js"));
 const engine = require(path.join(EMIT, "session-progress.js"));
+// Phase 13: the student universe is defined by the lifecycle module, not by the
+// progression engine — so the universe query below has to read the constant from
+// where it lives (this is the whole point of the phase: one source of truth).
+const lifecycle = require(path.join(EMIT, "session-lifecycle.js"));
+const UNIVERSE = { status: "PUBLISHED" };
 
 // ---- In-memory mock Prisma client (evaluates the reconciler's `where`) ----
 // ---------------------------------------------------------------------------
@@ -340,8 +345,12 @@ function legacyLesson(topicId, overrides = {}) {
     summary: null,
     curriculumStatus: "DRAFT",
     officialCode: null,
+    // Phase 13: a legacy row that was `isPublished: true` before the split is
+    // exactly what the migration backfill turns into `status: "PUBLISHED"`.
+    // The retired `isLocked` column is deliberately NOT modelled here: no
+    // access decision may read it any more.
     isPublished: true,
-    isLocked: false,
+    status: "PUBLISHED",
     createdAt: `legacy-t${legacySeq}`,
     ...overrides,
   };
@@ -450,15 +459,22 @@ function legacyLesson(topicId, overrides = {}) {
     officialRows.every(
       (l) =>
         l.curriculumStatus === "OFFICIAL" &&
-        l.isPublished === true &&
+        // Phase 13: reconciling STAGES a lesson, it does not publish one. A new
+        // official row enters the lifecycle at DRAFT and stays invisible until
+        // an admin runs the READY → OPEN ceremony.
+        l.status === "DRAFT" &&
         typeof l.unitId === "string" &&
         (l.topicId === null || l.topicId === undefined)
     ),
-    "official rows are OFFICIAL + published + unit-linked + topic-less"
+    "official rows are OFFICIAL + DRAFT (staged, not published) + unit-linked + topic-less"
   );
   ok(
-    officialRows.every((l) => l.isLocked === false),
-    "official rows are unlocked"
+    officialRows.every((l) => l.isPublished === false && l.isLocked === undefined)
+    // Parity by construction: `isPublished` is written only so that a DRAFT row
+    // never carries the column's `@default(true)`; `isLocked` is not written at
+    // all because Phase 13 retired it.
+    ,
+    "the reconciler writes the mirror as false and never touches the retired `isLocked`"
   );
   const freshCourse = fresh.__tables.course[0];
   ok(
@@ -540,6 +556,7 @@ function legacyLesson(topicId, overrides = {}) {
       officialCode: "9-9",
       curriculumStatus: "OFFICIAL",
       isPublished: false,
+      status: "DRAFT",
       title: "Stray",
     })
   );
@@ -657,23 +674,88 @@ function legacyLesson(topicId, overrides = {}) {
       ]),
     "lessonCoursesChainOr builds the multi-course dual-chain OR"
   );
+  // Phase 13: the universe clause is the LIFECYCLE state, not the mirror.
+  ok(
+    JSON.stringify(lifecycle.LESSON_STUDENT_STATUS_FILTER) ===
+      JSON.stringify(UNIVERSE),
+    "the student universe filter is exactly { status: \"PUBLISHED\" }"
+  );
+  ok(
+    /LESSON_STUDENT_STATUS_FILTER/.test(
+      fs.readFileSync(path.join(EMIT, "session-progress.js"), "utf8")
+    ),
+    "and the progression engine really applies it"
+  );
   // Simulate the progression-universe query over the reconciled legacy DB.
-  const universeRows = await legacy.lesson.findMany({
+  let universeRows = await legacy.lesson.findMany({
     where: {
-      isPublished: true,
+      ...lifecycle.LESSON_STUDENT_STATUS_FILTER,
       ...engine.EXCLUDE_ARCHIVED_LESSON,
       OR: engine.lessonCourseChainOr("course-r1"),
     },
   });
+  // Right after reconciliation the legacy database holds its 23 official rows at
+  // DRAFT, so the student universe is EMPTY — that is Phase 13's point (staging
+  // is not publishing), and it is the property the "invisible" check below pins.
+  ok(
+    universeRows.length === 0,
+    `a reconciled-but-unopened curriculum is invisible in the legacy DB too (got ${universeRows.length})`
+  );
+  for (const row of legacy.__tables.lesson) {
+    // Only rows the model actually owns: the stray `9-9` lesson above is
+    // OFFICIAL-tagged data, is warned about and left untouched, and must stay
+    // out of the universe (it is still DRAFT).
+    if (reconciler.OFFICIAL_LESSON_CODES.includes(row.officialCode)) {
+      row.status = "PUBLISHED";
+      row.isPublished = true;
+    }
+  }
+  const openedLegacyRows = await legacy.lesson.findMany({
+    where: {
+      ...lifecycle.LESSON_STUDENT_STATUS_FILTER,
+      ...engine.EXCLUDE_ARCHIVED_LESSON,
+      OR: engine.lessonCourseChainOr("course-r1"),
+    },
+  });
+  universeRows = openedLegacyRows;
   const universeCodes = universeRows.map((l) => l.officialCode).sort();
   ok(
     universeRows.length === 23,
-    `progression universe is exactly 23 lessons (got ${universeRows.length})`
+    `after the ceremony the universe is exactly 23 lessons (got ${universeRows.length})`
   );
   ok(
     JSON.stringify(universeCodes) ===
       JSON.stringify([...reconciler.OFFICIAL_LESSON_CODES].sort()),
     "progression universe is exactly the official code set"
+  );
+
+  // A freshly reconciled curriculum is staged, not published: the same query
+  // over the fresh database must find nothing until the ceremony opens it.
+  const stagedUniverse = await fresh.lesson.findMany({
+    where: {
+      ...lifecycle.LESSON_STUDENT_STATUS_FILTER,
+      ...engine.EXCLUDE_ARCHIVED_LESSON,
+      OR: engine.lessonCourseChainOr(freshCourse.id),
+    },
+  });
+  ok(
+    stagedUniverse.length === 0,
+    `a reconciled-but-unopened curriculum is invisible to students (got ${stagedUniverse.length})`
+  );
+  for (const row of fresh.__tables.lesson) {
+    row.status = "PUBLISHED";
+    row.isPublished = true;
+  }
+  const openedUniverse = await fresh.lesson.findMany({
+    where: {
+      ...lifecycle.LESSON_STUDENT_STATUS_FILTER,
+      ...engine.EXCLUDE_ARCHIVED_LESSON,
+      OR: engine.lessonCourseChainOr(freshCourse.id),
+    },
+  });
+  ok(
+    openedUniverse.length === 23,
+    `opening all 23 makes the same universe complete (got ${openedUniverse.length})`
   );
 
   console.log(`\ncurriculum reconciliation (phase 11): ${pass} passed, ${fail} failed`);

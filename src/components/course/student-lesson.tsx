@@ -53,7 +53,8 @@ type LessonView = {
     order: number;
     videoUrl: string | null;
     pdfUrl: string | null;
-    isLocked: boolean;
+    // Phase 13: `isLocked` removed — the retired column is no longer sent, and
+    // gating is decided by the server (`access.allowed`), never by the client.
   };
   part: { id: string; title: string; titleAr: string } | null;
   unit: { id: string; title: string; titleAr: string } | null;

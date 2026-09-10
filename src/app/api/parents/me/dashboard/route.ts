@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { getServerT, serverPick, serverLocale } from "@/lib/i18n-server";
 import { db } from "@/lib/db";
+import { LESSON_STUDENT_STATUS_FILTER } from "@/lib/session-lifecycle";
 import { ok, err, requireUser, getParentProfile } from "@/lib/api";
 import type { ParentSubscriptionPayload } from "@/lib/parent-subscription";
 import { getVideoProgressForStudents } from "@/lib/progress";
@@ -59,7 +60,10 @@ export async function GET(_req: NextRequest) {
       // history can neither inflate the average nor push it past 100%.
       const universeLessonRows = await db.lesson.findMany({
         where: {
-          isPublished: true,
+          // Phase 13: `status = PUBLISHED` replaces the legacy flag here too.
+          // Unpublished sessions are neither counted in the child's progress
+          // nor named anywhere on the parent screen.
+          ...LESSON_STUDENT_STATUS_FILTER,
           ...EXCLUDE_ARCHIVED_LESSON,
           ...childTrack,
           OR: lessonCourseChainOr(student.group?.courseId || ""),
@@ -244,9 +248,17 @@ export async function GET(_req: NextRequest) {
       const allHomeworks = await db.homework.findMany({
         // Phase 12: the parent must not be shown assignments from the other
         // school type — this list returns titles, so it is a content surface.
+        // Phase 13 adds the lifecycle clause for the same reason: the
+        // assignment of a session that has not been opened is not a title the
+        // parent may read. The legacy-chain `lesson:` filter below is left
+        // exactly as it was (its chain limitation is a documented Phase 12
+        // limitation, not a lifecycle matter).
         where: {
           ...childTrack,
-          lesson: { topic: { unit: { part: { courseId: student.group?.courseId || "" } } } },
+          lesson: {
+            ...LESSON_STUDENT_STATUS_FILTER,
+            topic: { unit: { part: { courseId: student.group?.courseId || "" } } },
+          },
         },
         select: { id: true, title: true, titleAr: true, deadline: true, maxMarks: true },
       });

@@ -251,13 +251,43 @@ model Lesson {
   /// not a second curriculum: officialCode stays UNIQUE, so a track-specific
   /// lesson can never create a duplicate official row.
   trackScope    TrackScope       @default(SHARED)
+  /// Phase 13 — THE administrative lifecycle of the session and the ONLY
+  /// lifecycle source of truth. `DRAFT → READY → PUBLISHED` is an editorial
+  /// chain owned by the admin OPEN ceremony
+  /// (`src/lib/session-lifecycle.ts`, `POST /api/admin/lessons/[id]/open`);
+  /// it is ORTHOGONAL to student progression (LOCKED/UNLOCKED/COMPLETED is
+  /// derived per student by `src/lib/session-progress.ts` and is never
+  /// stored here). `PUBLISHED` = eligible for the student curriculum
+  /// universe; it does NOT mean unlocked, completed, or prerequisite-free.
+  /// `DRAFT`/`READY` are admin-visible only: they never enter the student
+  /// universe, the course tree, prev/next, dashboards or reports.
+  /// Read the phase doc before changing any of this:
+  /// `docs/PHASE_13_SESSION_LIFECYCLE.md`.
+  status        LessonStatus     @default(DRAFT)
   title         String
   titleAr       String
   order         Int
   description   String?
   summary       String?
   duration      Int              @default(90)
+  /// DEPRECATED (Phase 13) — inert legacy metadata, never revived. Lock
+  /// state is DERIVED from progression (`unlocked = eligibility`), so this
+  /// column is not read by any authorization, progression or visibility
+  /// path and must never be used as one. Not written by the reconciler or by
+  /// the lifecycle module any more. Drop it once no external consumer
+  /// (raw SQL, exports) references it.
   isLocked      Boolean          @default(false)
+  /// DEPRECATED (Phase 13) — read-only compatibility mirror of
+  /// `status == PUBLISHED`, kept in sync by `src/lib/session-lifecycle.ts`,
+  /// which is its ONLY writer. Nothing derives lifecycle behaviour from it
+  /// any more: every former reader (progression universe, course tree,
+  /// prev/next, dashboards, parent reports, reconciler) now reads `status`.
+  /// It exists so external/legacy consumers and raw SQL keep working until a
+  /// later phase drops the column; see `docs/PHASE_13_SESSION_LIFECYCLE.md`
+  /// §"isPublished". Its historical `true` column default is INERT (kept so
+  /// the column DDL needs no rebuild): every write path sets the mirror from
+  /// `src/lib/session-lifecycle.ts`, and a lesson with no lifecycle write is
+  /// DRAFT because `status` defaults to DRAFT at the database level.
   isPublished   Boolean          @default(true)
   videoUrl      String?
   pdfUrl        String?
@@ -274,9 +304,56 @@ model Lesson {
   sessions      LiveSession[]
   quizzes       Quiz[]
   sessionVideos SessionVideo[]
+  /// Phase 13 — the publication anchor of the OPEN ceremony (idempotency +
+  /// the state Phase 17 notification fan-out consumes). Optional: a lesson
+  /// that has never been opened through the ceremony has none.
+  publication   SessionPublication?
 
   @@index([topicId])
   @@index([unitId, order])
+  @@index([status])
+}
+
+/// Phase 13 — the publication anchor of the OPEN ceremony.
+///
+/// WHY THIS TABLE EXISTS (and why nothing bigger does)
+///   Lesson.status is the lifecycle source of truth and is itself enough to
+///   make `POST /api/admin/lessons/[id]/open` idempotent. This row adds the
+///   two things `status` cannot express:
+///     1. WHICH curriculum segment was opened, and when — `lessonId` is
+///        UNIQUE, which is the database-level idempotency key the roadmap asks
+///        for as `(lessonId, segment)`; it collapses to `(lessonId)` on purpose
+///        (see `segment` below), so a retried ceremony can never create a
+///        second publication of the same lesson;
+///     2. the state Phase 17's notification fan-out must consume (and
+///        deduplicate against). Phase 13 deliberately writes NO
+///        notifications and has no `notifiedAt`/`notifiedCount` column —
+///        Phase 17 adds its own claim state instead of Phase 13 guessing at it.
+///   Every other lifecycle *event* (stage, unpublish, refusal) is recorded in
+///   the platform's existing `AuditLog`, so there is no second event table.
+///
+/// A row here means "this lesson was opened through the ceremony". Backfilled
+/// PUBLISHED rows (Phase 13 migration) deliberately have no row: their
+/// publication predates the ceremony and no honest timestamp exists for them.
+model SessionPublication {
+  id                String     @id @default(cuid())
+  /// The lesson this publication belongs to — and the idempotency key. One row
+  /// per lesson because publication is a LESSON-level decision: the roadmap's
+  /// `(lessonId, segment)` key deliberately collapses to `(lessonId)`, because
+  /// a per-segment key would be the first per-track publication state
+  /// (`PUBLISHED_ARABIC` vs `PUBLISHED_LANGUAGE`) and Phase 13 forbids one.
+  lessonId          String     @unique
+  /// The lesson's trackScope at publication time — recorded for audit and for
+  /// Phase 17's targeting, NOT a second lifecycle dimension. `status` stays
+  /// the only thing that decides visibility; `segment` never gates access.
+  segment           TrackScope @default(SHARED)
+  publishedAt       DateTime   @default(now())
+  /// Cuid of the admin User who performed the ceremony. A plain column, NOT a
+  /// relation: deleting a user must never rewrite curriculum history.
+  publishedByUserId String?
+  lesson            Lesson     @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@index([publishedAt])
 }
 
 model Group {
@@ -955,6 +1032,15 @@ model QuizAttemptEvidence {
 
   @@index([attemptId, capturedAt])
   @@index([retainUntil])
+}
+
+/// Phase 13 — the administrative lifecycle of a Lesson. Independent from
+/// student progression: `PUBLISHED` + LOCKED is a normal, expected state
+/// (a session that is in the curriculum but whose prerequisites are not met).
+enum LessonStatus {
+  DRAFT
+  READY
+  PUBLISHED
 }
 
 enum CurriculumStatus {

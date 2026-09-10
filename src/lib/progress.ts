@@ -8,6 +8,7 @@
 // of students) — no N+1 loops, no "fetch everything then filter in JS".
 
 import { db } from "@/lib/db";
+import { LESSON_STUDENT_STATUS_FILTER } from "@/lib/session-lifecycle";
 
 /** Minimum watched share of a video before it counts as completed. */
 export const VIDEO_COMPLETION_THRESHOLD = 95;
@@ -64,9 +65,14 @@ async function videoLessonIdsByStudent(
   // predicate as lessonCoursesChainOr + EXCLUDE_ARCHIVED_LESSON in
   // session-progress.ts, kept inline to avoid a progress ↔ session-progress
   // import cycle (that module imports VIDEO_COMPLETION_THRESHOLD from here).
+  // Phase 13: `status: "PUBLISHED"` replaces the legacy `isPublished` flag as
+  // the lifecycle clause (the same predicate the progression universe uses).
+  // A staged (DRAFT/READY) lesson is not a video a student is measured on, so
+  // counting it would inflate the denominator of every dashboard, report and
+  // certificate that reads through this helper.
   const lessons = await db.lesson.findMany({
     where: {
-      isPublished: true,
+      ...LESSON_STUDENT_STATUS_FILTER,
       curriculumStatus: { not: "ARCHIVED" },
       videoUrl: { not: null },
       OR: [

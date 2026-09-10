@@ -133,11 +133,11 @@ function world() {
     lessons: {
       // L-SHARED / L-AR / L-LANG all hang off the same Unit of the same course,
       // with L-SHARED first so progression order is deterministic.
-      "L-SHARED": { id: "L-SHARED", order: 1, trackScope: "SHARED", isPublished: true, curriculumStatus: "OFFICIAL", videoUrl: null, unitId: "U1", topicId: null, unit: { id: "U1", order: 1, part: { id: "P1", order: 1, courseId: COURSE } }, topic: null, quizzes: [], homeworks: [] },
-      "L-AR": { id: "L-AR", order: 2, trackScope: "ARABIC", isPublished: true, curriculumStatus: "OFFICIAL", videoUrl: null, unitId: "U1", topicId: null, unit: { id: "U1", order: 1, part: { id: "P1", order: 1, courseId: COURSE } }, topic: null, quizzes: [], homeworks: [] },
-      "L-LANG": { id: "L-LANG", order: 3, trackScope: "LANGUAGE", isPublished: true, curriculumStatus: "OFFICIAL", videoUrl: null, unitId: "U1", topicId: null, unit: { id: "U1", order: 1, part: { id: "P1", order: 1, courseId: COURSE } }, topic: null, quizzes: [], homeworks: [] },
+      "L-SHARED": { id: "L-SHARED", order: 1, trackScope: "SHARED", isPublished: true, status: "PUBLISHED", curriculumStatus: "OFFICIAL", videoUrl: null, unitId: "U1", topicId: null, unit: { id: "U1", order: 1, part: { id: "P1", order: 1, courseId: COURSE } }, topic: null, quizzes: [], homeworks: [] },
+      "L-AR": { id: "L-AR", order: 2, trackScope: "ARABIC", isPublished: true, status: "PUBLISHED", curriculumStatus: "OFFICIAL", videoUrl: null, unitId: "U1", topicId: null, unit: { id: "U1", order: 1, part: { id: "P1", order: 1, courseId: COURSE } }, topic: null, quizzes: [], homeworks: [] },
+      "L-LANG": { id: "L-LANG", order: 3, trackScope: "LANGUAGE", isPublished: true, status: "PUBLISHED", curriculumStatus: "OFFICIAL", videoUrl: null, unitId: "U1", topicId: null, unit: { id: "U1", order: 1, part: { id: "P1", order: 1, courseId: COURSE } }, topic: null, quizzes: [], homeworks: [] },
       // A SHARED lesson in the OTHER course — for course isolation.
-      "L-OTHER": { id: "L-OTHER", order: 1, trackScope: "SHARED", isPublished: true, curriculumStatus: "OFFICIAL", videoUrl: null, unitId: "U9", topicId: null, unit: { id: "U9", order: 1, part: { id: "P9", order: 1, courseId: OTHER_COURSE } }, topic: null, quizzes: [], homeworks: [] },
+      "L-OTHER": { id: "L-OTHER", order: 1, trackScope: "SHARED", isPublished: true, status: "PUBLISHED", curriculumStatus: "OFFICIAL", videoUrl: null, unitId: "U9", topicId: null, unit: { id: "U9", order: 1, part: { id: "P9", order: 1, courseId: OTHER_COURSE } }, topic: null, quizzes: [], homeworks: [] },
     },
     quizzes: {
       "Q-SHARED": { id: "Q-SHARED", lessonId: "L-SHARED", trackScope: "SHARED" },
@@ -971,7 +971,22 @@ async function main() {
   const lessonRoute = read("src/app/api/lessons/[id]/route.ts");
   ok(/viewerTrackFilter/.test(lessonRoute), "lessons/[id] computes a viewer track slice");
   ok((lessonRoute.match(/\.\.\.viewerTrackFilter/g) || []).length >= 3, "lessons/[id] filters quizzes, homework AND prev/next");
-  ok(/isParentAllowedTrackScope/.test(lessonRoute), "lessons/[id] gates parent preview by the child's track");
+  // Phase 13 retargets this pin: the parent preview gate in this route is now
+  // the COMBINED helper (lifecycle + the child's track + the child's course),
+  // which is how the Phase 12 finding "a parent can preview an unpublished
+  // lesson" was closed. The track dimension is asserted through the helper it
+  // now delegates to, so the original guarantee is still pinned — and the
+  // lifecycle dimension is pinned too (see tests/session-lifecycle-phase13).
+  ok(
+    /await isParentLessonPreviewAllowed\(\s*user\.id,\s*\{[^}]*status[^}]*trackScope[^}]*\},\s*(lesson\.courseId|chainCourse\?\.id)/.test(
+      lessonRoute
+    ),
+    "lessons/[id] gates parent preview by the child's track (and now by lifecycle too)"
+  );
+  ok(
+    !/isParentAuthorizedForCourse\(user\.id, lesson\.courseId\)/.test(lessonRoute),
+    "lessons/[id] no longer re-implements the parent check inline"
+  );
 
   const quizRoute = read("src/app/api/quizzes/[id]/route.ts");
   ok(/isQuestionEligible/.test(quizRoute), "quizzes/[id] filters the served questions by track");
