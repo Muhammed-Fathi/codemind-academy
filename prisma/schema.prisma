@@ -326,9 +326,11 @@ model Lesson {
 ///        (see `segment` below), so a retried ceremony can never create a
 ///        second publication of the same lesson;
 ///     2. the state Phase 17's notification fan-out must consume (and
-///        deduplicate against). Phase 13 deliberately writes NO
-///        notifications and has no `notifiedAt`/`notifiedCount` column —
-///        Phase 17 adds its own claim state instead of Phase 13 guessing at it.
+///        deduplicate against). Phase 13 deliberately wrote NO notifications
+///        and no counters; Phase 17 (migration
+///        20260911000000_phase17_session_notifications) then added the
+///        `notifiedCount`/`notifiedAt` delivery counters below, maintained
+///        only by `src/lib/session-notifications.ts`.
 ///   Every other lifecycle *event* (stage, unpublish, refusal) is recorded in
 ///   the platform's existing `AuditLog`, so there is no second event table.
 ///
@@ -351,6 +353,17 @@ model SessionPublication {
   /// Cuid of the admin User who performed the ceremony. A plain column, NOT a
   /// relation: deleting a user must never rewrite curriculum history.
   publishedByUserId String?
+  /// Phase 17: rows of the NEW_LESSON publication notification this anchor has
+  /// delivered so far — the DB-truth cumulative count maintained by the
+  /// fan-out in src/lib/session-notifications.ts. Capped by the number of
+  /// DISTINCT users ever eligible (the per-user dedupe is (type, link) so the
+  /// count can never exceed one row per user per publication, and a retry
+  /// either grows it toward the eligible set or leaves it unchanged).
+  notifiedCount     Int        @default(0)
+  /// Phase 17: timestamp of the most recent fan-out run that delivered at
+  /// least one row. NULL means no delivery has happened yet (the published
+  /// state itself is real regardless — see Lesson.status).
+  notifiedAt        DateTime?
   lesson            Lesson     @relation(fields: [lessonId], references: [id], onDelete: Cascade)
 
   @@index([publishedAt])

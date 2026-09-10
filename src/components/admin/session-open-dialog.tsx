@@ -55,7 +55,42 @@ type CeremonyResponse = {
   message: string;
   readiness: LessonReadinessSnapshot | null;
   publication: { id: string; segment: string; publishedAt: string } | null;
+  /** Phase 17 — the delivery half of the outcome (null when the ceremony
+   * produced no live publication). Never read to judge PUBLICATION success. */
+  notification: {
+    ok: boolean;
+    code: string;
+    eligible: number;
+    delivered: number;
+    alreadyNotified: number;
+    skippedPreference: number;
+    skippedQuietHours: number;
+    failedChunks: number[];
+    message: string;
+  } | null;
 };
+
+/** Phase 17 — the Open-dialog confirmation numbers (server-derived,
+ *  preference-aware: `pending` is what a run would insert RIGHT NOW). */
+type RecipientsPreview = {
+  eligible: number;
+  alreadyNotified: number;
+  pending: number;
+  deliverableNow: number;
+  skippedPreferenceNow: number;
+  skippedQuietHoursNow: number;
+  notifiedCount: number;
+  publication: { id: string; segment: string; publishedAt: string } | null;
+};
+
+async function fetchRecipientsPreview(
+  lessonId: string
+): Promise<RecipientsPreview | null> {
+  const res = await fetchJson<RecipientsPreview>(
+    `/api/admin/lessons/${encodeURIComponent(lessonId)}/recipients`
+  );
+  return res.ok ? res.data : null;
+}
 
 function segmentLabelKey(scope: string): string {
   const s = String(scope || "").toUpperCase();
@@ -102,11 +137,35 @@ export function OpenSessionDialog({
   const [liveReadiness, setLiveReadiness] = React.useState<LessonReadinessSnapshot>(
     detail.readiness
   );
+  // Phase 17 — the server-derived recipient preview. `null` = not loaded,
+  // "error" = the preview endpoint refused; the ceremony remains the judge
+  // either way (the preview never gates the Open button).
+  const [preview, setPreview] = React.useState<RecipientsPreview | null | "error">(null);
   const [wasOpen, setWasOpen] = React.useState(open);
   if (open !== wasOpen) {
     setWasOpen(open);
-    if (open) setLiveReadiness(detail.readiness);
+    if (open) {
+      setLiveReadiness(detail.readiness);
+      // Reset on the closed→open transition together with the checklist
+      // (render-time adjustment — never a synchronous setState-in-effect).
+      setPreview(null);
+    }
   }
+
+  React.useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    fetchRecipientsPreview(detail.id)
+      .then((data) => {
+        if (alive) setPreview(data ?? "error");
+      })
+      .catch(() => {
+        if (alive) setPreview("error");
+      });
+    return () => {
+      alive = false;
+    };
+  }, [open, detail.id]);
 
   const confirm = async () => {
     if (confirming) return;
@@ -114,11 +173,33 @@ export function OpenSessionDialog({
     try {
       const res = await runCeremony(detail.id, "open");
       if (res.ok) {
+        // Phase 17 — the delivery half of the outcome. Publication success
+        // was already decided by the ceremony; these toasts report WHO got
+        // the NEW_LESSON row and any suppressed/partial remainder.
+        const n = res.data.notification;
         if (res.data.code === "NO_OP_ALREADY_IN_STATE") {
           // Idempotent replay: nothing was published by THIS call — say so.
           toast.info(tr("admin.392"));
+          if (n && n.code === "ALREADY_DELIVERED") {
+            toast.info(tr("admin.501"));
+          } else if (n && n.delivered > 0) {
+            toast.success(tr("admin.498", { p1: n.delivered }));
+          }
+        } else if (n && n.delivered > 0) {
+          toast.success(tr("admin.498", { p1: n.delivered }));
         } else {
           toast.success(tr("admin.391"));
+        }
+        if (n && n.code === "EMITTED_PARTIAL") {
+          // Partial delivery: the publication is LIVE (say so explicitly) and
+          // retrying the same Open is the documented resume path. Keep the
+          // dialog open so the operator can re-confirm immediately.
+          toast.error(tr("admin.500", { p1: n.delivered, p2: n.delivered + Math.max(0, previewNotNull(preview)?.pending ?? 0) }));
+          onDone();
+          return;
+        }
+        if (n && (n.skippedPreference > 0 || n.skippedQuietHours > 0)) {
+          toast.info(tr("admin.499", { p1: n.skippedPreference, p2: n.skippedQuietHours }));
         }
         onOpenChange(false);
         onDone();
@@ -170,6 +251,46 @@ export function OpenSessionDialog({
               <div className="text-xs font-semibold text-muted-foreground">{tr("admin.400")}</div>
               <p className="mt-1 text-sm">{tr("admin.401")}</p>
             </div>
+            {/* Phase 17 — server-derived recipient preview: the SAME
+                derivation the fan-out delivers to (course × trackScope ×
+                active), rendered read-only. Never gates the ceremony. */}
+            <div className="rounded-lg border p-3" data-testid="open-recipients-preview">
+              <div className="text-xs font-semibold text-muted-foreground">
+                {tr("admin.494")}
+              </div>
+              {preview === null ? (
+                <p className="mt-1 text-sm text-muted-foreground">{tr("admin.502")}</p>
+              ) : preview === "error" ? (
+                <p className="mt-1 text-sm text-muted-foreground">{tr("admin.505")}</p>
+              ) : (
+                <div className="mt-1.5 grid gap-1.5 text-sm sm:grid-cols-3">
+                  <div>
+                    <div className="text-xs text-muted-foreground">{tr("admin.399")}</div>
+                    <div className="font-semibold">
+                      {preview.eligible === 0
+                        ? tr("admin.496")
+                        : tr("admin.495", { p1: preview.eligible })}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground">{tr("admin.503", { p1: preview.pending })}</div>
+                    <div className="font-semibold">
+                      {tr("admin.497", { p1: preview.alreadyNotified })}
+                    </div>
+                    {preview.skippedPreferenceNow + preview.skippedQuietHoursNow > 0 && (
+                      <div className="text-[11px] text-muted-foreground mt-0.5">
+                        {tr("admin.499", { p1: preview.skippedPreferenceNow, p2: preview.skippedQuietHoursNow })}
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground">
+                      {tr("admin.504", { p1: preview.notifiedCount })}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
             <div>
               <div className="mb-1.5 text-xs font-semibold text-muted-foreground">
                 {tr("admin.384")}
@@ -195,6 +316,13 @@ export function OpenSessionDialog({
 function DetailTitle(detail: AdminSessionDetail): string {
   const name = pickAuto(detail.titleAr, detail.title);
   return detail.officialCode ? `${detail.officialCode} · ${name}` : name;
+}
+
+/** Narrow the tri-state preview for arithmetic (presentation only). */
+function previewNotNull(
+  preview: RecipientsPreview | null | "error"
+): RecipientsPreview | null {
+  return preview && preview !== "error" ? preview : null;
 }
 
 // ---------------------------------------------------------------------------

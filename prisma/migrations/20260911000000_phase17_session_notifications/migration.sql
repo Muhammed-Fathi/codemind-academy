@@ -1,0 +1,44 @@
+-- CodeMind Academy — Migration: Phase 17 Session Notifications
+-- Date: 2026-09-11
+-- Tables touched: SessionPublication (two new columns; no rebuild)
+--
+-- WHAT THIS DOES
+--   Adds the two publication-delivery counters Phase 17's targeted
+--   notification fan-out maintains on the Phase 13 publication anchor:
+--     1. `notifiedCount` — the cumulative number of NEW_LESSON notification
+--        rows this publication has delivered (the operational "how far did
+--        the fan-out get" signal).
+--     2. `notifiedAt`   — when the most recent delivering fan-out ran. NULL
+--        means the session is published but has never produced a delivered
+--        notification row (first OPEN before fan-out, or a publication with
+--        no eligible recipients).
+--
+-- SAFETY
+--   * PURELY ADDITIVE. SQLite supports `ADD COLUMN ... NOT NULL DEFAULT`
+--     directly, so this needs NO table rebuild, NO row copy and NO DROP. No
+--     row is deleted, no column is dropped or retyped, and no historical
+--     migration is edited.
+--   * Every pre-existing SessionPublication row keeps its id, its relation
+--     and all Phase 13 columns verbatim; `notifiedCount` starts at 0 and
+--     `notifiedAt` at NULL, which is the honest state: those publications
+--     happened before the fan-out existed and have delivered nothing.
+--   * Both columns are written ONLY by src/lib/session-notifications.ts.
+--     There is no code path that edits them by hand.
+--
+-- IDEMPOTENCY NOTE
+--   Re-creating a database from base + all migrations applies these ALTERs
+--   exactly once (the _prisma_migrations ledger governs). Within a statement
+--   there is nothing to guard: ADD COLUMN either succeeds (column absent) or
+--   fails the migration (column present), which is the correct signal.
+--
+-- Post-migration invariants (asserted externally in
+-- tests/session-notifications-phase17.test.js and scripts/verify-phase17-
+-- notifications.mjs):
+--   * PRAGMA table_info("SessionPublication") contains notifiedCount INTEGER
+--     NOT NULL DEFAULT 0 and notifiedAt DATETIME (nullable);
+--   * every pre-existing publication row reads notifiedCount = 0,
+--     notifiedAt = NULL;
+--   * row count of SessionPublication identical before and after.
+
+ALTER TABLE "SessionPublication" ADD COLUMN "notifiedCount" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "SessionPublication" ADD COLUMN "notifiedAt" DATETIME;
