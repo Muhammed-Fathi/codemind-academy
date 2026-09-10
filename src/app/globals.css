@@ -1442,4 +1442,6 @@
   .kodgy-ember { opacity: 0; }
   .kodgy-thinking-dot { opacity: 0.6; }
   .kodgy-status-dot { opacity: 1; }
+  .kodgy-panel { backdrop-filter: none !important; background-color: var(--background) !important; }
+  .kodgy-anchor { transition: none !important; }
 }

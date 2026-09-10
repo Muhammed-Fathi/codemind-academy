@@ -104,10 +104,14 @@ export function KodgyAssistant() {
 
   const reducedMotion = useReducedMotion();
 
-  // Hide on public surfaces only — same rule as the previous assistant
-  // (landing/login/register have no auth context).
-  const hideOn = ["landing", "login", "register"];
-  const shouldHide = !user || hideOn.includes(view);
+  // Hide Kodgy on auth-only surfaces (login, register). It remains visible
+  // on the public landing page for guests, while still being available to
+  // authenticated users on their respective dashboards.
+  const hideOn = ["login", "register"];
+  // Show Kodgy when: user is authenticated, OR the view is not a restricted
+  // auth surface.  Guests on the landing page can see and use the assistant
+  // within the anonymous capability of the scripted engine.
+  const shouldHide = hideOn.includes(view);
 
   // Re-anchor on locale change: x is measured from the locale-default edge
   // (Arabic → LEFT, English → RIGHT), so switching language moves Kodgy to
