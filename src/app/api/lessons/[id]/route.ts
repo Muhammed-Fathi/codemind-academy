@@ -327,6 +327,10 @@ export async function GET(
       id: lesson.id,
       title: lesson.title,
       titleAr: lesson.titleAr,
+      // Phase 16 — official session identity (1-1..7-3). Skeleton metadata,
+      // safe to serialise on every response of this route: reaching this
+      // point already passed the lifecycle / track / progression gates above.
+      officialCode: lesson.officialCode ?? null,
       description: lesson.description,
       summary: lesson.summary,
       duration: lesson.duration,

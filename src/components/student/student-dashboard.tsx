@@ -17,6 +17,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { useApp } from "@/lib/store";
+import { navigateDeepLink, parseDeepLink } from "@/lib/deep-link";
 import { brand } from "@/lib/brand";
 import { toast } from "sonner";
 import { GamificationPanel } from "@/components/student/gamification-panel";
@@ -1131,6 +1132,10 @@ function HomeworkView() {
   const t = useT();
   const setView = useApp((s) => s.setView);
   const setNavParam = useApp((s) => s.setNavParam);
+  // Phase 16 — deep-link landing: `homework:<id>` arrives here as navParam.
+  // The list is the authorized set, so highlighting a matching id cannot
+  // bypass anything — a foreign id simply matches nothing.
+  const navParam = useApp((s) => s.navParam);
   const [items, setItems] = React.useState<any[] | null>(null);
   const [loading, setLoading] = React.useState(true);
 
@@ -1146,6 +1151,13 @@ function HomeworkView() {
   React.useEffect(() => {
     reload();
   }, [reload]);
+
+  React.useEffect(() => {
+    if (!navParam || !items) return;
+    document
+      .getElementById(`homework-${navParam}`)
+      ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [navParam, items]);
 
   return (
     <div className="space-y-4">
@@ -1190,10 +1202,16 @@ function HomeworkView() {
                   const isSubmitted = sub?.status === "SUBMITTED";
                   const isLate = sub?.status === "LATE";
                   const isPending = !sub || sub?.status === "PENDING";
+                  const isTarget = navParam === h.id;
                   return (
                     <li
                       key={h.id}
-                      className="flex items-center gap-3 p-3 rounded-lg border border-border/60 hover:bg-muted/40 hover:border-primary/30 transition-all group"
+                      id={`homework-${h.id}`}
+                      className={`flex items-center gap-3 p-3 rounded-lg border transition-all group scroll-mt-2 ${
+                        isTarget
+                          ? "border-primary bg-primary/5"
+                          : "border-border/60 hover:bg-muted/40 hover:border-primary/30"
+                      }`}
                     >
                       <div className="grid place-items-center w-9 h-9 rounded-lg bg-amber-400/15 text-amber-500 shrink-0 group-hover:scale-105 transition-transform">
                         <FileText className="w-4 h-4" />
@@ -1311,6 +1329,25 @@ function NotificationsView() {
     toast.success(t("student.183"));
   };
 
+  // Phase 16 — safe deep links. A notification carrying a well-formed
+  // `lesson:|video:|quiz:|homework:` link gets an Open button; anything else
+  // (legacy `admin-*` strings, malformed links) renders no button at all.
+  // Navigation only picks the view — the view's own fetch re-authorizes
+  // server-side, so a stale link to unpublished content lands on the same
+  // locked / not-available state as opening it by hand.
+  const openNotification = async (n: { id: string; link?: unknown }) => {
+    const landed = navigateDeepLink(n.link, useApp.getState());
+    if (!landed) {
+      toast.error(t("student.248"));
+      return;
+    }
+    await fetch("/api/notifications", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: n.id }),
+    }).catch(() => {});
+  };
+
   return (
     <div className="space-y-4">
       <BackBar
@@ -1364,9 +1401,22 @@ function NotificationsView() {
                         {timeAgo(n.createdAt)}
                       </div>
                     </div>
-                    {!n.isRead && (
-                      <span className="w-2 h-2 rounded-full bg-primary mt-2" />
-                    )}
+                    <div className="flex flex-col items-end gap-1.5 shrink-0">
+                      {parseDeepLink(n.link) && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-xs"
+                          onClick={() => openNotification(n)}
+                        >
+                          {t("student.247")}
+                          <ChevronLeft className="w-3.5 h-3.5 flip-rtl" />
+                        </Button>
+                      )}
+                      {!n.isRead && (
+                        <span className="w-2 h-2 rounded-full bg-primary" />
+                      )}
+                    </div>
                   </li>
                 ))}
               </ul>

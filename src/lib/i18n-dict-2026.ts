@@ -99,6 +99,20 @@ export const DICT_2026: Record<string, DictEntry> = {
   "course.212": { ar: "مش مشترك في الكورس ده. كلّم الإدارة عشان يتفعّلك.", en: "You are not enrolled in this course. Contact the administration to get access." },
   "course.213": { ar: "مفيش كورس محدد.", en: "No course selected." },
 
+  // ---------------- Phase 16: locked curriculum skeleton + unified session ----------------
+  "course.214": { ar: "تسجيلات الحصة", en: "Session recordings" },
+  "course.215": { ar: "فيديوهات مسجلة مرتبطة بالحصة دي من مجموعتك", en: "Recorded videos from your batch linked to this session" },
+  "course.216": { ar: "شاهد التسجيل", en: "Watch recording" },
+  "course.217": { ar: "الحصة دي مش متاحة", en: "This session is not available" },
+  "course.218": { ar: "ممكن تكون اتشالت أو لسه متفتحتش ليك.", en: "It may have been removed or not published to you yet." },
+  "course.219": { ar: "ارجع للكورس", en: "Back to course" },
+  "course.220": { ar: "فيديو", en: "Video" },
+  "course.221": { ar: "ملف", en: "PDF" },
+  "course.222": { ar: "متطلب واحد ناقص", en: "One requirement left" },
+  "course.223": { ar: "خلّص اللي ناقص عشان الجلسة الجاية تتفتح", en: "Finish what is left so the next session unlocks" },
+  "course.224": { ar: "مش مطلوب", en: "Not required" },
+  "course.225": { ar: "ارجع للرئيسية", en: "Back to dashboard" },
+
   // ---------------- Quiz camera ----------------
   "quiz.200": { ar: "الكاميرا مطلوبة قبل بداية الاختبار", en: "Camera access is requested before the quiz" },
   "quiz.201": {
@@ -269,6 +283,10 @@ export const DICT_2026: Record<string, DictEntry> = {
   "student.244": { ar: "الشهر السابق", en: "Previous month" },
   "student.245": { ar: "الشهر التالي", en: "Next month" },
   "student.246": { ar: "اليوم", en: "Today" },
+
+  // ---------------- Phase 16: safe deep links ----------------
+  "student.247": { ar: "فتح", en: "Open" },
+  "student.248": { ar: "المحتوى ده مش متاح ليك دلوقتي", en: "This content is not available to you right now" },
 
   // Dashboard shell nav items that previously used bare English labels.
   // tr(label) returned the English string as-is in both locales (missing key),

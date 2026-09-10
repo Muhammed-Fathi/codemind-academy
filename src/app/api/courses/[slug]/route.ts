@@ -37,6 +37,8 @@ type LessonRow = {
   topicId: string | null;
   title: string;
   titleAr: string;
+  /** Phase 16 — official session identity (1-1..7-3). Part of the skeleton. */
+  officialCode: string | null;
   order: number;
   duration: number;
   videoUrl: string | null;
@@ -325,6 +327,17 @@ export async function GET(
     };
     materialOpts["legacyPdfUrl"] = legacyUrl;
     const materials = buildMaterialDescriptors(materialOpts);
+    // Phase 16 — presence is computed over the UNREDACTED descriptor list, so
+    // a PUBLISHED + LOCKED session can carry safe skeleton badges without
+    // exposing any location, id, or title. Only the count below leaves this
+    // mapper for locked rows; the descriptors themselves stay server-side.
+    const presenceOpts: Parameters<typeof buildMaterialDescriptors>[0] = {
+      materials: materialRows,
+      includeProtected: true,
+      eligibleScopes: viewerEligibleScopes,
+    };
+    presenceOpts["legacyPdfUrl"] = legacyUrl;
+    const downloadableCount = buildMaterialDescriptors(presenceOpts).length;
     const unlockedPdf =
       materials.find((m) => m.downloadUrl && !m.legacy)?.downloadUrl ??
       materials.find((m) => m.legacy)?.downloadUrl ??
@@ -333,6 +346,7 @@ export async function GET(
       id: lesson.id,
       title: lesson.title,
       titleAr: lesson.titleAr,
+      officialCode: lesson.officialCode ?? null,
       order: lesson.order,
       duration: lesson.duration,
       // Phase 13: the retired `isLocked` column is no longer serialised. The
@@ -344,9 +358,12 @@ export async function GET(
       // storageKey. Null for locked sessions — same redaction shape as Phase 4.
       pdfUrl: locked ? null : unlockedPdf,
       materials: locked ? [] : materials,
-      hasPdf:
-        !locked &&
-        (materials.length > 0 || (!!legacyUrl && legacyUrl !== "#")),
+      // Phase 16 — lock-independent presence. A PUBLISHED + LOCKED session
+      // shows its skeleton, and these flags ARE the skeleton. Booleans and a
+      // count only: no identities, no locations, no titles.
+      hasVideo: !!lesson.videoUrl,
+      hasPdf: downloadableCount > 0,
+      materialCount: downloadableCount,
       summary: locked ? null : lesson.summary,
       description: locked ? null : lesson.description,
       progress: locked ? 0 : lp?.progress || 0,

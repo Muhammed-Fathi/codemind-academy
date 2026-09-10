@@ -21,6 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { useApp } from "@/lib/store";
 import { CheckCircle2, PlayCircle, Video, Lock } from "lucide-react";
 
 type SessionVideo = {
@@ -40,29 +41,51 @@ const HEARTBEAT_MS = 15_000;
 
 export function StudentSessionVideosView() {
   const tr = useT();
+  // Phase 16 — deep-link landing: `video:<id>` arrives here as navParam. The
+  // list itself is the authorized set, so activating a matching id cannot
+  // bypass anything — a foreign id simply matches nothing and keeps the
+  // default selection.
+  const navParam = useApp((s) => s.navParam);
   const [videos, setVideos] = React.useState<SessionVideo[]>([]);
   const [isEnrolled, setIsEnrolled] = React.useState(true);
   const [loading, setLoading] = React.useState(true);
   const [activeId, setActiveId] = React.useState<string | null>(null);
+  const topRef = React.useRef<HTMLDivElement | null>(null);
 
   const load = React.useCallback(async () => {
     setLoading(true);
     try {
       const r = await fetch("/api/students/me/session-videos");
       const d = await r.json();
+      const list = (d.videos || []) as SessionVideo[];
       setIsEnrolled(d.isEnrolled !== false);
-      setVideos(d.videos || []);
-      setActiveId((prev) => prev || d.videos?.[0]?.id || null);
+      setVideos(list);
+      // A deep-linked id that exists in the authorized list becomes the
+      // active video. Unknown ids fall through to the default selection.
+      setActiveId((prev) =>
+        navParam && list.some((v) => v.id === navParam)
+          ? navParam
+          : prev || list[0]?.id || null
+      );
     } catch {
       setVideos([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [navParam]);
 
   React.useEffect(() => {
     load();
   }, [load]);
+
+  // Scroll the player into view after a deep-link landing. Scroll only — no
+  // state is set here.
+  React.useEffect(() => {
+    if (!navParam || videos.length === 0) return;
+    if (videos.some((v) => v.id === navParam)) {
+      topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [navParam, videos]);
 
   const active = videos.find((v) => v.id === activeId) || null;
 
@@ -93,7 +116,7 @@ export function StudentSessionVideosView() {
       animate={{ opacity: 1, y: 0 }}
       className="space-y-4"
     >
-      <div>
+      <div ref={topRef} className="scroll-mt-4">
         <h1 className="text-2xl font-bold text-gradient">{tr("admin.204")}</h1>
         <p className="text-xs text-muted-foreground">{tr("course.210")}</p>
       </div>

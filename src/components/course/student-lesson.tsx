@@ -36,17 +36,36 @@ import {
   Trash2,
   Loader2,
   Edit3,
+  Lock,
+  ListChecks,
+  Circle,
 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 
 // ============================================================
 // Types
 // ============================================================
+type SessionRequirement = {
+  required: boolean;
+  done: boolean;
+  value: number;
+};
+
+type SessionRequirements = {
+  completed: boolean;
+  unlocked: boolean;
+  video: SessionRequirement;
+  quiz: SessionRequirement;
+  assignment: SessionRequirement;
+};
+
 type LessonView = {
   lesson: {
     id: string;
     title: string;
     titleAr: string;
+    /** Phase 16 — official session identity (1-1..7-3). */
+    officialCode?: string | null;
     description: string | null;
     summary: string | null;
     duration: number;
@@ -104,6 +123,8 @@ type LessonView = {
     isCompleted: boolean;
     lastViewedAt: string | null;
   } | null;
+  /** Phase 16 — server-computed unlock requirements (video/quiz/assignment). */
+  requirements?: SessionRequirements | null;
   prevLessonId: string | null;
   nextLessonId: string | null;
 };
@@ -121,6 +142,13 @@ export function StudentLessonView() {
   const [data, setData] = React.useState<LessonView | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
+  // Phase 16 — the denial KIND is safe to surface (it reveals nothing about
+  // the session itself) and it decides which skeleton the page renders: a
+  // locked-session panel for gated sessions, a not-available panel for
+  // unpublished/foreign ids. No content is fetched or shown in either case.
+  const [errorKind, setErrorKind] = React.useState<
+    "locked" | "missing" | "denied" | "error"
+  >("error");
   const [completing, setCompleting] = React.useState(false);
   const [bookmarked, setBookmarked] = React.useState(false);
 
@@ -161,19 +189,39 @@ export function StudentLessonView() {
   const reload = React.useCallback(() => {
     if (!navParam) {
       setError(t("course.049"));
+      setErrorKind("error");
       setLoading(false);
       return;
     }
     setLoading(true);
     setError(null);
     fetch(`/api/lessons/${encodeURIComponent(navParam)}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("fail"))))
+      .then(async (r) => {
+        if (r.ok) return r.json();
+        const body = await r.json().catch(() => ({}));
+        return Promise.reject({
+          status: r.status,
+          code: (body as { code?: string } | null)?.code,
+        });
+      })
       .then((d) => setData(d))
-      .catch(() => {
-        setError(t("course.050"));
+      .catch((e: { status?: number; code?: string } | null) => {
+        if (e?.status === 403 && e?.code === "PREVIOUS_SESSION_INCOMPLETE") {
+          setErrorKind("locked");
+          setError(t("course.204"));
+        } else if (e?.status === 403) {
+          setErrorKind("denied");
+          setError(t("course.212"));
+        } else if (e?.status === 404) {
+          setErrorKind("missing");
+          setError(t("course.218"));
+        } else {
+          setErrorKind("error");
+          setError(t("course.050"));
+        }
       })
       .finally(() => setLoading(false));
-  }, [navParam]);
+  }, [navParam, t]);
 
   React.useEffect(() => {
     reload();
@@ -181,7 +229,49 @@ export function StudentLessonView() {
 
   if (loading) return <LessonSkeleton />;
 
-  if (error || !data)
+  if (error || !data) {
+    // Phase 16 — locked and missing sessions render distinct, content-free
+    // skeletons. Neither panel names the session (its title is unknown here
+    // by construction: the server refused the fetch), so a locked panel can
+    // never become an oracle for unpublished content.
+    if (errorKind === "locked" || errorKind === "missing") {
+      const locked = errorKind === "locked";
+      return (
+        <Card className="glass">
+          <CardContent className="flex flex-col items-center justify-center py-16 text-center px-6">
+            <div
+              className={`grid place-items-center w-14 h-14 rounded-full mb-4 ${
+                locked
+                  ? "bg-amber-400/15 text-amber-500"
+                  : "bg-muted text-muted-foreground"
+              }`}
+            >
+              {locked ? (
+                <Lock className="w-7 h-7" />
+              ) : (
+                <BookOpen className="w-7 h-7" />
+              )}
+            </div>
+            <p className="text-base font-bold mb-1">
+              {locked ? t("course.203") : t("course.217")}
+            </p>
+            <p className="text-sm text-muted-foreground max-w-md">
+              {error || t("course.051")}
+            </p>
+            <div className="flex flex-col sm:flex-row items-center gap-2 mt-5">
+              <Button
+                variant="outline"
+                onClick={() => setView("student-dashboard")}
+              >
+                <ArrowRight className="w-4 h-4 ms-1.5 flip-rtl" />
+                {t("course.225")}</Button>
+              <Button variant="ghost" onClick={reload}>
+                {t("course.036")}</Button>
+            </div>
+          </CardContent>
+        </Card>
+      );
+    }
     return (
       <Card className="glass">
         <CardContent className="flex flex-col items-center justify-center py-16 text-center">
@@ -198,6 +288,7 @@ export function StudentLessonView() {
         </CardContent>
       </Card>
     );
+  }
 
   const progressPct = data.progress?.progress || 0;
   const isCompleted = data.progress?.isCompleted || false;
@@ -291,7 +382,15 @@ export function StudentLessonView() {
               </p>
             )}
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 flex-wrap">
+            {data.lesson.officialCode && (
+              <Badge
+                variant="outline"
+                className="bg-primary/10 text-primary border-primary/30 tabular-nums"
+              >
+                {data.lesson.officialCode}
+              </Badge>
+            )}
             <Badge variant="outline" className="bg-muted/50">
               <Clock className="w-3 h-3 ms-1" />
               {data.lesson.duration} {t("course.056")}</Badge>
@@ -456,6 +555,9 @@ export function StudentLessonView() {
             </motion.div>
           )}
 
+          {/* Phase 16 — recordings linked to THIS session (unified page). */}
+          <LessonRecordingsSection lessonId={data.lesson.id} />
+
           {/* Mark complete */}
           <motion.div
             initial={{ opacity: 0, y: 12 }}
@@ -490,6 +592,50 @@ export function StudentLessonView() {
               </CardContent>
             </Card>
           </motion.div>
+
+          {/* Phase 16 — completion requirements. Server-computed
+              (`data.requirements` from the progression engine); the client
+              only renders the checklist, it never derives unlock state. */}
+          {data.requirements && (
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.17 }}
+            >
+              <Card className="glass">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <ListChecks className="w-5 h-5 text-primary" />
+                    {t("course.205")}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <RequirementRow
+                    label={t("course.206")}
+                    req={data.requirements.video}
+                    detail={
+                      data.requirements.video.required
+                        ? `${data.requirements.video.value}%`
+                        : undefined
+                    }
+                  />
+                  <RequirementRow
+                    label={t("course.207")}
+                    req={data.requirements.quiz}
+                  />
+                  <RequirementRow
+                    label={t("course.208")}
+                    req={data.requirements.assignment}
+                  />
+                  {!data.requirements.completed && (
+                    <p className="text-xs text-muted-foreground pt-1">
+                      {t("course.223")}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
 
           {/* Prev / Next */}
           <div className="flex items-center justify-between gap-2 pt-2">
@@ -668,6 +814,139 @@ export function StudentLessonView() {
         </div>
       </div>
     </div>
+  );
+}
+
+// ============================================================
+// Phase 16 — Requirement checklist row + linked recordings
+// ============================================================
+function RequirementRow({
+  label,
+  req,
+  detail,
+}: {
+  label: string;
+  req: SessionRequirement;
+  detail?: string;
+}) {
+  const t = useT();
+  return (
+    <div className="flex items-center gap-3 rounded-lg border border-border/60 px-3 py-2">
+      {req.done ? (
+        <CheckCircle2 className="w-4 h-4 text-primary shrink-0" />
+      ) : (
+        <Circle className="w-4 h-4 text-muted-foreground/40 shrink-0" />
+      )}
+      <span className="flex-1 min-w-0 text-sm">{label}</span>
+      {!req.required ? (
+        <Badge
+          variant="outline"
+          className="text-[10px] text-muted-foreground shrink-0"
+        >
+          {t("course.224")}
+        </Badge>
+      ) : detail ? (
+        <Badge variant="outline" className="text-[10px] tabular-nums shrink-0">
+          {detail}
+        </Badge>
+      ) : null}
+    </div>
+  );
+}
+
+type LinkedRecording = {
+  id: string;
+  title: string;
+  titleAr: string;
+  progress: { percent: number; isCompleted: boolean };
+};
+
+// The recordings linked to THIS session, fetched from the same authorized
+// endpoint as the recordings view and narrowed server-side by `?lessonId=` —
+// no second authorization path exists. Empty or failed renders nothing: an
+// unlinked session simply has no recordings block.
+function LessonRecordingsSection({ lessonId }: { lessonId: string }) {
+  const t = useT();
+  const setView = useApp((s) => s.setView);
+  const setNavParam = useApp((s) => s.setNavParam);
+  const [videos, setVideos] = React.useState<LinkedRecording[] | null>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    fetch(
+      `/api/students/me/session-videos?lessonId=${encodeURIComponent(lessonId)}`
+    )
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!cancelled) setVideos(d?.videos ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setVideos([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [lessonId]);
+
+  if (!videos || videos.length === 0) return null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, delay: 0.13 }}
+    >
+      <Card className="glass">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Video className="w-5 h-5 text-primary" />
+            {t("course.214")}
+          </CardTitle>
+          <CardDescription className="text-xs">
+            {t("course.215")}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {videos.map((v) => (
+            <div
+              key={v.id}
+              className="flex flex-col gap-2 rounded-lg border border-border/60 px-3 py-2.5 sm:flex-row sm:items-center sm:gap-3"
+            >
+              <div className="flex items-center gap-3 flex-1 min-w-0">
+                <div className="grid place-items-center w-9 h-9 rounded-lg bg-primary/10 text-primary shrink-0">
+                  {v.progress?.isCompleted ? (
+                    <CheckCircle2 className="w-4 h-4" />
+                  ) : (
+                    <PlayCircle className="w-4 h-4" />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-semibold truncate">
+                    {pickAuto(v.titleAr, v.title)}
+                  </div>
+                  <Progress
+                    value={v.progress?.percent ?? 0}
+                    className="mt-1 h-1"
+                  />
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="shrink-0 self-end sm:self-auto"
+                onClick={() => {
+                  setView("student-session-videos");
+                  setNavParam(v.id);
+                }}
+              >
+                <PlayCircle className="w-4 h-4 ms-1" />
+                {t("course.216")}
+              </Button>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+    </motion.div>
   );
 }
 

@@ -36,6 +36,7 @@ import {
   Clock,
   Layers,
   Sparkles,
+  Video,
 } from "lucide-react";
 
 // ============================================================
@@ -63,6 +64,12 @@ type LessonItem = {
   /** Presence only — the API never names a locked session's quiz/assignment. */
   hasQuiz?: boolean;
   hasAssignment?: boolean;
+  /** Phase 16 — official session identity (1-1..7-3), part of the skeleton. */
+  officialCode: string | null;
+  /** Phase 16 — lock-independent presence (badges without identities/URLs). */
+  hasVideo?: boolean;
+  hasPdf?: boolean;
+  materialCount?: number;
   quiz: { id: string; title: string; titleAr: string } | null;
   homework: { id: string; title: string; titleAr: string } | null;
 };
@@ -422,12 +429,38 @@ function LessonRow({ lesson }: { lesson: LessonItem }) {
         {StatusIcon}
       </div>
       <div className="flex-1 min-w-0 text-end">
-        <div className="text-sm font-medium truncate">
-          {lesson.order}. {pickAuto(lesson.titleAr, lesson.title)}
+        <div className="text-sm font-medium flex items-center gap-1.5">
+          {/* Phase 16 — session identity chip. Skeleton metadata: safe on
+              locked rows, because the API serialises it for every status. */}
+          {lesson.officialCode && (
+            <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold text-primary tabular-nums">
+              {lesson.officialCode}
+            </span>
+          )}
+          <span className="truncate min-w-0">
+            {lesson.order}. {pickAuto(lesson.titleAr, lesson.title)}
+          </span>
         </div>
-        <div className="text-[11px] text-muted-foreground flex items-center gap-2 mt-0.5">
-          <Clock className="w-3 h-3" />
-          {lesson.duration} {tr("course.045")}{(lesson.hasQuiz ?? !!lesson.quiz) && (
+        <div className="text-[11px] text-muted-foreground flex items-center gap-2 mt-0.5 flex-wrap">
+          <span className="flex items-center gap-1">
+            <Clock className="w-3 h-3" />
+            {lesson.duration} {tr("course.045")}</span>
+          {/* Phase 16 — lock-independent presence badges. The API sends
+              booleans and a count only: no URLs, no ids, no titles. */}
+          {lesson.hasVideo && (
+            <span className="flex items-center gap-0.5">
+              · <Video className="w-3 h-3" /> {tr("course.220")}
+            </span>
+          )}
+          {((lesson.materialCount ?? 0) > 0 || lesson.hasPdf) && (
+            <span className="flex items-center gap-0.5">
+              · <FileText className="w-3 h-3" /> {tr("course.221")}
+              {(lesson.materialCount ?? 0) > 1
+                ? ` ×${lesson.materialCount}`
+                : ""}
+            </span>
+          )}
+          {(lesson.hasQuiz ?? !!lesson.quiz) && (
             <span className="flex items-center gap-0.5">
               · <Trophy className="w-3 h-3" /> Quiz
             </span>
