@@ -4,7 +4,11 @@ import { ok, err, requireUser, getStudentProfile, denyProgression } from "@/lib/
 import { canAccessQuiz } from "@/lib/session-progress";
 import { getStudentSchoolType } from "@/lib/enrollment";
 import { canAccessTrackScope } from "@/lib/track-scope";
-import { loadAttemptQuestionSet, safeParseOptions } from "@/lib/session-quiz";
+import {
+  loadAttemptQuestionSet,
+  safeParseOptions,
+  timeLimitState,
+} from "@/lib/session-quiz";
 import { isQuestionEligible } from "@/lib/track-scope";
 import {
   isParentAllowedTrackScope,
@@ -100,6 +104,15 @@ export async function GET(
   let studentHasAttempted = false;
   let attemptQuestionIds: string[] | null = null;
   let studentSchoolType: SchoolType | null = null;
+  // Phase 18 — the server-computed window of the OPEN attempt (if any), so a
+  // reloaded page renders the SAME countdown instead of restarting one. Never
+  // derived from a client clock; `expiresAt` is null for untimed quizzes.
+  let attemptWindow: {
+    startedAt: Date;
+    expiresAt: Date | null;
+    remainingSeconds: number | null;
+    expired: boolean;
+  } | null = null;
   if (user.role === "STUDENT") {
     const s = await getStudentProfile(user.id);
     if (!s) return err("Student profile not found", 404);
@@ -135,6 +148,13 @@ export async function GET(
     if (open) {
       const set = await loadAttemptQuestionSet(open.id, schoolType);
       attemptQuestionIds = set.map((q) => q.questionId);
+      const limit = timeLimitState(open.startedAt, quiz.timeLimit);
+      attemptWindow = {
+        startedAt: open.startedAt,
+        expiresAt: limit.deadline,
+        remainingSeconds: limit.remainingSeconds,
+        expired: limit.expired,
+      };
     }
   }
 
@@ -171,6 +191,8 @@ export async function GET(
       description: quiz.description,
       passMark: quiz.passMark,
       timeLimit: quiz.timeLimit,
+      /** Phase 18 — the running attempt's server-authoritative window. */
+      attemptWindow,
     },
     lesson: quiz.lesson
       ? {

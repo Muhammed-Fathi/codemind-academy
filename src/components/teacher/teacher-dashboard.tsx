@@ -68,6 +68,22 @@ import {
 
 import { useApp, type ViewKey } from "@/lib/store";
 import { brand } from "@/lib/brand";
+import {
+  CurriculumBadge,
+  StatusBadge,
+  TrackScopeBadge,
+} from "@/components/admin/session-workflow-shared";
+import {
+  HomeworkDialog,
+  LessonMeta,
+  LessonPicker,
+  QuestionManagerDialog,
+  TrackSplitRow,
+  TRACK_INHERIT,
+  useTeacherLessons,
+  type TeacherLesson,
+  type TrackSummaryBucket,
+} from "@/components/teacher/teacher-authoring";
 
 import {
   LayoutDashboard,
@@ -261,9 +277,20 @@ type QuizListItem = {
   description: string | null;
   passMark: number;
   timeLimit: number | null;
+  /** Phase 18 — the quiz's own eligibility, as configured by the teacher. */
+  trackScope: string;
+  /** Phase 18 — Phase 6 summary cut by track (finished attempts only). */
+  trackSummary?: Record<string, TrackSummaryBucket>;
   lesson: {
     id: string;
     title: string;
+    officialCode?: string | null;
+    trackScope?: string;
+    status?: string;
+    curriculumStatus?: string;
+    chain?: string | null;
+    part?: { id: string; title: string } | null;
+    unit?: { id: string; title: string } | null;
     course: { id: string; name: string } | null;
   } | null;
   questionCount: number;
@@ -273,11 +300,7 @@ type QuizListItem = {
   passedCount: number;
 };
 
-type LessonNode = {
-  id: string;
-  title: string;
-  titleAr: string;
-};
+type LessonNode = TeacherLesson;
 type TopicNode = {
   id: string;
   title: string;
@@ -288,6 +311,8 @@ type UnitNode = {
   id: string;
   title: string;
   titleAr: string;
+  /** Phase 18 — unit-linked (official) lessons, directly under their unit. */
+  lessons: LessonNode[];
   topics: TopicNode[];
 };
 type PartNode = {
@@ -311,6 +336,12 @@ type QuestionDraft = {
   explanation: string;
   difficulty: "EASY" | "MEDIUM" | "HARD";
   marks: number;
+  /**
+   * Phase 18 — explicit per-question track tag. `""` (absent) means "inherit",
+   * which the API resolves through the Phase 12 precedence: explicit value →
+   * owning quiz's scope → SHARED. The UI never guesses it.
+   */
+  schoolType?: string;
 };
 
 type HomeworkSubmission = {
@@ -339,9 +370,18 @@ type HomeworkListItem = {
   deadline: string;
   maxMarks: number;
   createdAt: string;
+  /** Phase 18 — the assignment's own eligibility + edit guards. */
+  trackScope: string;
+  gradedCount?: number;
   lesson: {
     id: string;
     title: string;
+    officialCode?: string | null;
+    trackScope?: string;
+    status?: string;
+    curriculumStatus?: string;
+    part?: { id: string; title: string } | null;
+    unit?: { id: string; title: string } | null;
     course: { id: string; name: string } | null;
   } | null;
   stats: {
@@ -1429,14 +1469,10 @@ function QuizzesView() {
     },
   });
 
-  const lessonsQuery = useQuery<{ grouped: CourseNode[] }>({
-    queryKey: ["teacher-lessons"],
-    queryFn: async () => {
-      const r = await fetch("/api/teacher/lessons");
-      if (!r.ok) throw new Error("fail");
-      return (await r.json()) as { grouped: CourseNode[] };
-    },
-  });
+  // Phase 18 — the canonical lesson catalogue (officialCode + Part + Unit +
+  // trackScope + lifecycle). The picker reads the FLAT list; the grouped tree
+  // is kept for compatibility with the API contract.
+  const lessonsQuery = useTeacherLessons();
 
   const createMutation = useMutation({
     mutationFn: async (payload: {
@@ -1445,6 +1481,8 @@ function QuizzesView() {
       titleAr: string;
       description: string;
       passMark: number;
+      timeLimit: number | null;
+      trackScope: string;
       questions: QuestionDraft[];
     }) => {
       const r = await fetch("/api/teacher/quizzes", {
@@ -1568,7 +1606,7 @@ function QuizzesView() {
               {tr("teacher.066")}</DialogDescription>
           </DialogHeader>
           <QuizEditor
-            lessons={lessonsQuery.data?.grouped ?? []}
+            lessons={lessonsQuery.data?.lessons ?? []}
             lessonsLoading={lessonsQuery.isLoading}
             onSubmit={(payload) => createMutation.mutate(payload)}
             submitting={createMutation.isPending}
@@ -1582,6 +1620,7 @@ function QuizzesView() {
 function QuizCard({ quiz }: { quiz: QuizListItem }) {
   const tr = useT();
   const [expanded, setExpanded] = React.useState(false);
+  const [questionsOpen, setQuestionsOpen] = React.useState(false);
   return (
     <Card className="card-hover p-5">
       <div className="flex items-start justify-between gap-3">
@@ -1591,15 +1630,20 @@ function QuizCard({ quiz }: { quiz: QuizListItem }) {
             <h3 className="font-bold text-base truncate">{quiz.title}</h3>
           </div>
           <p className="text-xs text-muted-foreground mt-1 truncate">
+            {quiz.lesson?.officialCode ? `${quiz.lesson.officialCode} · ` : ""}
+            {quiz.lesson?.unit?.title ? `${quiz.lesson.unit.title} · ` : ""}
             {quiz.lesson?.title || "Lesson"}
             {quiz.lesson?.course ? ` · ${quiz.lesson.course.name}` : ""}
           </p>
         </div>
-        <Badge
-          variant="secondary"
-          className="bg-primary/10 text-primary border-0 shrink-0"
-        >
-          {quiz.attemptsCount} {tr("teacher.067")}</Badge>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <TrackScopeBadge scope={quiz.trackScope || "SHARED"} />
+          <Badge
+            variant="secondary"
+            className="bg-primary/10 text-primary border-0"
+          >
+            {quiz.attemptsCount} {tr("teacher.067")}</Badge>
+        </div>
       </div>
 
       <div className="mt-3 grid grid-cols-3 gap-2 text-center">
@@ -1631,6 +1675,9 @@ function QuizCard({ quiz }: { quiz: QuizListItem }) {
         </p>
       )}
 
+      {/* Phase 18 — the track cut of the SAME finished-attempt aggregate. */}
+      <TrackSplitRow split={quiz.trackSummary} />
+
       <div className="mt-3 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
           <Award className="w-3 h-3" />
@@ -1638,20 +1685,39 @@ function QuizCard({ quiz }: { quiz: QuizListItem }) {
             {tr("teacher.072")}{quiz.passedCount} / {quiz.attemptsCount} · Pass {quiz.passMark}%
           </span>
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="text-xs"
-          onClick={() => setExpanded((v) => !v)}
-        >
-          {expanded ? tr("teacher.073") : tr("teacher.074")}
-          <ChevronDown
-            className={`w-3.5 h-3.5 me-1 transition-transform ${
-              expanded ? "rotate-180" : ""
-            }`}
-          />
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-xs"
+            onClick={() => setQuestionsOpen(true)}
+          >
+            {tr("teacher.192")}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-xs"
+            onClick={() => setExpanded((v) => !v)}
+          >
+            {expanded ? tr("teacher.073") : tr("teacher.074")}
+            <ChevronDown
+              className={`w-3.5 h-3.5 me-1 transition-transform ${
+                expanded ? "rotate-180" : ""
+              }`}
+            />
+          </Button>
+        </div>
       </div>
+
+      {/* Phase 18 — question management (list / append / edit / delete), with
+          the server's frozen-attempt and FIXED-pin guards surfaced inline. */}
+      <QuestionManagerDialog
+        quizId={quiz.id}
+        quizTitle={quiz.title}
+        open={questionsOpen}
+        onOpenChange={setQuestionsOpen}
+      />
 
       <AnimatePresence>
         {expanded && (
@@ -1691,7 +1757,7 @@ function QuizEditor({
   onSubmit,
   submitting,
 }: {
-  lessons: CourseNode[];
+  lessons: TeacherLesson[];
   lessonsLoading: boolean;
   onSubmit: (payload: {
     lessonId: string;
@@ -1699,6 +1765,8 @@ function QuizEditor({
     titleAr: string;
     description: string;
     passMark: number;
+    timeLimit: number | null;
+    trackScope: string;
     questions: QuestionDraft[];
   }) => void;
   submitting: boolean;
@@ -1709,6 +1777,12 @@ function QuizEditor({
   const [titleAr, setTitleAr] = React.useState("");
   const [description, setDescription] = React.useState("");
   const [passMark, setPassMark] = React.useState(60);
+  // Phase 18 — both fields were accepted by the API and never sent by the UI.
+  // `timeLimit` is now enforced server-side, and `trackScope` is what decides
+  // whether the quiz is shared or track-specific.
+  const [timeLimit, setTimeLimit] = React.useState<string>("");
+  const [trackScope, setTrackScope] = React.useState(""); // "" = inherit the lesson
+  const selectedLesson = lessons.find((l) => l.id === lessonId) ?? null;
   const [questions, setQuestions] = React.useState<QuestionDraft[]>([
     {
       type: "MCQ",
@@ -1792,55 +1866,41 @@ function QuizEditor({
       titleAr: titleAr.trim() || title.trim(),
       description: description.trim(),
       passMark,
-      questions: normalized,
+      timeLimit: timeLimit.trim() === "" ? null : Number(timeLimit),
+      // "" means "let the server inherit the lesson's scope" — the client never
+      // substitutes a default, because guessing SHARED would widen a
+      // track-specific lesson's new content.
+      trackScope,
+      // Same rule for a question's own tag: an empty value is sent as ABSENT,
+      // so the server applies the documented Phase 12 inheritance instead of
+      // storing a default the teacher never chose.
+      questions: normalized.map((q) =>
+        q.schoolType ? q : { ...q, schoolType: undefined }
+      ),
     });
   };
 
   return (
     <div className="space-y-4 mt-2">
-      {/* Lesson selector */}
+      {/* Lesson selector — canonical (unit-linked) AND legacy lessons, with
+          officialCode / part / unit / trackScope / lifecycle on display. The
+          previous picker rendered `unit.topics[].lessons` only, so EVERY
+          official lesson was invisible in the dropdown and a quiz could not be
+          attached to the curriculum it belongs to. */}
       <div className="space-y-1.5">
         <Label className="text-xs text-muted-foreground">
-          Lesson <span className="text-destructive">*</span>
+          {tr("teacher.081")} <span className="text-destructive">*</span>
         </Label>
-        {lessonsLoading ? (
-          <Skeleton className="h-9 w-full" />
-        ) : (
-          <Select value={lessonId} onValueChange={setLessonId}>
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder={tr("teacher.081")} />
-            </SelectTrigger>
-            <SelectContent>
-              {lessons.map((c) => (
-                <SelectGroup key={c.id}>
-                  <SelectLabel className="font-bold text-primary">
-                    {c.name}
-                  </SelectLabel>
-                  {c.parts.map((p) => (
-                    <SelectGroup key={p.id}>
-                      <SelectLabel className="text-xs ps-3 opacity-80">
-                        {p.title}
-                      </SelectLabel>
-                      {p.units.map((u) =>
-                        u.topics.map((t) =>
-                          t.lessons.map((l) => (
-                            <SelectItem
-                              key={l.id}
-                              value={l.id}
-                              className="text-xs"
-                            >
-                              {t.title} · {l.title}
-                            </SelectItem>
-                          ))
-                        )
-                      )}
-                    </SelectGroup>
-                  ))}
-                </SelectGroup>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
+        <LessonPicker
+          lessons={lessons}
+          loading={lessonsLoading}
+          value={lessonId}
+          onChange={setLessonId}
+        />
+        {/* Placement of the chosen lesson (officialCode / part / unit / track /
+            lifecycle) so the teacher sees WHICH curriculum node they are
+            attaching the quiz to before they save it. */}
+        {selectedLesson && <LessonMeta lesson={selectedLesson} />}
       </div>
 
       {/* Title + titleAr */}
@@ -1876,7 +1936,7 @@ function QuizEditor({
         />
       </div>
 
-      <div className="grid sm:grid-cols-2 gap-3">
+      <div className="grid sm:grid-cols-3 gap-3">
         <div className="space-y-1.5">
           <Label className="text-xs text-muted-foreground">Pass Mark (%)</Label>
           <Input
@@ -1886,6 +1946,38 @@ function QuizEditor({
             value={passMark}
             onChange={(e) => setPassMark(Number(e.target.value) || 0)}
           />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">
+            {tr("teacher.175")}
+          </Label>
+          <Input
+            type="number"
+            min={1}
+            max={300}
+            value={timeLimit}
+            placeholder="—"
+            onChange={(e) => setTimeLimit(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">
+            {tr("teacher.173")}
+          </Label>
+          <Select
+            value={trackScope || TRACK_INHERIT}
+            onValueChange={(v) => setTrackScope(v === TRACK_INHERIT ? "" : v)}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={TRACK_INHERIT}>{tr("teacher.174")}</SelectItem>
+              <SelectItem value="SHARED">{tr("admin.349")}</SelectItem>
+              <SelectItem value="ARABIC">{tr("admin.350")}</SelectItem>
+              <SelectItem value="LANGUAGE">{tr("admin.351")}</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
@@ -2114,6 +2206,31 @@ function QuestionEditor({
         </div>
       )}
 
+      {/* Phase 18 — explicit per-question track tag. "Inherit" is the Phase 12
+          precedence (owning quiz's scope → SHARED); an explicit value must be
+          contained by the quiz's scope or the API refuses it. */}
+      <div className="space-y-1.5">
+        <Label className="text-[10px] text-muted-foreground">
+          {tr("teacher.203")}
+        </Label>
+        <Select
+          value={question.schoolType || TRACK_INHERIT}
+          onValueChange={(v) =>
+            onChange({ schoolType: v === TRACK_INHERIT ? "" : v })
+          }
+        >
+          <SelectTrigger size="sm" className="h-8 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={TRACK_INHERIT}>{tr("teacher.174")}</SelectItem>
+            <SelectItem value="SHARED">{tr("admin.349")}</SelectItem>
+            <SelectItem value="ARABIC">{tr("admin.350")}</SelectItem>
+            <SelectItem value="LANGUAGE">{tr("admin.351")}</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
       <div className="grid sm:grid-cols-3 gap-2">
         <div className="space-y-1.5">
           <Label className="text-[10px] text-muted-foreground">Difficulty</Label>
@@ -2191,6 +2308,14 @@ function HomeworkView() {
     maxMarks: number;
     submission?: HomeworkSubmission;
   } | null>(null);
+  // Phase 18 — create / edit. `null` = closed; `{ homework: null }` = create.
+  const [authoring, setAuthoring] = React.useState<{
+    homework: HomeworkListItem | null;
+  } | null>(null);
+
+  // The authoring dialog needs the canonical lesson catalogue (officialCode /
+  // Part / Unit / trackScope / lifecycle), exactly like the quiz editor.
+  const lessonsQuery = useTeacherLessons();
 
   const dashQuery = useQuery<DashboardPayload>({
     queryKey: ["teacher-dashboard"],
@@ -2274,6 +2399,36 @@ function HomeworkView() {
         title={tr("teacher.112")}
         subtitle={tr("teacher.113")}
         icon={ClipboardList}
+        action={
+          <Button onClick={() => setAuthoring({ homework: null })}>
+            <Plus className="w-4 h-4 ms-2" />
+            {tr("teacher.182")}
+          </Button>
+        }
+      />
+
+      <HomeworkDialog
+        // Remount per target so the dialog's local state is seeded from props.
+        key={authoring?.homework?.id ?? "new-homework"}
+        open={!!authoring}
+        onOpenChange={(o) => !o && setAuthoring(null)}
+        lessons={lessonsQuery.data?.lessons ?? []}
+        lessonsLoading={lessonsQuery.isLoading}
+        homework={
+          authoring?.homework
+            ? {
+                id: authoring.homework.id,
+                title: authoring.homework.titleRaw,
+                titleAr: authoring.homework.titleAr,
+                instructions: authoring.homework.instructions,
+                deadline: authoring.homework.deadline,
+                maxMarks: authoring.homework.maxMarks,
+                trackScope: authoring.homework.trackScope,
+                gradedCount: authoring.homework.gradedCount ?? 0,
+                lessonId: authoring.homework.lesson?.id ?? "",
+              }
+            : null
+        }
       />
 
       {/* Filter */}
@@ -2328,6 +2483,7 @@ function HomeworkView() {
             >
               <HomeworkCard
                 hw={hw}
+                onEdit={() => setAuthoring({ homework: hw })}
                 onGrade={(submission) =>
                   setGradingFor({
                     homeworkId: hw.id,
@@ -2394,9 +2550,11 @@ function HomeworkView() {
 function HomeworkCard({
   hw,
   onGrade,
+  onEdit,
 }: {
   hw: HomeworkListItem;
   onGrade: (sub: HomeworkSubmission) => void;
+  onEdit: () => void;
 }) {
   const tr = useT();
   const [expanded, setExpanded] = React.useState(false);
@@ -2415,9 +2573,28 @@ function HomeworkCard({
             <h3 className="font-bold text-base truncate">{hw.title}</h3>
           </div>
           <p className="text-xs text-muted-foreground mt-1 truncate">
+            {hw.lesson?.officialCode ? `${hw.lesson.officialCode} · ` : ""}
+            {hw.lesson?.unit?.title ? `${hw.lesson.unit.title} · ` : ""}
             {hw.lesson?.title || "Lesson"}
             {hw.lesson?.course ? ` · ${hw.lesson.course.name}` : ""}
           </p>
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+            <TrackScopeBadge scope={hw.trackScope || "SHARED"} />
+            {hw.lesson?.curriculumStatus === "ARCHIVED" ? (
+              <CurriculumBadge value="ARCHIVED" />
+            ) : hw.lesson?.status ? (
+              <StatusBadge status={hw.lesson.status} />
+            ) : null}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-[10px]"
+              onClick={onEdit}
+            >
+              <Pencil className="w-3 h-3 ms-1" />
+              {tr("teacher.194")}
+            </Button>
+          </div>
         </div>
         <div className="flex flex-col items-end gap-1 shrink-0">
           <Badge

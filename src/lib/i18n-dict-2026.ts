@@ -502,8 +502,8 @@ export const DICT_2026: Record<string, DictEntry> = {
   "admin.433": { ar: "إدارة من بنك الأسئلة", en: "Manage in question bank" },
   "admin.434": { ar: "مفيش واجب على الجلسة دي (اختياري)", en: "No homework on this session (optional)" },
   "admin.435": {
-    ar: "إنشاء الواجبات هييجي مع شغل المدرس (المرحلة 18). الواجبات الموجودة معروضة هنا للقراءة بس.",
-    en: "Homework creation arrives with the teacher workflow (Phase 18). Existing assignments are listed here read-only.",
+    ar: "الواجبات بينشئها المعلم من لوحة المعلم (إنشاء واجب). الواجبات الموجودة معروضة هنا للقراءة بس.",
+    en: "Homework is authored by the teacher from the teacher workflow (Create homework). Existing assignments are listed here read-only.",
   },
   "admin.436": { ar: "اختبار فاضي بيمنع الجاهزية", en: "An empty quiz blocks readiness" },
   "admin.437": {
@@ -599,4 +599,138 @@ export const DICT_2026: Record<string, DictEntry> = {
     ar: "تعذر حساب المستلمين — الإخطار هيتم بالقواعد نفسها عند الفتح",
     en: "Could not compute recipients — notification follows the same rules at open",
   },
+
+  // ---------------- Phase 18: teacher workflow completion ----------------
+  // Server messages for homework authoring, question management, track-scope
+  // containment and the server-side quiz time limit.
+  "api.233": {
+    ar: "مدة الاختبار لازم تكون من {p1} لـ {p2} دقيقة",
+    en: "The quiz time limit must be between {p1} and {p2} minutes",
+  },
+  "api.234": { ar: "عنوان الواجب مطلوب", en: "A homework title is required" },
+  "api.235": {
+    ar: "ميعاد تسليم الواجب مطلوب و/أو غير صالح",
+    en: "A valid homework deadline is required",
+  },
+  "api.236": {
+    ar: "درجة الواجب لازم تكون من {p1} لـ {p2}",
+    en: "Homework marks must be between {p1} and {p2}",
+  },
+  "api.237": {
+    ar: "تعليمات الواجب طويلة أوي (الحد {p1} حرف)",
+    en: "The homework instructions are too long (max {p1} characters)",
+  },
+  "api.238": { ar: "الواجب مش موجود", en: "Homework not found" },
+  "api.239": {
+    ar: "الواجب ده عليه درجات مسجلة — مش ممكن تغيير التراك بتاعه",
+    en: "This homework already has graded submissions — its track scope cannot change",
+  },
+  "api.240": {
+    ar: "مش ممكن تقلل الدرجة النهائية عن درجة طالب مصححة ({p1})",
+    en: "The maximum marks cannot be set below an existing grade ({p1})",
+  },
+  "api.241": {
+    ar: "مش ممكن تغيير الدرس بتاع الواجب بعد الإنشاء",
+    en: "A homework cannot be moved to another lesson",
+  },
+  "api.242": {
+    ar: "الدرس ده مؤرشف — مش ممكن تنشئ عليه محتوى جديد",
+    en: "This lesson is archived and cannot receive new content",
+  },
+  "api.243": {
+    ar: "تراك المحتوى مش متوافق مع تراك الدرس",
+    en: "The content track scope is not compatible with the lesson's scope",
+  },
+  "api.244": {
+    ar: "السؤال مش موجود",
+    en: "Question not found",
+  },
+  "api.245": {
+    ar: "السؤال موجود في محاولات مسجلة — مش ممكن تعديل مفتاح الإجابة",
+    en: "This question is part of saved attempts — its answer key cannot be changed",
+  },
+  "api.246": {
+    ar: "السؤال مربوط بامتحان ثابت (FIXED) — مش ممكن حذفه",
+    en: "This question is pinned to a FIXED mock exam and cannot be deleted",
+  },
+  "api.247": {
+    ar: "السؤال مستخدم في محاولات — مش ممكن حذفه",
+    en: "This question is referenced by attempts and cannot be deleted",
+  },
+  "api.248": { ar: "الاختبار مش موجود", en: "Quiz not found" },
+  "api.249": {
+    ar: "الاختبار ده عليه محاولات — مش ممكن حذفه",
+    en: "This quiz has attempts and cannot be deleted",
+  },
+  "api.250": {
+    ar: "عدد الأسئلة في الاختبار الواحد الحد الأقصى {p1}",
+    en: "A quiz can hold at most {p1} questions",
+  },
+  "api.251": {
+    ar: "نص السؤال طويل أوي (الحد {p1} حرف)",
+    en: "The question text is too long (max {p1} characters)",
+  },
+  "api.252": {
+    ar: "الاختيارات لازم تكون من {p1} لـ {p2} وكل اختيار أقل من {p3} حرف",
+    en: "A question needs {p1}–{p2} choices, each under {p3} characters",
+  },
+  "api.253": {
+    ar: "رقم الإجابة لازم يكون ضمن الاختيارات",
+    en: "The correct answer must be one of the choices",
+  },
+  "api.254": {
+    ar: "درجة السؤال لازم تكون من {p1} لـ {p2}",
+    en: "Question marks must be between {p1} and {p2}",
+  },
+  "api.255": {
+    ar: "نوع التراك بتاع السؤال مش متوافق مع تراك الاختبار",
+    en: "The question's track is not compatible with the quiz's scope",
+  },
+  "api.256": {
+    ar: "وقت الاختبار خلص — اتصححت المحاولة تلقائياً",
+    en: "The quiz time limit expired — the attempt was graded automatically",
+  },
+  "api.257": {
+    ar: "درجة النجاح لازم تكون من {p1} لـ {p2}",
+    en: "The pass mark must be between {p1} and {p2}",
+  },
+
+  // ---------------- Phase 18: teacher workflow completion (UI) ----------------
+  "teacher.173": { ar: "تراك المحتوى", en: "Track scope" },
+  "teacher.174": { ar: "زي تراك الدرس", en: "Same as the lesson" },
+  "teacher.175": { ar: "مدة الاختبار (دقيقة)", en: "Time limit (min)" },
+  "teacher.177": { ar: "الجلسة الرسمية", en: "Official session" },
+  "teacher.178": { ar: "الجزء", en: "Part" },
+  "teacher.179": { ar: "الوحدة", en: "Unit" },
+  "teacher.182": { ar: "إنشاء واجب", en: "Create homework" },
+  "teacher.183": { ar: "تعديل واجب", en: "Edit homework" },
+  "teacher.184": { ar: "تعليمات الواجب", en: "Homework instructions" },
+  "teacher.185": { ar: "آخر ميعاد للتسليم", en: "Deadline" },
+  "teacher.186": { ar: "الدرجة النهائية", en: "Max marks" },
+  "teacher.187": { ar: "اتحفظ الواجب ✅", en: "Homework saved ✅" },
+  "teacher.188": { ar: "اختار الدرس الأول", en: "Choose the lesson first" },
+  "teacher.189": { ar: "اكتب عنوان الواجب", en: "Enter the homework title" },
+  "teacher.190": { ar: "اكتب تعليمات الواجب", en: "Enter the homework instructions" },
+  "teacher.191": { ar: "حدد ميعاد التسليم", en: "Set the deadline" },
+  "teacher.192": { ar: "إدارة الأسئلة", en: "Manage questions" },
+  "teacher.193": { ar: "مفيش أسئلة في الاختبار ده", en: "No questions in this quiz yet" },
+  "teacher.194": { ar: "تعديل", en: "Edit" },
+  "teacher.195": { ar: "الإجابة الصحيحة", en: "Correct answer" },
+  "teacher.196": {
+    ar: "مش ممكن الحذف — السؤال مستخدم",
+    en: "Cannot delete — the question is in use",
+  },
+  "teacher.197": {
+    ar: "الأسئلة المربوطة بامتحان ثابت (FIXED) مقفولة",
+    en: "Questions pinned to a FIXED exam are locked",
+  },
+  "teacher.198": {
+    ar: "مفتاح الإجابة مقفول (فيه محاولات)",
+    en: "Answer key locked (attempts exist)",
+  },
+  "teacher.199": { ar: "اتحذف السؤال", en: "Question deleted" },
+  "teacher.204": { ar: "اتحفظ السؤال", en: "Question saved" },
+  "teacher.201": { ar: "توزيع المسارات", en: "Track split" },
+  "teacher.202": { ar: "أضف سؤال", en: "Add question" },
+  "teacher.203": { ar: "تراك السؤال", en: "Question track" },
 };

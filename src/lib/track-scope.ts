@@ -235,6 +235,100 @@ export function resolveQuestionSchoolType(
   return inherited === "ARABIC" || inherited === "LANGUAGE" ? inherited : null;
 }
 
+// ---------------------------------------------------------------------------
+// Authoring-time containment (Phase 18)
+// ---------------------------------------------------------------------------
+//
+// Phase 12 decided how EXISTING content is filtered. Phase 18 has to decide
+// what a teacher is allowed to CREATE underneath a lesson, which is a
+// different question: a container (Quiz, Homework) whose own `trackScope` is
+// WIDER than its lesson's would be filtered by student queries before the
+// lesson gate ever runs, and one that is DISJOINT from its lesson (a LANGUAGE
+// homework under an ARABIC session) is dead content nobody can ever open.
+//
+// THE CONTRACT (single source of truth — routes must not re-implement it):
+//
+//   * A lesson's `trackScope` is the CEILING for everything authored under it.
+//     The lesson gate runs FIRST for every student read (`canAccessQuiz`,
+//     `canAccessHomework` both call `gateTrackedResource`), so a `SHARED`
+//     child of an ARABIC lesson is reachable by ARABIC students only — it is
+//     narrower in practice, never a leak. Allowing it is deliberate: it is the
+//     stored state of every row that predates Phase 12, and forbidding it
+//     would make the two phases' defaults contradict each other.
+//   * A TRACK-SPECIFIC (ARABIC / LANGUAGE) child must have the SAME track as
+//     its lesson when the lesson is track-specific. `LANGUAGE` under `ARABIC`
+//     is rejected rather than stored: it could never be opened by anyone, so
+//     accepting it would be silently planting broken content.
+//   * An ABSENT scope is resolved to the LESSON's scope, never to SHARED.
+//     Defaulting to SHARED would widen a track-specific lesson's new content
+//     by omission, which is exactly the ambiguity the roadmap forbids.
+//   * An UNRECOGNISED value (either side) fails closed: the request is
+//     rejected, never normalised to a guess.
+//
+// Questions keep the Phase 12 rule (explicit → owning quiz's scope → SHARED),
+// because a question's `schoolType` is a SELECTION filter inside an
+// already-gated container, not a second container. See `TRACK_SCOPE_LABELS`
+// for UI strings.
+
+/**
+ * May content with `requested` scope be *stored* under a lesson whose scope is
+ * `lessonScope`? Pure containment test — no inference, no defaulting.
+ *
+ * `SHARED` content is accepted under any lesson (the lesson gate narrows it).
+ * Track-specific content is accepted only under a lesson of the same track or
+ * under a `SHARED` lesson (where it is the intended way to serve different
+ * material to the two tracks).
+ */
+export function isTrackScopeWithinLesson(
+  requested: unknown,
+  lessonScope: unknown
+): boolean {
+  const scope = normalizeTrackScope(requested);
+  const lesson = normalizeTrackScope(lessonScope);
+  if (!scope || !lesson) return false; // fail closed on BOTH sides
+  if (scope === "SHARED") return true;
+  return lesson === "SHARED" || lesson === scope;
+}
+
+/** Why an author-supplied scope was refused (for a precise 400 message). */
+export type TrackScopeDecision =
+  | { ok: true; scope: TrackScope; /** true when no scope was supplied. */ inherited: boolean }
+  | { ok: false; reason: "INVALID_SCOPE" | "OUT_OF_LESSON_SCOPE" };
+
+/**
+ * Resolve the `trackScope` to persist on a container (Quiz / Homework) created
+ * under `lessonScope`.
+ *
+ *   absent (undefined / null / "")      → inherit `lessonScope`
+ *   "SHARED" / "ALL" / "BOTH"           → SHARED (explicitly shared)
+ *   "ARABIC" / "LANGUAGE"               → that track, when contained
+ *   anything else                       → `INVALID_SCOPE`
+ *   contained-check fails               → `OUT_OF_LESSON_SCOPE`
+ *
+ * The caller persists `scope` and returns `INVALID_SCOPE`/`OUT_OF_LESSON_SCOPE`
+ * as a 400 — a scope that cannot be honoured must never be silently rewritten.
+ */
+export function resolveContentTrackScope(
+  requested: unknown,
+  lessonScope: unknown
+): TrackScopeDecision {
+  const lesson = normalizeTrackScope(lessonScope);
+  if (!lesson) return { ok: false, reason: "INVALID_SCOPE" };
+
+  const absent =
+    requested === undefined ||
+    requested === null ||
+    (typeof requested === "string" && requested.trim() === "");
+  if (absent) return { ok: true, scope: lesson, inherited: true };
+
+  const scope = normalizeTrackScope(requested);
+  if (!scope) return { ok: false, reason: "INVALID_SCOPE" };
+  if (!isTrackScopeWithinLesson(scope, lesson)) {
+    return { ok: false, reason: "OUT_OF_LESSON_SCOPE" };
+  }
+  return { ok: true, scope, inherited: false };
+}
+
 /**
  * Strict parse of an author-supplied question school type.
  *

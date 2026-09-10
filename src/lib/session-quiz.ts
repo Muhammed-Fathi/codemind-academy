@@ -217,6 +217,135 @@ export async function loadQuizQuestionSet(
 }
 
 // ---------------------------------------------------------------------------
+// Server-side time limit (Phase 18)
+// ---------------------------------------------------------------------------
+//
+// THE VERDICT ON `Quiz.timeLimit`
+// ===============================
+// Phase 18 was asked to resolve a field that existed, was shown in the admin
+// and teacher UI, was accepted by the create API — and gated nothing. It is
+// now ENFORCED SERVER-SIDE. The alternative (removing it from the contract)
+// was rejected because the column is already stored on real rows, displayed in
+// two admin surfaces, and a time limit is a genuine assessment control.
+//
+// THE PRECISE SEMANTICS
+// ---------------------
+//   * START TIME is `QuizAttempt.startedAt`, written by the SERVER at attempt
+//     creation (`/api/quizzes/[id]/start`). It is never taken from the client,
+//     never refreshed on resume, and never rewritten — so reconnecting,
+//     refreshing or resuming cannot extend an attempt.
+//   * DEADLINE = `startedAt + timeLimit minutes + TIME_LIMIT_GRACE_SECONDS`.
+//     The grace window is a fixed, documented allowance for the submit request
+//     travelling over the network; without it a student who presses Submit at
+//     0:01 remaining would be marked late by latency alone. The client NEVER
+//     computes the deadline — it renders the server's number.
+//   * TIMEOUT is evaluated from the SERVER's clock at the moment the request is
+//     handled. A client clock, a frozen timer, a replayed tab or a crafted
+//     `expiresAt` field cannot move it.
+//   * `timeLimit = null` (every quiz that existed before this phase) means NO
+//     LIMIT: nothing about those attempts changes.
+//   * A late submit is REFUSED (409 `TIME_LIMIT_EXCEEDED`) and the expired
+//     attempt is finalised at the deadline with the answers the server already
+//     holds — which, because the frozen set is seeded unanswered and only
+//     written on submit, is the empty set. That is what "the time ran out"
+//     means; it is not a silently accepted late answer. The attempt is
+//     finished, so the Phase 4 progression rule ("a finished attempt exists")
+//     is satisfied exactly as an immediate empty submit would satisfy it —
+//     no new unlock path is created, and no student is wedged with an attempt
+//     that can never be submitted.
+//   * RESUME of an already-expired attempt finalises it too and opens a FRESH
+//     attempt (a new clock). Time is therefore never silently banked, and the
+//     answers of the abandoned attempt are not carried over.
+
+/** Fixed grace window granted to a submit request past the deadline (seconds). */
+export const TIME_LIMIT_GRACE_SECONDS = 30;
+
+export type TimeLimitState = {
+  /** False when the quiz has no usable limit (`null`, 0 or non-finite). */
+  limited: boolean;
+  /** Server-computed deadline (startedAt + limit + grace), or null. */
+  deadline: Date | null;
+  /** True when `now` is at or past `deadline`. */
+  expired: boolean;
+  /** Whole seconds left, floored at 0. `null` when unlimited. */
+  remainingSeconds: number | null;
+};
+
+/** Normalise a stored `Quiz.timeLimit` (minutes) into a usable limit or null. */
+export function normalizeTimeLimitMinutes(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  const minutes = Math.trunc(n);
+  if (minutes <= 0) return null; // 0 / negative = "no limit", never "instant"
+  return minutes;
+}
+
+/**
+ * The server-side state of a timed attempt. Pure and clock-injectable, so the
+ * enforcement path is unit-testable without waiting a minute.
+ */
+export function timeLimitState(
+  startedAt: Date | string | null | undefined,
+  timeLimitMinutes: unknown,
+  now: Date = new Date()
+): TimeLimitState {
+  const minutes = normalizeTimeLimitMinutes(timeLimitMinutes);
+  if (minutes === null || !startedAt) {
+    return { limited: false, deadline: null, expired: false, remainingSeconds: null };
+  }
+  const start = startedAt instanceof Date ? startedAt : new Date(startedAt);
+  const startMs = start.getTime();
+  if (!Number.isFinite(startMs)) {
+    return { limited: false, deadline: null, expired: false, remainingSeconds: null };
+  }
+  const deadlineMs = startMs + minutes * 60_000 + TIME_LIMIT_GRACE_SECONDS * 1000;
+  const deadline = new Date(deadlineMs);
+  const nowMs = now.getTime();
+  return {
+    limited: true,
+    deadline,
+    expired: nowMs >= deadlineMs,
+    remainingSeconds: Math.max(0, Math.floor((deadlineMs - nowMs) / 1000)),
+  };
+}
+
+/**
+ * Truthy when the attempt must be treated as timed out. Kept separate so a
+ * route can call it without destructuring, and so the negative case (no limit)
+ * reads as an explicit decision rather than a missing branch.
+ */
+export function isAttemptExpired(
+  startedAt: Date | string | null | undefined,
+  timeLimitMinutes: unknown,
+  now: Date = new Date()
+): boolean {
+  return timeLimitState(startedAt, timeLimitMinutes, now).expired === true;
+}
+
+/**
+ * Grade the frozen rows an expired attempt already holds.
+ *
+ * Used ONLY by the timeout path: the frozen set is seeded with empty
+ * selections, so an attempt that timed out before submitting grades to zero —
+ * deterministically, from persisted rows, with no client value involved.
+ * Questions ineligible for the student's track are dropped by
+ * `gradeAttemptQuestionSet`, so the denominator matches a normal submit.
+ */
+export function gradeExpiredAttempt(
+  set: AttemptQuestion[],
+  passMark: number,
+  schoolType: SchoolType | null
+) {
+  return gradeAttemptQuestionSet(
+    set,
+    set.map((q) => ({ questionId: q.questionId, selected: q.selected })),
+    passMark,
+    schoolType
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Server-side grading
 // ---------------------------------------------------------------------------
 

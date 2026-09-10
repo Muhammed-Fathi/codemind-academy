@@ -6,6 +6,12 @@ import { getServerT } from "@/lib/i18n-server";
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireUser, getTeacherProfile } from "@/lib/api";
+import {
+  LESSON_PLACEMENT_SELECT,
+  lessonPlacement,
+  teacherCourseIds as teacherCourseIdsOf,
+  type ChainLesson,
+} from "@/lib/teacher-content";
 
 export async function PATCH(
   req: NextRequest,
@@ -31,25 +37,22 @@ export async function PATCH(
   if (gradeNum < 0 || gradeNum > 100)
     return err(tApi("api.170"), 400);
 
-  // Verify the homework belongs to one of the teacher's courses
+  // Verify the homework belongs to one of the teacher's courses.
+  //
+  // Phase 18 FIX: this check used to read ONLY the legacy Topic chain
+  // (`lesson.topic?.unit.part.courseId`). Official lessons are unit-linked
+  // with a NULL topicId (Phase 11), so every assignment on a canonical lesson
+  // was refused with a 403 and could never be graded. The chain is now
+  // resolved CANONICAL FIRST — the same precedence the progression engine and
+  // every Phase 18 write route use (src/lib/teacher-content.ts).
   const hw = await db.homework.findUnique({
     where: { id: homeworkId },
-    include: {
-      lesson: {
-        select: {
-          topic: {
-            select: {
-              unit: { select: { part: { select: { courseId: true } } } },
-            },
-          },
-        },
-      },
-    },
+    include: { lesson: { select: LESSON_PLACEMENT_SELECT } },
   });
   if (!hw) return err(tApi("api.171"), 404);
-  const teacherCourseIds = teacher.groups.map((g) => g.courseId);
-  const hwCourseId = hw.lesson.topic?.unit.part.courseId;
-  if (!hwCourseId || !teacherCourseIds.includes(hwCourseId)) {
+  const teacherCourseIds = teacherCourseIdsOf(teacher);
+  const placement = lessonPlacement((hw.lesson ?? null) as ChainLesson | null);
+  if (!placement || !teacherCourseIds.includes(placement.courseId)) {
     return err(tApi("api.172"), 403);
   }
 
