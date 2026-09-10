@@ -1536,8 +1536,11 @@ function compileRealCode() {
       2
     )
   );
+  // Windows cannot spawn the `npx` shim without its extension (ENOENT), so
+  // resolve the platform-correct runner while keeping args/cwd identical.
+  const npmRunner = process.platform === "win32" ? "npx.cmd" : "npx";
   try {
-    execFileSync("npx", ["tsc", "-p", path.join(out, "tsconfig.json")], {
+    execFileSync(npmRunner, ["tsc", "-p", path.join(out, "tsconfig.json")], {
       cwd: REPO,
       stdio: "pipe",
     });
