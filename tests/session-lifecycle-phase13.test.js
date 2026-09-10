@@ -1078,7 +1078,7 @@ section("8. the ceremony — MARK_READY requires readiness");
     );
   }
 
-  section("17. admin endpoints: ADMIN-only, ceremony-only, notification-free");
+  section("17. admin endpoints: ADMIN-only, ceremony-only, engine-notification-free");
   {
     const routes = {
       open: read("src/app/api/admin/lessons/[id]/open/route.ts"),
@@ -1096,8 +1096,17 @@ section("8. the ceremony — MARK_READY requires readiness");
       ok(!/status:\s*req/u.test(src), `${name}: accepts no client-supplied target state`);
     }
     pinned(routes.open, /openLesson\(\{/, "OPEN delegates to the ceremony (no parallel engine)");
-    ok(!/notification/i.test(routes.open.replace(/^\/\/.*$/gm, "")), "publishing creates NO notification (Phase 17's job; comments aside, the route never touches that table)");
-    ok(!/db\.notification/.test(routes.open + routes.unpublish), "…and no lifecycle endpoint writes the Notification model at all");
+    // PHASE 17 AMENDMENT (session publication notifications): this pin was
+    // written as a forward guard — "publishing creates NO notification
+    // (Phase 17's job)". Phase 17 has now arrived and the OPEN route DOES
+    // fan out — but the Phase 13 purity guarantees survive intact, and this
+    // section now pins the Phase 17-era contract instead:
+    pinned(routes.open, /emitSessionPublicationNotifications\(\s*\{[\s\S]*?lessonId/, "OPEN fans out ONLY through the single Phase 17 emit helper (no inline Notification writes — the planned delegation)");
+    pinned(routes.open, /result\.ok\s*&&\s*!!result\.publication/, "the fan-out is gated behind a successful ceremony outcome (OK-changed or NO_OP retry) — refusal outcomes NEVER emit");
+    const engineNoComments = read("src/lib/session-lifecycle.ts").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    ok(!/notification/i.test(engineNoComments), "the lifecycle ENGINE (transitionLesson) itself still writes NO notification — the fan-out is route-level orchestration, not ceremony logic (comment mentions aside)");
+    ok(!/db\.notification/.test(routes.open + routes.unpublish), "…and no lifecycle endpoint writes the Notification model directly (the helper owns the inserts)");
+    ok(!/emitSessionPublicationNotifications/.test(routes.unpublish + routes.markReady), "unpublish/mark-ready never fan out");
     ok(!/publishedAt/.test(routes.open), "the endpoint cannot set the publication time — the ceremony owns it");
   }
 

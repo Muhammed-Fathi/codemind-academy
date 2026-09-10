@@ -701,6 +701,18 @@ export function createSqlitePrisma({ db, schemaPath }) {
             ? project(model, after, args.include, "include")
             : hydrateScalars(model, after);
       },
+      createMany: async (args = {}) => {
+        // Prisma semantics: insert every row; returns the inserted count.
+        // Real INSERTs against the real migrated schema — a duplicate unique
+        // key or a bad value throws exactly like the engine would.
+        const rows = Array.isArray(args.data) ? args.data : [args.data];
+        let count = 0;
+        for (const row of rows) {
+          insertRow(model, row ?? {});
+          count += 1;
+        }
+        return { count };
+      },
       updateMany: async (args = {}) => ({ count: applyUpdate(model, null, null, args.data, args.where) }),
       delete: async (args = {}) => {
         const target = readUnique(model, args.where);

@@ -357,6 +357,17 @@ export const DICT_2026: Record<string, DictEntry> = {
     ar: "نوع المدرسة الخاص بالسؤال غير صالح (مشترك أو عربي أو لغات)",
     en: "Invalid question school type (Shared, Arabic or Language)",
   },
+  // Phase 17 — NEW_LESSON publication notification templates. {p1} is the
+  // session display name (officialCode · localized title), {p2} the chapter.
+  "api.230": {
+    ar: "جلسة جديدة: {p1}",
+    en: "New session: {p1}",
+  },
+  "api.231": {
+    ar: "{p1} في «{p2}» بقت متاحة دلوقتي. افتحها من منهجك وابدأ على طول.",
+    en: "{p1} in “{p2}” is now open. Open it from your curriculum to start.",
+  },
+  "api.232": { ar: "رابط الإخطار غير صالح", en: "Invalid notification link" },
   "admin.318": { ar: "مطابقة المنهج الرسمي", en: "Reconcile official curriculum" },
   "admin.319": { ar: "جارٍ المطابقة…", en: "Reconciling…" },
   "admin.320": {
@@ -557,4 +568,35 @@ export const DICT_2026: Record<string, DictEntry> = {
   "admin.491": { ar: "شريحة مدارس العربي بس", en: "Arabic-school segment only" },
   "admin.492": { ar: "شريحة مدارس اللغات بس", en: "Language-school segment only" },
   "admin.493": { ar: "سحب النشر هيرجع الجلسة لجاهزة", en: "Unpublishing returns the session to READY" },
+  // ---------------- Phase 17 — session publication notifications ----------------
+  "admin.494": { ar: "إخطار النشر", en: "Publication notification" },
+  "admin.495": { ar: "{p1} طالب مؤهل", en: "{p1} eligible students" },
+  "admin.496": { ar: "مفيش طلاب مؤهلين دلوقتي", en: "No eligible students right now" },
+  "admin.497": { ar: "اتخطروا بالفعل: {p1}", en: "Already notified: {p1}" },
+  "admin.498": {
+    ar: "الجلسة اتنشرت، والإخطار وصل لـ {p1} طالب",
+    en: "Session published — notification delivered to {p1} students",
+  },
+  "admin.499": {
+    ar: "اتخطاوا: {p1} (إعدادات الإخطارات)، {p2} (ساعات الهدوء)",
+    en: "Skipped: {p1} (preferences), {p2} (quiet hours)",
+  },
+  "admin.500": {
+    ar: "الإخطار اتبعت جزئياً ({p1} من {p2}). الجلسة منشورة — اضغط فتح تاني لاستكمال الإرسال من غير تكرار.",
+    en: "Notification delivered partially ({p1} of {p2}). The session is published — open again to resume without duplicates.",
+  },
+  "admin.501": {
+    ar: "كل الطلاب المؤهلين اتخطروا قبل كده",
+    en: "Every eligible student was already notified",
+  },
+  "admin.502": { ar: "جارِ حساب المستلمين…", en: "Computing recipients…" },
+  "admin.503": { ar: "هيوصلهم إخطار جديد: {p1}", en: "Will be notified now: {p1}" },
+  "admin.504": {
+    ar: "إجمالي اللي اتخطروا للجلسة دي: {p1}",
+    en: "Total notified for this session: {p1}",
+  },
+  "admin.505": {
+    ar: "تعذر حساب المستلمين — الإخطار هيتم بالقواعد نفسها عند الفتح",
+    en: "Could not compute recipients — notification follows the same rules at open",
+  },
 };

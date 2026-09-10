@@ -46,9 +46,13 @@
 //  5. Publishing is IDEMPOTENT: a second OPEN returns the existing published
 //     state, writes nothing and performs no second semantic publish.
 //  6. Phase 13 publishes NOTHING to students' notification feeds. There is no
-//     fan-out, no `NEW_LESSON` notification and no `notifiedAt` column here;
-//     `SessionPublication` is the state Phase 17 will consume. PDFs are also
-//     out of scope: the readiness contract reports the PDF dimension as
+//     fan-out, no `NEW_LESSON` notification and no `notifiedAt` write in this
+//     engine; `SessionPublication` is the state Phase 17 consumes. (Phase 17
+//     has since landed — `session-notifications.ts` — and fans out from the
+//     OPEN ROUTE after a successful ceremony; the engine itself remains
+//     notification-free, and the Phase 17 columns on SessionPublication are
+//     written by the fan-out, never here.) PDFs are also out of scope in
+//     Phase 13: the readiness contract reports the PDF dimension as
 //     NOT_APPLICABLE rather than pretending an unimplemented upload exists.
 //
 // Track interaction (Phase 12): `trackScope` decides WHO a session is for,
