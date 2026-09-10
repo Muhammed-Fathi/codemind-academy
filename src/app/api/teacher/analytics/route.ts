@@ -4,7 +4,11 @@ import { getServerT } from "@/lib/i18n-server";
 import { NextResponse } from "next/server";
 import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
-import { attemptInQuizScope } from "@/lib/quiz-analytics";
+import {
+  TRACK_BUCKETS,
+  attemptInQuizScope,
+  summarizeFinishedAttemptsByTrack,
+} from "@/lib/quiz-analytics";
 
 export async function GET() {
   const tApi = await getServerT();
@@ -32,6 +36,13 @@ export async function GET() {
                   passed: true,
                   finishedAt: true,
                   quizId: true,
+                  // Phase 18 — read so the track split can reuse the Phase 6
+                  // summary verbatim (it reports avgScore and participantCount,
+                  // which need these). No existing number changes: these fields
+                  // were previously projected away, never aggregated.
+                  studentId: true,
+                  score: true,
+                  totalMarks: true,
                 },
               },
               homeworkSubmits: {
@@ -65,9 +76,27 @@ export async function GET() {
         ],
       },
     },
-    select: { id: true },
+    // Phase 18 — the quiz's OWN trackScope travels with its id, so the same
+    // authorized finished attempts can be SLICED by track without a second
+    // authorization decision and without a second query.
+    select: { id: true, trackScope: true },
   });
   const authorizedQuizIds = new Set(authorizedQuizRows.map((q) => q.id));
+  const quizTrackById = new Map(
+    authorizedQuizRows.map((q) => [q.id, String(q.trackScope)])
+  );
+  // Every authorized, finished attempt the teacher may see, collected once so
+  // the track split is computed over exactly the rows the rest of this handler
+  // aggregates — no second filter, no chance of the split disagreeing.
+  const allAuthorizedAttempts: Array<{
+    quizId: string;
+    studentId: string;
+    score: number;
+    totalMarks: number;
+    percentage: number;
+    passed: boolean;
+    finishedAt: Date | null;
+  }> = [];
 
   // Compute per-group stats
   const groups = teacher.groups.map((g) => {
@@ -83,6 +112,9 @@ export async function GET() {
     let completedLessons = 0;
 
     const studentStats = g.students.map((s) => {
+      for (const a of s.quizAttempts) {
+        if (attemptInQuizScope(a, authorizedQuizIds)) allAuthorizedAttempts.push(a);
+      }
       const attendanceCount = s.attendances.length;
       const presentCount = s.attendances.filter((a) => a.status === "PRESENT").length;
       // Quiz rows are finished (SQL filter above); restrict further to the
@@ -132,10 +164,26 @@ export async function GET() {
     // Sort students by performance score
     studentStats.sort((a, b) => b.performanceScore - a.performanceScore);
 
+    // Phase 18 — minimal track-aware reporting: the SAME finished-only,
+    // attempt-weighted Phase 6 summary, cut by the track of the quiz each
+    // attempt belongs to. Buckets keep their deterministic SHARED → ARABIC →
+    // LANGUAGE order and always exist, so the shape never changes shape.
+    const groupAttempts = g.students.flatMap((s) =>
+      s.quizAttempts.filter((a) => attemptInQuizScope(a, authorizedQuizIds))
+    );
+    const trackSummary = summarizeFinishedAttemptsByTrack(
+      groupAttempts,
+      (a) => quizTrackById.get(a.quizId)
+    );
+    const trackSplit = Object.fromEntries(
+      TRACK_BUCKETS.map((bucket) => [bucket, trackSummary[bucket]])
+    );
+
     return {
       groupId: g.id,
       groupName: g.name,
       courseName: g.course.nameAr || g.course.name,
+      trackSplit,
       totalStudents,
       avgAttendance: totalAttendance > 0 ? Math.round((presentAttendance / totalAttendance) * 100) : 0,
       avgQuizScore: totalStudents > 0 ? Math.round(totalQuizPct / totalStudents) : 0,
@@ -147,6 +195,17 @@ export async function GET() {
       students: studentStats,
     };
   });
+
+  // Phase 18 — the same track split over EVERY authorized finished attempt,
+  // preserved. Ordering is the module's `TRACK_BUCKETS` (SHARED, ARABIC,
+  // LANGUAGE), and each bucket is the unmodified Phase 6 shape.
+  const overallTrackSummary = summarizeFinishedAttemptsByTrack(
+    allAuthorizedAttempts,
+    (a) => quizTrackById.get(a.quizId)
+  );
+  const overallTrackSplit = Object.fromEntries(
+    TRACK_BUCKETS.map((bucket) => [bucket, overallTrackSummary[bucket]])
+  );
 
   // Overall stats
   const allStudents = groups.reduce((sum, g) => sum + g.totalStudents, 0);
@@ -167,6 +226,8 @@ export async function GET() {
       avgAttendance: overallAvgAttendance,
       avgQuizScore: overallAvgQuiz,
       quizPassRate: overallPassRate,
+      /** Phase 18 — track cut of the same finished-attempt population. */
+      trackSplit: overallTrackSplit,
     },
     groups,
   });

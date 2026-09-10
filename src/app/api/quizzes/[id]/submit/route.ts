@@ -1,11 +1,14 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { getServerT } from "@/lib/i18n-server";
 import { db } from "@/lib/db";
 import { ok, err, requireUser, getStudentProfile, denyProgression } from "@/lib/api";
 import { canAccessQuiz } from "@/lib/session-progress";
 import {
   gradeAttemptQuestionSet,
+  gradeExpiredAttempt,
   loadAttemptQuestionSet,
   loadQuizQuestionSet,
+  timeLimitState,
   type SubmittedAnswer,
 } from "@/lib/session-quiz";
 import { getStudentSchoolType } from "@/lib/enrollment";
@@ -31,6 +34,18 @@ import { getStudentSchoolType } from "@/lib/enrollment";
 //   * A FINISHED attempt is immutable: submit only ever writes to the open
 //     attempt (or a brand-new one). Repeated submission therefore creates a
 //     fresh retake attempt, never modifies a submitted one.
+//
+// Phase 18 — server-side TIME LIMIT (see src/lib/session-quiz.ts):
+//   When the quiz carries a `timeLimit`, the open attempt's deadline is
+//   `startedAt + timeLimit + TIME_LIMIT_GRACE_SECONDS`, evaluated against the
+//   SERVER's clock — the client never supplies an expiry, and a frozen browser
+//   timer cannot extend it. A submit that arrives after the deadline is
+//   REFUSED with 409 + `code: "TIME_LIMIT_EXCEEDED"`, and the expired attempt
+//   is finalised at its deadline from the answers the server already holds
+//   (the frozen set is seeded unanswered, so a timed-out attempt grades to
+//   zero). Late answers are never graded into it: accepting them would make
+//   the limit decorative, which is exactly the state Phase 18 was told to
+//   resolve. `timeLimit = null` keeps the previous behaviour unchanged.
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -43,9 +58,10 @@ export async function POST(
   const s = await getStudentProfile(user.id);
   if (!s) return err("Student profile not found", 404);
 
+  const tApi = await getServerT();
   const quiz = await db.quiz.findUnique({
     where: { id },
-    select: { id: true, passMark: true },
+    select: { id: true, passMark: true, timeLimit: true },
   });
   if (!quiz) return err("Quiz not found", 404);
 
@@ -68,8 +84,57 @@ export async function POST(
   const open = await db.quizAttempt.findFirst({
     where: { quizId: id, studentId: s.id, finishedAt: null },
     orderBy: { startedAt: "desc" },
-    select: { id: true },
+    select: { id: true, startedAt: true },
   });
+
+  // Phase 18 — the time limit is checked BEFORE any grading, and it is the
+  // server's clock that decides. Only the OPEN attempt is subject to it: a
+  // direct submit with no open attempt (the documented retake path) starts and
+  // finishes in the same request, so there is no window to exceed.
+  if (open) {
+    const limit = timeLimitState(open.startedAt, quiz.timeLimit);
+    if (limit.expired && limit.deadline) {
+      const expiredSet = await loadAttemptQuestionSet(open.id, schoolType);
+      const expired = gradeExpiredAttempt(expiredSet, quiz.passMark, schoolType);
+      const finalized = await db.quizAttempt.update({
+        where: { id: open.id },
+        data: {
+          score: expired.score,
+          totalMarks: expired.totalMarks,
+          percentage: expired.percentage,
+          passed: expired.passed,
+          finishedAt: limit.deadline,
+        },
+        select: { id: true },
+      });
+      return NextResponse.json(
+        {
+          error: tApi("api.256"),
+          code: "TIME_LIMIT_EXCEEDED",
+          attemptId: finalized.id,
+          score: expired.score,
+          totalMarks: expired.totalMarks,
+          percentage: expired.percentage,
+          passed: expired.passed,
+          passMark: quiz.passMark,
+          finishedAt: limit.deadline,
+          timeLimitMinutes: Number(quiz.timeLimit),
+          answers: expired.graded.map((a) => ({
+            questionId: a.questionId,
+            prompt: a.prompt,
+            promptAr: a.promptAr,
+            selected: a.selected,
+            correctAnswer: a.correctAnswer,
+            isCorrect: a.isCorrect,
+            marks: a.marks,
+            options: a.options,
+            explanation: a.explanation,
+          })),
+        },
+        { status: 409 }
+      );
+    }
+  }
 
   // The attempt's own frozen question set (persisted rows), never the live
   // quiz questions. A pre-Phase-5 in-flight attempt with no rows adopts the
@@ -138,6 +203,11 @@ export async function POST(
         include: { answers: true },
       });
 
+  const submittedLimit = timeLimitState(
+    open?.startedAt ?? finishedAt,
+    quiz.timeLimit
+  );
+
   return ok({
     attemptId: attempt.id,
     score,
@@ -145,6 +215,10 @@ export async function POST(
     percentage,
     passed,
     passMark: quiz.passMark,
+    /** Server-computed window of the attempt that was just graded. */
+    timeLimitMinutes: submittedLimit.limited ? Number(quiz.timeLimit) : null,
+    startedAt: open?.startedAt ?? null,
+    finishedAt,
     answers: graded.map((a) => ({
       questionId: a.questionId,
       prompt: a.prompt,

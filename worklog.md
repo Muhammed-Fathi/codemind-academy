@@ -1625,3 +1625,55 @@ Added 8 new CSS utilities to `src/app/globals.css`:
 - achievements-view + leaderboard-view: level title → `pickAuto(title, titleEn)`.
 - FINAL AUDIT (all APIs 200): [ar] 1145/111/1 (== pre-round, zero regressions), [en] 130/66/1 (was 1141/171/1 at baseline). 1 console error both = benign 401. Residue = DB seed content + intentional «عربي» toggle label (app.011).
 - Report: docs/I18N_REPORT.md. Evidence refreshed: tests/i18n/evidence/final/.
+
+## 2026-09-10 — Phase 18: Teacher Workflow Completion (canonical lessons, homework, question locks, time limit)
+
+- **Route of record:** `docs/PHASE_18_TEACHER_WORKFLOW.md` (Phase 17-style phase doc).
+- **Discovery finding.** Every teacher reader except quiz creation resolved lessons
+  through the LEGACY topic chain only (`Lesson.topicId → Topic → Unit → Part → Course`).
+  Since Phase 11's official lessons carry `unitId` and a NULL `topicId`, the picker, the
+  homework list and the homework grader returned nothing for the official curriculum.
+  All of them now resolve `Course → Part → Unit → Lesson` first, legacy chain as fallback
+  (`lessonCoursesChainOr`, `LESSON_PLACEMENT_SELECT`, `lessonPlacement`).
+- **New writes:** `POST /api/teacher/homework` (validated create), `PATCH
+  /api/teacher/homework/[id]` (history-preserving update), `POST
+  /api/teacher/quizzes/[id]/questions` (additive append), `GET|PATCH|DELETE
+  /api/teacher/questions/[id]` (reference counters + locks). Every one of them:
+  authenticated → TEACHER role → the teacher's OWN groups' courses → canonical lesson →
+  resource → valid track scope. No route reads a client-supplied course id.
+- **Track scope (explicit, no inference):** `resolveContentTrackScope` — absent inherits
+  the LESSON's scope (never SHARED), explicit `SHARED` always allowed, same-track
+  allowed, foreign track refused 400, unknown value refused 400. Questions are bounded by
+  their OWNING QUIZ (`isQuestionScopeWithinQuiz`). UI sentinel `TRACK_INHERIT`.
+- **Frozen attempts / FIXED pins:** deletion refused while any `QuizAnswer` (open or
+  graded) or any FIXED `MockExamQuestion` pin exists; `answer`/`options`/`type`/`marks`/
+  `schoolType` edits refused while any attempt exists (text/metadata stay editable);
+  refused edits write nothing; pins are never deleted; the pin count, blockers and
+  `canEditAnswerKey` are surfaced to the UI. No schema change, no versioning model.
+- **`timeLimit` verdict: ENFORCE (option a).** `deadline = QuizAttempt.startedAt +
+  timeLimit + 30 s grace`, evaluated on the server; `/start` returns the server deadline
+  (`expiresAt`/`remainingSeconds`) and `GET /api/quizzes/[id]` exposes the open attempt's
+  `attemptWindow`; a late `/submit` is refused 409 `TIME_LIMIT_EXCEEDED` BEFORE grading
+  and the expired attempt is finalised at its deadline (no permanently open attempt);
+  resuming an expired attempt opens a FRESH attempt (no banked time). `null`/`0`/≤0 =
+  no limit — exactly the pre-Phase-18 behaviour.
+- **Analytics:** Phase 6 contract untouched (finished-only, attempt-weighted,
+  deterministic, no mutation, no `ExamAttempt`) + `trackSplit` on `overview` and every
+  group, built from `TRACK_BUCKETS`/`summarizeAttemptsByTrack`. No UI redesign.
+- **Docs/i18n:** `docs/PHASE_18_TEACHER_WORKFLOW.md`; `src/lib/i18n-dict-2026.ts`
+  gained `api.233–257` and `teacher.173–204` (ar+en). `src/lib/i18n-dict.ts` untouched
+  (auto-generated).
+- **Verification.** `tests/teacher-workflow-phase18.test.js` — 365 assertions
+  (pure functions, track containment matrix, time-limit math, source pins with negative
+  controls, i18n key resolution, UI wiring, boundary pins) and a child-process run of
+  `scripts/verify-phase18-teacher.mjs` — 157 real-HTTP-handler assertions over a real
+  migrated SQLite DB (canonical coverage, homework create/update, scope validation,
+  ownership/IDOR, question create/edit/delete, frozen-attempt safety, FIXED-pin safety,
+  time-limit enforcement on the real clock, student homework isolation, analytics).
+  All 23 `tests/*.test.js` suites pass (22 pre-existing + the new Phase 18 suite); `npx tsc --noEmit` exit 0; production build
+  succeeds; ESLint holds the `main` baseline exactly (117 pre-existing problems, none
+  added).
+- **Sandbox limits (must be re-run where reachable):** Prisma engines unreachable
+  (`PRISMA_*_ENGINE_*` overrides for `prisma generate`); `SECURITY_HASH_SECRET` required
+  by the production build; no browser host, so the RTL/mobile pass of the new dialogs is
+  a checklist in the phase doc (§12).

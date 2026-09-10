@@ -275,8 +275,44 @@ export function createSqlitePrisma({ db, schemaPath }) {
     }
   };
 
+  /**
+   * Expand a Prisma compound-unique key into its scalar leaves.
+   *
+   * `where: { homeworkId_studentId: { homeworkId, studentId } }` is how the
+   * engine accepts `@@unique([homeworkId, studentId])`. The adapter executes
+   * SQL, so the key is rewritten into the equivalent AND of scalar equality
+   * conditions — but ONLY when the key is not a real column AND every `_`
+   * segment names a real column of the same model, so a typo still throws
+   * `UnsupportedQuery` instead of silently matching nothing.
+   */
+  function expandCompoundUnique(model, where) {
+    if (!where || typeof where !== "object" || Array.isArray(where)) return where;
+    let changed = false;
+    const out = {};
+    for (const [key, value] of Object.entries(where)) {
+      const parts = key.split("_");
+      const isCompound =
+        !isColumn(model, key) &&
+        parts.length > 1 &&
+        parts.every((p) => isColumn(model, p)) &&
+        value !== null &&
+        typeof value === "object" &&
+        !Array.isArray(value) &&
+        Object.keys(value).length > 0 &&
+        Object.keys(value).every((k) => parts.includes(k));
+      if (isCompound) {
+        Object.assign(out, value);
+        changed = true;
+      } else {
+        out[key] = value;
+      }
+    }
+    return changed ? out : where;
+  }
+
   /** Recursively translate a `where` object for `model`, alias `a`. */
   function translateWhere(model, where, alias, out, params) {
+    where = expandCompoundUnique(model, where);
     // `alias` is the SQL alias the caller gave this table; a nested relation
     // filter runs under a DIFFERENT alias, so every column reference has to be
     // qualified with it — hardcoding the table name breaks inside EXISTS.
@@ -567,6 +603,58 @@ export function createSqlitePrisma({ db, schemaPath }) {
     return data;
   }
 
+  /**
+   * Insert a row AND any nested creates the caller supplied.
+   *
+   * Only the back-relation direction (`parent.questions.create = [...]`, where
+   * the CHILD holds the foreign key) is supported: the child row is inserted
+   * with its FK filled from the parent row, which is exactly what the Prisma
+   * engine writes. A nested create on the FK-holding side would have to create
+   * the target and then update the parent, so it still throws rather than
+   * approximating.
+   */
+  function insertRowDeep(model, data) {
+    const scalars = {};
+    const children = [];
+    for (const [k, v] of Object.entries(data ?? {})) {
+      if (isColumn(model, k)) {
+        scalars[k] = v;
+        continue;
+      }
+      const rel = relations.get(model)?.get(k);
+      if (!rel) throw new UnsupportedQuery(`unknown data key ${model}.${k}`);
+      if (rel.ownFk) {
+        throw new UnsupportedQuery(`nested write on ${model}.${k} (not needed by Phase 13)`);
+      }
+      const payload = v && typeof v === "object" && !Array.isArray(v) ? v : null;
+      if (!payload) {
+        throw new UnsupportedQuery(`nested write on ${model}.${k} (only create/createMany)`);
+      }
+      if ("create" in payload) {
+        children.push([rel, Array.isArray(payload.create) ? payload.create : [payload.create]]);
+      } else if ("createMany" in payload) {
+        const many = payload.createMany;
+        children.push([
+          rel,
+          Array.isArray(many) ? many : Array.isArray(many?.data) ? many.data : [many?.data],
+        ]);
+      } else {
+        throw new UnsupportedQuery(`nested write on ${model}.${k} (only create/createMany)`);
+      }
+    }
+    const row = insertRow(model, scalars);
+    for (const [rel, items] of children) {
+      for (const item of items) {
+        const child = { ...(item ?? {}) };
+        rel.foreignFields.forEach((ff, i) => {
+          if (child[ff] === undefined) child[ff] = row[rel.localFields[i]];
+        });
+        insertRowDeep(rel.to, child);
+      }
+    }
+    return row;
+  }
+
   function insertRow(model, data) {
     const fields = models.get(model).fields;
     const merged = { ...defaultsFor(model), ...stripRelations(model, data) };
@@ -681,7 +769,7 @@ export function createSqlitePrisma({ db, schemaPath }) {
           .get(...params).c;
       },
       create: async (args = {}) => {
-        const created = insertRow(model, args.data);
+        const created = insertRowDeep(model, args.data);
         const row = created ?? readUnique(model, {});
         return args.select
           ? project(model, row, args.select, "select")
@@ -708,7 +796,7 @@ export function createSqlitePrisma({ db, schemaPath }) {
         const rows = Array.isArray(args.data) ? args.data : [args.data];
         let count = 0;
         for (const row of rows) {
-          insertRow(model, row ?? {});
+          insertRowDeep(model, row ?? {});
           count += 1;
         }
         return { count };
@@ -737,16 +825,12 @@ export function createSqlitePrisma({ db, schemaPath }) {
             applyUpdate(model, `"${model}"."id" = ?`, [existing.id], merged);
           }
         } else {
-          insertRow(model, args.create ?? {});
+          insertRowDeep(model, args.create ?? {});
         }
-        const row =
-          db
-            .prepare(
-              `SELECT * FROM "${model}" WHERE ${Object.keys(args.where)
-                .map((k) => `"${k}" = ?`)
-                .join(" AND ")}`
-            )
-            .get(...Object.values(args.where)) ?? readUnique(model, args.where);
+        // Re-read through the SAME `where` translator the rest of the adapter
+        // uses, so a compound-unique key (`a_b`) resolves identically here and
+        // in `findUnique`/`update` instead of being spliced into raw SQL.
+        const row = readUnique(model, args.where);
         return args.select
           ? project(model, row, args.select, "select")
           : args.include
