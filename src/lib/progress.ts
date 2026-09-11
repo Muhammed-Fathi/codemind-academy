@@ -113,9 +113,9 @@ async function videoLessonIdsByStudent(
   }
 
   for (const s of students) {
-    const courseId = s.groupId ? courseByGroup.get(s.groupId as string) : null;
-    const schoolType = normalizeSchoolType(s.schoolType as string | null);
-    const courseLessons = courseId ? (lessonsByCourse.get(courseId as string) ?? []) : [];
+    const courseId = s.groupId ? courseByGroup.get(s.groupId) : null;
+    const schoolType = normalizeSchoolType(s.schoolType);
+    const courseLessons = courseId ? (lessonsByCourse.get(courseId) ?? []) : [];
     result.set(
       s.id,
       courseLessons

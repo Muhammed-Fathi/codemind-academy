@@ -51,10 +51,51 @@ import {
   questionValidationMessage,
   teacherCourseIds,
   validateQuestionDraft,
-  type ChainLesson,
   type ValidatedQuestion,
   lessonStamp,
 } from "@/lib/teacher-content";
+
+/**
+ * One author-supplied question draft.
+ *
+ * This is the shape the endpoint ACCEPTS, not a claim that the payload already
+ * satisfies it: every field is optional and every one of them is re-validated
+ * by the shared `validateQuestionDraft` (plus the Phase 12 school-type parse)
+ * before anything is written. Typing it only keeps the request body from being
+ * `any`, so a misspelled field becomes a compile error instead of a silent 400.
+ */
+type QuestionDraftInput = {
+  type?: QuestionType;
+  prompt?: string;
+  promptAr?: string;
+  options?: string[];
+  answer?: string;
+  explanation?: string;
+  difficulty?: Difficulty;
+  marks?: number;
+  /** Phase 12: explicit per-question school type. Absent = inherit. */
+  schoolType?: string | null;
+};
+
+/**
+ * The POST body of this route, narrowed to the fields it genuinely reads.
+ *
+ * Scalar fields are `unknown` on purpose: each is parsed by `boundedText`, a
+ * numeric range check or `resolveContentTrackScope`, and none of them may reach
+ * the Prisma write unvalidated. Only `questions` is given a structural type,
+ * because it is validated element-by-element by the shared validator.
+ */
+type CreateQuizRequestBody = {
+  lessonId?: unknown;
+  title?: unknown;
+  titleAr?: unknown;
+  description?: unknown;
+  passMark?: unknown;
+  timeLimit?: unknown;
+  /** Phase 12/18: resolved through `resolveContentTrackScope`, never trusted. */
+  trackScope?: unknown;
+  questions?: QuestionDraftInput[];
+};
 
 export async function GET(req: NextRequest) {
   const user = await requireUser();
@@ -191,8 +232,8 @@ export async function GET(req: NextRequest) {
     // `summarizeFinishedAttempts` per bucket, so a bucket can never disagree
     // with the overall number it was split from.
     const trackSummary = summarizeFinishedAttemptsByTrack(
-      q.attempts as unknown as Array<{ student?: { schoolType: unknown } } & typeof q.attempts[number]>,
-      (a) => (a as { student?: { schoolType: unknown } }).student?.schoolType
+      q.attempts,
+      (a) => a.student?.schoolType
     );
     // Canonical chain first, legacy topic chain as fallback.
     const lessonUnit = q.lesson?.unit ?? q.lesson?.topic?.unit ?? null;
@@ -275,7 +316,7 @@ export async function POST(req: NextRequest) {
   const teacher = await getTeacherProfile(user.id);
   if (!teacher) return err("Teacher profile not found", 404);
 
-  const body = await req.json().catch(() => ({}));
+  const body = (await req.json().catch(() => ({}))) as CreateQuizRequestBody;
   const lessonId = String(body.lessonId || "");
   const titleIn = boundedText(body.title, TEACHER_LIMITS.TITLE_MAX, {
     required: true,
@@ -326,18 +367,9 @@ export async function POST(req: NextRequest) {
   }
   const timeLimit = timeLimitRaw;
 
-  const questions: Array<{
-    type?: QuestionType;
-    prompt?: string;
-    promptAr?: string;
-    options?: string[];
-    answer?: string;
-    explanation?: string;
-    difficulty?: Difficulty;
-    marks?: number;
-    /** Phase 12: explicit per-question school type. Absent = inherit. */
-    schoolType?: string | null;
-  }> = Array.isArray(body.questions) ? body.questions : [];
+  const questions: QuestionDraftInput[] = Array.isArray(body.questions)
+    ? body.questions
+    : [];
 
   if (!lessonId) return err(tApi("api.176"), 400);
   if (questions.length === 0) return err(tApi("api.178"), 400);
@@ -355,7 +387,7 @@ export async function POST(req: NextRequest) {
     select: LESSON_PLACEMENT_SELECT,
   });
   if (!lessonRow) return err(tApi("api.179"), 404);
-  const lesson = lessonRow as ChainLesson;
+  const lesson = lessonRow;
   // Canonical chain first, legacy Topic chain as the fallback. Written out
   // rather than hidden inside a helper because THIS is the ownership check the
   // Phase 11/12 suites pin, and because "which course does this lesson belong

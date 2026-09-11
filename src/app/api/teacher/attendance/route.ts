@@ -12,6 +12,22 @@ import { ok, err, requireUser, getTeacherProfile } from "@/lib/api";
 
 const ALLOWED: AttendanceStatus[] = ["PRESENT", "ABSENT", "LATE", "EXCUSED"];
 
+/**
+ * The shape of one entry of the POST body's `attendance` array — the fields
+ * this endpoint genuinely accepts and nothing else (`studentId` and `status`
+ * are the only ones ever persisted, `note` the only optional one).
+ *
+ * It states the CONTRACT, not a guarantee: every entry is still re-validated
+ * below (presence → `ALLOWED` membership → membership of the session's group),
+ * and those runtime checks are what reject a malformed payload. Typing the body
+ * only stops an unrecognised field from reaching the Prisma write.
+ */
+type AttendanceEntryInput = {
+  studentId: string;
+  status: AttendanceStatus;
+  note?: string;
+};
+
 export async function GET(req: NextRequest) {
   const tApi = await getServerT();
   const user = await requireUser();
@@ -59,7 +75,7 @@ export async function GET(req: NextRequest) {
     const rows = (await db.attendance.findMany({
       where: { sessionId },
       select: { studentId: true, status: true, note: true },
-    }) as Array<{ studentId: string; status: AttendanceStatus; note: string | null }>);
+    }));
     const map = new Map<string, { studentId: string; status: AttendanceStatus; note: string | null }>(rows.map((r) => [r.studentId, r]));
     attendanceRecords = students.map((s) => {
       const r = map.get(s.id);
@@ -86,7 +102,7 @@ export async function GET(req: NextRequest) {
     perStudent.set(r.studentId, entry);
   }
 
-  const studentsPayload = students.map((s: any) => {
+  const studentsPayload = students.map((s) => {
     const att = attendanceRecords.find((a) => a.studentId === s.id);
     const stats = perStudent.get(s.id) || { total: 0, present: 0 };
     return {
@@ -132,12 +148,10 @@ export async function POST(req: NextRequest) {
   if (!teacher) return err("Teacher profile not found", 404);
 
   const body = (await req.json().catch(() => ({} as Record<string, unknown>))) as Record<string, unknown>;
-  const sessionId = String((body.sessionId as string) || "");
-  const attendance: Array<{
-    studentId: string;
-    status: AttendanceStatus;
-    note?: string;
-  }> = Array.isArray(body.attendance) ? (body.attendance as Array<{ studentId: string; status: AttendanceStatus; note?: string }>) : [];
+  const sessionId = String(body.sessionId || "");
+  const attendance: AttendanceEntryInput[] = Array.isArray(body.attendance)
+    ? body.attendance
+    : [];
 
   if (!sessionId) return err(tApi("api.157"), 400);
   if (attendance.length === 0) return err(tApi("api.158"), 400);
