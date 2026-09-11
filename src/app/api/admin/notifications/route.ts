@@ -13,7 +13,13 @@ import { getServerT } from "@/lib/i18n-server";
 // an empty post-preference audience is still the "no recipients" 400.
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { ok, err, requireRole } from "@/lib/api";
+import {
+  ok,
+  err,
+  requireRole,
+  applyRateLimit,
+  rateLimitedResponse,
+} from "@/lib/api";
 import { NotificationType } from "@prisma/client";
 import {
   chunkList,
@@ -58,6 +64,12 @@ export async function POST(req: NextRequest) {
   const { user, error } = await requireRole("ADMIN");
   if (error) return error;
   if (!user) return err("Unauthorized", 401);
+
+  // Phase 20 — a broadcast fans out over the WHOLE recipient set; rate limit
+  // before deriving the audience so repeated sends cannot be used as an
+  // amplification hammer.
+  const rl = await applyRateLimit("notification", user.id);
+  if (!rl.allowed) return rateLimitedResponse(rl);
 
   const body = await req.json().catch(() => ({}));
   const title = String(body.title || "").trim();

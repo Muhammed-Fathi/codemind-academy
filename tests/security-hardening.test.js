@@ -314,9 +314,21 @@ section("7. Session cookie flags & auth hygiene");
 
   const login = read("src/app/api/auth/[action]/route.ts");
   ok(
-    /role === "TEACHER" \|\| role === "ADMIN"/.test(login),
-    "self-registration as TEACHER/ADMIN remains blocked"
+    /if \(role === "ADMIN"\) return err\(tApi\("api\.059"\), 400\)/.test(login),
+    "self-registration as ADMIN remains blocked"
   );
+  // Phase 20 addendum: TEACHER self-registration now submits a PENDING
+  // application — it must still never create a session or a User account.
+  ok(
+    /submitTeacherApplication\(/.test(login),
+    "TEACHER self-registration submits a teacher application"
+  );
+  const teacherBranch = login.slice(
+    login.indexOf('if (role === "TEACHER")'),
+    login.indexOf("// Public admin registration")
+  );
+  ok(!/createSession\(/.test(teacherBranch), "TEACHER self-registration never creates a session");
+  ok(!/db\.user\.create/.test(teacherBranch), "TEACHER self-registration never creates a User");
   ok(/function safeUser/.test(login) && !/password/.test(login.split("function safeUser")[1]), "safeUser never returns the password hash");
 
   const reqReset = read("src/app/api/auth/password-reset/request/route.ts");

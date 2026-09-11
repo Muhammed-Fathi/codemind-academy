@@ -16,7 +16,13 @@
 
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { ok, err, requireRole } from "@/lib/api";
+import {
+  ok,
+  err,
+  requireRole,
+  applyRateLimit,
+  rateLimitedResponse,
+} from "@/lib/api";
 import {
   uploadLessonPdfMaterial,
   deactivateMaterial,
@@ -116,6 +122,11 @@ export async function POST(
   const tApi = await getServerT();
   const { user, error } = await requireRole("ADMIN");
   if (error) return error;
+
+  // Phase 20 — PDF upload writes a private file + DB rows; rate limit before
+  // any bytes are read so upload flooding is bounded per admin.
+  const rl = await applyRateLimit("pdfUpload", user?.id ?? "anonymous-admin");
+  if (!rl.allowed) return rateLimitedResponse(rl);
 
   const { id: lessonId } = await params;
 

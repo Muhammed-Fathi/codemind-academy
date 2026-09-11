@@ -24,7 +24,12 @@
 // nosniff. Range requests are supported for large documents.
 
 import { NextRequest, NextResponse } from "next/server";
-import { requireUser, err } from "@/lib/api";
+import {
+  requireUser,
+  err,
+  applyRateLimit,
+  rateLimitedResponse,
+} from "@/lib/api";
 import { readPrivateFile, privateFileStat } from "@/lib/media";
 import {
   authorizeMaterialDownload,
@@ -40,6 +45,12 @@ export async function GET(
   const { id } = await params;
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
+
+  // Phase 20 — rate limit BEFORE the 10-check authorization so mass probing
+  // (PDF id guessing) is bounded per user and can never double as a DoS on
+  // the authorization query.
+  const rl = await applyRateLimit("materialDownload", user.id);
+  if (!rl.allowed) return rateLimitedResponse(rl);
 
   const access = await authorizeMaterialDownload({
     materialId: id,

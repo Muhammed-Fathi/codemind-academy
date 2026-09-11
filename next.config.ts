@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import { assertProductionEnv } from "./src/lib/env";
+import { decideCspHeader } from "./src/lib/content-security-policy";
 
 // Fail the PRODUCTION BUILD early when the production secret contract is not
 // met. `next build` always runs with NODE_ENV=production, so this check only
@@ -18,25 +19,37 @@ if (
 }
 
 /**
- * Baseline security headers (defense-in-depth). These are deliberately
- * conservative and framework-agnostic; a Content-Security-Policy is NOT set
- * here because the app renders client-side with inline styles/scripts and an
- * embedded video iframe, and an untested CSP would break the product.
+ * Baseline security headers (defense-in-depth).
+ *
+ * Phase 20 adds a Content-Security-Policy derived from the application's REAL
+ * runtime requirements (see src/lib/content-security-policy.ts): no
+ * `unsafe-eval` in production, `unsafe-inline` only where the discovered
+ * runtime demands it (Next.js inline bootstrap scripts + inline styles), video
+ * playback preserved, and an operator kill-switch / report-only toggle
+ * (CSP_DISABLED=1 / CSP_REPORT_ONLY=1). In development the same policy is
+ * widened with 'unsafe-eval' for webpack HMR only (never shipped).
  */
-const securityHeaders = [
-  // Never let the app be framed by another origin (clickjacking).
-  { key: "X-Frame-Options", value: "SAMEORIGIN" },
-  // Stop browsers from MIME-sniffing responses (e.g. served media).
-  { key: "X-Content-Type-Options", value: "nosniff" },
-  // Do not leak full URLs (which may include ?token= reset links) to third parties.
-  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-  // Camera is required for quiz proctoring on the same origin only; everything
-  // else the app never uses is disabled outright.
-  {
-    key: "Permissions-Policy",
-    value: "camera=(self), microphone=(), geolocation=(), payment=(), usb=()",
-  },
-];
+const securityHeaders = () => {
+  const headers = [
+    // Never let the app be framed by another origin (clickjacking).
+    { key: "X-Frame-Options", value: "SAMEORIGIN" },
+    // Stop browsers from MIME-sniffing responses (e.g. served media).
+    { key: "X-Content-Type-Options", value: "nosniff" },
+    // Do not leak full URLs (which may include ?token= reset links) to third parties.
+    { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+    // Camera is required for quiz proctoring on the same origin only; everything
+    // else the app never uses is disabled outright.
+    {
+      key: "Permissions-Policy",
+      value: "camera=(self), microphone=(), geolocation=(), payment=(), usb=()",
+    },
+  ];
+  const csp = decideCspHeader();
+  if (csp) {
+    headers.push({ key: csp.header, value: csp.value });
+  }
+  return headers;
+};
 
 const nextConfig: NextConfig = {
   output: "standalone",
@@ -48,7 +61,7 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/:path*",
-        headers: securityHeaders,
+        headers: securityHeaders(),
       },
     ];
   },

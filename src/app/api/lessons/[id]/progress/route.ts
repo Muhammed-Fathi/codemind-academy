@@ -1,6 +1,13 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { ok, err, requireUser, getStudentProfile } from "@/lib/api";
+import {
+  ok,
+  err,
+  requireUser,
+  getStudentProfile,
+  applyRateLimit,
+  rateLimitedResponse,
+} from "@/lib/api";
 import { VIDEO_COMPLETION_THRESHOLD } from "@/lib/progress";
 import { canAccessLesson } from "@/lib/session-progress";
 import { getServerT } from "@/lib/i18n-server";
@@ -16,6 +23,11 @@ export async function POST(
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
   if (user.role !== "STUDENT") return err("Forbidden", 403);
+
+  // Phase 20 — shared limiter (see rate-limit.ts). Applied before the gating
+  // computation so a spammy client cannot DoS the progression query.
+  const rl = await applyRateLimit("progress", user.id);
+  if (!rl.allowed) return rateLimitedResponse(rl);
 
   const s = await getStudentProfile(user.id);
   if (!s) return err("Student profile not found", 404);
