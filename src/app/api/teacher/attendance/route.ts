@@ -56,11 +56,11 @@ export async function GET(req: NextRequest) {
     note: string | null;
   }[] = [];
   if (sessionId) {
-    const rows = await db.attendance.findMany({
+    const rows = (await db.attendance.findMany({
       where: { sessionId },
       select: { studentId: true, status: true, note: true },
-    });
-    const map = new Map(rows.map((r) => [r.studentId, r]));
+    }) as Array<{ studentId: string; status: AttendanceStatus; note: string | null }>);
+    const map = new Map<string, { studentId: string; status: AttendanceStatus; note: string | null }>(rows.map((r) => [r.studentId, r]));
     attendanceRecords = students.map((s) => {
       const r = map.get(s.id);
       return { studentId: s.id, status: r?.status ?? null, note: r?.note ?? null };
@@ -131,13 +131,13 @@ export async function POST(req: NextRequest) {
   const teacher = await getTeacherProfile(user.id);
   if (!teacher) return err("Teacher profile not found", 404);
 
-  const body = await req.json().catch(() => ({}));
-  const sessionId = String(body.sessionId || "");
+  const body = (await req.json().catch(() => ({} as Record<string, unknown>))) as Record<string, unknown>;
+  const sessionId = String((body.sessionId as string) || "");
   const attendance: Array<{
     studentId: string;
     status: AttendanceStatus;
     note?: string;
-  }> = Array.isArray(body.attendance) ? body.attendance : [];
+  }> = Array.isArray(body.attendance) ? (body.attendance as Array<{ studentId: string; status: AttendanceStatus; note?: string }>) : [];
 
   if (!sessionId) return err(tApi("api.157"), 400);
   if (attendance.length === 0) return err(tApi("api.158"), 400);

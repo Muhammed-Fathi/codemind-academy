@@ -191,8 +191,8 @@ export async function GET(req: NextRequest) {
     // `summarizeFinishedAttempts` per bucket, so a bucket can never disagree
     // with the overall number it was split from.
     const trackSummary = summarizeFinishedAttemptsByTrack(
-      q.attempts,
-      (a) => a.student?.schoolType
+      q.attempts as unknown as Array<{ student?: { schoolType: unknown } } & typeof q.attempts[number]>,
+      (a) => (a as { student?: { schoolType: unknown } }).student?.schoolType
     );
     // Canonical chain first, legacy topic chain as fallback.
     const lessonUnit = q.lesson?.unit ?? q.lesson?.topic?.unit ?? null;

@@ -113,9 +113,9 @@ async function videoLessonIdsByStudent(
   }
 
   for (const s of students) {
-    const courseId = s.groupId ? courseByGroup.get(s.groupId) : null;
-    const schoolType = normalizeSchoolType(s.schoolType);
-    const courseLessons = courseId ? lessonsByCourse.get(courseId) || [] : [];
+    const courseId = s.groupId ? courseByGroup.get(s.groupId as string) : null;
+    const schoolType = normalizeSchoolType(s.schoolType as string | null);
+    const courseLessons = courseId ? (lessonsByCourse.get(courseId as string) ?? []) : [];
     result.set(
       s.id,
       courseLessons
@@ -173,10 +173,10 @@ export async function getVideoProgressForStudents(
     const completedVideos = rows.filter((p) => p.videoCompleted).length;
     const percentSum = rows.reduce((acc, p) => acc + p.videoPercent, 0);
     const watchedSec = rows.reduce((acc, p) => acc + p.videoWatchedSec, 0);
-    const lastWatchedAt = rows.reduce<Date | null>(
-      (acc, p) =>
+    const lastWatchedAt: Date | null = rows.reduce(
+      (acc: Date | null, p) =>
         p.lastHeartbeatAt && (!acc || p.lastHeartbeatAt > acc) ? p.lastHeartbeatAt : acc,
-      null
+      null as Date | null
     );
 
     out.set(s.id, {

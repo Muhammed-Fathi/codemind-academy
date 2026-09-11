@@ -90,7 +90,7 @@ export async function GET() {
     // authorization decision and without a second query.
     select: { id: true, trackScope: true },
   });
-  const authorizedQuizIds = new Set(authorizedQuizRows.map((q) => q.id));
+  const authorizedQuizIds = new Set<string>(authorizedQuizRows.map((q: { id: string }) => q.id));
   const quizTrackById = new Map(
     authorizedQuizRows.map((q) => [q.id, String(q.trackScope)])
   );
@@ -181,10 +181,10 @@ export async function GET() {
       // (their group's course, their track), never over raw progress rows —
       // archived legacy and out-of-track history can no longer move the
       // teacher's numbers.
-      const studentUniverseIds = new Set(
+      const studentUniverseIds = new Set<string>(
         (universeLessonsByCourse.get(g.courseId) || [])
           .filter((l) => canAccessTrackScope(s.schoolType, l.trackScope))
-          .map((l) => l.id)
+          .map((l: { id: string }) => l.id)
       );
       const lessonTotal = studentUniverseIds.size;
       const lessonCompleted = s.lessonProgress.filter(
