@@ -450,7 +450,7 @@ import {
 bun run dev
 
 # 2. Open the app, log in with the matching demo account
-#    (student@codemind.academy / student123 for the example above)
+#    (student@codemind.academy / the SEED_DEMO_PASSWORD you seeded with)
 
 # 3. Click your new sidebar item — verify the component renders
 
@@ -458,7 +458,7 @@ bun run dev
 curl -b cookies.txt -c cookies.txt \
   -X POST http://localhost:3000/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"student@codemind.academy","password":"student123"}'
+  -d "{\"email\":\"student@codemind.academy\",\"password\":\"$SEED_DEMO_PASSWORD\"}"
 
 curl -b cookies.txt http://localhost:3000/api/students/me/projects
 
@@ -773,7 +773,7 @@ STUDENT: [
 
 ```bash
 bun run dev   # already running
-# Log in as student@codemind.academy / student123
+# Log in as student@codemind.academy / $SEED_DEMO_PASSWORD
 # Click "أهدافي" in the sidebar
 # Set targets, click "حفظ", verify toast
 # Reload page — targets should persist

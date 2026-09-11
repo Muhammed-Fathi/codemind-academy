@@ -23,11 +23,25 @@ process.env.LD_LIBRARY_PATH = "/tmp/al2023/lib" + (process.env.LD_LIBRARY_PATH ?
 
 const AR = /[\u0600-\u06FF]/;
 
+// The seeder no longer has default passwords (see docs/DEPLOYMENT_GUIDE.md §8),
+// so this audit takes them from the environment. Seed the target database with
+// known values before running it:
+//   SEED_ADMIN_PASSWORD=… SEED_DEMO_PASSWORD=… bun run scripts/seed.ts
+const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD;
+const DEMO_PASSWORD = process.env.SEED_DEMO_PASSWORD;
+if (!ADMIN_PASSWORD || !DEMO_PASSWORD) {
+  console.error(
+    "SEED_ADMIN_PASSWORD and SEED_DEMO_PASSWORD must both be set (the values\n" +
+      "you seeded the target database with). The seeder has no default passwords."
+  );
+  process.exit(2);
+}
+
 const ACCOUNTS = {
-  admin: { email: "admin@codemind.academy", password: "admin123" },
-  teacher: { email: "teacher@codemind.academy", password: "teacher123" },
-  student: { email: "student@codemind.academy", password: "student123" },
-  parent: { email: "parent@codemind.academy", password: "parent123" },
+  admin: { email: "admin@codemind.academy", password: ADMIN_PASSWORD },
+  teacher: { email: "teacher@codemind.academy", password: DEMO_PASSWORD },
+  student: { email: "student@codemind.academy", password: DEMO_PASSWORD },
+  parent: { email: "parent@codemind.academy", password: DEMO_PASSWORD },
 };
 
 const VIEWS = {

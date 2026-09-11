@@ -5,6 +5,7 @@ import {
   generateToken,
   deviceHashFromHeaders,
   hashIp,
+  clientIpFromHeaders,
   logSecurityEvent,
 } from "@/lib/security";
 
@@ -112,9 +113,7 @@ export async function createSession(userId: string): Promise<CreateSessionResult
       tokenHash: sha256(token),
       deviceHash,
       userAgent: (hdrs as Headers).get("user-agent")?.slice(0, 300) || null,
-      ipHash: hashIp(
-        (hdrs as Headers).get("x-forwarded-for")?.split(",")[0]?.trim()
-      ),
+      ipHash: hashIp(clientIpFromHeaders(hdrs as Headers)),
       expiresAt: expires,
     },
   });

@@ -392,12 +392,28 @@ model reference (36 models, 11 enums) and reset/backup commands.
 
 After running the seeder, the following accounts are available:
 
-| Role    | Email                           | Password      |
-| ------- | ------------------------------- | ------------- |
-| Admin   | `admin@codemind.academy`       | `admin123`    |
-| Teacher | `teacher@codemind.academy`      | `teacher123`  |
-| Student | `student@codemind.academy`      | `student123`  |
-| Parent  | `parent@codemind.academy`       | `parent123`   |
+| Role    | Email                           |
+| ------- | ------------------------------- |
+| Admin   | `admin@codemind.academy`       |
+| Teacher | `teacher@codemind.academy`      |
+| Student | `student@codemind.academy`      |
+| Parent  | `parent@codemind.academy`       |
+
+**There is no default password.** The seeder never uses a credential that is
+committed to this repository:
+
+```bash
+# Development — random passwords, printed ONCE by the seeder:
+bun run scripts/seed.ts
+
+# ...or pin your own (never commit them):
+SEED_ADMIN_PASSWORD="..." SEED_DEMO_PASSWORD="..." bun run scripts/seed.ts
+
+# Production — the seeder REFUSES to run without them:
+SEED_ADMIN_PASSWORD="$(openssl rand -hex 24)" \
+SEED_DEMO_PASSWORD="$(openssl rand -hex 24)" \
+NODE_ENV=production bun run scripts/seed.ts
+```
 
 > The seeder also creates a linked student → parent relationship, a
 > `Group A — Sat & Tue 6PM` group with one student enrolled, two live

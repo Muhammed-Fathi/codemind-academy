@@ -21,6 +21,7 @@ import { hashPassword, revokeAllSessions } from "@/lib/auth";
 import {
   sha256,
   hashIp,
+  clientIpFromHeaders,
   checkRateLimit,
   resetRateLimit,
   logSecurityEvent,
@@ -42,7 +43,7 @@ export async function POST(req: NextRequest) {
   if (!token) return err(tApi("api.203"), 400);
   if (password.length < 8) return err(tApi("api.204"), 400);
 
-  const ip = hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() || null;
+  const ip = clientIpFromHeaders(hdrs as Headers);
   const ipKey = hashIp(ip) || "unknown";
 
   const ipLimit = await checkRateLimit(

@@ -18,7 +18,13 @@ import { NextRequest } from "next/server";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { ok, err } from "@/lib/api";
-import { hashIp, sha256, checkRateLimit, logSecurityEvent } from "@/lib/security";
+import {
+  hashIp,
+  clientIpFromHeaders,
+  sha256,
+  checkRateLimit,
+  logSecurityEvent,
+} from "@/lib/security";
 import { activateTeacher } from "@/lib/teacher-applications";
 import { getServerT } from "@/lib/i18n-server";
 
@@ -38,7 +44,7 @@ export async function POST(req: NextRequest) {
   if (!token) return err(tApi("api.260"), 400);
   if (password.length < 8) return err(tApi("api.204"), 400);
 
-  const ip = hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() || null;
+  const ip = clientIpFromHeaders(hdrs as Headers);
   const ipKey = hashIp(ip) || "unknown";
   const tokenKey = sha256(token);
 

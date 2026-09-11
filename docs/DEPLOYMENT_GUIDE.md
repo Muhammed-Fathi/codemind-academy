@@ -428,7 +428,26 @@ Creates:
 bun run scripts/seed-parent-demo.ts
 ```
 
-### Production seeding
+### Production seeding — REQUIRED environment
+
+**`scripts/seed.ts` has no default passwords and refuses to run in production
+without them.** Earlier revisions hardcoded one well-known password per demo
+role, which meant every deployment that followed this guide shipped a
+publicly-known ADMIN password.
+
+```bash
+# Generate real secrets; never commit them.
+SEED_ADMIN_PASSWORD="$(openssl rand -hex 24)" \
+SEED_DEMO_PASSWORD="$(openssl rand -hex 24)" \
+NODE_ENV=production bun run scripts/seed.ts
+```
+
+- `SEED_ADMIN_PASSWORD` — the `admin@codemind.academy` account.
+- `SEED_DEMO_PASSWORD`  — the teacher / student / parent demo accounts.
+
+Both are used verbatim and are **never echoed back** by the seeder. If either
+is missing while `NODE_ENV=production`, the seeder exits non-zero without
+writing anything.
 
 On a production deploy, you typically want only:
 - The 4 subscription plans.
@@ -441,6 +460,10 @@ You can either:
    admin UI, or
 2. Fork the seeder into `scripts/seed-production.ts` and remove the
    demo user creation.
+
+Do (2) if you can. Demo users seeded into a production database are live
+accounts until an operator deletes them, and the seeder prints a warning
+saying so.
 
 ---
 
@@ -654,7 +677,7 @@ See `examples/` for a reference implementation.
 - [ ] HTTPS reverse proxy (Caddy / nginx / Vercel) configured.
 - [ ] DNS A/AAAA records point to the server / Vercel.
 - [ ] `curl https://your-domain/api/` returns 200.
-- [ ] Login works (`admin@codemind.academy` / `admin123`).
+- [ ] Login works with the `SEED_ADMIN_PASSWORD` you supplied.
 - [ ] Database backup cron job in place (VPS only).
 - [ ] `server.log` rotate config in place (VPS only).
 - [ ] Demo accounts either removed or password-changed (production).

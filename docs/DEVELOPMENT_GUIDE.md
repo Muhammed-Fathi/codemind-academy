@@ -56,14 +56,23 @@ bun run db:push
 bun run scripts/seed.ts
 ```
 
-After seeding you have 4 demo accounts ready to log in:
+After seeding you have 4 demo accounts ready to log in. **The seeder no longer
+has default passwords** — it prints randomly generated ones for local use, or
+uses the values you supply:
 
-| Role    | Email                          | Password      |
-| ------- | ------------------------------ | ------------- |
-| Admin   | `admin@codemind.academy`      | `admin123`    |
-| Teacher | `teacher@codemind.academy`     | `teacher123`  |
-| Student | `student@codemind.academy`     | `student123`  |
-| Parent  | `parent@codemind.academy`      | `parent123`   |
+| Role    | Email                          |
+| ------- | ------------------------------ |
+| Admin   | `admin@codemind.academy`      |
+| Teacher | `teacher@codemind.academy`     |
+| Student | `student@codemind.academy`     |
+| Parent  | `parent@codemind.academy`      |
+
+```bash
+bun run scripts/seed.ts                       # passwords printed once
+SEED_ADMIN_PASSWORD=dev-admin-pw \
+SEED_DEMO_PASSWORD=dev-demo-pw \
+  bun run scripts/seed.ts                     # fixed local passwords
+```
 
 ---
 
