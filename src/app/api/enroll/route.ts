@@ -28,8 +28,31 @@ export async function POST(req: NextRequest) {
   const plan = await db.subscriptionPlan.findUnique({ where: { id: planId } });
   if (!plan) return err(tApi("api.084"), 404);
 
-  const group = await db.group.findUnique({ where: { id: groupId } });
+  const course = await db.course.findUnique({
+    where: { id: courseId },
+    select: { id: true },
+  });
+  if (!course) return err(tApi("api.085"), 404);
+
+  const group = await db.group.findUnique({
+    where: { id: groupId },
+    select: { id: true, courseId: true, isActive: true, capacity: true },
+  });
   if (!group || !group.isActive) return err(tApi("api.085"), 404);
+
+  // Security Audit Gate (pre-P21) — COURSE / GROUP BINDING.
+  //
+  // Nothing on the server tied `groupId` to `courseId`, so a student could
+  // post any ACTIVE group id from any course. Enrollment is derived from
+  // `Student.groupId -> Group.courseId` (src/lib/enrollment.ts), so that
+  // single unchecked id immediately granted the curriculum of another course
+  // (any lesson whose track scope the student's own school type admits), plus
+  // a seat the group owner never sold.
+  //
+  // The pair is now validated together; the refusal reuses the
+  // "group not available" message so it never confirms which ids are real.
+  if (group.courseId !== course.id) return err(tApi("api.085"), 400);
+
   const filled = await db.student.count({ where: { groupId } });
   if (filled >= group.capacity) return err(tApi("api.086"), 400);
 

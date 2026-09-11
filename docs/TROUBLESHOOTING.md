@@ -463,7 +463,7 @@ immediately. Check `date` on the server.
 # 1. Verify the session row exists after login
 curl -c cookies.txt -X POST http://localhost:3000/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"admin@codemind.academy","password":"admin123"}'
+  -d "{\"email\":\"admin@codemind.academy\",\"password\":\"$SEED_ADMIN_PASSWORD\"}"
 
 # Should return {user: {...}} and set the cm_session cookie
 

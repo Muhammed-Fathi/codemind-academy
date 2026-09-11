@@ -36,13 +36,16 @@ demo account, then use the left sidebar to navigate.
 2. Click **"تسجيل الدخول"** (Sign In).
 3. Use the quick-login button or enter credentials:
    - **Email**: `admin@codemind.academy`
-   - **Password**: `admin123`
+   - **Password**: the one printed by `scripts/seed.ts`, or the value you
+     passed in `SEED_ADMIN_PASSWORD`
 4. On success you land on the **Overview** dashboard
    (`view: "admin-overview"`).
 
-> The demo admin account is created by `scripts/seed.ts`. To change
-> the password, edit the seed or update the `User.password` field
-> directly (use `hashPassword()` from `src/lib/auth.ts`).
+> The demo admin account is created by `scripts/seed.ts`. **There is no
+> default password** — the seeder generates a random one (printed once) or
+> uses `SEED_ADMIN_PASSWORD`. Never seed a production database with a
+> credential that lives in the repository; see
+> `docs/DEPLOYMENT_GUIDE.md` §8.
 
 ---
 

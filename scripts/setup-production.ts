@@ -141,9 +141,12 @@ async function main() {
     "\nEnter Admin password: "
   );
 
-  if (!password || password.length < 6) {
+  // Security Audit Gate (pre-P21): the platform minimum is 8 characters
+  // (password reset, teacher activation, registration). A production admin
+  // must not be provisioned with a 6-character password.
+  if (!password || password.length < 8) {
     throw new Error(
-      "Admin password must be at least 6 characters."
+      "Admin password must be at least 8 characters."
     );
   }
 

@@ -148,7 +148,9 @@ export async function POST(req: NextRequest) {
 
   if (!name || !email || !password)
     return err(tApi("api.048"), 400);
-  if (password.length < 6) return err(tApi("api.049"), 400);
+  // Security Audit Gate (pre-P21): align with the platform-wide 8-character
+  // minimum (password reset, teacher activation, client-side registration).
+  if (password.length < 8) return err(tApi("api.204"), 400);
 
   const exists = await db.user.findUnique({ where: { email } });
   if (exists) return err(tApi("api.050"), 409);

@@ -8,8 +8,16 @@ import {
   getCurrentUser,
   getCurrentUserDetailed,
 } from "@/lib/auth";
-import { logSecurityEvent } from "@/lib/security";
+import {
+  clientIpFromHeaders,
+  hashIp,
+  logSecurityEvent,
+  sha256,
+  checkRateLimit,
+  resetRateLimit,
+} from "@/lib/security";
 import { headers } from "next/headers";
+import { RATE_LIMITED_CODE } from "@/lib/rate-limit";
 import {
   ok,
   err,
@@ -30,6 +38,31 @@ import { requireSchoolType } from "@/lib/school-type";
 import { reconcileStudentBatch } from "@/lib/enrollment";
 import { submitTeacherApplication } from "@/lib/teacher-applications";
 
+// ---------------------------------------------------------------------------
+// Login abuse limiting (Security Audit Gate, pre-P21)
+// ---------------------------------------------------------------------------
+// Login is the one unauthenticated endpoint that mints a session, and until
+// now it was the ONLY unauthenticated credential endpoint without a limiter
+// (password reset and teacher activation both are). That left the whole
+// platform one `for` loop away from credential stuffing.
+//
+// Two independent buckets, both using the shared DB-backed primitive so the
+// counter survives restarts and is shared across processes:
+//   * `login:id`  — hashed email identity. Not spoofable, stops a distributed
+//     attack against one account. Cleared on success, so a legitimate user is
+//     never penalised for their own past typos.
+//   * `login:ip`  — hashed client IP. Stops one source spraying many accounts.
+//
+// Neither bucket can be used for account enumeration: `login:id` is keyed by
+// the submitted email whether or not that account exists, so "unknown account"
+// and "wrong password" consume the same budget and return the same 401.
+const LOGIN_ID_LIMIT = 10;
+const LOGIN_ID_WINDOW_SEC = 15 * 60;
+const LOGIN_ID_BLOCK_SEC = 10 * 60;
+const LOGIN_IP_LIMIT = 40;
+const LOGIN_IP_WINDOW_SEC = 10 * 60;
+const LOGIN_IP_BLOCK_SEC = 15 * 60;
+
 export async function POST(req: NextRequest, { params }: { params: Promise<{ action: string }> }) {
   const tApi = await getServerT();
   const { action } = await params;
@@ -37,6 +70,43 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ act
 
   if (action === "login") {
     const hdrs = await headers();
+
+    // Throttled BEFORE the credential is checked, on both keys.
+    const loginIpKey = hashIp(clientIpFromHeaders(hdrs as Headers)) || "unknown";
+    const loginIdKey = sha256(`login:id:${String(body.email || "").toLowerCase().trim()}`);
+
+    const ipLimit = await checkRateLimit(
+      "login:ip",
+      loginIpKey,
+      LOGIN_IP_LIMIT,
+      LOGIN_IP_WINDOW_SEC,
+      LOGIN_IP_BLOCK_SEC
+    );
+    if (!ipLimit.allowed) {
+      await logSecurityEvent({
+        type: "LOGIN_FAILED",
+        detail: "Login IP rate limit exceeded",
+        headers: hdrs,
+      });
+      return tooManyAttempts(tApi("api.202"), ipLimit.retryAfterSec);
+    }
+
+    const idLimit = await checkRateLimit(
+      "login:id",
+      loginIdKey,
+      LOGIN_ID_LIMIT,
+      LOGIN_ID_WINDOW_SEC,
+      LOGIN_ID_BLOCK_SEC
+    );
+    if (!idLimit.allowed) {
+      await logSecurityEvent({
+        type: "LOGIN_FAILED",
+        detail: "Login per-identity rate limit exceeded",
+        headers: hdrs,
+      });
+      return tooManyAttempts(tApi("api.202"), idLimit.retryAfterSec);
+    }
+
     const user = await db.user.findUnique({
       where: { email: String(body.email || "").toLowerCase().trim() },
     });
@@ -68,6 +138,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ act
         { status: 403 }
       );
     }
+    // Successful login clears this identity's failure budget, so the limiter
+    // punishes attackers and not people who mistyped their own password.
+    await resetRateLimit("login:id", loginIdKey);
+
     await logSecurityEvent({
       userId: user.id,
       type: "LOGIN_SUCCESS",
@@ -140,7 +214,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ act
     if (!email || !password || !name)
       return err(tApi("api.059"), 400);
     if (!isValidEmail(email)) return err(tApi("api.060"), 400);
-    if (password.length < 6) return err(tApi("api.061"), 400);
+    // Security Audit Gate (pre-P21): the server accepted 6 characters while
+    // the registration FORM it feeds already refuses fewer than 8, and the
+    // reset/activation paths use 8. Enforce one minimum, server-side.
+    if (password.length < 8) return err(tApi("api.204"), 400);
 
     const exists = await db.user.findUnique({ where: { email } });
     if (exists) return err(tApi("api.062"), 409);
@@ -316,6 +393,21 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ acti
     return ok(u);
   }
   return err("Not found", 404);
+}
+
+/**
+ * 429 for a throttled login. Same body shape as `rateLimitedResponse` from
+ * src/lib/api.ts (machine `code` + human message + `Retry-After`) so a client
+ * cannot tell the login limiter apart from any other limiter in the platform.
+ */
+function tooManyAttempts(message: string, retryAfterSec: number) {
+  return NextResponse.json(
+    { error: message, code: RATE_LIMITED_CODE },
+    {
+      status: 429,
+      headers: { "Retry-After": String(Math.max(1, Math.ceil(retryAfterSec))) },
+    }
+  );
 }
 
 function safeUser(u: any) {

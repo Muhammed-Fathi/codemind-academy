@@ -21,6 +21,7 @@ import {
   sha256,
   generateToken,
   hashIp,
+  clientIpFromHeaders,
   maskEmail,
   checkRateLimit,
   logSecurityEvent,
@@ -46,7 +47,7 @@ export async function POST(req: NextRequest) {
   if (!email) return err(tApi("api.200"), 400);
   if (!isValidEmail(email)) return err(tApi("api.220"), 400);
 
-  const ip = hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() || null;
+  const ip = clientIpFromHeaders(hdrs as Headers);
   const ipKey = hashIp(ip) || "unknown";
   const identifierKey = sha256(email);
 
