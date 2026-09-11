@@ -63,7 +63,11 @@ export async function POST(req: NextRequest) {
 
   if (!name || !email || !password)
     return err(tApi("api.051"), 400);
-  if (password.length < 6) return err(tApi("api.052"), 400);
+  // Security Audit Gate (pre-P21): the platform minimum is 8 everywhere
+  // else (self-service reset, teacher activation, and the client-side
+  // registration form). An admin-provisioned TEACHER account is privileged,
+  // is never forced to change this password, and used to accept 6.
+  if (password.length < 8) return err(tApi("api.204"), 400);
 
   const exists = await db.user.findUnique({ where: { email } });
   if (exists) return err(tApi("api.053"), 409);

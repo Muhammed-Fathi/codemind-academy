@@ -99,10 +99,26 @@ export async function PATCH(req: NextRequest) {
   if (scheduledDate) data.scheduledDate = new Date(scheduledDate);
   if (durationMin) data.durationMin = durationMin;
 
-  const task = await db.studyTask.update({
-    where: { id: taskId },
+  // Security Audit Gate (pre-P21) — OWNERSHIP-SCOPED WRITE.
+  //
+  // This was the last write in the student surface that updated a row by id
+  // alone: any authenticated student could PATCH another student's task id and
+  // have the route rewrite it AND hand the victim's row back in the response.
+  // The sibling operations in this very file (DELETE) and in
+  // /api/students/me/notes (PATCH) already scope by `studentId` — this branch
+  // had simply drifted.
+  //
+  // `updateMany` with the owner in the WHERE clause makes the whole operation
+  // atomic and non-enumerable: a task that is not the caller's own answers
+  // exactly like one that does not exist (404), which also removes the
+  // unhandled Prisma P2025 a guessed id used to raise.
+  const result = await db.studyTask.updateMany({
+    where: { id: taskId, studentId: student.id },
     data,
   });
+  if (result.count !== 1) return err("Not found", 404);
+
+  const task = await db.studyTask.findUnique({ where: { id: taskId } });
   return ok({ task });
 }
 

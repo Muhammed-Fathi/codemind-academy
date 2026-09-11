@@ -34,6 +34,30 @@ export function generateToken(bytes = 32): string {
 // ---------------------------------------------------------------------------
 
 /**
+ * Best-effort client IP, for ABUSE LIMITING ONLY — never for authorization.
+ *
+ * TRUST MODEL (Security Audit Gate, pre-P21). `X-Forwarded-For` is appended
+ * to by every hop, so its FIRST entry is whatever the outermost client sent
+ * unless a trusted proxy rewrites the header. `X-Real-IP` is different: the
+ * documented deployment (Caddyfile, docs/DEPLOYMENT_GUIDE.md §1B) sets it
+ * unconditionally with `header_up X-Real-IP {remote_host}`, so a proxy that
+ * emits it also overwrites any client-supplied value, and a request that
+ * reaches the app WITHOUT the proxy carries no `X-Real-IP` at all.
+ *
+ * We therefore prefer `X-Real-IP` and fall back to the first XFF hop. A
+ * spoofed IP can only ever weaken an IP-bucketed *throttle*, never an
+ * authorization decision — and every abuse-sensitive endpoint also keys a
+ * second, non-spoofable bucket (hashed account identity or hashed token).
+ */
+export function clientIpFromHeaders(headers: Headers): string | null {
+  const realIp = headers.get("x-real-ip")?.trim();
+  if (realIp) return realIp;
+  const forwarded = headers.get("x-forwarded-for");
+  const first = forwarded?.split(",")[0]?.trim();
+  return first || null;
+}
+
+/**
  * Hash an IP with a server secret so logs are useful for abuse detection but
  * do not store raw personal data.
  */
@@ -250,7 +274,10 @@ export async function logSecurityEvent(params: {
         userId: params.userId || null,
         type: params.type,
         detail: params.detail || null,
-        ipHash: hashIp(params.ip ?? params.headers?.get("x-forwarded-for")?.split(",")[0]?.trim()),
+        ipHash: hashIp(
+          params.ip ??
+            (params.headers ? clientIpFromHeaders(params.headers) : null)
+        ),
         userAgent: params.headers?.get("user-agent")?.slice(0, 300) || null,
       },
     });

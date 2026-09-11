@@ -222,10 +222,12 @@ Four roles defined in the Prisma `Role` enum:
 
 | Role      | Home View           | Count of Sidebar Items | Demo Account                    |
 | --------- | ------------------- | ---------------------- | ------------------------------- |
-| `STUDENT` | `student-dashboard` | 12                     | `student@codemind.academy` / `student123` |
-| `PARENT`  | `parent-dashboard` | 2                      | `parent@codemind.academy` / `parent123` |
-| `TEACHER` | `teacher-dashboard` | 4                      | `teacher@codemind.academy` / `teacher123` |
-| `ADMIN`   | `admin-overview`   | 11                     | `admin@codemind.academy` / `admin123` |
+| `STUDENT` | `student-dashboard` | 12                     | `student@codemind.academy` / seeded password |
+| `PARENT`  | `parent-dashboard` | 2                      | `parent@codemind.academy` / seeded password |
+| `TEACHER` | `teacher-dashboard` | 4                      | `teacher@codemind.academy` / seeded password |
+| `ADMIN`   | `admin-overview`   | 11                     | `admin@codemind.academy` / seeded password |
+
+> The seeder has no default passwords — see `docs/DEPLOYMENT_GUIDE.md` §8.
 
 Authorization is enforced server-side via `requireUser()` /
 `requireRole(...roles)` helpers in `src/lib/api.ts`.

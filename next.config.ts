@@ -43,6 +43,23 @@ const securityHeaders = () => {
       key: "Permissions-Policy",
       value: "camera=(self), microphone=(), geolocation=(), payment=(), usb=()",
     },
+    // HSTS (Security Audit Gate, pre-P21). Every supported deployment
+    // terminates TLS in front of the app (Caddy / nginx / Vercel —
+    // docs/DEPLOYMENT_GUIDE.md §6) and redirects HTTP → HTTPS, so the app only
+    // ever answers on an HTTPS origin and can commit to it. Browsers honour
+    // the header only on a secure response, so emitting it unconditionally is
+    // safe; `preload` is deliberately omitted because it is a one-way door
+    // submitted to browser vendor lists. `HSTS_DISABLED=1` is the operator
+    // kill-switch, shaped like the existing `CSP_DISABLED`.
+    ...(String(process.env.HSTS_DISABLED ?? "")
+      .trim() === "1"
+      ? []
+      : [
+          {
+            key: "Strict-Transport-Security",
+            value: "max-age=15552000; includeSubDomains",
+          },
+        ]),
   ];
   const csp = decideCspHeader();
   if (csp) {

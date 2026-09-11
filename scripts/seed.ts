@@ -1,11 +1,72 @@
 // CodeMind Academy — Database Seeder
 // Run with: bun run scripts/seed.ts
+import { randomBytes } from "crypto";
 import { db } from "../src/lib/db";
 import { hashPassword } from "../src/lib/auth";
 import { reconcileOfficialCurriculum } from "../src/lib/official-curriculum";
 
+// ---------------------------------------------------------------------------
+// Demo-user credentials — SECURITY CONTRACT (Security Audit Gate, pre-P21)
+// ---------------------------------------------------------------------------
+//
+// A seeder must NEVER create an account whose password is committed to the
+// repository. The previous version hardcoded one well-known password per demo
+// role, and docs/DEPLOYMENT_GUIDE.md made `bun run scripts/seed.ts` a
+// MANDATORY first-deploy step — so every deployment that followed the guide
+// shipped a publicly-known ADMIN password (full platform compromise: every
+// student record, national ID, phone number and every admin mutation).
+//
+// The contract is now:
+//   * `SEED_ADMIN_PASSWORD` / `SEED_DEMO_PASSWORD`, when set, are used
+//     verbatim and are NEVER printed back to the console.
+//   * NODE_ENV=production with no value for either variable: the seeder
+//     REFUSES to create the account and exits non-zero. A production admin
+//     password is an operator secret, not a default.
+//   * Anywhere else (development / test / a one-off script run): a
+//     cryptographically random password is generated, printed ONCE, and never
+//     written to disk. It is usable only on the database that was just seeded.
+
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
+
+/** 16 random bytes → 22 chars of URL-safe text (≈128 bits of entropy). */
+function generatedPassword(): string {
+  return randomBytes(16).toString("base64url");
+}
+
+/**
+ * Resolve the password for a seeded account.
+ * Returns `null` when production requires an operator-supplied value and none
+ * was given — the caller must then abort.
+ */
+function resolveSeedPassword(
+  envKey: string,
+  label: string
+): { value: string; fromEnv: boolean } | null {
+  const fromEnv = process.env[envKey]?.trim();
+  if (fromEnv) return { value: fromEnv, fromEnv: true };
+  if (IS_PRODUCTION) {
+    console.error(
+      `\n❌ ${label} password is not set.\n` +
+        `   This database is being seeded with NODE_ENV=production, so the seeder\n` +
+        `   will not invent a credential. Set it explicitly and re-run:\n\n` +
+        `       ${envKey}="$(openssl rand -hex 24)" bun run scripts/seed.ts\n\n` +
+        `   Never commit the value. See docs/DEPLOYMENT_GUIDE.md §8.`
+    );
+    return null;
+  }
+  return { value: generatedPassword(), fromEnv: false };
+}
+
 async function main() {
   console.log("🌱 Seeding CodeMind Academy...");
+
+  // Resolve BOTH passwords before touching the database, so a production run
+  // with a half-configured environment aborts without leaving demo rows behind.
+  const adminPassword = resolveSeedPassword("SEED_ADMIN_PASSWORD", "Admin");
+  const demoPassword = resolveSeedPassword("SEED_DEMO_PASSWORD", "Demo user");
+  if (!adminPassword || !demoPassword) {
+    process.exit(1);
+  }
 
   // 1. Settings / branding
   // Unified support line across the platform: +20 1147422177
@@ -36,7 +97,7 @@ async function main() {
     create: {
       email: "admin@codemind.academy",
       name: "Admin User",
-      password: hashPassword("admin123"),
+      password: hashPassword(adminPassword.value),
       role: "ADMIN",
       phone: "+201000000003",
     },
@@ -48,7 +109,7 @@ async function main() {
     create: {
       email: "teacher@codemind.academy",
       name: "Eng. Omar Khaled",
-      password: hashPassword("teacher123"),
+      password: hashPassword(demoPassword.value),
       role: "TEACHER",
       phone: "+201000000004",
     },
@@ -69,7 +130,7 @@ async function main() {
     create: {
       email: "student@codemind.academy",
       name: "Ahmed Hassan",
-      password: hashPassword("student123"),
+      password: hashPassword(demoPassword.value),
       role: "STUDENT",
       phone: "+201000000005",
     },
@@ -81,7 +142,7 @@ async function main() {
     create: {
       email: "parent@codemind.academy",
       name: "Mr. Hassan",
-      password: hashPassword("parent123"),
+      password: hashPassword(demoPassword.value),
       role: "PARENT",
       phone: "+201000000006",
     },
@@ -323,11 +384,35 @@ async function main() {
 
   console.log("✅ Seed complete!");
   console.log("");
-  console.log("Demo credentials:");
-  console.log("  Admin:    admin@codemind.academy    / admin123");
-  console.log("  Teacher:  teacher@codemind.academy  / teacher123");
-  console.log("  Student:  student@codemind.academy  / student123");
-  console.log("  Parent:   parent@codemind.academy   / parent123");
+
+  // Credentials are ONLY echoed when the seeder generated them itself (a local
+  // / throw-away database). An operator-supplied password is never printed, and
+  // there is no longer any default password to print.
+  const generated: string[] = [];
+  if (!adminPassword.fromEnv) {
+    generated.push(`  Admin:    admin@codemind.academy    / ${adminPassword.value}`);
+  }
+  if (!demoPassword.fromEnv) {
+    generated.push(
+      `  Teacher:  teacher@codemind.academy  / ${demoPassword.value}`,
+      `  Student:  student@codemind.academy  / ${demoPassword.value}`,
+      `  Parent:   parent@codemind.academy   / ${demoPassword.value}`
+    );
+  }
+
+  if (generated.length > 0) {
+    console.log("Generated demo credentials (random — shown ONCE, never stored):");
+    for (const line of generated) console.log(line);
+  } else {
+    console.log("Demo credentials: supplied via SEED_ADMIN_PASSWORD / SEED_DEMO_PASSWORD");
+    console.log("(not shown — the operator already knows them).");
+  }
+
+  if (IS_PRODUCTION) {
+    console.log("");
+    console.log("⚠️  NODE_ENV=production: demo accounts were created. Remove them");
+    console.log("   through the admin UI (or never expose this database) before go-live.");
+  }
 }
 
 main()
