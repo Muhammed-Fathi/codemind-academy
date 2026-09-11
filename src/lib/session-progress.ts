@@ -332,12 +332,12 @@ export async function getCourseSessionProgress(
       quizzes: { select: { id: true } },
       homeworks: { select: { id: true } },
     },
-  });
-  const lessons = orderCourseLessons(found, courseId);
+  }) as unknown as Array<LessonChain & { quizzes: { id: string }[]; homeworks: { id: string }[] }>
+  const lessons = orderCourseLessons(found, courseId) as Array<LessonChain & { quizzes: { id: string }[]; homeworks: { id: string }[] }>;
 
   const lessonIds = lessons.map((l) => l.id);
-  const quizIds = lessons.flatMap((l) => l.quizzes.map((q) => q.id));
-  const homeworkIds = lessons.flatMap((l) => l.homeworks.map((h) => h.id));
+  const quizIds = lessons.flatMap((l) => l.quizzes.map((q: { id: string }) => q.id));
+  const homeworkIds = lessons.flatMap((l) => l.homeworks.map((h: { id: string }) => h.id));
 
   const [progressRows, quizAttempts, submissions] = await Promise.all([
     lessonIds.length
@@ -372,7 +372,7 @@ export async function getCourseSessionProgress(
   let previousCompleted = true; // the very first lesson is always unlocked
 
   for (const lesson of lessons) {
-    const lp = progressByLesson.get(lesson.id);
+    const lp = progressByLesson.get(lesson.id) as { videoPercent: number; videoCompleted: boolean; isCompleted: boolean } | undefined;
 
     const hasVideo = !!lesson.videoUrl;
     const videoPercent = lp?.videoPercent ?? 0;
