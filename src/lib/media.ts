@@ -13,7 +13,7 @@
 
 import { promises as fs } from "fs";
 import path from "path";
-import { randomBytes } from "crypto";
+import { createHash, randomBytes } from "crypto";
 
 export const MEDIA_ROOT =
   process.env.MEDIA_STORAGE_PATH || path.join(process.cwd(), "storage", "media");
@@ -270,6 +270,28 @@ export async function deletePrivateFile(storageKey: string): Promise<void> {
 
 export async function privateFileStat(storageKey: string) {
   return fs.stat(resolveSafePath(storageKey)).catch(() => null);
+}
+
+// ---------------------------------------------------------------------------
+// Phase 21 — integrity checksums (media migration + backup verification).
+// ---------------------------------------------------------------------------
+
+/** SHA-256 hex of bytes (migration manifests, integrity proofs). */
+export function sha256Buffer(data: Buffer | Uint8Array): string {
+  return createHash("sha256").update(data).digest("hex");
+}
+
+/** SHA-256 hex of a private-storage file, streamed (no full buffering). */
+export async function sha256PrivateFile(storageKey: string): Promise<string> {
+  const { createReadStream } = await import("fs");
+  const target = resolveSafePath(storageKey);
+  return new Promise((resolve, reject) => {
+    const hash = createHash("sha256");
+    const stream = createReadStream(target);
+    stream.on("error", reject);
+    stream.on("data", (chunk) => hash.update(chunk as Buffer));
+    stream.on("end", () => resolve(hash.digest("hex")));
+  });
 }
 
 export function extFromMime(mime: string): string {

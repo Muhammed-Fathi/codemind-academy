@@ -494,6 +494,8 @@ const MODULES = [
   "src/lib/school-type.ts",
   "src/lib/track-scope.ts",
   "src/lib/media.ts",
+  // Phase 21: session-materials.ts imports the volume-quota check.
+  "src/lib/storage-quotas.ts",
   "src/lib/session-materials.ts",
   "src/lib/session-lifecycle.ts",
   "src/lib/progress.ts",

@@ -71,6 +71,7 @@ import {
 } from "@/lib/parent-access";
 import { getStudentSchoolType } from "@/lib/enrollment";
 import { normalizeSchoolType, type SchoolType } from "@/lib/school-type";
+import { assertVolumeQuota } from "@/lib/storage-quotas";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -127,7 +128,8 @@ export type MaterialUploadResult =
         | "LESSON_NOT_FOUND"
         | "LESSON_ARCHIVED"
         | "VALIDATION_FAILED"
-        | "INVALID_TRACK_SCOPE";
+        | "INVALID_TRACK_SCOPE"
+        | "QUOTA_EXCEEDED";
       message: string;
       validation?: PdfValidationResult;
     };
@@ -367,6 +369,16 @@ export async function uploadLessonPdfMaterial(
   const buffer = Buffer.isBuffer(input.buffer)
     ? input.buffer
     : Buffer.from(input.buffer);
+  // Phase 21 — volume quota, checked BEFORE any byte is written or any DB row
+  // is created. No-op unless the operator sets MEDIA_QUOTA_BYTES.
+  const quota = await assertVolumeQuota(buffer.length);
+  if (!quota.ok) {
+    return {
+      ok: false,
+      code: "QUOTA_EXCEEDED",
+      message: "Media storage quota exceeded",
+    };
+  }
   await writePrivateFile(storageKey, buffer);
 
   const title =

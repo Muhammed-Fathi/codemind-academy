@@ -20,6 +20,7 @@ import {
   makeStorageKey,
   writePrivateFile,
 } from "@/lib/media";
+import { assertVolumeQuota } from "@/lib/storage-quotas";
 import { getServerT } from "@/lib/i18n-server";
 
 export async function GET(req: NextRequest) {
@@ -137,6 +138,10 @@ export async function POST(req: NextRequest) {
 
     const storageKey = makeStorageKey("session-videos", extFromMime(mime));
     const buffer = Buffer.from(await file.arrayBuffer());
+    // Phase 21 — volume quota, checked BEFORE any byte is written. No-op
+    // unless the operator sets MEDIA_QUOTA_BYTES.
+    const quota = await assertVolumeQuota(buffer.length);
+    if (!quota.ok) return err("Media storage quota exceeded", 413);
     await writePrivateFile(storageKey, buffer);
 
     const asset = await db.mediaAsset.create({

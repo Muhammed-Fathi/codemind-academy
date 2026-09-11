@@ -129,6 +129,8 @@ const REAL_CODE_MODULES = [
   "src/lib/env.ts",
   "src/lib/security.ts",
   "src/lib/media.ts",
+  // Phase 21: session-materials.ts + upload routes import the volume-quota check.
+  "src/lib/storage-quotas.ts",
   "src/lib/enrollment.ts",
   "src/lib/session-lifecycle.ts",
   "src/lib/progress.ts",
