@@ -106,12 +106,35 @@ function ask(question: string): Promise<string> {
 }
 
 /**
+ * Discard stale typed-ahead input already buffered on an interactive TTY
+ * (e.g. an extra Enter pressed just after answering) so it can never be
+ * consumed as the answer to the NEXT prompt. Piped (non-TTY) input is left
+ * untouched so scripted, byte-exact input keeps working.
+ */
+async function drainTypedAheadInput(): Promise<void> {
+  if (!process.stdin.isTTY || !process.stdin.readable) return;
+  await new Promise((resolve) => setImmediate(resolve));
+  while (process.stdin.read() !== null) {
+    // Discard.
+  }
+}
+
+/**
  * Prompt for a secret without echoing it to the terminal. The typed value is
  * never printed, never logged, and never stored anywhere but as a hash.
+ *
+ * The question is printed on its OWN line (a newline is appended). A
+ * terminal-mode readline interface clears and redraws the ACTIVE input line
+ * (`cursorTo(0)` + erase + `prompt + line`) on every keystroke; keeping the
+ * prompt above that line means the redraw can never wipe it (any prompt left
+ * on the same line is erased the instant the interface takes over — which is
+ * exactly why the previous inline prompt disappeared). `_writeToOutput`
+ * muting keeps the secret itself invisible while typing.
  */
-function askHidden(question: string): Promise<string> {
+async function askHidden(question: string): Promise<string> {
+  await drainTypedAheadInput();
+  process.stdout.write(question.endsWith("\n") ? question : `${question}\n`);
   return new Promise((resolve) => {
-    process.stdout.write(question);
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
     // Mute all echo while the secret is being typed.
     (rl as unknown as { _writeToOutput: (s: string) => void })._writeToOutput = () => {};
@@ -489,14 +512,19 @@ async function main() {
   // ---- Collect all passwords up front (so the DB transaction never waits on
   //      human input). Each is entered twice, hidden, and policy-checked. ----
   const passwordHashes = new Map<string, string>();
-  for (const spec of PRODUCTION_USERS) {
+  for (const [index, spec] of PRODUCTION_USERS.entries()) {
     for (;;) {
-      const pw = await askHidden(`\nPassword for ${spec.role} ${spec.name} <${spec.email}>: `);
+      // Announce the account BEFORE the hidden prompts: the prompt text is
+      // printed on its own line (never inline), so the operator always knows
+      // exactly which credentials they are entering.
+      console.log(`\n[${index + 1}/${PRODUCTION_USERS.length}] ${spec.role} — ${spec.name}`);
+      console.log(`Email: ${spec.email}`);
+      const pw = await askHidden("Enter password:");
       if (!pw || pw.length < MIN_PASSWORD_LENGTH) {
         console.log(`  Password must be at least ${MIN_PASSWORD_LENGTH} characters. Try again.`);
         continue;
       }
-      const confirm = await askHidden(`Confirm password for ${spec.email}: `);
+      const confirm = await askHidden("Confirm password:");
       if (pw !== confirm) {
         console.log("  Passwords did not match. Try again.");
         continue;
