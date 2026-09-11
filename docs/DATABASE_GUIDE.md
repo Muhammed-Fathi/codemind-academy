@@ -921,15 +921,22 @@ cp backups/custom-2024-09-01-0300.db db/custom.db
 bun run dev
 ```
 
-### Backup (PostgreSQL — when you switch)
+### Backup (PostgreSQL — Phase 21 production path)
 
 ```bash
-# Full dump
-pg_dump $DATABASE_URL > backups/codemind-$(date +%F).sql
+# Full custom-format dump + sha256 + manifest + retention (see §11 + runbook)
+scripts/db/backup-postgres.sh --out-dir /var/backups/codemind --label nightly
 
-# Restore
-psql $DATABASE_URL < backups/codemind-2024-09-01.sql
+# Restore into an EMPTY database (enforces integrity + verification battery)
+scripts/db/restore-postgres.sh --backup /var/backups/codemind/<artifact>.dump \
+    --target postgresql://user@host/codemind_restored
+
+# Verify any PostgreSQL (counts, constraints, lifecycle, app-shaped queries)
+node scripts/db/verify-postgres.mjs --target "$DATABASE_URL"
 ```
+
+Authoritative procedure: `docs/POSTGRES_CUTOVER_RUNBOOK.md`.
+Design + drill evidence: `docs/PHASE_21_PRODUCTION_DATABASE_STORAGE.md`.
 
 ### Cron job (VPS)
 
@@ -980,56 +987,65 @@ SELECT email, role FROM User;
 
 ---
 
-## 11. Switching to PostgreSQL
+## 11. Switching to PostgreSQL (Phase 21 — IMPLEMENTED)
 
-The schema is portable. To switch:
+> The old "edit the provider + pgloader" sketch below is SUPERSEDED by the
+> Phase 21 cutover. Do not hand-edit the provider and do not use pgloader
+> (it cannot preserve the verification contract). Follow the runbook:
+> **`docs/POSTGRES_CUTOVER_RUNBOOK.md`**.
 
-1. **Edit `prisma/schema.prisma`**:
-   ```prisma
-   datasource db {
-     provider = "postgresql"   # was "sqlite"
-     url      = env("DATABASE_URL")
-   }
-   ```
+Short form (details + rollback in the runbook):
 
-2. **Update `.env`**:
-   ```
-   DATABASE_URL="postgresql://user:password@host:5432/codemind?schema=public"
-   ```
-
-3. **Regenerate the client**:
+1. **Derive (never hand-edit) the PostgreSQL artifacts**:
    ```bash
-   bun run db:generate
+   node scripts/db/make-postgres-schema.mjs        # regenerates both
+   node scripts/db/make-postgres-schema.mjs --check # CI / pre-cutover gate
    ```
-
-4. **Push the schema**:
+   This produces `prisma/schema.postgresql.prisma` (provider-only swap) and
+   `scripts/db/postgres-baseline.sql` (21 enums + 55 tables + 67 indexes).
+2. **Apply the baseline** to an empty database (`psql -f
+   scripts/db/postgres-baseline.sql`, or `prisma db push` from the derived
+   schema where engines are reachable).
+3. **Load** (one transaction, fail-closed, count+hash verified):
    ```bash
-   bun run db:push
+   node scripts/db/migrate-sqlite-to-postgres.mjs --source db/custom.db \
+       --target "$DATABASE_URL" --manifest /var/backups/codemind/pg-load.json
    ```
+4. **Verify**: `node scripts/db/verify-postgres.mjs --target "$DATABASE_URL"`
+   must end `VERIFY_POSTGRES_OK` (presence, orphans, duplicates, Teacher
+   lifecycle, security tables, rate-limit probe, app-shaped queries).
+5. **Baseline the ledger** (`prisma migrate resolve --applied …`) so the 9
+   SQLite migrations are never replayed on PostgreSQL, then switch
+   `DATABASE_URL` per the runbook.
 
-5. **Seed**:
-   ```bash
-   bun run scripts/seed.ts
-   ```
+### Schema compatibility notes (verified, not assumed)
 
-6. **(Optional) Migrate existing SQLite data**:
-   - Use `pgloader` for a one-time copy:
-     ```bash
-     pgloader db/custom.db postgresql://user:password@host:5432/codemind
-     ```
-   - Or write a custom Prisma script that reads from SQLite and
-     writes to PostgreSQL.
+- All `String` fields with JSON content (`Question.options`,
+  `LessonPlanTemplate.objectives`, `ExamAttempt.answers`, …) stay `TEXT` —
+  deliberately NO JSONB conversion (opaque to the DB, byte-identity required).
+- No SQLite-specific functions, no `@db.*`, no `Bytes/Json/Decimal/BigInt`,
+  no raw SQL in `src/` — every query is a Prisma call, identical on both
+  providers (swept by `tests/production-storage-phase21.test.js` §3).
+- `cuid()` IDs work identically on both providers and are preserved verbatim.
+- `DateTime` maps to `TIMESTAMPTZ(3)`; all three SQLite encodings (ISO, naive,
+  ms-epoch) migrate to the same UTC instants (drill-proven).
+- NULL-in-UNIQUE semantics agree on both engines (NULLs distinct).
+- Security persistence (`UserSession`, `PasswordResetToken`,
+  `TeacherApplication`/`TeacherActivationToken`, `SecurityRateLimit`,
+  `SecurityEvent`) migrates 1:1 with the same constraints; the guarded
+  rate-limit and single-use activation primitives are proven on PostgreSQL
+  by the verification battery.
 
-### Schema compatibility notes
+### Evidence retention & storage quotas (Phase 21)
 
-- All `String` fields with JSON content (e.g. `Question.options`,
-  `LessonPlanTemplate.objectives`, `ExamAttempt.answers`) use plain
-  `String` — no SQLite-specific JSON type. PostgreSQL will accept
-  these as `TEXT` columns.
-- No SQLite-specific functions or `@db.Text` annotations are used.
-- `cuid()` IDs work identically on both providers.
-- `DateTime` fields map to `TIMESTAMP` on PostgreSQL.
+- Expired quiz camera evidence is purged by
+  `npx tsx scripts/media/purge-expired-evidence.ts` (dry-run by default;
+  `--live --yes` deletes; rule in `src/lib/evidence-retention.ts`).
+  Security/audit tables are never inputs and are count-asserted unchanged.
+- Volume quota: `MEDIA_QUOTA_BYTES` (unset = unlimited = previous behavior;
+  set = fail-closed 413 before any write). Policy: `src/lib/storage-quotas.ts`.
 
-**Status**: PostgreSQL migration is **Not Currently Implemented** —
-the schema currently ships with `provider = "sqlite"`. The above
-steps describe the procedure for when you decide to switch.
+**Status**: PostgreSQL cutover is **IMPLEMENTED and drill-verified**
+(`PHASE21_MIGRATION_OK` + `PHASE21_RESTORE_OK` on disposable PostgreSQL).
+`prisma/schema.prisma` still ships `provider = "sqlite"` for development; the
+derived `prisma/schema.postgresql.prisma` is the production target.

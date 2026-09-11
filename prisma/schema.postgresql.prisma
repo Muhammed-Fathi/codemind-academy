@@ -1,0 +1,1277 @@
+// CodeMind Academy — Phase 21 PostgreSQL schema (DERIVED ARTIFACT).
+//
+// DO NOT EDIT. Generated from prisma/schema.prisma by
+// scripts/db/make-postgres-schema.mjs — the ONLY difference from the source
+// is the datasource provider below (sqlite -> postgresql). Every model, enum,
+// index, unique and relation is byte-identical to the source.
+//
+// Regenerate: node scripts/db/make-postgres-schema.mjs
+// Verify:     node scripts/db/make-postgres-schema.mjs --check
+//
+// Cutover use: point Prisma at THIS file on the production host
+// (see docs/POSTGRES_CUTOVER_RUNBOOK.md), then baseline the migration history
+// with `prisma migrate resolve --applied`. Old SQLite migrations are never
+// rewritten or replayed on PostgreSQL.
+
+generator client {
+  provider        = "prisma-client-js"
+}
+
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String         @id @default(cuid())
+  email         String         @unique
+  password      String
+  name          String
+  phone         String?
+  role          Role           @default(STUDENT)
+  avatarUrl     String?
+  isActive      Boolean        @default(true)
+  status        AccountStatus  @default(ACTIVE)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  auditLogs     AuditLog[]
+  notifications Notification[]
+  parent        Parent?
+  payments      Payment[]
+  student       Student?
+  teacher       Teacher?
+  sessions      UserSession[]
+  resetTokens   PasswordResetToken[]
+  securityEvents SecurityEvent[]
+
+  @@index([role])
+  @@index([status])
+}
+
+model Student {
+  id                String               @id @default(cuid())
+  userId            String               @unique
+  grade             String               @default("2nd Secondary")
+  schoolName        String?
+  /// Phase 12: constrained from a free-form String to the `SchoolType` enum.
+  /// Still NULLABLE on purpose — "unspecified" is a real, first-class state
+  /// (the admin students screen has an UNSPECIFIED tab and registration is
+  /// not the only way a student row is born). A NULL school type FAILS CLOSED
+  /// for track purposes: the student sees SHARED content only, never
+  /// ARABIC/LANGUAGE-specific content. See src/lib/track-scope.ts.
+  schoolType        SchoolType?
+  nationalId        String?              @unique
+  parentPhone       String?
+  studentCode       String?              @unique
+  groupId           String?
+  batchId           String?
+  enrolledAt        DateTime             @default(now())
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  attendances       Attendance[]
+  examAttempts      ExamAttempt[]
+  homeworkSubmits   HomeworkSubmission[]
+  bookmarks         LessonBookmark[]
+  notes             LessonNote[]
+  lessonProgress    LessonProgress[]
+  parentLinks       ParentStudentLink[]
+  quizAttempts      QuizAttempt[]
+  referralsReceived Referral[]           @relation("ReferredRelation")
+  referralsMade     Referral[]           @relation("ReferrerRelation")
+  group             Group?               @relation(fields: [groupId], references: [id])
+  batch             Batch?               @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  user              User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badges            StudentBadge[]
+  studyTasks        StudyTask[]
+  subscription      Subscription?
+  videoViews        SessionVideoView[]
+  enrollments       Enrollment[]
+
+  @@index([schoolType])
+  @@index([groupId])
+  @@index([batchId])
+}
+
+model StudentBadge {
+  id        String   @id @default(cuid())
+  studentId String
+  code      String
+  earnedAt  DateTime @default(now())
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, code])
+  @@index([studentId])
+}
+
+model Parent {
+  id        String              @id @default(cuid())
+  userId    String              @unique
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  children  ParentStudentLink[]
+}
+
+model ParentStudentLink {
+  id        String   @id @default(cuid())
+  parentId  String
+  studentId String
+  relation  String   @default("parent")
+  createdAt DateTime @default(now())
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  parent    Parent   @relation(fields: [parentId], references: [id], onDelete: Cascade)
+
+  @@unique([parentId, studentId])
+}
+
+model Teacher {
+  id           String               @id @default(cuid())
+  userId       String               @unique
+  bio          String?
+  specialty    String?
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+  groups       Group[]
+  templates    LessonPlanTemplate[]
+  sessions     LiveSession[]
+  user         User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  teacherNotes TeacherNote[]
+}
+
+/// DEPRECATED / FUTURE SCHEMA — NOT USED BY ANY APPLICATION CODE.
+///
+/// Phase 12 verdict (docs/PHASE_12_TRACK_ARCHITECTURE.md): track eligibility
+/// is modelled as `TrackScope` metadata on the shared curriculum, keyed off
+/// `Student.schoolType`. A `Track` ENTITY would only ever hold two rows
+/// (ARABIC / LANGUAGE) that duplicate the `SchoolType` enum, and turning it
+/// into the access gate would mean a second, parallel enrollment system next
+/// to the group-derived one — the exact hybrid the platform must not have.
+///
+/// Kept (not dropped) because dropping it is destructive and buys nothing:
+/// it is referenced by `Course.trackId` / `Enrollment.trackId`, both of which
+/// are NULL/unused. No route, lib or script reads or writes this model.
+model Track {
+  id          String       @id @default(cuid())
+  code        String       @unique
+  name        String
+  nameAr      String
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  courses     Course[]
+  enrollments Enrollment[]
+}
+
+/// DEPRECATED / DEAD SCHEMA — NOT USED BY ANY APPLICATION CODE.
+///
+/// Phase 12 verdict: `Group -> Course` remains the SINGLE enrollment gate
+/// (`getEnrollment` / `canAccessCourse` in src/lib/enrollment.ts). This table
+/// is never read or written anywhere in src/ or scripts/, and it has never
+/// been backfilled.
+///
+/// It is deliberately NOT adopted: adopting it would require backfilling every
+/// student and cutting every access check over in one coherent move, and it
+/// would add a second source of truth for "is this student enrolled". Leaving
+/// it half-used is the worse outcome, so it is formally declared dead schema.
+/// Kept (not dropped) because a DROP is destructive and unnecessary.
+///
+/// NOTE: the `Enrollment` TYPE exported by src/lib/enrollment.ts is an
+/// unrelated in-memory projection of the group-derived enrollment — it is not
+/// this model.
+model Enrollment {
+  id        String       @id @default(cuid())
+  studentId String
+  courseId  String
+  trackId   String
+  status    EnrollmentStatus @default(ACTIVE)
+  startsAt  DateTime     @default(now())
+  endsAt    DateTime?
+  createdAt DateTime     @default(now())
+  student   Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  course    Course       @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  track     Track        @relation(fields: [trackId], references: [id], onDelete: Restrict)
+  @@unique([studentId, courseId, trackId])
+  @@index([courseId, trackId, status])
+}
+
+model Course {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  name        String
+  nameAr      String
+  description String
+  iconUrl     String?
+  color       String   @default("#10b981")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  groups      Group[]
+  parts       Part[]
+  /// DEAD SCHEMA (Phase 12 verdict): always NULL, never read or written. The
+  /// course is SHARED by both school types by design; track eligibility lives
+  /// on the content (Lesson/Quiz/Homework.trackScope), not on the course.
+  trackId     String?
+  track       Track?       @relation(fields: [trackId], references: [id], onDelete: SetNull)
+  enrollments Enrollment[]
+  batches     Batch[]
+  mockExams   MockExam[]
+}
+
+model Part {
+  id          String  @id @default(cuid())
+  courseId    String
+  title       String
+  titleAr     String
+  order       Int
+  description String?
+  course      Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  units       Unit[]
+
+  @@index([courseId])
+}
+
+model Unit {
+  id      String  @id @default(cuid())
+  partId  String
+  title   String
+  titleAr String
+  order   Int
+  icon    String?
+  topics  Topic[]
+  lessons Lesson[]
+  part    Part    @relation(fields: [partId], references: [id], onDelete: Cascade)
+
+  @@index([partId])
+}
+
+model Topic {
+  id      String   @id @default(cuid())
+  unitId  String
+  title   String
+  titleAr String
+  order   Int
+  lessons Lesson[]
+  unit    Unit     @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  @@index([unitId])
+}
+
+model Lesson {
+  id            String           @id @default(cuid())
+  topicId       String?
+  unitId        String?
+  officialCode  String?          @unique
+  curriculumStatus CurriculumStatus @default(LEGACY)
+  /// Phase 12 — which school type this session belongs to. Track metadata,
+  /// not a second curriculum: officialCode stays UNIQUE, so a track-specific
+  /// lesson can never create a duplicate official row.
+  trackScope    TrackScope       @default(SHARED)
+  /// Phase 13 — THE administrative lifecycle of the session and the ONLY
+  /// lifecycle source of truth. `DRAFT → READY → PUBLISHED` is an editorial
+  /// chain owned by the admin OPEN ceremony
+  /// (`src/lib/session-lifecycle.ts`, `POST /api/admin/lessons/[id]/open`);
+  /// it is ORTHOGONAL to student progression (LOCKED/UNLOCKED/COMPLETED is
+  /// derived per student by `src/lib/session-progress.ts` and is never
+  /// stored here). `PUBLISHED` = eligible for the student curriculum
+  /// universe; it does NOT mean unlocked, completed, or prerequisite-free.
+  /// `DRAFT`/`READY` are admin-visible only: they never enter the student
+  /// universe, the course tree, prev/next, dashboards or reports.
+  /// Read the phase doc before changing any of this:
+  /// `docs/PHASE_13_SESSION_LIFECYCLE.md`.
+  status        LessonStatus     @default(DRAFT)
+  title         String
+  titleAr       String
+  order         Int
+  description   String?
+  summary       String?
+  duration      Int              @default(90)
+  /// DEPRECATED (Phase 13) — inert legacy metadata, never revived. Lock
+  /// state is DERIVED from progression (`unlocked = eligibility`), so this
+  /// column is not read by any authorization, progression or visibility
+  /// path and must never be used as one. Not written by the reconciler or by
+  /// the lifecycle module any more. Drop it once no external consumer
+  /// (raw SQL, exports) references it.
+  isLocked      Boolean          @default(false)
+  /// DEPRECATED (Phase 13) — read-only compatibility mirror of
+  /// `status == PUBLISHED`, kept in sync by `src/lib/session-lifecycle.ts`,
+  /// which is its ONLY writer. Nothing derives lifecycle behaviour from it
+  /// any more: every former reader (progression universe, course tree,
+  /// prev/next, dashboards, parent reports, reconciler) now reads `status`.
+  /// It exists so external/legacy consumers and raw SQL keep working until a
+  /// later phase drops the column; see `docs/PHASE_13_SESSION_LIFECYCLE.md`
+  /// §"isPublished". Its historical `true` column default is INERT (kept so
+  /// the column DDL needs no rebuild): every write path sets the mirror from
+  /// `src/lib/session-lifecycle.ts`, and a lesson with no lifecycle write is
+  /// DRAFT because `status` defaults to DRAFT at the database level.
+  isPublished   Boolean          @default(true)
+  videoUrl      String?
+  pdfUrl        String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  examQuestions ExamQuestion[]
+  homeworks     Homework[]
+  topic         Topic?           @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  unit          Unit?            @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  materials     Material[]
+  bookmarks     LessonBookmark[]
+  notes         LessonNote[]
+  progress      LessonProgress[]
+  sessions      LiveSession[]
+  quizzes       Quiz[]
+  sessionVideos SessionVideo[]
+  /// Phase 13 — the publication anchor of the OPEN ceremony (idempotency +
+  /// the state Phase 17 notification fan-out consumes). Optional: a lesson
+  /// that has never been opened through the ceremony has none.
+  publication   SessionPublication?
+
+  @@index([topicId])
+  @@index([unitId, order])
+  @@index([status])
+}
+
+/// Phase 13 — the publication anchor of the OPEN ceremony.
+///
+/// WHY THIS TABLE EXISTS (and why nothing bigger does)
+///   Lesson.status is the lifecycle source of truth and is itself enough to
+///   make `POST /api/admin/lessons/[id]/open` idempotent. This row adds the
+///   two things `status` cannot express:
+///     1. WHICH curriculum segment was opened, and when — `lessonId` is
+///        UNIQUE, which is the database-level idempotency key the roadmap asks
+///        for as `(lessonId, segment)`; it collapses to `(lessonId)` on purpose
+///        (see `segment` below), so a retried ceremony can never create a
+///        second publication of the same lesson;
+///     2. the state Phase 17's notification fan-out must consume (and
+///        deduplicate against). Phase 13 deliberately wrote NO notifications
+///        and no counters; Phase 17 (migration
+///        20260911000000_phase17_session_notifications) then added the
+///        `notifiedCount`/`notifiedAt` delivery counters below, maintained
+///        only by `src/lib/session-notifications.ts`.
+///   Every other lifecycle *event* (stage, unpublish, refusal) is recorded in
+///   the platform's existing `AuditLog`, so there is no second event table.
+///
+/// A row here means "this lesson was opened through the ceremony". Backfilled
+/// PUBLISHED rows (Phase 13 migration) deliberately have no row: their
+/// publication predates the ceremony and no honest timestamp exists for them.
+model SessionPublication {
+  id                String     @id @default(cuid())
+  /// The lesson this publication belongs to — and the idempotency key. One row
+  /// per lesson because publication is a LESSON-level decision: the roadmap's
+  /// `(lessonId, segment)` key deliberately collapses to `(lessonId)`, because
+  /// a per-segment key would be the first per-track publication state
+  /// (`PUBLISHED_ARABIC` vs `PUBLISHED_LANGUAGE`) and Phase 13 forbids one.
+  lessonId          String     @unique
+  /// The lesson's trackScope at publication time — recorded for audit and for
+  /// Phase 17's targeting, NOT a second lifecycle dimension. `status` stays
+  /// the only thing that decides visibility; `segment` never gates access.
+  segment           TrackScope @default(SHARED)
+  publishedAt       DateTime   @default(now())
+  /// Cuid of the admin User who performed the ceremony. A plain column, NOT a
+  /// relation: deleting a user must never rewrite curriculum history.
+  publishedByUserId String?
+  /// Phase 17: rows of the NEW_LESSON publication notification this anchor has
+  /// delivered so far — the DB-truth cumulative count maintained by the
+  /// fan-out in src/lib/session-notifications.ts. Capped by the number of
+  /// DISTINCT users ever eligible (the per-user dedupe is (type, link) so the
+  /// count can never exceed one row per user per publication, and a retry
+  /// either grows it toward the eligible set or leaves it unchanged).
+  notifiedCount     Int        @default(0)
+  /// Phase 17: timestamp of the most recent fan-out run that delivered at
+  /// least one row. NULL means no delivery has happened yet (the published
+  /// state itself is real regardless — see Lesson.status).
+  notifiedAt        DateTime?
+  lesson            Lesson     @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@index([publishedAt])
+}
+
+model Group {
+  id        String        @id @default(cuid())
+  name      String
+  courseId  String
+  teacherId String?
+  capacity  Int           @default(20)
+  schedule  String        @default("Sat & Tue, 6:00 PM")
+  isActive  Boolean       @default(true)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  teacher   Teacher?      @relation(fields: [teacherId], references: [id])
+  course    Course        @relation(fields: [courseId], references: [id])
+  sessions  LiveSession[]
+  students  Student[]
+
+  @@index([courseId])
+}
+
+model Material {
+  id          String       @id @default(cuid())
+  lessonId    String
+  kind        MaterialKind @default(GENERATED)
+  title       String
+  storageKey  String?
+  mediaAssetId String?
+  isActive    Boolean      @default(true)
+  /// Phase 14 — track eligibility of this material, independent of (but never
+  /// wider than is useful for) its lesson's trackScope. A LANGUAGE PDF on a
+  /// SHARED lesson is served to LANGUAGE students only; SHARED material is
+  /// visible to both tracks. Matching is enforced server-side via
+  /// `src/lib/session-materials.ts` and fails closed.
+  trackScope  TrackScope   @default(SHARED)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  lesson      Lesson       @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  media       MediaAsset?  @relation(fields: [mediaAssetId], references: [id], onDelete: SetNull)
+  @@index([lessonId, isActive])
+  @@index([lessonId, trackScope, isActive])
+}
+
+model LiveSession {
+  id           String        @id @default(cuid())
+  groupId      String
+  teacherId    String?
+  lessonId     String?
+  title        String
+  titleAr      String
+  description  String?
+  startAt      DateTime
+  duration     Int           @default(120)
+  meetingUrl   String?
+  recordingUrl String?
+  status       SessionStatus @default(SCHEDULED)
+  createdAt    DateTime      @default(now())
+  attendance   Attendance[]
+  lesson       Lesson?       @relation(fields: [lessonId], references: [id])
+  teacher      Teacher?      @relation(fields: [teacherId], references: [id])
+  group        Group         @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@index([groupId])
+  @@index([startAt])
+}
+
+model Attendance {
+  id        String           @id @default(cuid())
+  studentId String
+  sessionId String
+  status    AttendanceStatus @default(PRESENT)
+  note      String?
+  createdAt DateTime         @default(now())
+  session   LiveSession      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  student   Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, sessionId])
+  @@index([studentId])
+}
+
+model Quiz {
+  id          String        @id @default(cuid())
+  lessonId    String
+  /// Phase 12 — track eligibility of the quiz itself, independent of (but
+  /// never wider than) its lesson's trackScope. A LANGUAGE quiz on a SHARED
+  /// lesson is served to LANGUAGE students only.
+  trackScope  TrackScope    @default(SHARED)
+  title       String
+  titleAr     String
+  description String?
+  passMark    Int           @default(60)
+  timeLimit   Int?
+  order       Int           @default(0)
+  questions   Question[]
+  lesson      Lesson        @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  attempts    QuizAttempt[]
+
+  @@index([lessonId])
+}
+
+model Question {
+  id          String       @id @default(cuid())
+  quizId      String?
+  type        QuestionType @default(MCQ)
+  prompt      String
+  promptAr    String?
+  options     String
+  answer      String
+  explanation String?
+  difficulty  Difficulty   @default(MEDIUM)
+  marks       Int          @default(1)
+  schoolType  SchoolType?
+  createdAt   DateTime     @default(now())
+  quiz        Quiz?        @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  answers     QuizAnswer[]
+  mockExamLinks MockExamQuestion[]
+
+  @@index([quizId])
+  @@index([schoolType])
+}
+
+model QuizAttempt {
+  id         String       @id @default(cuid())
+  quizId     String
+  studentId  String
+  score      Int          @default(0)
+  totalMarks Int          @default(0)
+  percentage Int          @default(0)
+  passed     Boolean      @default(false)
+  startedAt  DateTime     @default(now())
+  finishedAt DateTime?
+  cameraStatus String     @default("NOT_REQUESTED")
+  answers    QuizAnswer[]
+  evidence   QuizAttemptEvidence[]
+  student    Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  quiz       Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
+
+  @@index([quizId, studentId])
+  @@index([studentId])
+}
+
+model QuizAnswer {
+  id         String      @id @default(cuid())
+  attemptId  String
+  questionId String
+  selected   String
+  isCorrect  Boolean     @default(false)
+  question   Question    @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  attempt    QuizAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  // One answer per (attempt, question). Phase 5: the attempt's question set
+  // is persisted as QuizAnswer rows the moment the attempt is created, so a
+  // student can never hold two rows for the same question of one attempt.
+  @@unique([attemptId, questionId])
+  @@index([attemptId])
+  @@index([questionId])
+}
+
+model Homework {
+  id           String               @id @default(cuid())
+  lessonId     String
+  /// Phase 12 — track eligibility, same contract as Lesson/Quiz.trackScope.
+  trackScope   TrackScope           @default(SHARED)
+  title        String
+  titleAr      String
+  instructions String?
+  deadline     DateTime
+  maxMarks     Int                  @default(10)
+  createdAt    DateTime             @default(now())
+  lesson       Lesson               @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  submissions  HomeworkSubmission[]
+
+  @@index([lessonId])
+}
+
+model HomeworkSubmission {
+  id          String         @id @default(cuid())
+  homeworkId  String
+  studentId   String
+  content     String?
+  fileUrl     String?
+  submittedAt DateTime?
+  grade       Int?
+  feedback    String?
+  status      HomeworkStatus @default(PENDING)
+  student     Student        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  homework    Homework       @relation(fields: [homeworkId], references: [id], onDelete: Cascade)
+
+  @@unique([homeworkId, studentId])
+  @@index([studentId])
+}
+
+model ExamQuestion {
+  id          String     @id @default(cuid())
+  lessonId    String?
+  examType    ExamType   @default(UNIT)
+  prompt      String
+  promptAr    String?
+  options     String
+  answer      String
+  explanation String?
+  difficulty  Difficulty @default(MEDIUM)
+  marks       Int        @default(2)
+  schoolType  SchoolType?
+  lesson      Lesson?    @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  mockExamLinks MockExamQuestion[]
+
+  @@index([lessonId])
+  @@index([schoolType])
+}
+
+model LessonProgress {
+  id                  String    @id @default(cuid())
+  studentId           String
+  lessonId            String
+  progress            Int       @default(0)
+  isCompleted         Boolean   @default(false)
+  lastViewedAt        DateTime?
+  // --- video watch tracking (server-verified, monotonic) ---
+  videoDurationSec    Int       @default(0)
+  videoWatchedSec     Int       @default(0)
+  videoPercent        Int       @default(0)
+  videoCompleted      Boolean   @default(false)
+  videoCompletedAt    DateTime?
+  lastHeartbeatAt     DateTime?
+  lesson              Lesson    @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  student             Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, lessonId])
+  @@index([studentId])
+  @@index([lessonId])
+  @@index([videoCompleted])
+}
+
+model TeacherNote {
+  id        String   @id @default(cuid())
+  teacherId String
+  studentId String
+  note      String
+  createdAt DateTime @default(now())
+  teacher   Teacher  @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+}
+
+model SubscriptionPlan {
+  id             String         @id @default(cuid())
+  name           String
+  nameAr         String
+  durationMonths Int
+  price          Float
+  isPromo        Boolean        @default(false)
+  isActive       Boolean        @default(true)
+  description    String?
+  createdAt      DateTime       @default(now())
+  subscriptions  Subscription[]
+}
+
+model Subscription {
+  id        String             @id @default(cuid())
+  studentId String             @unique
+  planId    String
+  status    SubscriptionStatus @default(PENDING)
+  startDate DateTime?
+  endDate   DateTime?
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+  payments  Payment[]
+  plan      SubscriptionPlan   @relation(fields: [planId], references: [id])
+  student   Student            @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+}
+
+model Payment {
+  id             String        @id @default(cuid())
+  userId         String
+  subscriptionId String?
+  amount         Float
+  method         PaymentMethod
+  status         PaymentStatus @default(PENDING)
+  reference      String?
+  notes          String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id])
+  user           User          @relation(fields: [userId], references: [id])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  message   String
+  isRead    Boolean          @default(false)
+  link      String?
+  createdAt DateTime         @default(now())
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String
+  action    String
+  entity    String?
+  entityId  String?
+  details   String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Setting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+model LessonBookmark {
+  id        String   @id @default(cuid())
+  studentId String
+  lessonId  String
+  createdAt DateTime @default(now())
+  lesson    Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, lessonId])
+  @@index([studentId])
+}
+
+model LessonNote {
+  id        String   @id @default(cuid())
+  studentId String
+  lessonId  String
+  content   String
+  color     String   @default("amber")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lesson    Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([studentId])
+}
+
+model ExamAttempt {
+  id            String    @id @default(cuid())
+  studentId     String
+  mockExamId    String?
+  schoolType    SchoolType?
+  examType      String    @default("MOCK")
+  questionCount Int
+  durationMin   Int
+  score         Int       @default(0)
+  totalMarks    Int       @default(0)
+  percentage    Int       @default(0)
+  passed        Boolean   @default(false)
+  answers       String
+  startedAt     DateTime  @default(now())
+  finishedAt    DateTime?
+  student       Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  mockExam      MockExam? @relation(fields: [mockExamId], references: [id], onDelete: SetNull)
+
+  @@index([studentId, examType])
+  @@index([finishedAt])
+  @@index([mockExamId])
+}
+
+model Coupon {
+  id          String             @id @default(cuid())
+  code        String             @unique
+  type        String             @default("PERCENTAGE")
+  value       Float
+  maxUses     Int                @default(100)
+  usedCount   Int                @default(0)
+  validFrom   DateTime           @default(now())
+  validUntil  DateTime?
+  isActive    Boolean            @default(true)
+  description String?
+  createdById String?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  redemptions CouponRedemption[]
+}
+
+model CouponRedemption {
+  id        String   @id @default(cuid())
+  couponId  String
+  userId    String
+  paymentId String?
+  createdAt DateTime @default(now())
+  coupon    Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+
+  @@unique([couponId, userId])
+  @@index([userId])
+}
+
+model Referral {
+  id          String    @id @default(cuid())
+  referrerId  String
+  referredId  String
+  rewardType  String    @default("XP")
+  rewardValue Int       @default(50)
+  status      String    @default("PENDING")
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+  referred    Student   @relation("ReferredRelation", fields: [referredId], references: [id], onDelete: Cascade)
+  referrer    Student   @relation("ReferrerRelation", fields: [referrerId], references: [id], onDelete: Cascade)
+
+  @@unique([referrerId, referredId])
+  @@index([referrerId])
+}
+
+model StudyTask {
+  id            String   @id @default(cuid())
+  studentId     String
+  title         String
+  description   String?
+  lessonId      String?
+  scheduledDate DateTime
+  durationMin   Int      @default(60)
+  status        String   @default("PENDING")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  student       Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([studentId, scheduledDate])
+}
+
+model NotificationPreference {
+  id                     String   @id @default(cuid())
+  userId                 String   @unique
+  newLesson              Boolean  @default(true)
+  newQuiz                Boolean  @default(true)
+  quizResult             Boolean  @default(true)
+  newHomework            Boolean  @default(true)
+  homeworkDeadline       Boolean  @default(true)
+  upcomingSession        Boolean  @default(true)
+  lowAttendance          Boolean  @default(true)
+  monthlyReport          Boolean  @default(true)
+  subscriptionExpiration Boolean  @default(true)
+  announcements          Boolean  @default(true)
+  emailEnabled           Boolean  @default(false)
+  pushEnabled            Boolean  @default(true)
+  quietHoursStart        String?
+  quietHoursEnd          String?
+  updatedAt              DateTime @updatedAt
+}
+
+model LessonPlanTemplate {
+  id          String   @id @default(cuid())
+  teacherId   String?
+  title       String
+  titleAr     String
+  description String?
+  duration    Int      @default(90)
+  objectives  String
+  materials   String
+  activities  String
+  homework    String?
+  assessment  String?
+  isPublic    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  teacher     Teacher? @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+}
+
+// ============================================================
+// Platform upgrade 2026/2027 — new models
+// ============================================================
+
+/// A batch groups every student of one school type on one course, so a
+/// session video is published ONCE and resolved for all eligible students.
+model Batch {
+  id          String         @id @default(cuid())
+  name        String
+  nameAr      String
+  schoolType  SchoolType
+  courseId    String?
+  isActive    Boolean        @default(true)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  course      Course?        @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  students    Student[]
+  videos      SessionVideo[]
+
+  @@unique([schoolType, courseId])
+  @@index([schoolType])
+}
+
+/// Media stored ONCE (uploaded file or external URL). Never duplicated per student.
+model MediaAsset {
+  id            String         @id @default(cuid())
+  kind          MediaKind      @default(VIDEO)
+  storage       MediaStorage   @default(EXTERNAL_URL)
+  /// Private storage key (uploads) — never a public URL.
+  storageKey    String?
+  /// External URL (YouTube / Vimeo / CDN) when storage = EXTERNAL_URL.
+  externalUrl   String?
+  mimeType      String?
+  sizeBytes     Int?
+  durationSec   Int?
+  originalName  String?
+  /// Visibility: PRIVATE assets are only reachable through an authorized route.
+  isPrivate     Boolean        @default(false)
+  createdById   String?
+  createdAt     DateTime       @default(now())
+  sessionVideos SessionVideo[]
+  quizEvidence  QuizAttemptEvidence[]
+  materials     Material[]
+
+  @@index([kind])
+  @@index([storage])
+}
+
+/// A session video published to a batch. One row per (batch, lesson-ish session).
+model SessionVideo {
+  id           String             @id @default(cuid())
+  batchId      String
+  lessonId     String?
+  mediaAssetId String
+  title        String
+  titleAr      String
+  description  String?
+  /// Minimum watched percentage required to consider the video complete.
+  requiredPercent Int             @default(95)
+  isPublished  Boolean            @default(false)
+  publishedAt  DateTime?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  batch        Batch              @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  lesson       Lesson?            @relation(fields: [lessonId], references: [id], onDelete: SetNull)
+  media        MediaAsset         @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+  views        SessionVideoView[]
+
+  @@index([batchId, isPublished])
+  @@index([lessonId])
+}
+
+/// Per-student watch tracking of a batch session video (95% rule).
+model SessionVideoView {
+  id              String       @id @default(cuid())
+  sessionVideoId  String
+  studentId       String
+  watchedSec      Int          @default(0)
+  durationSec     Int          @default(0)
+  percent         Int          @default(0)
+  isCompleted     Boolean      @default(false)
+  completedAt     DateTime?
+  lastHeartbeatAt DateTime?
+  video           SessionVideo @relation(fields: [sessionVideoId], references: [id], onDelete: Cascade)
+  student         Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionVideoId, studentId])
+  @@index([studentId])
+  @@index([isCompleted])
+}
+
+/// Persisted mock-exam definition, bound to exactly one school-type bank.
+model MockExam {
+  id            String             @id @default(cuid())
+  title         String
+  titleAr       String
+  description   String?
+  schoolType    SchoolType
+  courseId      String?
+  questionCount Int                @default(10)
+  durationMin   Int                @default(30)
+  passMark      Int                @default(60)
+  difficulty    String             @default("MIXED")
+  /// RANDOM = sample the matching bank at attempt time; FIXED = use the pinned questions.
+  selectionMode String             @default("RANDOM")
+  isPublished   Boolean            @default(false)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  course        Course?            @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  questions     MockExamQuestion[]
+  attempts      ExamAttempt[]
+
+  @@index([schoolType, isPublished])
+}
+
+/// Pinned questions for a FIXED mock exam. Deleting a question detaches the
+/// link but never destroys historical ExamAttempt answer snapshots.
+model MockExamQuestion {
+  id             String        @id @default(cuid())
+  mockExamId     String
+  questionId     String?
+  examQuestionId String?
+  order          Int           @default(0)
+  mockExam       MockExam      @relation(fields: [mockExamId], references: [id], onDelete: Cascade)
+  question       Question?     @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  examQuestion   ExamQuestion? @relation(fields: [examQuestionId], references: [id], onDelete: Cascade)
+
+  @@unique([mockExamId, questionId])
+  @@unique([mockExamId, examQuestionId])
+  @@index([mockExamId])
+}
+
+/// Server-side device/session tracking (replaces the Setting-row hack).
+model UserSession {
+  id           String    @id @default(cuid())
+  userId       String
+  /// SHA-256 of the session token — the raw token is only ever in the cookie.
+  tokenHash    String    @unique
+  /// Stable-ish device fingerprint (hash of UA + platform hints). Advisory only.
+  deviceHash   String
+  userAgent    String?
+  ipHash       String?
+  createdAt    DateTime  @default(now())
+  lastSeenAt   DateTime  @default(now())
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  revokedReason String?
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+  @@index([deviceHash])
+}
+
+/// Single-use, short-lived password reset token/OTP. Only hashes are stored.
+model PasswordResetToken {
+  id         String    @id @default(cuid())
+  userId     String
+  /// SHA-256 of the emailed token or the SMS OTP. Raw value is never persisted or logged.
+  tokenHash  String    @unique
+  channel    String    @default("EMAIL")
+  /// Redacted destination for audit (e.g. "a***@mail.com" / "+2010****77").
+  destinationMask String?
+  attempts   Int       @default(0)
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime  @default(now())
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, usedAt])
+  @@index([expiresAt])
+}
+
+/// Phase 20 — a person's application to become a Teacher. The public flow
+/// only ever creates a PENDING row here; the User (role TEACHER) is created
+/// LATER, by the applicant themselves, through the single-use activation
+/// token minted when an Admin approves. `userId` is therefore set only at
+/// activation (never by the public submitter, never by the approver).
+model TeacherApplication {
+  id               String                   @id @default(cuid())
+  /// Canonicalized (lowercased/trimmed) — one application per email identity.
+  email            String                   @unique
+  name             String
+  phone            String?
+  specialty        String?
+  bio              String?
+  status           TeacherApplicationStatus @default(PENDING)
+  /// Optional admin note (e.g. rejection reason). Never shown to the applicant.
+  adminNote        String?
+  reviewedByUserId String?
+  reviewedAt       DateTime?
+  /// The provisioned User, set only when the applicant completes activation.
+  userId           String?                  @unique
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+
+  activationTokens TeacherActivationToken[]
+
+  @@index([status, createdAt])
+}
+
+/// Phase 20 — single-use teacher activation token (same architecture as
+/// PasswordResetToken: SHA-256 stored, raw secret only ever in the email).
+/// One live token per application at a time.
+model TeacherActivationToken {
+  id            String             @id @default(cuid())
+  applicationId String
+  tokenHash     String             @unique
+  expiresAt     DateTime
+  usedAt        DateTime?
+  createdAt     DateTime           @default(now())
+  application   TeacherApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId, usedAt])
+  @@index([expiresAt])
+}
+
+/// Generic server-side rate limiter bucket (reset requests, OTP verification…).
+model SecurityRateLimit {
+  id          String   @id @default(cuid())
+  bucket      String
+  identifier  String
+  count       Int      @default(0)
+  windowStart DateTime @default(now())
+  blockedUntil DateTime?
+
+  @@unique([bucket, identifier])
+  @@index([windowStart])
+}
+
+/// Security audit trail (never contains raw tokens/OTPs).
+model SecurityEvent {
+  id        String   @id @default(cuid())
+  userId    String?
+  type      String
+  detail    String?
+  ipHash    String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([type, createdAt])
+}
+
+/// Camera evidence captured during a quiz attempt (snapshots, private storage).
+model QuizAttemptEvidence {
+  id            String      @id @default(cuid())
+  attemptId     String
+  mediaAssetId  String?
+  /// SNAPSHOT | STATUS — STATUS rows record camera state changes with no media.
+  kind          String      @default("SNAPSHOT")
+  status        String?
+  capturedAt    DateTime    @default(now())
+  /// Retention deadline; a cleanup job deletes rows past this date.
+  retainUntil   DateTime?
+  attempt       QuizAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  media         MediaAsset? @relation(fields: [mediaAssetId], references: [id], onDelete: SetNull)
+
+  @@index([attemptId, capturedAt])
+  @@index([retainUntil])
+}
+
+/// Phase 13 — the administrative lifecycle of a Lesson. Independent from
+/// student progression: `PUBLISHED` + LOCKED is a normal, expected state
+/// (a session that is in the curriculum but whose prerequisites are not met).
+enum LessonStatus {
+  DRAFT
+  READY
+  PUBLISHED
+}
+
+enum CurriculumStatus {
+  OFFICIAL
+  LEGACY
+  ARCHIVED
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+enum MaterialKind {
+  GENERATED
+  ADMIN_UPLOADED
+}
+
+enum SchoolType {
+  ARABIC
+  LANGUAGE
+}
+
+/// Phase 12 — the content-eligibility dimension of the ONE shared course.
+///
+/// There is exactly ONE course; `trackScope` decides WHICH students a piece of
+/// session content belongs to. It is metadata on the shared academic skeleton,
+/// NOT a second curriculum universe: the official curriculum stays 2 Parts /
+/// 7 Units / 23 lessons regardless of how many scopes exist.
+///
+///   SHARED   → visible to ARABIC and LANGUAGE students
+///   ARABIC   → visible to ARABIC students only
+///   LANGUAGE → visible to LANGUAGE students only
+///
+/// Matching is enforced SERVER-SIDE and fails closed (see
+/// src/lib/track-scope.ts). `SHARED` is the default because it is the
+/// semantically correct value for every row that predates Phase 12: all
+/// pre-existing content was authored for the whole cohort, with no
+/// track-specific variants in the database at migration time.
+enum TrackScope {
+  SHARED
+  ARABIC
+  LANGUAGE
+}
+
+enum AccountStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED_MULTI_DEVICE
+}
+
+enum MediaKind {
+  VIDEO
+  IMAGE
+  DOCUMENT
+}
+
+enum MediaStorage {
+  EXTERNAL_URL
+  LOCAL_PRIVATE
+  S3
+}
+
+enum Role {
+  STUDENT
+  PARENT
+  TEACHER
+  ADMIN
+}
+
+/// Phase 20 — the public "become a teacher" application lifecycle.
+/// PENDING → APPROVED → ACTIVATED, or PENDING/APPROVED → REJECTED.
+/// A rejected applicant may re-apply, which re-opens the SAME row as PENDING.
+enum TeacherApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  ACTIVATED
+}
+
+enum SessionStatus {
+  SCHEDULED
+  LIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  EXCUSED
+}
+
+enum QuestionType {
+  MCQ
+  TRUE_FALSE
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum HomeworkStatus {
+  PENDING
+  SUBMITTED
+  GRADED
+  LATE
+}
+
+enum ExamType {
+  UNIT
+  MONTHLY
+  MOCK
+  FINAL
+}
+
+enum SubscriptionStatus {
+  PENDING
+  ACTIVE
+  EXPIRED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  INSTAPAY
+  VODAFONE_CASH
+  ETISALAT_CASH
+}
+
+enum PaymentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+enum NotificationType {
+  NEW_LESSON
+  NEW_QUIZ
+  QUIZ_RESULT
+  NEW_HOMEWORK
+  HOMEWORK_DEADLINE
+  UPCOMING_SESSION
+  LOW_ATTENDANCE
+  MONTHLY_REPORT
+  SUBSCRIPTION_EXPIRATION
+  ANNOUNCEMENT
+  PAYMENT_APPROVED
+  PAYMENT_REJECTED
+}

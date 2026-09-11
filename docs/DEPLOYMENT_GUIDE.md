@@ -121,35 +121,56 @@ sudo systemctl status codemind
   users.
 - Backup: just copy the file (`cp db/custom.db backup/custom-$(date +%F).db`).
 
-### PostgreSQL (production recommended)
+### PostgreSQL (production — Phase 21 cutover, IMPLEMENTED)
 
-For multi-instance / serverless deployments (Vercel, Kubernetes, ECS),
-switch to PostgreSQL:
+Production runs on PostgreSQL. The cutover is a verified procedure, NOT a
+hand-edit: **`docs/POSTGRES_CUTOVER_RUNBOOK.md`** is authoritative (freeze
+window, snapshot, load, validation, switch, verification, rollback).
 
-1. Provision a managed PostgreSQL (Neon, Supabase, Railway, RDS).
-2. Edit `prisma/schema.prisma`:
-   ```prisma
-   datasource db {
-     provider = "postgresql"
-     url      = env("DATABASE_URL")
-   }
-   ```
-3. Set `DATABASE_URL` in your environment:
-   ```
-   DATABASE_URL="postgresql://user:password@host:5432/codemind?schema=public"
-   ```
-4. Recreate the schema:
-   ```bash
-   bun run db:push
-   bun run scripts/seed.ts
-   ```
-5. Run a one-time SQLite → PostgreSQL data migration if you have
-   existing data (use `pgloader` or a custom Prisma script).
+Short form:
 
-> **Note**: PostgreSQL migration is **Not Currently Implemented** in
-> the codebase — the schema currently uses `provider = "sqlite"`. The
-> schema itself is portable (no SQLite-specific types are used) but
-> the `datasource` block must be changed before deploying.
+1. Provision managed PostgreSQL (Neon, Supabase, Railway, RDS) + app/owner
+   roles; create the empty database.
+2. Derive (never hand-edit) the artifacts:
+   `node scripts/db/make-postgres-schema.mjs` → `prisma/schema.postgresql.prisma`
+   + `scripts/db/postgres-baseline.sql`.
+3. Apply the baseline (`psql -f scripts/db/postgres-baseline.sql`, or
+   `prisma db push` from the derived schema where engines are reachable).
+4. Load: `node scripts/db/migrate-sqlite-to-postgres.mjs --source db/custom.db
+   --target "$DATABASE_URL" --manifest …` (one transaction, count+hash verified).
+5. Verify: `node scripts/db/verify-postgres.mjs --target "$DATABASE_URL"`
+   (must end `VERIFY_POSTGRES_OK`).
+6. Baseline the migration ledger, switch `DATABASE_URL`, smoke-test every role.
+
+Do NOT edit `prisma/schema.prisma`'s provider by hand and do NOT use pgloader.
+
+### Backups (PostgreSQL — Phase 21)
+
+```bash
+# Nightly (cron/systemd timer): full pg_dump + sha256 + manifest + retention
+scripts/db/backup-postgres.sh --out-dir /var/backups/codemind --label nightly
+
+# Restore (empty database only; enforces integrity + verification battery)
+scripts/db/restore-postgres.sh --backup /var/backups/codemind/<artifact>.dump \
+    --target postgresql://user@host/codemind_restored
+```
+
+Backups include ALL data (curriculum, progress, Teacher Applications,
+provisioning state, security/audit tables, sessions/tokens). Optional
+AES-256 encryption via `BACKUP_PASSPHRASE` (secret manager only).
+Retention: 30 days, always keeping the 7 newest. Drill the restore quarterly.
+
+### Durable media (Phase 21)
+
+`MEDIA_STORAGE_PATH` MUST be a persistent volume in production (survives
+redeploys; never served directly by the proxy). Migrate once with
+`node scripts/media/migrate-media.mjs --source <old> --dest <volume> --manifest …`
+(SHA-256-verified per file; never deletes the source — delete only after
+`--check` succeeds). Set `MEDIA_QUOTA_BYTES` (≈80% of the volume) and purge
+expired camera evidence nightly:
+`npx tsx scripts/media/purge-expired-evidence.ts --target "$DATABASE_URL" --live --yes --metrics …`
+(dry-run first; deletes ONLY expired evidence; security/audit tables asserted
+untouched).
 
 ### MySQL / SQL Server
 

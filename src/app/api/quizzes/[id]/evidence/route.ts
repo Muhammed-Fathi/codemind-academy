@@ -22,6 +22,7 @@ import {
   makeStorageKey,
   writePrivateFile,
 } from "@/lib/media";
+import { assertVolumeQuota } from "@/lib/storage-quotas";
 import { getServerT } from "@/lib/i18n-server";
 
 const MAX_SNAPSHOTS_PER_ATTEMPT = 12;
@@ -123,6 +124,10 @@ export async function POST(
 
   const storageKey = makeStorageKey("quiz-evidence", extFromMime(mime));
   const buffer = Buffer.from(await file.arrayBuffer());
+  // Phase 21 — volume quota, checked BEFORE any byte is written. No-op
+  // unless the operator sets MEDIA_QUOTA_BYTES.
+  const quota = await assertVolumeQuota(buffer.length);
+  if (!quota.ok) return err(tApi("api.215"), 413);
   await writePrivateFile(storageKey, buffer);
 
   const asset = await db.mediaAsset.create({

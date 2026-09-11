@@ -80,3 +80,14 @@ prompt
 # NEVER be committed — they are large and, in the case of camera evidence,
 # personal biometric data subject to a retention policy.
 /storage/
+
+# Phase 21 — production data artifacts (never commit: user data + credentials).
+# Database backups, load manifests and media-migration manifests may contain
+# personal data (national IDs, emails, camera evidence bytes). Keep them on the
+# backup volume / secret manager only.
+/backups/
+*.dump
+*.dump.enc
+*.dump.sha256
+*.pg-load.json
+*-purge-metrics.json

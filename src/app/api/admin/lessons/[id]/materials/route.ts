@@ -184,6 +184,8 @@ export async function POST(
     if (result.code === "LESSON_NOT_FOUND") return err(result.message, 404);
     if (result.code === "LESSON_ARCHIVED") return err(result.message, 409);
     if (result.code === "INVALID_TRACK_SCOPE") return err(result.message, 400);
+    // Phase 21 — volume quota (MEDIA_QUOTA_BYTES): fail-closed 413.
+    if (result.code === "QUOTA_EXCEEDED") return err(result.message, 413);
     // VALIDATION_FAILED — map size to 413, the rest to 415/400.
     const vCode = result.validation && !result.validation.ok
       ? result.validation.code
