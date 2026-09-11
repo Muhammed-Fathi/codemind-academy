@@ -44,9 +44,12 @@ export async function GET(
   });
   if (!asset) return err("Not found", 404);
 
-  // External URLs are not proxied — the client uses them directly.
+  // External URLs are not proxied — the client uses them directly. A 404 (not
+  // a 400) keeps this route from confirming that the id is a REAL asset whose
+  // bytes simply live elsewhere: probing ids must never distinguish "exists
+  // but external" from "does not exist".
   if (asset.storage === "EXTERNAL_URL" || !asset.storageKey) {
-    return err("Not a stored asset", 400);
+    return err("Not found", 404);
   }
 
   // ---- Authorization -------------------------------------------------------
@@ -120,11 +123,25 @@ export async function GET(
 
   const range = req.headers.get("range");
   if (range) {
-    const match = /bytes=(\d*)-(\d*)/.exec(range);
+    // Phase 20 — strict Range parsing (parity with /api/materials/[id]):
+    // non-numeric / negative / out-of-range bounds are refused with 416
+    // rather than producing a malformed partial response (NaN coerces to 0 in
+    // `subarray`, which previously yielded a bogus 206 `bytes NaN-NaN/…`).
+    const match = /^bytes=(\d*)-(\d*)$/.exec(range.trim());
     if (match) {
-      const start = match[1] ? parseInt(match[1], 10) : 0;
-      const end = match[2] ? parseInt(match[2], 10) : total - 1;
-      if (start >= total || end >= total || start > end) {
+      const startRaw = match[1];
+      const endRaw = match[2];
+      const start = startRaw === "" ? 0 : Number(startRaw);
+      const end = endRaw === "" ? total - 1 : Number(endRaw);
+      if (
+        !Number.isSafeInteger(start) ||
+        !Number.isSafeInteger(end) ||
+        start < 0 ||
+        end < 0 ||
+        start >= total ||
+        end >= total ||
+        start > end
+      ) {
         return new NextResponse(null, {
           status: 416,
           headers: { ...baseHeaders, "Content-Range": `bytes */${total}` },

@@ -1202,7 +1202,116 @@ function TeachersView() {
       </Card>
 
       <AddTeacherDialog open={openAdd} onOpenChange={setOpenAdd} onCreated={reload} />
+
+      <TeacherApplicationsPanel />
     </motion.div>
+  );
+}
+
+type TeacherApplicationRow = {
+  id: string;
+  email: string;
+  name: string;
+  phone: string | null;
+  specialty: string | null;
+  bio: string | null;
+  status: "PENDING" | "APPROVED" | "REJECTED" | "ACTIVATED";
+  adminNote: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
+  userId: string | null;
+};
+
+// Phase 20 — the admin review queue for the public "become a teacher" flow.
+// Approval/rejection are server-authorized POSTs; nothing here can set a
+// status field directly (the server ignores any client-supplied status/role).
+function TeacherApplicationsPanel() {
+  const tr = useT();
+  const [statusFilter, setStatusFilter] = React.useState("PENDING");
+  const { data, loading, error, reload } = useApi<{ applications: TeacherApplicationRow[] }>(
+    `/api/admin/teacher-applications?status=${encodeURIComponent(statusFilter)}`
+  );
+  const [busyId, setBusyId] = React.useState<string | null>(null);
+
+  const act = async (id: string, action: "approve" | "reject") => {
+    setBusyId(id);
+    try {
+      const r = await fetch(`/api/admin/teacher-applications/${id}/${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || "err");
+      toast.success(action === "approve" ? "Application approved" : "Application rejected");
+      reload();
+    } catch (e: any) {
+      toast.error(e.message || tr("admin.001"));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const pendingCount = (data?.applications || []).filter((a) => a.status === "PENDING").length;
+
+  return (
+    <Card className="p-4">
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <h3 className="font-bold">Teacher applications</h3>
+          <p className="text-xs text-muted-foreground">
+            Public applicants awaiting review — approve to email an activation link.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">{pendingCount} pending</span>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+          >
+            {["PENDING", "APPROVED", "REJECTED", "ACTIVATED"].map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {loading ? (
+        <LoadingBlock rows={3} />
+      ) : error ? (
+        <ErrorBlock message={error} onRetry={reload} />
+      ) : !data || data.applications.length === 0 ? (
+        <EmptyBlock message="No applications" />
+      ) : (
+        <div className="max-h-[40vh] overflow-auto space-y-2">
+          {data.applications.map((a) => (
+            <div key={a.id} className="rounded-lg border border-border/60 p-3 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="font-medium">{a.name}</div>
+                <div className="text-xs text-muted-foreground" dir="ltr">{a.email}</div>
+                <div className="text-xs text-muted-foreground">
+                  {a.phone || "—"} · {a.specialty || "—"}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Badge variant={a.status === "PENDING" ? "default" : "secondary"}>{a.status}</Badge>
+                {a.status === "PENDING" && (
+                  <>
+                    <Button size="sm" disabled={busyId === a.id} onClick={() => act(a.id, "approve")}>
+                      Approve
+                    </Button>
+                    <Button size="sm" variant="outline" disabled={busyId === a.id} onClick={() => act(a.id, "reject")}>
+                      Reject
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
   );
 }
 

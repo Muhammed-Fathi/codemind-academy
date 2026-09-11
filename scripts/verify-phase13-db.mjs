@@ -238,6 +238,8 @@ const BASE_SKIP_TABLES = new Set([
   "Enrollment",
   "Material",
   PHASE13_MIGRATION_TABLE,
+  "TeacherApplication",
+  "TeacherActivationToken",
 ]);
 
 const PRISMA_TO_SQLITE = {

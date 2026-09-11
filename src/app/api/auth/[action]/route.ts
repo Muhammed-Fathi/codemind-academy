@@ -10,7 +10,12 @@ import {
 } from "@/lib/auth";
 import { logSecurityEvent } from "@/lib/security";
 import { headers } from "next/headers";
-import { ok, err } from "@/lib/api";
+import {
+  ok,
+  err,
+  applyRateLimitForIdentifier,
+  rateLimitedResponse,
+} from "@/lib/api";
 import {
   isValidArabicThreePartName,
   isValidEgyptianPhone,
@@ -23,6 +28,7 @@ import {
 import { createStudentWithCode } from "@/lib/curriculum-seed";
 import { requireSchoolType } from "@/lib/school-type";
 import { reconcileStudentBatch } from "@/lib/enrollment";
+import { submitTeacherApplication } from "@/lib/teacher-applications";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ action: string }> }) {
   const tApi = await getServerT();
@@ -79,6 +85,58 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ act
       | "PARENT"
       | "TEACHER"
       | "ADMIN";
+
+    // ---------------- TEACHER — public APPLICATION (Phase 20) ----------------
+    // A person applying to teach must NOT get an active Teacher account, a
+    // Teacher session, or `User.role = TEACHER` here. They create a PENDING
+    // `TeacherApplication`; an Admin approves, and the applicant later sets
+    // their own password through a single-use activation token.
+    if (role === "TEACHER") {
+      const hdrs = await headers();
+      if (!name || !email) return err(tApi("api.059"), 400);
+      if (!isValidEmail(email)) return err(tApi("api.060"), 400);
+
+      const applyLimit = await applyRateLimitForIdentifier("teacherApply", email);
+      if (!applyLimit.allowed) return rateLimitedResponse(applyLimit);
+
+      const phone = String(body.phone || "").trim();
+      if (phone && !isValidEgyptianPhone(phone))
+        return err(tApi("api.064"), 400);
+      const specialty = String(body.specialty || "").trim().slice(0, 200) || null;
+      const bio = String(body.bio || "").trim().slice(0, 1000) || null;
+
+      const outcome = await submitTeacherApplication({
+        email,
+        name,
+        phone: phone || null,
+        specialty,
+        bio,
+      });
+      if (!outcome.ok) {
+        // One generic answer for every blocked case (existing account of ANY
+        // role, existing pending/approved application, already activated) — the
+        // caller learns nothing about which account/application state exists.
+        await logSecurityEvent({
+          userId: null,
+          type: "TEACHER_APPLICATION_BLOCKED",
+          detail: `reason=${outcome.reason}`,
+          headers: hdrs,
+        });
+        return err(tApi("api.258"), 409);
+      }
+
+      await logSecurityEvent({
+        userId: null,
+        type: "TEACHER_APPLICATION_SUBMITTED",
+        detail: `applicationId=${outcome.application.id} reapplied=${outcome.reapplied}`,
+        headers: hdrs,
+      });
+      return ok({ applied: true, message: tApi("api.259") });
+    }
+
+    // Public admin registration stays prohibited (privilege escalation).
+    if (role === "ADMIN") return err(tApi("api.059"), 400);
+
     if (!email || !password || !name)
       return err(tApi("api.059"), 400);
     if (!isValidEmail(email)) return err(tApi("api.060"), 400);
@@ -207,10 +265,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ act
     }
 
     // ---------------- TEACHER / ADMIN — registration blocked --------
-    // Teacher and Admin accounts must be provisioned by an existing admin
-    // via the admin management API, never through public self-registration.
-    // Allowing clients to choose these roles would be a privilege escalation.
-    if (role === "TEACHER" || role === "ADMIN") {
+    // (Phase 20: TEACHER now submits a PENDING application above; only the
+    // public ADMIN self-registration remains blocked, as a privilege
+    // escalation guard. Teacher/Admin accounts are provisioned through the
+    // approved activation flow / the admin management API.)
+    if (role === "ADMIN") {
       return err(tApi("api.059"), 400);
     }
 

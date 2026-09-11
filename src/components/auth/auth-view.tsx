@@ -59,8 +59,20 @@ export function AuthView() {
     view === "login" &&
     typeof window !== "undefined" &&
     Boolean(new URLSearchParams(window.location.search).get("token"));
-  const [mode, setMode] = React.useState<"login" | "register" | "forgot">(() =>
-    view === "register" ? "register" : hasResetToken ? "forgot" : "login"
+  // Phase 20 — arriving from the teacher-application approval email
+  // (/?teacherActivation=…) opens the activation form (set your own password).
+  const hasActivationToken =
+    view === "login" &&
+    typeof window !== "undefined" &&
+    Boolean(new URLSearchParams(window.location.search).get("teacherActivation"));
+  const [mode, setMode] = React.useState<"login" | "register" | "forgot" | "activate">(() =>
+    view === "register"
+      ? "register"
+      : hasResetToken
+        ? "forgot"
+        : hasActivationToken
+          ? "activate"
+          : "login"
   );
   const [role, setRole] = React.useState<Role>("STUDENT");
   // Adjust mode when the parent switches between login/register. Never
@@ -96,22 +108,28 @@ export function AuthView() {
             <h1 className="text-2xl font-extrabold mb-1">
               {mode === "forgot"
                 ? tr("auth.201")
-                : mode === "login"
-                  ? t.auth.welcomeBack
-                  : t.auth.createAccount}
+                : mode === "activate"
+                  ? tr("auth.220")
+                  : mode === "login"
+                    ? t.auth.welcomeBack
+                    : t.auth.createAccount}
             </h1>
             <p className="text-sm text-muted-foreground mb-6">
               {mode === "forgot"
                 ? tr("auth.202")
-                : mode === "login"
-                  ? t.auth.loginHint
-                  : t.auth.registerHint}
+                : mode === "activate"
+                  ? tr("auth.221")
+                  : mode === "login"
+                    ? t.auth.loginHint
+                    : t.auth.registerHint}
             </p>
 
             {mode === "register" && <RolePicker role={role} onChange={setRole} />}
 
             {mode === "forgot" ? (
               <ForgotPasswordForm onBackToLogin={() => setMode("login")} />
+            ) : mode === "activate" ? (
+              <TeacherActivationForm onDone={() => setMode("login")} />
             ) : (
               <>
                 <AuthForm mode={mode} role={role} />
@@ -318,12 +336,20 @@ function AuthForm({ mode, role }: { mode: "login" | "register"; role: Role }) {
       }
       Object.assign(payload, { parentPhone, studentNationalId, studentCode });
     } else {
+      // Phase 20 — TEACHER: submit a PENDING application (no password, no
+      // session, no active account). The applicant sets their own password
+      // later, after an Admin approves, via the emailed activation link.
       const phone = String(fd.get("phone") || "").trim();
       if (!name) {
         toast.error(tr("auth.018"));
         return;
       }
+      if (phone && !isValidEgyptianPhone(phone)) {
+        toast.error(tr("auth.009"));
+        return;
+      }
       if (phone) payload.phone = phone;
+      delete payload.password;
     }
 
     setLoading(true);
@@ -336,6 +362,13 @@ function AuthForm({ mode, role }: { mode: "login" | "register"; role: Role }) {
       const data = await r.json();
       if (!r.ok) {
         toast.error(data.error || tr("auth.005"));
+        return;
+      }
+      // Teacher application: NO account and NO session is returned. Stay on
+      // the auth shell and tell the applicant to expect the activation email.
+      if (data.applied) {
+        toast.success(tr("api.259"));
+        setMode("login");
         return;
       }
       if (data.user?.studentCode) setCreatedCode(data.user.studentCode);
@@ -473,6 +506,8 @@ function AuthForm({ mode, role }: { mode: "login" | "register"; role: Role }) {
               placeholder="01xxxxxxxxx"
               dir="ltr"
             />
+            <p className="text-[11px] text-muted-foreground leading-relaxed">
+              {tr("auth.218")}</p>
           </>
         )}
 
@@ -485,7 +520,11 @@ function AuthForm({ mode, role }: { mode: "login" | "register"; role: Role }) {
           dir="ltr"
           required
         />
-        <PasswordField label={t.auth.password} />
+        {/* Phase 20 — a teacher APPLICATION carries no password: the applicant
+            sets their own only after admin approval, via the activation link. */}
+        {!(mode === "register" && role === "TEACHER") && (
+          <PasswordField label={t.auth.password} />
+        )}
 
         <Button
           type="submit"
@@ -499,12 +538,83 @@ function AuthForm({ mode, role }: { mode: "login" | "register"; role: Role }) {
             </span>
           ) : mode === "login" ? (
             t.auth.enter
+          ) : mode === "register" && role === "TEACHER" ? (
+            tr("auth.219")
           ) : (
             t.auth.create
           )}
         </Button>
       </form>
     </>
+  );
+}
+
+function TeacherActivationForm({ onDone }: { onDone: () => void }) {
+  const tr = useT();
+  const [loading, setLoading] = React.useState(false);
+  const [password, setPassword] = React.useState("");
+  const [confirm, setConfirm] = React.useState("");
+
+  const token =
+    typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("teacherActivation") || ""
+      : "";
+
+  const submit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (password.length < 8) {
+      toast.error(tr("api.204"));
+      return;
+    }
+    if (password !== confirm) {
+      toast.error(tr("auth.222"));
+      return;
+    }
+    setLoading(true);
+    try {
+      const r = await fetch("/api/auth/teacher-activate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, password }),
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        toast.error(data.error || tr("auth.005"));
+        return;
+      }
+      toast.success(tr("api.262"));
+      onDone();
+    } catch {
+      toast.error(tr("auth.007"));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <form onSubmit={submit} className="space-y-3">
+      <div className="space-y-1.5">
+        <Label className="text-xs font-semibold">{tr("auth.224")}</Label>
+        <PasswordInput
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="••••••••"
+          dir="ltr"
+        />
+      </div>
+      <div className="space-y-1.5">
+        <Label className="text-xs font-semibold">{tr("auth.225")}</Label>
+        <PasswordInput
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+          placeholder="••••••••"
+          dir="ltr"
+        />
+      </div>
+      <Button type="submit" disabled={loading} className="w-full h-11 font-bold mt-2">
+        {loading ? tr("auth.007") : tr("auth.223")}
+      </Button>
+    </form>
   );
 }
 

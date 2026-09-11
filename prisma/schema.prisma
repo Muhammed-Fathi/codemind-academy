@@ -1008,6 +1008,48 @@ model PasswordResetToken {
   @@index([expiresAt])
 }
 
+/// Phase 20 — a person's application to become a Teacher. The public flow
+/// only ever creates a PENDING row here; the User (role TEACHER) is created
+/// LATER, by the applicant themselves, through the single-use activation
+/// token minted when an Admin approves. `userId` is therefore set only at
+/// activation (never by the public submitter, never by the approver).
+model TeacherApplication {
+  id               String                   @id @default(cuid())
+  /// Canonicalized (lowercased/trimmed) — one application per email identity.
+  email            String                   @unique
+  name             String
+  phone            String?
+  specialty        String?
+  bio              String?
+  status           TeacherApplicationStatus @default(PENDING)
+  /// Optional admin note (e.g. rejection reason). Never shown to the applicant.
+  adminNote        String?
+  reviewedByUserId String?
+  reviewedAt       DateTime?
+  /// The provisioned User, set only when the applicant completes activation.
+  userId           String?                  @unique
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+
+  @@index([status, createdAt])
+}
+
+/// Phase 20 — single-use teacher activation token (same architecture as
+/// PasswordResetToken: SHA-256 stored, raw secret only ever in the email).
+/// One live token per application at a time.
+model TeacherActivationToken {
+  id            String             @id @default(cuid())
+  applicationId String
+  tokenHash     String             @unique
+  expiresAt     DateTime
+  usedAt        DateTime?
+  createdAt     DateTime           @default(now())
+  application   TeacherApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId, usedAt])
+  @@index([expiresAt])
+}
+
 /// Generic server-side rate limiter bucket (reset requests, OTP verification…).
 model SecurityRateLimit {
   id          String   @id @default(cuid())
@@ -1131,6 +1173,16 @@ enum Role {
   PARENT
   TEACHER
   ADMIN
+}
+
+/// Phase 20 — the public "become a teacher" application lifecycle.
+/// PENDING → APPROVED → ACTIVATED, or PENDING/APPROVED → REJECTED.
+/// A rejected applicant may re-apply, which re-opens the SAME row as PENDING.
+enum TeacherApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  ACTIVATED
 }
 
 enum SessionStatus {

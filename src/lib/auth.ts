@@ -140,10 +140,6 @@ export async function destroySession(): Promise<void> {
         data: { revokedAt: new Date(), revokedReason: "LOGOUT" },
       })
       .catch(() => {});
-    // Backward compatibility: clear any legacy Setting-based session row.
-    await db.setting
-      .deleteMany({ where: { key: `session:${token}` } })
-      .catch(() => {});
     store.delete(SESSION_COOKIE);
   }
 }
@@ -176,44 +172,29 @@ export async function getCurrentUserDetailed(): Promise<CurrentUserResult> {
 
   let userId: string | null = null;
 
-  if (session) {
-    if (session.revokedAt) return { user: null, reason: "REVOKED" };
-    if (session.expiresAt.getTime() < now.getTime())
-      return { user: null, reason: "EXPIRED" };
-    userId = session.userId;
-    // Throttled last-seen touch (keeps conflict detection accurate cheaply).
-    if (now.getTime() - session.lastSeenAt.getTime() > LAST_SEEN_THROTTLE_MS) {
-      await db.userSession
-        .update({ where: { id: session.id }, data: { lastSeenAt: now } })
-        .catch(() => {});
-    }
-  } else {
-    // ---- Backward compatibility with pre-upgrade Setting-based sessions ----
-    const legacy = await db.setting
-      .findUnique({ where: { key: `session:${token}` } })
-      .catch(() => null);
-    if (!legacy) return { user: null, reason: "NO_SESSION" };
-    const [legacyUserId, expiresStr] = legacy.value.split("|");
-    if (!legacyUserId || !expiresStr) return { user: null, reason: "NO_SESSION" };
-    if (new Date(expiresStr).getTime() < now.getTime()) {
-      await db.setting.delete({ where: { id: legacy.id } }).catch(() => {});
-      return { user: null, reason: "EXPIRED" };
-    }
-    userId = legacyUserId;
-    // Migrate the legacy session into UserSession so device control applies.
-    const hdrs = await headers().catch(() => new Headers());
+  // Phase 20 — the legacy `Setting:session:*` fallback is REMOVED. Rationale
+  // (see docs/PHASE_20_SECURITY_HARDENING_II.md §6):
+  //   * the read-time migrator below was the migration itself, and it has run
+  //     on every session used since the Platform Upgrade — those sessions are
+  //     all `UserSession` rows now;
+  //   * legacy sessions carried a 7-day TTL, so any `Setting:session:*` row
+  //     still un-migrated is expired by construction and cannot be a valid
+  //     production session;
+  //   * rollback semantics: removing this branch logs out any such dormant
+  //     legacy token holder (they log in again), which is the intended,
+  //     non-blind cleanup — `scripts/audit-legacy-sessions.mjs` proves the
+  //     "no valid session depends on it" precondition before purging.
+  if (!session) return { user: null, reason: "NO_SESSION" };
+
+  if (session.revokedAt) return { user: null, reason: "REVOKED" };
+  if (session.expiresAt.getTime() < now.getTime())
+    return { user: null, reason: "EXPIRED" };
+  userId = session.userId;
+  // Throttled last-seen touch (keeps conflict detection accurate cheaply).
+  if (now.getTime() - session.lastSeenAt.getTime() > LAST_SEEN_THROTTLE_MS) {
     await db.userSession
-      .create({
-        data: {
-          userId,
-          tokenHash: sha256(token),
-          deviceHash: deviceHashFromHeaders(hdrs as Headers),
-          userAgent: (hdrs as Headers).get("user-agent")?.slice(0, 300) || null,
-          expiresAt: new Date(expiresStr),
-        },
-      })
+      .update({ where: { id: session.id }, data: { lastSeenAt: now } })
       .catch(() => {});
-    await db.setting.delete({ where: { id: legacy.id } }).catch(() => {});
   }
 
   const user = await db.user.findUnique({ where: { id: userId! } });

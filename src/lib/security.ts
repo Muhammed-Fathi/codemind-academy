@@ -98,51 +98,103 @@ export type RateLimitResult = {
 /**
  * Fixed-window limiter. `identifier` should already be hashed/normalised
  * (e.g. hashed email or hashed IP) so no PII lands in the table.
+ *
+ * Phase 20 — RACE-FREE under concurrency. The pre-Phase-20 implementation did
+ * read-modify-write (`findUnique` → `update { count: next }`), which lost
+ * increments under contention (admitting more requests than `limit`). Every
+ * state change now runs as a single guarded statement, so the limiter is
+ * deterministic even across concurrent requests:
+ *
+ *   1. ensure the row exists — an idempotent atomic `upsert` with an empty
+ *      `update` (INSERT … ON CONFLICT DO NOTHING), so concurrent first
+ *      requests produce exactly one row;
+ *   2. window reset — `UPDATE … SET count=1, windowStart=now WHERE windowStart
+ *      <= cutoff`: only ONE concurrent resetter wins, so a burst at the window
+ *      boundary cannot all re-open the window;
+ *   3. claim — `UPDATE … SET count = count + 1 WHERE count < limit`: exactly
+ *      one write per slot below `limit` lands, and the rest observe the block.
+ *
+ * `client` is injectable (defaults to `db`) so the offline real-DB suite can
+ * exercise the SAME implementation against a SQLite adapter — no parallel
+ * limiter exists anywhere.
  */
 export async function checkRateLimit(
   bucket: string,
   identifier: string,
   limit: number,
   windowSec: number,
-  blockSec = windowSec
+  blockSec = windowSec,
+  // Injected clients are structural, not nominal — same convention as the
+  // lifecycle/material services (tests, CLI, and `db`).
+  client: any = db
 ): Promise<RateLimitResult> {
   const now = new Date();
   const key = { bucket_identifier: { bucket, identifier } };
+  const cutoff = new Date(now.getTime() - windowSec * 1000);
 
-  const existing = await db.securityRateLimit.findUnique({ where: key });
+  // 1. Ensure the row exists (atomic, idempotent — see the header comment).
+  await client.securityRateLimit.upsert({
+    where: key,
+    create: { bucket, identifier, count: 0, windowStart: now, blockedUntil: null },
+    update: {},
+  });
 
+  const blocked = (row: { blockedUntil: Date }): RateLimitResult => ({
+    allowed: false,
+    remaining: 0,
+    retryAfterSec: Math.max(
+      1,
+      Math.ceil((row.blockedUntil.getTime() - now.getTime()) / 1000)
+    ),
+  });
+
+  let existing = await client.securityRateLimit.findUnique({ where: key });
+
+  // While blocked, refuse without touching the window.
   if (existing?.blockedUntil && existing.blockedUntil > now) {
+    return blocked(existing);
+  }
+
+  // 2. Window expired → guarded reset (only one concurrent resetter wins).
+  if (existing && existing.windowStart.getTime() <= cutoff.getTime()) {
+    const reset = await client.securityRateLimit.updateMany({
+      where: { bucket, identifier, windowStart: { lte: cutoff } },
+      data: { count: 1, windowStart: now, blockedUntil: null },
+    });
+    if (reset.count === 1) {
+      return { allowed: true, remaining: limit - 1, retryAfterSec: 0 };
+    }
+    // Lost the reset race — the winner moved windowStart to `now`. Re-read and
+    // take the normal increment path.
+    existing = await client.securityRateLimit.findUnique({ where: key });
+    if (existing?.blockedUntil && existing.blockedUntil > now) {
+      return blocked(existing);
+    }
+  }
+
+  // 3. Atomic guarded claim (see the header comment).
+  const incremented = await client.securityRateLimit.updateMany({
+    where: { bucket, identifier, count: { lt: limit } },
+    data: { count: { increment: 1 } },
+  });
+
+  if (incremented.count === 1) {
+    const row = await client.securityRateLimit.findUnique({ where: key });
+    const used = row?.count ?? limit;
     return {
-      allowed: false,
-      remaining: 0,
-      retryAfterSec: Math.ceil((existing.blockedUntil.getTime() - now.getTime()) / 1000),
+      allowed: true,
+      remaining: Math.max(0, limit - used),
+      retryAfterSec: 0,
     };
   }
 
-  const windowExpired =
-    !existing || now.getTime() - existing.windowStart.getTime() > windowSec * 1000;
-
-  if (windowExpired) {
-    await db.securityRateLimit.upsert({
-      where: key,
-      create: { bucket, identifier, count: 1, windowStart: now, blockedUntil: null },
-      update: { count: 1, windowStart: now, blockedUntil: null },
-    });
-    return { allowed: true, remaining: limit - 1, retryAfterSec: 0 };
-  }
-
-  const next = existing.count + 1;
-  if (next > limit) {
-    const blockedUntil = new Date(now.getTime() + blockSec * 1000);
-    await db.securityRateLimit.update({
-      where: key,
-      data: { count: next, blockedUntil },
-    });
-    return { allowed: false, remaining: 0, retryAfterSec: blockSec };
-  }
-
-  await db.securityRateLimit.update({ where: key, data: { count: next } });
-  return { allowed: true, remaining: limit - next, retryAfterSec: 0 };
+  // Over the limit: (re)arm the block. `update` is safe here because the row
+  // provably exists (step 1 created it).
+  const blockedUntil = new Date(now.getTime() + blockSec * 1000);
+  await client.securityRateLimit
+    .update({ where: key, data: { blockedUntil } })
+    .catch(() => {});
+  return { allowed: false, remaining: 0, retryAfterSec: blockSec };
 }
 
 /** Clear a bucket after a legitimate success (e.g. successful password reset). */
@@ -169,7 +221,17 @@ export type SecurityEventType =
   | "SESSION_REVOKED"
   | "QUIZ_EVIDENCE_ACCESSED"
   /** Phase 14 — staff review of a private session PDF. */
-  | "MATERIAL_ACCESSED";
+  | "MATERIAL_ACCESSED"
+  /** Phase 20 — an endpoint rate limit was exceeded (detail names the limiter). */
+  | "RATE_LIMITED"
+  /** Phase 20 — Teacher application & admin-approval lifecycle. */
+  | "TEACHER_APPLICATION_SUBMITTED"
+  | "TEACHER_APPLICATION_BLOCKED"
+  | "TEACHER_APPLICATION_APPROVED"
+  | "TEACHER_APPLICATION_REJECTED"
+  | "TEACHER_ACTIVATION_ISSUED"
+  | "TEACHER_ACTIVATION_COMPLETED"
+  | "TEACHER_ACTIVATION_FAILED";
 
 /**
  * Append a security event. Callers must pass only redacted details — this

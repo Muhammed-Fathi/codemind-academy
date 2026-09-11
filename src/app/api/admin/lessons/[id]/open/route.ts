@@ -28,7 +28,13 @@
 //     admin dialog shows exactly who was/wasn't told and why.
 
 import { NextRequest } from "next/server";
-import { ok, err, requireRole } from "@/lib/api";
+import {
+  ok,
+  err,
+  requireRole,
+  applyRateLimit,
+  rateLimitedResponse,
+} from "@/lib/api";
 import { openLesson, lifecycleHttpStatus } from "@/lib/session-lifecycle";
 import { emitSessionPublicationNotifications } from "@/lib/session-notifications";
 import { serverLocale } from "@/lib/i18n-server";
@@ -39,6 +45,12 @@ export async function POST(
 ) {
   const { user, error } = await requireRole("ADMIN");
   if (error) return error;
+
+  // Phase 20 — OPEN runs a transaction + a targeted fan-out (the most
+  // expensive admin ceremony); rate limit before either so a retry loop
+  // cannot bury the server in fan-outs.
+  const rl = await applyRateLimit("open", user?.id ?? "anonymous-admin");
+  if (!rl.allowed) return rateLimitedResponse(rl);
 
   const { id } = await params;
   const result = await openLesson({ lessonId: id, actorUserId: user?.id ?? null });

@@ -99,6 +99,8 @@ const BASE_SKIP_TABLES = new Set([
   "Enrollment",
   "Material",
   "SessionPublication",
+  "TeacherApplication",
+  "TeacherActivationToken",
 ]);
 
 function parsePrismaModels(schemaPath = SCHEMA) {

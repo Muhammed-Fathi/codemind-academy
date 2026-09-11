@@ -12,7 +12,14 @@
 
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { ok, err, requireUser, getStudentProfile } from "@/lib/api";
+import {
+  ok,
+  err,
+  requireUser,
+  getStudentProfile,
+  applyRateLimit,
+  rateLimitedResponse,
+} from "@/lib/api";
 import { VIDEO_COMPLETION_THRESHOLD } from "@/lib/progress";
 import { canAccessLesson } from "@/lib/session-progress";
 import { getServerT } from "@/lib/i18n-server";
@@ -29,6 +36,13 @@ export async function POST(
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
   if (user.role !== "STUDENT") return err("Forbidden", 403);
+
+  // Phase 20 — heartbeat endpoints are the platform's highest-frequency
+  // write surface (a playhead beat every few seconds); rate limit BEFORE any
+  // progression computation so a stuck or hostile client cannot hammer the
+  // gating query.
+  const rl = await applyRateLimit("heartbeat", user.id);
+  if (!rl.allowed) return rateLimitedResponse(rl);
 
   const student = await getStudentProfile(user.id);
   if (!student) return err(tApi("api.095"), 404);

@@ -4,6 +4,12 @@ import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getServerT } from "@/lib/i18n-server";
 import type { Role } from "@prisma/client";
+import { checkRateLimit, logSecurityEvent } from "@/lib/security";
+import {
+  enforceRateLimit,
+  type RateLimitEnforcement,
+  type RateLimitKey,
+} from "@/lib/rate-limit";
 
 export async function ok(data: unknown, init?: ResponseInit) {
   return NextResponse.json(data, init);
@@ -11,6 +17,73 @@ export async function ok(data: unknown, init?: ResponseInit) {
 
 export async function err(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
+}
+
+// ---------------------------------------------------------------------------
+// Phase 20 — shared rate limiting
+// ---------------------------------------------------------------------------
+//
+// One composition point for the DB-backed primitive (`checkRateLimit`) and the
+// pure policy module (`rate-limit.ts`). Every protected endpoint calls
+// `applyRateLimit` and, on refusal, returns `rateLimitedResponse`. The
+// identifier is derived from the authenticated user's id (hashed inside
+// `rate-limit.ts`), so the limiter is per-user and multi-process safe.
+
+/** Run the shared limiter for an authenticated user. */
+export async function applyRateLimit(
+  key: RateLimitKey,
+  userId: string
+): Promise<RateLimitEnforcement> {
+  const enforcement = await enforceRateLimit({
+    key,
+    userId,
+    check: checkRateLimit,
+  });
+  if (!enforcement.allowed) {
+    // Observability: blocks are audited (never fail the request — the helper
+    // swallows its own errors). The detail names the limiter, not the user.
+    await logSecurityEvent({
+      userId,
+      type: "RATE_LIMITED",
+      detail: `limiter=${key}`,
+    });
+  }
+  return enforcement;
+}
+
+/**
+ * Public-surface variant of `applyRateLimit` for requests with no authenticated
+ * user (e.g. a teacher application submitted by email identity). The identifier
+ * is hashed inside `rate-limit.ts`, so no raw email/IP lands in the table, and
+ * the block is audited WITHOUT a userId.
+ */
+export async function applyRateLimitForIdentifier(
+  key: RateLimitKey,
+  identifier: string
+): Promise<RateLimitEnforcement> {
+  const enforcement = await enforceRateLimit({
+    key,
+    userId: identifier,
+    check: checkRateLimit,
+  });
+  if (!enforcement.allowed) {
+    await logSecurityEvent({
+      userId: null,
+      type: "RATE_LIMITED",
+      detail: `limiter=${key}`,
+    });
+  }
+  return enforcement;
+}
+
+/** Build the 429 response for a refused request (Retry-After + X-RateLimit-*). */
+export function rateLimitedResponse(
+  enforcement: Extract<RateLimitEnforcement, { allowed: false }>
+) {
+  return NextResponse.json(enforcement.body, {
+    status: 429,
+    headers: enforcement.headers,
+  });
 }
 
 /**

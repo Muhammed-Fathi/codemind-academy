@@ -695,6 +695,38 @@ export const DICT_2026: Record<string, DictEntry> = {
     en: "The pass mark must be between {p1} and {p2}",
   },
 
+  // ---------------- Phase 20: teacher application & admin approval ----------------
+  "api.258": {
+    ar: "الإيميل ده مسجل بالفعل أو فيه طلب انضمام قائم",
+    en: "This email is already registered or has a pending application",
+  },
+  "api.259": {
+    ar: "اتسجل طلبك كمعلّم وهيتم مراجعته من الإدارة. هتوصلك رسالة تفعيل بعد الموافقة.",
+    en: "Your teacher application was submitted and will be reviewed. You will receive an activation email once approved.",
+  },
+  "api.260": { ar: "رابط التفعيل مطلوب", en: "The activation link is required" },
+  "api.261": { ar: "رابط التفعيل غير صالح أو منتهي الصلاحية", en: "Invalid or expired activation link" },
+  "api.262": { ar: "اتفعّل حسابك. ادخل ببياناتك دلوقتي.", en: "Your account is activated. You can now log in." },
+  "api.263": { ar: "الطلب غير موجود", en: "Application not found" },
+  "api.264": { ar: "مش ممكن الموافقة على الطلب ده", en: "This application cannot be approved" },
+  "api.265": { ar: "مش ممكن رفض الطلب ده", en: "This application cannot be rejected" },
+
+  // ---------------- Phase 20: teacher application (UI) ----------------
+  "auth.218": {
+    ar: "قدم طلبك للانضمام كمعلّم. بعد مراجعة الإدارة وموافقتها، هيوصلك إيميل تفعيل تحدد فيه كلمة السر بنفسك.",
+    en: "Apply to join as a teacher. Once an admin approves, you'll get an activation email to set your own password.",
+  },
+  "auth.219": { ar: "قدّم الطلب", en: "Submit application" },
+  "auth.220": { ar: "فعّل حساب المعلم", en: "Activate your teacher account" },
+  "auth.221": {
+    ar: "حط كلمة السر الجديدة بتاعتك عشان تكتمل تفعيل حسابك كمعلّم.",
+    en: "Set your own password to complete your teacher account activation.",
+  },
+  "auth.222": { ar: "كلمتا السر مش متطابقتين", en: "The passwords do not match" },
+  "auth.223": { ar: "فعّل الحساب", en: "Activate account" },
+  "auth.224": { ar: "كلمة السر الجديدة", en: "New password" },
+  "auth.225": { ar: "تأكيد كلمة السر", en: "Confirm password" },
+
   // ---------------- Phase 18: teacher workflow completion (UI) ----------------
   "teacher.173": { ar: "تراك المحتوى", en: "Track scope" },
   "teacher.174": { ar: "زي تراك الدرس", en: "Same as the lesson" },

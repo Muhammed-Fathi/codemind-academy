@@ -940,7 +940,10 @@ pinned(
   "K: the teacher UI reuses the admin vocabulary instead of a second one"
 );
 for (const migration of fs.readdirSync(path.join(REPO, "prisma/migrations"))) {
-  if (migration.includes("phase18") || migration.includes("teacher")) {
+  // Scope the pin to Phase 18's OWN migrations. A later phase (Phase 20
+  // Security Hardening II) legitimately added `phase20_teacher_applications`
+  // for the teacher application/approval flow — that is not a Phase 18 artifact.
+  if (migration.includes("phase18")) {
     ok(false, `K: Phase 18 added no migration (unexpected ${migration})`);
   }
 }

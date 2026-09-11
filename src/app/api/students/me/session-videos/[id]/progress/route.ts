@@ -8,7 +8,13 @@
 
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { requireUser, ok, err } from "@/lib/api";
+import {
+  requireUser,
+  ok,
+  err,
+  applyRateLimit,
+  rateLimitedResponse,
+} from "@/lib/api";
 
 const MAX_CREDIT_PER_BEAT_SEC = 60;
 
@@ -20,6 +26,10 @@ export async function POST(
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
   if (user.role !== "STUDENT") return err("Forbidden", 403);
+
+  // Phase 20 — batch-video heartbeat, same shared limiter as lesson videos.
+  const rl = await applyRateLimit("heartbeat", user.id);
+  if (!rl.allowed) return rateLimitedResponse(rl);
 
   const student = await db.student.findUnique({
     where: { userId: user.id },
