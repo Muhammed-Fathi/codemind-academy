@@ -1031,6 +1031,8 @@ model TeacherApplication {
   createdAt        DateTime                 @default(now())
   updatedAt        DateTime                 @updatedAt
 
+  activationTokens TeacherActivationToken[]
+
   @@index([status, createdAt])
 }
 

@@ -236,7 +236,7 @@ function RolePicker({ role, onChange }: { role: Role; onChange: (r: Role) => voi
   );
 }
 
-function AuthForm({ mode, role }: { mode: "login" | "register"; role: Role }) {
+function AuthForm({ mode, role, setMode }: { mode: "login" | "register"; role: Role; setMode?: (mode: "login" | "register") => void }) {
   const tr = useT();
   const setUser = useApp((s) => s.setUser);
   const setView = useApp((s) => s.setView);
@@ -368,7 +368,7 @@ function AuthForm({ mode, role }: { mode: "login" | "register"; role: Role }) {
       // the auth shell and tell the applicant to expect the activation email.
       if (data.applied) {
         toast.success(tr("api.259"));
-        setMode("login");
+        setMode?.("login");
         return;
       }
       if (data.user?.studentCode) setCreatedCode(data.user.studentCode);
