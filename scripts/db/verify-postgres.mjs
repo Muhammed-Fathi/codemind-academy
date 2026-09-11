@@ -27,6 +27,7 @@
 
 import fs from "node:fs";
 import pg from "pg";
+import { fileURLToPath } from "node:url";
 import { parseSchema, scalarFields, pgBackend, pgliteBackend, redactDatabaseUrl } from "./pg-lib.mjs";
 
 const { Pool } = pg;
@@ -369,7 +370,7 @@ function argOf(argv, name) {
   return i >= 0 ? argv[i + 1] : null;
 }
 
-const isMain = process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(new URL(import.meta.url).pathname);
+const isMain = process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url));
 if (isMain) {
   main().catch((e) => {
     console.error(`fatal: ${e?.message || e}`);
