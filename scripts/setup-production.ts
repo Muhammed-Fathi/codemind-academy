@@ -1,45 +1,122 @@
 import { PrismaClient, Role } from "@prisma/client";
 import { hashPassword } from "../src/lib/auth";
+import { reconcileOfficialCurriculum } from "../src/lib/official-curriculum";
+import {
+  OFFICIAL_COURSE_SLUG,
+  EXPECTED_OFFICIAL_COUNTS,
+  OFFICIAL_LESSON_CODES,
+} from "../src/lib/official-curriculum";
+import { DatabaseSync } from "node:sqlite";
 import readline from "node:readline";
+import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-// CodeMind Academy — Production Database Setup (Phase 21 revision).
+// ============================================================================
+// CodeMind Academy — Production Baseline Setup (Phase 22 rework)
+// ============================================================================
 //
-// ONE-TIME initial-production reset: empties a database that currently holds
-// demo/test/development data, then creates ONE real Admin interactively.
-// Preserved: Settings, SubscriptionPlans.
+// WHAT THIS SCRIPT IS
+//   A SAFE, SELECTIVE production-baseline operation. It establishes the final
+//   CodeMind Academy production baseline WITHOUT wiping the platform.
 //
-// Phase 21 changes vs the previous version:
-//   * Covers EVERY table added by Phases 11-20 (videos, mock exams,
-//     enrollments, materials, publications, Teacher Applications, activation
-//     tokens, sessions, reset tokens, rate limits, security events, evidence).
-//     The old script left MockExam / SessionVideo / MediaAsset / Batch /
-//     security rows behind (stale production state).
-//   * Deletion order is safe on BOTH SQLite and PostgreSQL. Several relations
-//     have NO database cascade (e.g. Student.groupId -> Group,
-//     Payment.userId -> User), so children are deleted before parents
-//     explicitly instead of relying on cascades.
-//   * Provider-aware: prints the datasource provider + redacted URL and a
-//     per-table count summary BEFORE asking for confirmation, and supports
-//     --dry-run (report only, change nothing).
-//   * Still creates NO teacher: teacher provisioning happens ONLY through the
-//     Phase 20 application -> approval -> activation flow. No hardcoded
-//     passwords anywhere; the admin password is prompted and hashed.
+// WHAT IT DOES (in order)
+//   1. Resolves the real database target from DATABASE_URL (no assumptions).
+//   2. Creates a verified, timestamped, checksummed backup BEFORE any mutation
+//      (SQLite: read-only `VACUUM INTO`; PostgreSQL: the repo's pg backup
+//      script). It never overwrites an existing backup.
+//   3. Reconciles the official curriculum using the CANONICAL repository
+//      implementation (`reconcileOfficialCurriculum`) — create-mostly and
+//      idempotent. Existing curriculum is PRESERVED; missing pieces are
+//      reconciled from `docs/curriculum/knowledge-model.json`.
+//   4. Selectively removes ONLY non-allowlisted (demo/test) users and their
+//      own dependent data, in a dependency-safe order. It NEVER deletes
+//      curriculum, media, assessments, plans, settings, groups, batches, or
+//      historical security/audit infrastructure.
+//   5. Creates/updates EXACTLY the three required production accounts
+//      (2 ADMIN + 1 TEACHER), each with an interactively-entered password
+//      hashed via the repo's `hashPassword()`.
+//   6. Verifies every final invariant (roles, identities, curriculum, content
+//      preservation, referential integrity, unique official codes).
 //
-// OWNERSHIP: Phase 22 owns the final production baseline cleanup and
-// allowlist. This script is the TOOL Phase 22 will use; Phase 21 only makes
-// it complete and provider-safe. Do NOT run it against a live production
-// database as part of Phase 21.
+// WHAT IT DELIBERATELY DOES NOT DO (this replaces the old dangerous script)
+//   * NO full reset. NO `prisma migrate reset`, `db push`, or seed.
+//   * NO unscoped `deleteMany()` on ANY table.
+//   * NO deletion of Course / Part / Unit / Topic / Lesson / Track.
+//   * NO deletion of MediaAsset / SessionVideo / Material.
+//   * NO deletion of Quiz / Question / ExamQuestion / MockExam / Homework
+//     definitions.
+//   * NO blanket wipe of AuditLog / SecurityEvent.
+//   * NO deletion of physical media files / MEDIA_STORAGE_PATH.
+//   * NO hardcoded / default / logged passwords.
+//
+// SAFETY MODEL
+//   * `--dry-run` performs ZERO mutations (not even a backup): it only reports
+//     the current state and the exact plan (including the backup path that
+//     WOULD be created).
+//   * A backup always exists and is verified BEFORE the first mutation.
+//   * All mutations run inside a single interactive transaction, so a failure
+//     mid-way rolls back — the database is never left half-configured.
+//   * Role conflicts on the three required emails FAIL CLOSED (abort, zero
+//     mutations) instead of silently mutating an existing user's role.
+//
+// RUN
+//   Dry run (read-only):  npx tsx scripts/setup-production.ts --dry-run
+//   Execute:              npx tsx scripts/setup-production.ts
+//   (Stop the app first so the SQLite backup is a clean, consistent snapshot.)
+
+// ---------------------------------------------------------------------------
+// Required final production accounts (the ONLY normal users that must remain).
+// ---------------------------------------------------------------------------
+// email comparison is normalized (lowercase + trim) everywhere.
+const PRODUCTION_USERS: { email: string; name: string; role: Role }[] = [
+  { email: "mudiifathii@gmail.com", name: "Muhammed Fathi Kamal", role: Role.ADMIN },
+  { email: "abdelrahmanmohamedhafez7@gmail.com", name: "Abdelrahman Mohamed", role: Role.ADMIN },
+  { email: "muhammedfathi2005@gmail.com", name: "Muhammed Fathi", role: Role.TEACHER },
+];
+
+/** Single source of truth for the keep-list, normalized. */
+const PRODUCTION_ALLOWLIST = new Set(
+  PRODUCTION_USERS.map((u) => normalizeEmail(u.email))
+);
+
+/** Platform password policy (see src/app/api/**: `password.length < 8`). */
+const MIN_PASSWORD_LENGTH = 8;
 
 const prisma = new PrismaClient();
 
-function ask(question: string): Promise<string> {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
+// ---------------------------------------------------------------------------
+// Small helpers
+// ---------------------------------------------------------------------------
 
+function normalizeEmail(raw: unknown): string {
+  // Mirrors canonicalTeacherEmail() in src/lib/teacher-applications.ts.
+  return String(raw ?? "").toLowerCase().trim();
+}
+
+function ask(question: string): Promise<string> {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   return new Promise((resolve) => {
     rl.question(question, (answer) => {
+      rl.close();
+      resolve(answer);
+    });
+  });
+}
+
+/**
+ * Prompt for a secret without echoing it to the terminal. The typed value is
+ * never printed, never logged, and never stored anywhere but as a hash.
+ */
+function askHidden(question: string): Promise<string> {
+  return new Promise((resolve) => {
+    process.stdout.write(question);
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
+    // Mute all echo while the secret is being typed.
+    (rl as unknown as { _writeToOutput: (s: string) => void })._writeToOutput = () => {};
+    rl.question("", (answer) => {
+      process.stdout.write("\n");
       rl.close();
       resolve(answer);
     });
@@ -57,8 +134,46 @@ function redactUrl(url: string | undefined): string {
   }
 }
 
+type Provider = "sqlite" | "postgresql" | "unknown";
+
+function detectProvider(dbUrl: string): Provider {
+  if (dbUrl.startsWith("postgres")) return "postgresql";
+  if (dbUrl.startsWith("file:") || dbUrl.endsWith(".db")) return "sqlite";
+  return "unknown";
+}
+
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+/**
+ * Resolve the ACTUAL SQLite file backing a `file:` DATABASE_URL. We do not
+ * assume a location: Prisma resolves relative SQLite URLs against the schema
+ * directory (`prisma/`), but historically some setups use the repo root, and
+ * this repo lists BOTH `db/custom.db` and `prisma/db/custom.db` as candidates.
+ * So we compute every plausible path and pick the one that actually exists.
+ * Returns { file, existed }.
+ */
+function resolveSqliteFile(dbUrl: string): { file: string; existed: boolean } {
+  const raw = dbUrl.replace(/^file:/, "");
+  if (path.isAbsolute(raw)) {
+    return { file: raw, existed: fs.existsSync(raw) };
+  }
+  const candidates = [
+    path.resolve(REPO_ROOT, "prisma", raw), // Prisma's schema-relative rule
+    path.resolve(REPO_ROOT, raw), // repo-root relative (.env.example convention)
+    path.resolve(process.cwd(), raw), // CWD relative (defensive)
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return { file: c, existed: true };
+  }
+  // None exist yet: prefer the repo-root convention for reporting.
+  return { file: candidates[1], existed: false };
+}
+
+// ---------------------------------------------------------------------------
+// Inventory (read-only counts). Every model, so the report is complete.
+// ---------------------------------------------------------------------------
+
 async function tableCounts(): Promise<{ table: string; rows: number }[]> {
-  // Every model in dependency-irrelevant order (counts only).
   const delegates: [string, { count: () => Promise<number> }][] = [
     ["User", prisma.user],
     ["Student", prisma.student],
@@ -127,262 +242,471 @@ async function tableCounts(): Promise<{ table: string; rows: number }[]> {
   return out;
 }
 
+/**
+ * Snapshot of tables that MUST NOT shrink. After the run we assert every one
+ * of these is >= its pre-run value (curriculum/content/security preservation).
+ */
+async function contentSnapshot(): Promise<Record<string, number>> {
+  return {
+    Course: await prisma.course.count(),
+    Part: await prisma.part.count(),
+    Unit: await prisma.unit.count(),
+    Topic: await prisma.topic.count(),
+    Lesson: await prisma.lesson.count(),
+    Track: await prisma.track.count(),
+    Group: await prisma.group.count(),
+    Batch: await prisma.batch.count(),
+    SubscriptionPlan: await prisma.subscriptionPlan.count(),
+    Setting: await prisma.setting.count(),
+    Quiz: await prisma.quiz.count(),
+    Question: await prisma.question.count(),
+    ExamQuestion: await prisma.examQuestion.count(),
+    MockExam: await prisma.mockExam.count(),
+    Homework: await prisma.homework.count(),
+    MediaAsset: await prisma.mediaAsset.count(),
+    SessionVideo: await prisma.sessionVideo.count(),
+    Material: await prisma.material.count(),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Backup (SQLite: read-only VACUUM INTO; PostgreSQL: repo pg backup script)
+// ---------------------------------------------------------------------------
+
+function backupDir(): string {
+  return path.join(REPO_ROOT, "backups"); // gitignored (see .gitignore /backups/)
+}
+
+function plannedBackupPath(provider: Provider): string {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const ext = provider === "postgresql" ? "dump" : "db";
+  return path.join(backupDir(), `pre-production-setup-${stamp}.${ext}`);
+}
+
+/**
+ * Take + verify a backup. SQLite uses a READ-ONLY connection and `VACUUM INTO`
+ * so the live database file is never opened for writing. Never overwrites an
+ * existing file. Returns the backup path, byte size and SHA-256.
+ */
+function createVerifiedBackup(
+  provider: Provider,
+  sqliteFile: string,
+  outPath: string
+): { path: string; size: number; sha256: string } {
+  fs.mkdirSync(backupDir(), { recursive: true });
+  if (fs.existsSync(outPath)) {
+    throw new Error(`Backup target already exists, refusing to overwrite: ${outPath}`);
+  }
+
+  if (provider === "sqlite") {
+    if (!fs.existsSync(sqliteFile)) {
+      throw new Error(`Cannot back up: SQLite database not found at ${sqliteFile}`);
+    }
+    // Read-only open: guarantees the source is not mutated/checkpointed by us.
+    const ro = new DatabaseSync(sqliteFile, { readOnly: true });
+    try {
+      ro.exec(`VACUUM INTO '${outPath.replace(/'/g, "''")}'`);
+    } finally {
+      ro.close();
+    }
+  } else if (provider === "postgresql") {
+    // Reuse the repository's PostgreSQL backup mechanism — do NOT reimplement.
+    const script = path.join(REPO_ROOT, "scripts", "db", "backup-postgres.sh");
+    if (!fs.existsSync(script)) {
+      throw new Error(`PostgreSQL backup script not found: ${script}`);
+    }
+    // Lazy import so SQLite runs never load child_process.
+    const { execFileSync } = require("node:child_process") as typeof import("node:child_process");
+    execFileSync("bash", [script, "--out-dir", backupDir(), "--label", "pre-production-setup"], {
+      stdio: "inherit",
+      cwd: REPO_ROOT,
+    });
+    // The pg script names its own artifact; surface the newest .dump it wrote.
+    const dumps = fs
+      .readdirSync(backupDir())
+      .filter((f) => f.endsWith(".dump"))
+      .map((f) => path.join(backupDir(), f))
+      .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+    if (dumps.length === 0) throw new Error("PostgreSQL backup produced no .dump artifact.");
+    outPath = dumps[0];
+  } else {
+    throw new Error(`Unknown database provider — refusing to run without a backup.`);
+  }
+
+  if (!fs.existsSync(outPath)) throw new Error(`Backup verification failed: ${outPath} missing.`);
+  const bytes = fs.readFileSync(outPath);
+  const size = bytes.length;
+  if (size === 0) throw new Error(`Backup verification failed: ${outPath} is empty.`);
+  const sha256 = crypto.createHash("sha256").update(bytes).digest("hex");
+  return { path: outPath, size, sha256 };
+}
+
+// ---------------------------------------------------------------------------
+// Selective, dependency-safe removal of a single non-allowlisted user.
+// ---------------------------------------------------------------------------
+//
+// Cascade analysis (from prisma/schema.prisma, verified against migrations):
+//   Deleting a User row CASCADES: Student (+ all student-owned children:
+//   Attendance, QuizAttempt→QuizAnswer/Evidence, HomeworkSubmission, Lesson*,
+//   StudentBadge, StudyTask, Subscription, SessionVideoView, Enrollment,
+//   ParentStudentLink, Referral, ExamAttempt), Parent (+ links), Teacher
+//   (+ TeacherNote, LessonPlanTemplate; Group.teacherId & LiveSession.teacherId
+//   are nullable → SET NULL, groups/sessions preserved), Notification,
+//   UserSession, PasswordResetToken, AuditLog. SecurityEvent.userId is
+//   SET NULL (rows preserved for audit).
+//
+//   NOT cascaded and therefore removed explicitly first:
+//     * Payment      — required relation with NO cascade (RESTRICT): would
+//                      block the User delete, so delete the user's payments.
+//     * NotificationPreference / CouponRedemption — carry userId but have no
+//                      FK relation to User (no cascade, would orphan): removed
+//                      by explicit scoped delete.
+async function removeUser(tx: any, userId: string): Promise<void> {
+  // Explicit, scoped deletes for the non-cascading user-owned rows.
+  await tx.payment.deleteMany({ where: { userId } });
+  await tx.notificationPreference.deleteMany({ where: { userId } });
+  await tx.couponRedemption.deleteMany({ where: { userId } });
+  // The User delete cascades / SET NULLs everything else per the analysis above.
+  await tx.user.delete({ where: { id: userId } });
+}
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
+
 async function main() {
   const dryRun = process.argv.includes("--dry-run");
 
   console.log("\n========================================");
-  console.log("   CodeMind Production Database Setup");
+  console.log("   CodeMind Production Baseline Setup");
   console.log("========================================\n");
 
   const dbUrl = process.env.DATABASE_URL || "";
-  const provider = dbUrl.startsWith("postgres")
-    ? "postgresql"
-    : dbUrl.startsWith("file:") || dbUrl.endsWith(".db")
-      ? "sqlite"
-      : "unknown";
+  const provider = detectProvider(dbUrl);
+  const sqlite = provider === "sqlite" ? resolveSqliteFile(dbUrl) : { file: "", existed: false };
+
   console.log(`Provider : ${provider}`);
   console.log(`Target   : ${redactUrl(dbUrl)}`);
+  if (provider === "sqlite") {
+    console.log(`DB file  : ${sqlite.file} ${sqlite.existed ? "(exists)" : "(NOT FOUND)"}`);
+  }
+  if (provider === "unknown") {
+    throw new Error("DATABASE_URL is unset or not recognized (expected file:/postgres).");
+  }
 
+  // ---- Current state (read-only) ----
   const before = await tableCounts();
-  const total = before.reduce((a, r) => a + Math.max(0, r.rows), 0);
-  console.log(`\nCurrent rows: ${total} across ${before.length} tables (non-empty):`);
-  for (const r of before) {
-    if (r.rows > 0) console.log(`  ${r.table}: ${r.rows}`);
+  const beforeByRole = {
+    ADMIN: await prisma.user.count({ where: { role: Role.ADMIN } }),
+    TEACHER: await prisma.user.count({ where: { role: Role.TEACHER } }),
+    STUDENT: await prisma.user.count({ where: { role: Role.STUDENT } }),
+    PARENT: await prisma.user.count({ where: { role: Role.PARENT } }),
+  };
+  const contentBefore = await contentSnapshot();
+
+  console.log("\nCurrent non-empty tables:");
+  for (const r of before) if (r.rows > 0) console.log(`  ${r.table}: ${r.rows}`);
+  console.log(
+    `\nUsers by role: ADMIN=${beforeByRole.ADMIN} TEACHER=${beforeByRole.TEACHER} ` +
+      `STUDENT=${beforeByRole.STUDENT} PARENT=${beforeByRole.PARENT}`
+  );
+
+  // ---- Plan: who stays / who goes / conflicts ----
+  const allUsers = await prisma.user.findMany({
+    select: { id: true, email: true, name: true, role: true },
+  });
+  const keep = allUsers.filter((u) => PRODUCTION_ALLOWLIST.has(normalizeEmail(u.email)));
+  const remove = allUsers.filter((u) => !PRODUCTION_ALLOWLIST.has(normalizeEmail(u.email)));
+
+  // Role-conflict pre-flight: an allowlisted email that exists with a role
+  // different from its designated role must ABORT (never silently corrupt).
+  const conflicts: string[] = [];
+  for (const spec of PRODUCTION_USERS) {
+    const existing = allUsers.find((u) => normalizeEmail(u.email) === normalizeEmail(spec.email));
+    if (existing && existing.role !== spec.role) {
+      conflicts.push(
+        `  ${spec.email}: exists as ${existing.role}, but must be ${spec.role}`
+      );
+    }
+  }
+
+  console.log("\nCurriculum (canonical reconciliation source: knowledge-model.json):");
+  const course = await prisma.course.findUnique({
+    where: { slug: OFFICIAL_COURSE_SLUG },
+    select: { id: true },
+  });
+  const curParts = course
+    ? await prisma.part.count({ where: { courseId: course.id } })
+    : 0;
+  const curUnits = course
+    ? await prisma.unit.count({ where: { part: { courseId: course.id } } })
+    : 0;
+  const curOfficialLessons = await prisma.lesson.count({
+    where: { officialCode: { not: null }, curriculumStatus: "OFFICIAL" },
+  });
+  console.log(
+    `  Course=${course ? "present" : "MISSING"} Parts=${curParts}/${EXPECTED_OFFICIAL_COUNTS.parts} ` +
+      `Units=${curUnits}/${EXPECTED_OFFICIAL_COUNTS.units} ` +
+      `OfficialLessons=${curOfficialLessons}/${EXPECTED_OFFICIAL_COUNTS.lessons}`
+  );
+
+  console.log("\nUser plan:");
+  console.log(`  KEEP (allowlisted, ${keep.length}): ${keep.map((u) => u.email).join(", ") || "none"}`);
+  console.log(`  REMOVE (non-allowlisted, ${remove.length}): ${remove.map((u) => u.email).join(", ") || "none"}`);
+  console.log("  CREATE/UPDATE to final baseline:");
+  for (const s of PRODUCTION_USERS) console.log(`    ${s.role.padEnd(7)} ${s.name} <${s.email}>`);
+
+  const plannedBackup = plannedBackupPath(provider);
+  console.log(`\nPlanned backup: ${plannedBackup}`);
+
+  if (conflicts.length) {
+    console.log("\n⚠ ROLE CONFLICTS — aborting with ZERO mutations:");
+    for (const c of conflicts) console.log(c);
+    throw new Error("Refusing to run: allowlisted emails exist with unexpected roles.");
   }
 
   if (dryRun) {
-    console.log("\n--dry-run: nothing was changed.");
+    console.log("\n--dry-run: no backup was created and NOTHING was changed.");
     return;
   }
 
-  console.log("\nThis will:");
-  console.log("- Delete demo/test data (ALL tables below)");
-  console.log("- Delete all existing users");
-  console.log("- Delete Teacher Applications, activation tokens, sessions,");
-  console.log("  reset tokens, rate limits, security events, evidence");
-  console.log("- Delete videos, mock exams, enrollments, materials, publications");
-  console.log("- Create ONE real Admin (interactive, no hardcoded password)");
-  console.log("- Preserve Settings");
-  console.log("- Preserve SubscriptionPlans\n");
+  // ---- Confirmation ----
+  console.log("\nThis PRODUCTION BASELINE operation will:");
+  console.log("- Create a verified backup BEFORE any change");
+  console.log("- Reconcile the official curriculum (preserve existing, idempotent)");
+  console.log("- Remove ONLY obsolete / non-allowlisted user data (dependency-safe)");
+  console.log("- Preserve ALL curriculum / media / assessments / plans / settings");
+  console.log("- Preserve historical audit/security infrastructure");
+  console.log("- Create/update EXACTLY 3 accounts (2 ADMIN + 1 TEACHER)");
+  console.log("- Prompt for each account password interactively (never stored in code)\n");
 
-  const confirmation = await ask('Type "CLEAN" to continue: ');
-
-  if (confirmation.trim() !== "CLEAN") {
+  const confirmation = await ask('Type "PRODUCTION" to continue: ');
+  if (confirmation.trim() !== "PRODUCTION") {
     console.log("\nCancelled. Nothing was changed.");
     return;
   }
 
-  console.log("\nCleaning database...\n");
-
-  // ========================================
-  // 1. Assessment leaves (children first — explicit, cascade-independent)
-  // ========================================
-
-  await prisma.quizAnswer.deleteMany();
-  await prisma.quizAttemptEvidence.deleteMany();
-  await prisma.quizAttempt.deleteMany();
-
-  await prisma.examAttempt.deleteMany();
-  await prisma.mockExamQuestion.deleteMany();
-  await prisma.mockExam.deleteMany();
-  await prisma.examQuestion.deleteMany();
-
-  await prisma.homeworkSubmission.deleteMany();
-  await prisma.homework.deleteMany();
-
-  await prisma.question.deleteMany();
-  await prisma.quiz.deleteMany();
-
-  await prisma.lessonProgress.deleteMany();
-  await prisma.lessonBookmark.deleteMany();
-  await prisma.lessonNote.deleteMany();
-  await prisma.studyTask.deleteMany();
-
-  // ========================================
-  // 2. Videos / materials / publications (Phase 14/17 media graph)
-  // ========================================
-  // SessionVideo.mediaAssetId is Restrict: videos go before assets.
-
-  await prisma.sessionVideoView.deleteMany();
-  await prisma.sessionVideo.deleteMany();
-  await prisma.material.deleteMany();
-  await prisma.sessionPublication.deleteMany();
-
-  // ========================================
-  // 3. Live sessions / attendance
-  // ========================================
-
-  await prisma.attendance.deleteMany();
-  await prisma.liveSession.deleteMany();
-
-  // ========================================
-  // 4. Teacher workflow rows
-  // ========================================
-
-  await prisma.teacherNote.deleteMany();
-  await prisma.lessonPlanTemplate.deleteMany();
-
-  // ========================================
-  // 5. Money / engagement (before users — Payment has no DB cascade)
-  // ========================================
-  // SubscriptionPlans are intentionally preserved.
-
-  await prisma.payment.deleteMany();
-  await prisma.subscription.deleteMany();
-
-  await prisma.couponRedemption.deleteMany();
-  await prisma.coupon.deleteMany();
-  await prisma.referral.deleteMany();
-
-  // ========================================
-  // 6. Notifications / audit / security persistence
-  // ========================================
-  // Security/audit rows are deleted here ONLY because this is a full initial
-  // reset of demo data. This is not a retention policy (see Phase 22).
-
-  await prisma.notification.deleteMany();
-  await prisma.notificationPreference.deleteMany();
-  await prisma.auditLog.deleteMany();
-
-  await prisma.securityEvent.deleteMany();
-  await prisma.securityRateLimit.deleteMany();
-  await prisma.passwordResetToken.deleteMany();
-  await prisma.userSession.deleteMany();
-
-  await prisma.teacherActivationToken.deleteMany();
-  await prisma.teacherApplication.deleteMany();
-
-  // ========================================
-  // 7. Enrollment graph (NO-cascade edges: Student.groupId, Group.*)
-  // ========================================
-
-  await prisma.enrollment.deleteMany();
-  await prisma.studentBadge.deleteMany();
-  await prisma.parentStudentLink.deleteMany();
-
-  await prisma.student.deleteMany();
-  await prisma.group.deleteMany();
-  await prisma.batch.deleteMany();
-  await prisma.parent.deleteMany();
-  await prisma.teacher.deleteMany();
-
-  // ========================================
-  // 8. Curriculum tree
-  // ========================================
-
-  await prisma.lesson.deleteMany();
-  await prisma.topic.deleteMany();
-  await prisma.unit.deleteMany();
-  await prisma.part.deleteMany();
-  await prisma.course.deleteMany();
-  await prisma.track.deleteMany();
-
-  // ========================================
-  // 9. Media bytes index (rows only — files are operator-managed)
-  // ========================================
-  // MediaAsset rows are deleted last: every pointer (videos, materials,
-  // evidence) is already gone, so no Restrict edge can fire. The private
-  // FILES under MEDIA_STORAGE_PATH are NOT deleted by this script — wiping a
-  // volume is a separate, deliberate operator step (see the runbook).
-
-  await prisma.mediaAsset.deleteMany();
-
-  // ========================================
-  // 10. Remove all existing users
-  // ========================================
-
-  await prisma.user.deleteMany();
-
-  console.log("✓ Demo/test data deleted.");
-  console.log("✓ Existing users deleted.");
-  console.log("✓ Teacher Applications / activation state deleted.");
-  console.log("✓ Sessions / tokens / rate limits / security events deleted.");
-  console.log("✓ Videos / mock exams / materials / publications deleted.");
-  console.log("✓ Settings preserved.");
-  console.log("✓ SubscriptionPlans preserved.");
-
-  // ========================================
-  // 11. Create the real Admin
-  // ========================================
-  // No teacher is created here — EVER. Teacher provisioning happens only
-  // through the Phase 20 flow (public application -> admin approval ->
-  // applicant activation with their own password). There is no code path in
-  // this script that creates role=TEACHER, and no password is hardcoded.
-
-  const email = "mudiifathii@gmail.com";
-
-  const password = await ask("\nEnter Admin password: ");
-
-  // Security Audit Gate (pre-P21): the platform minimum is 8 characters
-  // (password reset, teacher activation, registration). A production admin
-  // must not be provisioned with a 6-character password.
-  if (!password || password.length < 8) {
-    throw new Error("Admin password must be at least 8 characters.");
+  // ---- Collect all passwords up front (so the DB transaction never waits on
+  //      human input). Each is entered twice, hidden, and policy-checked. ----
+  const passwordHashes = new Map<string, string>();
+  for (const spec of PRODUCTION_USERS) {
+    for (;;) {
+      const pw = await askHidden(`\nPassword for ${spec.role} ${spec.name} <${spec.email}>: `);
+      if (!pw || pw.length < MIN_PASSWORD_LENGTH) {
+        console.log(`  Password must be at least ${MIN_PASSWORD_LENGTH} characters. Try again.`);
+        continue;
+      }
+      const confirm = await askHidden(`Confirm password for ${spec.email}: `);
+      if (pw !== confirm) {
+        console.log("  Passwords did not match. Try again.");
+        continue;
+      }
+      passwordHashes.set(normalizeEmail(spec.email), hashPassword(pw));
+      break;
+    }
   }
 
-  const name = await ask("Enter Admin name: ");
+  // ---- Backup BEFORE the first mutation ----
+  console.log("\nCreating verified backup...");
+  const backup = createVerifiedBackup(provider, sqlite.file, plannedBackup);
+  console.log(`✓ Backup: ${backup.path}`);
+  console.log(`  size   : ${backup.size} bytes`);
+  console.log(`  sha256 : ${backup.sha256}`);
 
-  const admin = await prisma.user.create({
-    data: {
-      email,
-      password: hashPassword(password),
-      name: name.trim() || "System Administrator",
-      role: Role.ADMIN,
-      isActive: true,
+  // ---- All mutations in ONE transaction (atomic; rolls back on failure) ----
+  console.log("\nApplying production baseline (transactional)...");
+  // Generous timeout: this transaction does NOT wait on human input (all
+  // passwords were collected above). It only needs enough headroom for the
+  // curriculum reconcile + scoped user deletes on a real database.
+  await prisma.$transaction(
+    async (tx) => {
+    // 1. Curriculum: canonical, idempotent reconciliation (create-mostly).
+    const report = await reconcileOfficialCurriculum(tx as any);
+    console.log(
+      `  ✓ Curriculum reconciled: parts +${report.partsCreated}, units +${report.unitsCreated}, ` +
+        `lessons +${report.lessonsCreated} (updated ${report.lessonsUpdated}); ` +
+        `official codes=${report.officialLessonCodes.length}`
+    );
+    for (const w of report.warnings) console.log(`    ! ${w}`);
+
+    // 2. Selective, dependency-safe removal of non-allowlisted users.
+    for (const u of remove) await removeUser(tx, u.id);
+    console.log(`  ✓ Removed ${remove.length} non-allowlisted user(s) and their owned data`);
+
+    // 3. Create/update the three required accounts.
+    for (const spec of PRODUCTION_USERS) {
+      const email = normalizeEmail(spec.email);
+      const password = passwordHashes.get(email)!;
+      const existing = await tx.user.findUnique({ where: { email } });
+
+      if (existing && existing.role !== spec.role) {
+        // Defensive: pre-flight already checked, but never corrupt a role.
+        throw new Error(`Role conflict for ${email}: ${existing.role} != ${spec.role}`);
+      }
+
+      const user = existing
+        ? await tx.user.update({
+            where: { email },
+            data: {
+              name: spec.name,
+              password,
+              role: spec.role,
+              isActive: true,
+              status: "ACTIVE",
+            },
+          })
+        : await tx.user.create({
+            data: {
+              email,
+              name: spec.name,
+              password,
+              role: spec.role,
+              isActive: true,
+              status: "ACTIVE",
+            },
+          });
+
+      // Teacher end-state must match the Phase 20 activation outcome exactly:
+      // a User{role:TEACHER} PLUS a Teacher row. We reach the same end-state
+      // here without a fake TeacherApplication or a fake activation token —
+      // the password is still interactive + scrypt-hashed, the account is
+      // active, and no plaintext or insecure shortcut is introduced. This is a
+      // deliberate one-time production bootstrap of a KNOWN owner, not the
+      // public application path (which remains the only way strangers become
+      // teachers).
+      if (spec.role === Role.TEACHER) {
+        const t = await tx.teacher.findUnique({ where: { userId: user.id } });
+        if (!t) await tx.teacher.create({ data: { userId: user.id } });
+      }
+      console.log(`  ✓ ${existing ? "Updated" : "Created"} ${spec.role} ${spec.email}`);
+    }
     },
-  });
-
-  // ========================================
-  // 12. Final verification
-  // ========================================
-
-  const after = await tableCounts();
-  const leftover = after.filter(
-    (r) =>
-      r.rows > 0 &&
-      r.table !== "User" &&
-      r.table !== "Setting" &&
-      r.table !== "SubscriptionPlan"
+    { timeout: 120_000, maxWait: 120_000 }
   );
+
+  // ======================================================================
+  // Verification (read-only, after commit)
+  // ======================================================================
+  console.log("\n========================================");
+  console.log("            Verification");
+  console.log("========================================");
 
   const adminCount = await prisma.user.count({ where: { role: Role.ADMIN } });
   const teacherCount = await prisma.user.count({ where: { role: Role.TEACHER } });
   const studentCount = await prisma.user.count({ where: { role: Role.STUDENT } });
   const parentCount = await prisma.user.count({ where: { role: Role.PARENT } });
-  const groupCount = await prisma.group.count();
-  const appCount = await prisma.teacherApplication.count();
-  const sessionCount = await prisma.userSession.count();
-  const eventCount = await prisma.securityEvent.count();
+  const totalUsers = await prisma.user.count();
 
-  console.log("\n========================================");
-  console.log("       Production Setup Complete");
-  console.log("========================================");
+  console.log("\nUsers:");
+  console.log(`  ADMIN   : ${adminCount} (expect 2)`);
+  console.log(`  TEACHER : ${teacherCount} (expect 1)`);
+  console.log(`  STUDENT : ${studentCount} (expect 0)`);
+  console.log(`  PARENT  : ${parentCount} (expect 0)`);
+  console.log(`  TOTAL   : ${totalUsers} (expect 3)`);
 
-  console.log(`\nAdmin email : ${admin.email}`);
-  console.log(`Admin role  : ${admin.role}`);
-  console.log("Password    : saved as secure hash");
+  const problems: string[] = [];
+  if (adminCount !== 2) problems.push(`ADMIN=${adminCount}, expected 2`);
+  if (teacherCount !== 1) problems.push(`TEACHER=${teacherCount}, expected 1`);
+  if (studentCount !== 0) problems.push(`STUDENT=${studentCount}, expected 0`);
+  if (parentCount !== 0) problems.push(`PARENT=${parentCount}, expected 0`);
+  if (totalUsers !== 3) problems.push(`TOTAL users=${totalUsers}, expected 3`);
 
-  console.log("\nDatabase verification:");
-  console.log(`  Admins              : ${adminCount}`);
-  console.log(`  Teachers            : ${teacherCount} (must be 0 — Phase 20 flow only)`);
-  console.log(`  Students            : ${studentCount}`);
-  console.log(`  Parents             : ${parentCount}`);
-  console.log(`  Groups              : ${groupCount}`);
-  console.log(`  TeacherApplications : ${appCount} (must be 0)`);
-  console.log(`  UserSessions        : ${sessionCount} (must be 0)`);
-  console.log(`  SecurityEvents      : ${eventCount} (must be 0)`);
-
-  console.log("\nPreserved:");
-  console.log("  Settings           : YES");
-  console.log("  SubscriptionPlans  : YES");
-
-  if (teacherCount !== 0 || appCount !== 0 || sessionCount !== 0 || eventCount !== 0 || leftover.length) {
-    console.log("\n⚠ UNEXPECTED LEFTOVER ROWS:");
-    for (const r of leftover) console.log(`  ${r.table}: ${r.rows}`);
-    throw new Error("Setup verification failed: leftover rows detected.");
+  // Exact identities.
+  for (const spec of PRODUCTION_USERS) {
+    const u = await prisma.user.findUnique({
+      where: { email: normalizeEmail(spec.email) },
+      select: { name: true, role: true, isActive: true, status: true },
+    });
+    const okId =
+      u && u.name === spec.name && u.role === spec.role && u.isActive && u.status === "ACTIVE";
+    console.log(
+      `  ${okId ? "✓" : "✗"} ${spec.role} ${spec.email} — ${u ? `${u.name} (${u.role}, active=${u.isActive}, ${u.status})` : "MISSING"}`
+    );
+    if (!okId) problems.push(`identity/state mismatch for ${spec.email}`);
+    if (spec.role === Role.TEACHER && u) {
+      const tu = await prisma.user.findUnique({
+        where: { email: normalizeEmail(spec.email) },
+        select: { teacher: { select: { id: true } } },
+      });
+      if (!tu?.teacher) problems.push(`Teacher record missing for ${spec.email}`);
+    }
   }
 
-  console.log("\n========================================\n");
+  // Curriculum.
+  const courseAfter = await prisma.course.findUnique({
+    where: { slug: OFFICIAL_COURSE_SLUG },
+    select: { id: true },
+  });
+  const partsAfter = courseAfter ? await prisma.part.count({ where: { courseId: courseAfter.id } }) : 0;
+  const unitsAfter = courseAfter
+    ? await prisma.unit.count({ where: { part: { courseId: courseAfter.id } } })
+    : 0;
+  const officialAfter = await prisma.lesson.count({
+    where: { officialCode: { not: null }, curriculumStatus: "OFFICIAL" },
+  });
+  console.log("\nCurriculum:");
+  console.log(`  Course  : ${courseAfter ? "present" : "MISSING"}`);
+  console.log(`  Parts   : ${partsAfter} (expect ${EXPECTED_OFFICIAL_COUNTS.parts})`);
+  console.log(`  Units   : ${unitsAfter} (expect ${EXPECTED_OFFICIAL_COUNTS.units})`);
+  console.log(`  Official lessons: ${officialAfter} (expect ${EXPECTED_OFFICIAL_COUNTS.lessons})`);
+  if (!courseAfter) problems.push("official Course missing");
+  if (partsAfter !== EXPECTED_OFFICIAL_COUNTS.parts) problems.push(`Parts=${partsAfter}`);
+  if (unitsAfter !== EXPECTED_OFFICIAL_COUNTS.units) problems.push(`Units=${unitsAfter}`);
+  if (officialAfter !== EXPECTED_OFFICIAL_COUNTS.lessons) problems.push(`OfficialLessons=${officialAfter}`);
+
+  // Unique official codes (no duplicates), and all expected codes present.
+  const grouped = await prisma.lesson.groupBy({
+    by: ["officialCode"],
+    where: { officialCode: { not: null } },
+    _count: { officialCode: true },
+  });
+  const dupes = grouped.filter((g) => (g._count.officialCode ?? 0) > 1);
+  if (dupes.length) problems.push(`duplicate official codes: ${dupes.map((d) => d.officialCode).join(", ")}`);
+  const presentCodes = new Set(grouped.map((g) => g.officialCode));
+  const missingCodes = OFFICIAL_LESSON_CODES.filter((c) => !presentCodes.has(c));
+  if (missingCodes.length) problems.push(`missing official codes: ${missingCodes.join(", ")}`);
+  console.log(
+    `  Official codes: ${presentCodes.size} distinct, duplicates=${dupes.length}, missing=${missingCodes.length}`
+  );
+
+  // Content preservation: nothing critical shrank.
+  const contentAfter = await contentSnapshot();
+  console.log("\nContent preservation (before → after; must not shrink):");
+  for (const k of Object.keys(contentBefore)) {
+    const b = contentBefore[k];
+    const a = contentAfter[k];
+    const flag = a < b ? " ✗ SHRANK" : "";
+    console.log(`  ${k}: ${b} → ${a}${flag}`);
+    if (a < b) problems.push(`${k} shrank ${b}→${a}`);
+  }
+
+  // Referential integrity (SQLite only: read-only FK check on the file).
+  if (provider === "sqlite") {
+    const ro = new DatabaseSync(sqlite.file, { readOnly: true });
+    try {
+      const fk = ro.prepare("PRAGMA foreign_key_check").all();
+      console.log(`\nForeign key check: ${fk.length === 0 ? "PASS (no violations)" : "FAIL"}`);
+      if (fk.length) {
+        problems.push(`FK violations: ${fk.length}`);
+        console.log(JSON.stringify(fk, null, 2));
+      }
+    } finally {
+      ro.close();
+    }
+  }
+
+  console.log("\n----------------------------------------");
+  console.log(`Backup preserved at: ${backup.path}`);
+  console.log(`Backup sha256      : ${backup.sha256}`);
+
+  if (problems.length) {
+    console.log("\n⚠ VERIFICATION PROBLEMS:");
+    for (const p of problems) console.log(`  - ${p}`);
+    throw new Error("Production baseline verification FAILED (see problems above).");
+  }
+
+  console.log("\n✓ Production baseline established and verified.");
+  console.log("========================================\n");
 }
 
 main()
