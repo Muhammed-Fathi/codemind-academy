@@ -13,42 +13,42 @@ model see [`DATABASE_GUIDE.md`](DATABASE_GUIDE.md).
 ┌──────────────────────────────────────────────────────────────────────┐
 │                        Browser (RTL Arabic UI)                       │
 │  ┌────────────────────────────────────────────────────────────────┐  │
-│  │  src/app/page.tsx → <AppShell/>                               │  │
-│  │     └── Zustand store (src/lib/store.ts) drives `view` state  │  │
-│  │          ├── landing   (10 marketing sections)                │  │
-│  │          ├── login / register / enroll                        │  │
+│  │  src/app/page.tsx → <AppShell/>                                │  │
+│  │     └── Zustand store (src/lib/store.ts) drives `view` state   │  │
+│  │          ├── landing   (10 marketing sections)                 │  │
+│  │          ├── login / register / enroll                         │  │
 │  │          └── DashboardShell → renderView(view)                 │  │
-│  │                ├── StudentDashboard / QuizRunner / MockExam…  │  │
+│  │                ├── StudentDashboard / QuizRunner / MockExam…   │  │
 │  │                ├── ParentDashboard / MonthlyReport / …         │  │
 │  │                ├── TeacherDashboard                            │  │
 │  │                └── AdminDashboard                              │  │
 │  └────────────────────────────────────────────────────────────────┘  │
-│              ▲                                            ▲           │
-│              │ TanStack Query (server state)              │           │
-│              │ Framer Motion (animations)                 │           │
+│              ▲                                            ▲          │
+│              │ TanStack Query (server state)              │          │
+│              │ Framer Motion (animations)                 │          │
 └──────────────┼────────────────────────────────────────────┼──────────┘
-               │ fetch('/api/...') — relative paths only   │
+               │ fetch('/api/...') — relative paths only    │
                ▼                                            │
 ┌──────────────────────────────────────────────────────────────────────┐
 │              Next.js 16 API Routes (63 endpoints)                    │
 │   /api/auth/[action]   /api/admin/*          /api/enroll             │
-│   /api/admin/*          /api/teacher/*       /api/students/me/*       │
-│   /api/parents/me/*     /api/courses/*       /api/quizzes/*           │
-│   /api/lessons/*        /api/exams/mock      /api/notifications/*     │
-│   /api/coupons/validate /api/groups          /api/subscription-plans  │
-│   /api/settings/public                                                 │
-│                                                                       │
-│   Helpers (src/lib/api.ts):                                           │
-│     ok(data)              → 200 JSON                                  │
-│     err(msg, status)      → JSON {error}                              │
-│     requireUser()         → SessionUser | null                        │
-│     requireRole(...roles) → { user, error }                           │
-└──────────────┬──────────────────────────────────────────────────────┘
+│   /api/admin/*          /api/teacher/*       /api/students/me/*      │
+│   /api/parents/me/*     /api/courses/*       /api/quizzes/*          │
+│   /api/lessons/*        /api/exams/mock      /api/notifications/*    │
+│   /api/coupons/validate /api/groups          /api/subscription-plans │
+│   /api/settings/public                                               │
+│                                                                      │
+│   Helpers (src/lib/api.ts):                                          │
+│     ok(data)              → 200 JSON                                 │
+│     err(msg, status)      → JSON {error}                             │
+│     requireUser()         → SessionUser | null                       │
+│     requireRole(...roles) → { user, error }                          │
+└──────────────┬───────────────────────────────────────────────────────┘
                │ Prisma Client (singleton, src/lib/db.ts)
                ▼
 ┌──────────────────────────────────────────────────────────────────────┐
-│              Prisma ORM 6  →  SQLite (db/custom.db)                   │
-│              36 models · 11 enums                                     │
+│              Prisma ORM 6  →  SQLite (db/custom.db)                  │
+│              36 models · 11 enums                                    │
 │              Sessions persisted in `Setting` table (key: session:<t>)│
 └──────────────────────────────────────────────────────────────────────┘
 ```
@@ -133,20 +133,20 @@ concern:
 | Prefix                 | Audience            | Examples                                            |
 | ---------------------- | ------------------- | --------------------------------------------------- |
 | `/api/auth/[action]`   | Public              | `login`, `register`, `logout`, `me`                 |
-| `/api/admin/*`         | ADMIN only          | overview, students, teachers, payments, coupons…   |
-| `/api/teacher/*`       | TEACHER only        | dashboard, attendance, homework, templates         |
-| `/api/students/me/*`   | STUDENT (self)      | dashboard, gamification, bookmarks, study-plan…    |
-| `/api/parents/me/*`    | PARENT (self)       | dashboard, analytics, weekly-report, link-student  |
+| `/api/admin/*`         | ADMIN only          | overview, students, teachers, payments, coupons…    |
+| `/api/teacher/*`       | TEACHER only        | dashboard, attendance, homework, templates          |
+| `/api/students/me/*`   | STUDENT (self)      | dashboard, gamification, bookmarks, study-plan…     |
+| `/api/parents/me/*`    | PARENT (self)       | dashboard, analytics, weekly-report, link-student   |
 | `/api/courses/*`       | Public + auth       | catalog + course-by-slug                            |
 | `/api/quizzes/*`       | STUDENT             | quiz fetch + submit                                 |
-| `/api/lessons/*`       | STUDENT             | lesson content + progress update                   |
+| `/api/lessons/*`       | STUDENT             | lesson content + progress update                    |
 | `/api/exams/mock`      | STUDENT             | randomized mock exam engine                         |
 | `/api/notifications/*` | Any authed user     | list + unread-count                                 |
-| `/api/enroll`          | STUDENT             | Course→Group→Plan→Payment wizard POST              |
-| `/api/coupons/validate`| STUDENT             | Coupon validation before enrollment                |
-| `/api/groups`          | Public              | Group capacity + teacher info                      |
-| `/api/subscription-plans` | Public           | Available subscription tiers                       |
-| `/api/settings/public` | Public              | Brand + whatsapp + prices                          |
+| `/api/enroll`          | STUDENT             | Course→Group→Plan→Payment wizard POST               |
+| `/api/coupons/validate`| STUDENT             | Coupon validation before enrollment                 |
+| `/api/groups`          | Public              | Group capacity + teacher info                       |
+| `/api/subscription-plans` | Public           | Available subscription tiers                        |
+| `/api/settings/public` | Public              | Brand + whatsapp + prices                           |
 
 Every route returns JSON via the `ok()` / `err()` helpers in
 `src/lib/api.ts`.
@@ -223,11 +223,11 @@ the role profile:
 | -------------------- | ---------------------------------------------------------------------- |
 | Users & RBAC         | User, Student, Parent, ParentStudentLink, Teacher                      |
 | Gamification         | StudentBadge                                                           |
-| Curriculum           | Course, Part, Unit, Topic, Lesson                                     |
+| Curriculum           | Course, Part, Unit, Topic, Lesson                                      |
 | Groups & Sessions    | Group, LiveSession, Attendance                                         |
 | Assessments          | Quiz, Question, QuizAttempt, QuizAnswer, Homework, HomeworkSubmission, ExamQuestion, ExamAttempt, LessonProgress, TeacherNote |
 | Subscriptions        | SubscriptionPlan, Subscription, Payment                                |
-| Notifications        | Notification, NotificationPreference, AuditLog, Setting                 |
+| Notifications        | Notification, NotificationPreference, AuditLog, Setting                |
 | Bookmarks & Notes    | LessonBookmark, LessonNote                                             |
 | Coupons & Referrals  | Coupon, CouponRedemption, Referral                                     |
 | Study Planner        | StudyTask                                                              |
@@ -309,19 +309,19 @@ A canonical flow — a student opening the dashboard — looks like:
 | `prisma/schema.prisma`                | Source of truth for the data model                          |
 | `scripts/seed.ts`                     | Demo data seeder (admin/teacher/student/parent + curriculum)|
 | `src/app/api/**/route.ts`             | 64 API route handlers (one file per route)                  |
-| `src/app/globals.css`                 | Tailwind 4 + brand tokens + 35+ custom utilities           |
+| `src/app/globals.css`                 | Tailwind 4 + brand tokens + 35+ custom utilities            |
 | `src/app/layout.tsx`                  | Root layout: RTL, Cairo font, ThemeProvider, ErrorBoundary  |
 | `src/app/page.tsx`                    | Single entry — `<AppShell/>`                                |
 | `src/components/admin/`               | Admin portal (single `admin-dashboard.tsx`, 3576 lines)     |
-| `src/components/ai/`                   | Floating AI assistant chatbot                               |
+| `src/components/ai/`                   | Floating AI assistant chatbot                              |
 | `src/components/auth/`                | Login/register + enrollment wizard                          |
 | `src/components/course/`              | Student course tree, lesson view, quiz runner               |
-| `src/components/dashboard/shell.tsx`  | Sidebar + header + notifications bell + theme toggle         |
+| `src/components/dashboard/shell.tsx`  | Sidebar + header + notifications bell + theme toggle        |
 | `src/components/landing/`             | Hero + 9 marketing sections                                 |
 | `src/components/parent/`              | Parent dashboard + monthly/weekly reports + analytics       |
 | `src/components/student/`             | 9 student views (dashboard, mock-exam, certificate, …)      |
 | `src/components/teacher/`             | Teacher dashboard (single `teacher-dashboard.tsx`, 3241 lines)|
-| `src/components/ui/`                   | 53 shadcn/ui components (New York style)                    |
+| `src/components/ui/`                   | 53 shadcn/ui components (New York style)                   |
 | `src/components/app-shell.tsx`        | The view router (Zustand `view` → component switch)         |
 | `src/components/app-providers.tsx`    | TanStack QueryClient + theme provider wiring                |
 | `src/components/error-boundary.tsx`   | React class ErrorBoundary + Arabic fallback UI              |
@@ -330,19 +330,19 @@ A canonical flow — a student opening the dashboard — looks like:
 | `src/hooks/use-mobile.ts`             | Responsive breakpoint hook                                  |
 | `src/lib/api.ts`                      | `ok` / `err` / `requireUser` / `requireRole` + profile helpers|
 | `src/lib/auth.ts`                     | scrypt hashing + cookie sessions                            |
-| `src/lib/brand.ts`                    | Centralized brand config (name, colors, whatsapp, plans)   |
+| `src/lib/brand.ts`                    | Centralized brand config (name, colors, whatsapp, plans)    |
 | `src/lib/curriculum.ts`               | Part 1 + Part 2 seed curriculum                             |
-| `src/lib/db.ts`                       | Prisma client singleton                                    |
-| `src/lib/gamification.ts`             | XP rules, 6 levels, 9 badges, stats builder                |
+| `src/lib/db.ts`                       | Prisma client singleton                                     |
+| `src/lib/gamification.ts`             | XP rules, 6 levels, 9 badges, stats builder                 |
 | `src/lib/notify.ts`                   | Notification preference enforcement (per-type + quiet hours)|
-| `src/lib/store.ts`                    | Zustand store (view, user, theme, sidebar)                 |
-| `src/lib/utils.ts`                    | `cn()` className merge + helpers                           |
-| `db/custom.db`                        | SQLite database file (gitignored)                          |
+| `src/lib/store.ts`                    | Zustand store (view, user, theme, sidebar)                  |
+| `src/lib/utils.ts`                    | `cn()` className merge + helpers                            |
+| `db/custom.db`                        | SQLite database file (gitignored)                           |
 | `public/`                             | Static assets, manifest.json, robots.txt, sitemap.xml       |
 | `docs/`                               | This documentation set                                      |
 | `agent-ctx/`                          | Per-task agent work records                                 |
 | `mini-services/`                      | Optional sidecar services                                   |
-| `Caddyfile`                           | Gateway config (`XTransformPort` proxy to other ports)     |
+| `Caddyfile`                           | Gateway config (`XTransformPort` proxy to other ports)      |
 
 ---
 
