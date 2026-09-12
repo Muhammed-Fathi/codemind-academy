@@ -48,7 +48,7 @@ export async function runChecks(query, parsed, { expectFixtures = false } = {}) 
     missingTables.length === 0, missingTables.length ? `missing: ${missingTables.join(",")}` : `extra(non-schema): ${extraTables.join(",") || "(none)"}`);
 
   const enumRows = (await query(
-    `SELECT t.typname AS name, array_agg(e.enumlabel ORDER BY e.enumsortorder) AS values
+    `SELECT t.typname AS name, array_agg(e.enumlabel::text ORDER BY e.enumsortorder) AS values
      FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid
      JOIN pg_namespace n ON n.oid = t.typnamespace
      WHERE n.nspname = 'public' GROUP BY 1 ORDER BY 1`
@@ -125,7 +125,7 @@ export async function runChecks(query, parsed, { expectFixtures = false } = {}) 
   // ---- C. duplicate scan per UNIQUE (catalog-driven, NULLs distinct) ----
   const uqRows = (await query(
     `SELECT conrelid::regclass::text AS tbl, c.conname AS name,
-            (SELECT array_agg(a.attname ORDER BY u.ord)
+            (SELECT array_agg(a.attname::text ORDER BY u.ord)
              FROM unnest(c.conkey) WITH ORDINALITY AS u(attnum, ord)
              JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = u.attnum) AS cols
      FROM pg_constraint c
@@ -150,7 +150,7 @@ export async function runChecks(query, parsed, { expectFixtures = false } = {}) 
   // PK duplicates are impossible by construction; still scan PKs for completeness.
   const pkRows = (await query(
     `SELECT conrelid::regclass::text AS tbl,
-            (SELECT array_agg(a.attname ORDER BY u.ord)
+            (SELECT array_agg(a.attname::text ORDER BY u.ord)
              FROM unnest(c.conkey) WITH ORDINALITY AS u(attnum, ord)
              JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = u.attnum) AS cols
      FROM pg_constraint c
