@@ -10,10 +10,18 @@
 //
 // Private files are never placed in /public and their names are random, so
 // they are not guessable.
+//
+// Byte movement is expressed as a `StorageBackend` (see below) so an
+// S3-compatible object store can be added without touching any caller. This
+// layer moves BYTES ONLY: MIME allow-lists, size ceilings, magic-byte
+// validation, filename sanitisation, storage-key generation and — above all —
+// every authorization decision stay in the routes and in
+// `src/lib/session-materials.ts`. The backend never decides who may read.
 
 import { promises as fs } from "fs";
 import path from "path";
 import { createHash, randomBytes } from "crypto";
+import type { Readable } from "stream";
 
 export const MEDIA_ROOT =
   process.env.MEDIA_STORAGE_PATH || path.join(process.cwd(), "storage", "media");
@@ -236,40 +244,307 @@ export function makeStorageKey(scope: string, ext: string): string {
   return `${safeScope}/${name}${safeExt ? `.${safeExt}` : ""}`;
 }
 
-function resolveSafePath(storageKey: string): string {
+function resolveSafePath(storageKey: string, root: string = MEDIA_ROOT): string {
   // `turbopackIgnore` keeps the bundler from treating this dynamic path as a
   // reason to trace the entire project into the server output. The path is
   // still resolved normally at runtime.
-  const target = path.resolve(/*turbopackIgnore: true*/ MEDIA_ROOT, storageKey);
-  const root = path.resolve(/*turbopackIgnore: true*/ MEDIA_ROOT);
+  const target = path.resolve(/*turbopackIgnore: true*/ root, storageKey);
+  const resolvedRoot = path.resolve(/*turbopackIgnore: true*/ root);
   // Defend against path traversal in a stored key.
-  if (target !== root && !target.startsWith(root + path.sep)) {
+  if (target !== resolvedRoot && !target.startsWith(resolvedRoot + path.sep)) {
     throw new Error("Invalid storage key");
   }
   return target;
 }
 
+// ---------------------------------------------------------------------------
+// Storage backend abstraction
+// ---------------------------------------------------------------------------
+//
+// A backend addresses objects by the same database-controlled `storageKey`
+// the application has always used. Under `local` that key is a path relative
+// to MEDIA_ROOT; under a future object-store backend it is an object key
+// verbatim (`makeStorageKey` already emits `<scope>/<random>.<ext>`, which is
+// a valid key in both worlds).
+
+/** Backend-neutral metadata about a stored object. */
+export type PrivateFileStat = {
+  /** Object size in bytes. */
+  size: number;
+  /** Last modification time, when the backend exposes one. */
+  lastModified: Date | null;
+};
+
+/**
+ * Inclusive byte range, mirroring the `Range: bytes=start-end` semantics the
+ * media routes already implement. An omitted bound means "from the start" /
+ * "to the end".
+ */
+export type StorageReadRange = {
+  start?: number;
+  end?: number;
+};
+
+/** A ranged read: the byte stream plus the offsets a 206 response needs. */
+export type StorageStreamResult = {
+  stream: Readable;
+  /** Size of the WHOLE object — for `Content-Range: bytes s-e/TOTAL`. */
+  size: number;
+  /** First byte included (inclusive). */
+  start: number;
+  /** Last byte included (inclusive); `-1` only for an empty object. */
+  end: number;
+  /** `end - start + 1` — the value for `Content-Length`. */
+  contentLength: number;
+};
+
+/** Optional metadata a backend may persist alongside the bytes. */
+export type StorageWriteMetadata = {
+  mimeType?: string | null;
+  originalName?: string | null;
+};
+
+/** Backends compiled into THIS build. Object storage lands in a later step. */
+export const SUPPORTED_STORAGE_BACKENDS = ["local"] as const;
+export type StorageBackendName = (typeof SUPPORTED_STORAGE_BACKENDS)[number];
+
+export interface StorageBackend {
+  readonly name: StorageBackendName;
+  /** Persist bytes; returns the key they were stored under. */
+  write(
+    key: string,
+    data: Buffer | Uint8Array,
+    metadata?: StorageWriteMetadata
+  ): Promise<string>;
+  /** Read the whole object. Rejects when it does not exist. */
+  read(key: string): Promise<Buffer>;
+  /** Remove the object. Idempotent: a missing object is not an error. */
+  delete(key: string): Promise<void>;
+  /** Object metadata, or null when the object does not exist. */
+  stat(key: string): Promise<PrivateFileStat | null>;
+  /** SHA-256 hex of the object's bytes, streamed (no full buffering). */
+  sha256(key: string): Promise<string>;
+  /**
+   * Streaming read with an optional inclusive byte range. Returns null when
+   * the object does not exist; throws RangeError for an unsatisfiable range.
+   */
+  readStream(
+    key: string,
+    range?: StorageReadRange
+  ): Promise<StorageStreamResult | null>;
+}
+
+/** A byte offset must be a non-negative safe integer (parity with Phase 20). */
+function assertSafeByteOffset(value: number, label: string): void {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new RangeError(`Invalid storage range ${label}: ${value}`);
+  }
+}
+
+/**
+ * The historical behaviour, unchanged: bytes on a private filesystem volume
+ * under MEDIA_ROOT, addressed by an unguessable key, reachable only through
+ * an authorized route.
+ */
+export class LocalStorageBackend implements StorageBackend {
+  readonly name: StorageBackendName = "local";
+  private readonly root: string;
+
+  constructor(root: string = MEDIA_ROOT) {
+    this.root = root;
+  }
+
+  private resolve(key: string): string {
+    return resolveSafePath(key, this.root);
+  }
+
+  async write(key: string, data: Buffer | Uint8Array): Promise<string> {
+    // The local backend has nowhere to persist `metadata`: mimeType and
+    // originalName live on the MediaAsset row, which stays the source of
+    // truth. An object-store backend maps them onto ContentType instead.
+    const target = this.resolve(key);
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(target, data);
+    return key;
+  }
+
+  async read(key: string): Promise<Buffer> {
+    return fs.readFile(this.resolve(key));
+  }
+
+  async delete(key: string): Promise<void> {
+    await fs.unlink(this.resolve(key)).catch(() => {});
+  }
+
+  async stat(key: string): Promise<PrivateFileStat | null> {
+    const st = await fs.stat(this.resolve(key)).catch(() => null);
+    if (!st) return null;
+    return { size: st.size, lastModified: st.mtime };
+  }
+
+  async sha256(key: string): Promise<string> {
+    const { createReadStream } = await import("fs");
+    const target = this.resolve(key);
+    return new Promise((resolve, reject) => {
+      const hash = createHash("sha256");
+      const stream = createReadStream(target);
+      stream.on("error", reject);
+      stream.on("data", (chunk) => hash.update(chunk as Buffer));
+      stream.on("end", () => resolve(hash.digest("hex")));
+    });
+  }
+
+  async readStream(
+    key: string,
+    range?: StorageReadRange
+  ): Promise<StorageStreamResult | null> {
+    const { createReadStream } = await import("fs");
+    const target = this.resolve(key);
+    const st = await fs.stat(target).catch(() => null);
+    if (!st || !st.isFile()) return null;
+    const size = st.size;
+    const rangeRequested =
+      !!range && (range.start !== undefined || range.end !== undefined);
+
+    // Degenerate case: an empty object has no addressable byte.
+    if (size === 0) {
+      if (rangeRequested) {
+        throw new RangeError("Unsatisfiable storage range: object is empty");
+      }
+      return { stream: createReadStream(target), size: 0, start: 0, end: -1, contentLength: 0 };
+    }
+
+    // Resolve the inclusive range using S3/R2 semantics, so the object-store
+    // backend added next behaves identically and the routes need no special
+    // casing per backend:
+    //   * `start` at or beyond EOF is unsatisfiable -> throw, and the caller
+    //     answers 416 (the HTTP mapping stays the route's job, as today);
+    //   * `end` beyond EOF is CLAMPED to the last byte (S3 does the same).
+    let start = 0;
+    let end = size - 1;
+    if (range?.start !== undefined) {
+      assertSafeByteOffset(range.start, "start");
+      start = range.start;
+    }
+    if (range?.end !== undefined) {
+      assertSafeByteOffset(range.end, "end");
+      end = range.end;
+    }
+    if (start > end) {
+      throw new RangeError(`Invalid storage range: start ${start} > end ${end}`);
+    }
+    if (start >= size) {
+      throw new RangeError(
+        `Unsatisfiable storage range: start ${start} for a ${size}-byte object`
+      );
+    }
+    if (end > size - 1) end = size - 1;
+
+    const isPartial = start !== 0 || end !== size - 1;
+    return {
+      stream: createReadStream(target, isPartial ? { start, end } : undefined),
+      size,
+      start,
+      end,
+      contentLength: end - start + 1,
+    };
+  }
+}
+
+/**
+ * Resolve the active backend name from `MEDIA_BACKEND`.
+ *
+ * FAIL-CLOSED BY DESIGN. An unset or empty value means `local`, which is the
+ * historical behaviour, so existing deployments are unaffected. Any other
+ * unsupported value THROWS rather than degrading: `MEDIA_BACKEND=s3` silently
+ * falling back to the local filesystem would write bytes to an ephemeral disk
+ * while the operator believes they are durable.
+ */
+export function resolveStorageBackendName(
+  env: NodeJS.ProcessEnv = process.env
+): StorageBackendName {
+  const raw = (env.MEDIA_BACKEND ?? "").trim();
+  if (raw === "") return "local";
+  const normalized = raw.toLowerCase();
+  if ((SUPPORTED_STORAGE_BACKENDS as readonly string[]).includes(normalized)) {
+    return normalized as StorageBackendName;
+  }
+  throw new Error(
+    `MEDIA_BACKEND="${raw}" is not a supported storage backend. Supported in ` +
+      `this build: ${SUPPORTED_STORAGE_BACKENDS.join(", ")}. Refusing to fall ` +
+      `back to "local" — unset MEDIA_BACKEND or set it to "local" explicitly.`
+  );
+}
+
+/** Build a backend by name. */
+export function createStorageBackend(
+  name: StorageBackendName = resolveStorageBackendName()
+): StorageBackend {
+  switch (name) {
+    case "local":
+      return new LocalStorageBackend();
+    default: {
+      // Exhaustiveness guard: widening SUPPORTED_STORAGE_BACKENDS without
+      // implementing the case here is a COMPILE error, not a runtime surprise.
+      const unimplemented: never = name;
+      throw new Error(`storage backend not implemented: ${String(unimplemented)}`);
+    }
+  }
+}
+
+let activeBackend: StorageBackend | null = null;
+
+/**
+ * The process-wide backend, resolved lazily on first use and then cached. A
+ * misconfigured `MEDIA_BACKEND` therefore throws on the first storage
+ * operation (a clear server-side error) instead of at import time.
+ */
+export function getStorageBackend(): StorageBackend {
+  if (!activeBackend) activeBackend = createStorageBackend();
+  return activeBackend;
+}
+
+// ---------------------------------------------------------------------------
+// Public helpers — names and signatures preserved; they delegate to the
+// active backend, so no caller had to change.
+// ---------------------------------------------------------------------------
+
 /** Persist bytes into private storage. Returns the storage key. */
 export async function writePrivateFile(
   storageKey: string,
-  data: Buffer | Uint8Array
+  data: Buffer | Uint8Array,
+  metadata?: StorageWriteMetadata
 ): Promise<string> {
-  const target = resolveSafePath(storageKey);
-  await fs.mkdir(path.dirname(target), { recursive: true });
-  await fs.writeFile(target, data);
-  return storageKey;
+  return getStorageBackend().write(storageKey, data, metadata);
 }
 
 export async function readPrivateFile(storageKey: string): Promise<Buffer> {
-  return fs.readFile(resolveSafePath(storageKey));
+  return getStorageBackend().read(storageKey);
 }
 
 export async function deletePrivateFile(storageKey: string): Promise<void> {
-  await fs.unlink(resolveSafePath(storageKey)).catch(() => {});
+  return getStorageBackend().delete(storageKey);
 }
 
-export async function privateFileStat(storageKey: string) {
-  return fs.stat(resolveSafePath(storageKey)).catch(() => null);
+export async function privateFileStat(
+  storageKey: string
+): Promise<PrivateFileStat | null> {
+  return getStorageBackend().stat(storageKey);
+}
+
+/**
+ * Streaming, optionally ranged read of a private object.
+ *
+ * Introduced to establish the contract an object-store backend will implement
+ * so large private videos stop being fully buffered into memory. NOT yet
+ * consumed by any route — the routes keep their current behaviour (and their
+ * existing strict Range/416 handling) until they are migrated deliberately.
+ */
+export async function readPrivateFileStream(
+  storageKey: string,
+  range?: StorageReadRange
+): Promise<StorageStreamResult | null> {
+  return getStorageBackend().readStream(storageKey, range);
 }
 
 // ---------------------------------------------------------------------------
@@ -281,17 +556,9 @@ export function sha256Buffer(data: Buffer | Uint8Array): string {
   return createHash("sha256").update(data).digest("hex");
 }
 
-/** SHA-256 hex of a private-storage file, streamed (no full buffering). */
+/** SHA-256 hex of a private-storage object, streamed (no full buffering). */
 export async function sha256PrivateFile(storageKey: string): Promise<string> {
-  const { createReadStream } = await import("fs");
-  const target = resolveSafePath(storageKey);
-  return new Promise((resolve, reject) => {
-    const hash = createHash("sha256");
-    const stream = createReadStream(target);
-    stream.on("error", reject);
-    stream.on("data", (chunk) => hash.update(chunk as Buffer));
-    stream.on("end", () => resolve(hash.digest("hex")));
-  });
+  return getStorageBackend().sha256(storageKey);
 }
 
 export function extFromMime(mime: string): string {
