@@ -224,7 +224,14 @@ async function main() {
     const { DatabaseSync } = require("node:sqlite");
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cm-p21-cli-"));
     const tiny = path.join(tmp, "tiny.db");
-    new DatabaseSync(tiny).exec(`CREATE TABLE "User" ("id" TEXT PRIMARY KEY)`);
+    // Close the seed handle deterministically: an open connection would make
+    // the rmSync below fail with EPERM on Windows (handle still on tiny.db).
+    const seed = new DatabaseSync(tiny);
+    try {
+      seed.exec(`CREATE TABLE "User" ("id" TEXT PRIMARY KEY)`);
+    } finally {
+      seed.close();
+    }
     try {
       run(`node scripts/db/migrate-sqlite-to-postgres.mjs --source ${tiny} --target postgresql://u@h/db`, quiet);
       ok(false, "degenerate source exits non-zero");
