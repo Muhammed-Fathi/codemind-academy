@@ -89,10 +89,24 @@ fs.writeFileSync(
     2
   )
 );
-execFileSync("npx", ["tsc", "-p", path.join(OUT, "tsconfig.json")], {
-  cwd: REPO,
-  stdio: "pipe",
-});
+// Windows portability: a shell-free execFileSync("npx", …) cannot resolve
+// npx.cmd (PATHEXT is a cmd.exe concept; without a shell, Node's CreateProcess
+// lookup finds no extension-less "npx") → ENOENT. Invoke the repo-local
+// TypeScript CLI directly instead: same Node binary (process.execPath),
+// exact installed tsc, no shell, no PATH lookup, no npx. Same deterministic
+// pattern as tests/quiz-analytics.test.js.
+execFileSync(
+  process.execPath,
+  [
+    path.join(REPO, "node_modules", "typescript", "lib", "tsc.js"),
+    "-p",
+    path.join(OUT, "tsconfig.json"),
+  ],
+  {
+    cwd: REPO,
+    stdio: "pipe",
+  }
+);
 const EMIT = path.join(OUT, "src", "lib");
 
 // The emitted JS lives in a temp dir, so bare imports (the AWS SDK and its
