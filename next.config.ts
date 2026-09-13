@@ -72,6 +72,12 @@ const nextConfig: NextConfig = {
   output: "standalone",
   /* config options here */
   reactStrictMode: false,
+  // The S3/R2 storage backend (src/lib/media-s3.ts) lazy-imports the AWS SDK
+  // only when MEDIA_BACKEND=s3. Keep the SDK OUT of the webpack bundle and
+  // resolve it from node_modules at runtime: it is server-only, never needed
+  // in a MEDIA_BACKEND=local deployment, and @smithy internals misbehave when
+  // bundled by webpack in standalone output.
+  serverExternalPackages: ["@aws-sdk/client-s3"],
   // Remove the X-Powered-By: Next.js banner (framework fingerprinting).
   poweredByHeader: false,
   async headers() {
