@@ -6,12 +6,21 @@
 // a deployment running the default `MEDIA_BACKEND=local` never imports the
 // AWS SDK at all.
 //
-// SECURITY MODEL (unchanged from the local backend):
+// SECURITY MODEL:
 //   * R2 objects are PRIVATE. No public bucket access, no ACL grants, no
-//     signed URLs, no direct browser uploads. Bytes flow:
-//         Browser → CodeMind server → R2
+//     anonymous reads. Reads ALWAYS flow: Browser → CodeMind server → R2 —
+//     there is NO presigned GET and there is NO bucket LIST capability.
+//   * WRITES for large admin media may flow direct: Browser → R2 via a
+//     SHORT-LIVED presigned PUT issued by `createPresignedPutUrl` (Phase 23).
+//     That is the only signed-URL surface in the entire codebase: PUT only,
+//     signed over the exact server-generated key, expiring within minutes.
+//     The storage key is always generated server-side; the client never
+//     supplies one. Every authorization decision stays in the routes and in
+//     `src/lib/media-upload.ts` / `src/lib/session-materials.ts`.
 //   * All R2 credentials are SERVER-SIDE env vars only (R2_*). Nothing here
 //     may ever be referenced from a NEXT_PUBLIC_* variable or client bundle.
+//     A presigned URL carries a time-boxed request signature — never a
+//     credential — and grants PUT on exactly one key.
 //   * This layer still moves BYTES ONLY. MIME allow-lists, size ceilings,
 //     magic-byte validation, storage-key generation and every authorization
 //     decision remain in the routes and `src/lib/session-materials.ts`.
@@ -39,6 +48,7 @@ import {
   HeadObjectCommand,
   DeleteObjectCommand,
 } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import type {
   StorageBackend,
   StorageBackendName,
@@ -114,8 +124,10 @@ async function collectStream(stream: Readable): Promise<Buffer> {
  * the same database-controlled `storageKey` the application has always used;
  * keys are stored verbatim (`<scope>/<random>.<ext>` is a valid object key).
  *
- * No signed URLs, no public ACLs, no presigned uploads: the server is the
- * only principal that ever talks to the bucket.
+ * The server is the principal for every READ. Writes go through `write()`
+ * (server-buffered) or — for the Phase 23 direct upload flow — through a
+ * short-lived presigned PUT created by `createPresignedPutUrl`. No public
+ * ACLs, no presigned GET, no list capability, ever.
  */
 export class S3StorageBackend implements StorageBackend {
   readonly name: StorageBackendName = "s3";
@@ -190,7 +202,13 @@ export class S3StorageBackend implements StorageBackend {
     const lastModified =
       out.LastModified instanceof Date ? out.LastModified : null;
     const size = Number(out.ContentLength ?? 0);
-    return { size, lastModified };
+    return {
+      size,
+      lastModified,
+      // The object's recorded Content-Type (null when the service omits it).
+      // Used by Phase 23 completion to verify what actually landed in R2.
+      contentType: typeof out.ContentType === "string" ? out.ContentType : null,
+    };
   }
 
   /**
@@ -286,7 +304,137 @@ export class S3StorageBackend implements StorageBackend {
       contentLength: end - start + 1,
     };
   }
+
+  /**
+   * Issue a SHORT-LIVED presigned PUT for one exact object key.
+   *
+   * Phase 23 — the only signed-URL surface in the codebase. Guarantees:
+   *   * PUT-only: the command signed is constructed HERE, internally, and is
+   *     always a PutObjectCommand. Callers cannot pass a command, so no
+   *     GetObject/List/Multipart command can ever be presigned.
+   *   * Exact key: the key is signed into the URL; the client cannot change
+   *     it without invalidating the signature.
+   *   * Content-Type pinned by the grant + ENFORCED at completion: the
+   *     browser MUST send exactly the Content-Type this grant carries, and
+   *     the presigned completion HEADs the stored object and deletes/rejects
+   *     any mismatch. (The AWS SDK presigner deliberately marks content-type
+   *     UNSIGNABLE in SigV4 query URLs — `unsignableHeaders.add("content-type")`
+   *     in @aws-sdk/s3-request-presigner — so no presigning setup can bind it
+   *     by signature; the byte-level guarantee lives in the completion
+   *     verification, which is stronger anyway: the stored bytes themselves
+   *     are checked, not the request.)
+   *   * Short expiry: bounded by [PRESIGN_PUT_MIN_EXPIRES_SEC,
+   *     PRESIGN_PUT_MAX_EXPIRES_SEC] — minutes, never hours.
+   *   * No credential exposure: the URL carries an AWS SigV4 query signature
+   *     only; the R2 secret key never leaves the server.
+   *
+   * `signer` is an injection point for tests. The default performs PURE
+   * COMPUTATION with the real SDK presigner — it never performs network I/O.
+   */
+  async createPresignedPutUrl(
+    input: PresignedPutRequest,
+    signer: PresignedPutSigner = defaultPresignedPutSigner
+  ): Promise<PresignedPutGrant> {
+    const key = typeof input.key === "string" ? input.key : "";
+    if (!key || key.startsWith("/") || key.includes("..") || /[\u0000-\u001f\u007f]/.test(key)) {
+      throw new Error("createPresignedPutUrl: invalid storage key");
+    }
+    const contentType = String(input.contentType ?? "").trim();
+    if (!contentType) {
+      throw new Error(
+        "createPresignedPutUrl: contentType is required — the presigned PUT signs it"
+      );
+    }
+    const expiresInSec = Math.floor(Number(input.expiresInSec));
+    if (
+      !Number.isSafeInteger(expiresInSec) ||
+      expiresInSec < PRESIGN_PUT_MIN_EXPIRES_SEC ||
+      expiresInSec > PRESIGN_PUT_MAX_EXPIRES_SEC
+    ) {
+      throw new Error(
+        `createPresignedPutUrl: expiresInSec must be an integer between ` +
+          `${PRESIGN_PUT_MIN_EXPIRES_SEC} and ${PRESIGN_PUT_MAX_EXPIRES_SEC}`
+      );
+    }
+
+    // The ONLY command ever presigned. Do not widen this to accept commands
+    // from callers — the PUT-only guarantee depends on it being built here.
+    const command = new PutObjectCommand({
+      Bucket: this.bucket,
+      Key: key,
+      ContentType: contentType,
+    });
+    const url = await signer(this.client, command, { expiresInSec });
+    if (typeof url !== "string" || url.length === 0) {
+      throw new Error("createPresignedPutUrl: signer produced no URL");
+    }
+    return {
+      url,
+      method: "PUT",
+      key,
+      contentType,
+      expiresInSec,
+      expiresAt: new Date(Date.now() + expiresInSec * 1000),
+    };
+  }
 }
+
+// ---------------------------------------------------------------------------
+// Presigned PUT — types, bounds and the default signer (Phase 23)
+// ---------------------------------------------------------------------------
+
+/** Presign expiry bounds (seconds): short-lived by construction. */
+export const PRESIGN_PUT_MIN_EXPIRES_SEC = 60;
+export const PRESIGN_PUT_MAX_EXPIRES_SEC = 900;
+
+/** Request shape for `S3StorageBackend.createPresignedPutUrl`. */
+export type PresignedPutRequest = {
+  /** Exact object key — generated server-side, never by a client. */
+  key: string;
+  /** Content-Type the browser MUST send; signed into the URL. */
+  contentType: string;
+  /** Lifetime of the presigned URL, bounded to a short window. */
+  expiresInSec: number;
+};
+
+/** What a successful presign returns — the minimum the browser needs. */
+export type PresignedPutGrant = {
+  url: string;
+  method: "PUT";
+  key: string;
+  contentType: string;
+  expiresInSec: number;
+  expiresAt: Date;
+};
+
+/**
+ * Test boundary for URL signing. The real implementation performs pure
+ * SigV4 computation (no network). Tests inject a deterministic fake HERE —
+ * the same dependency-injection seam as `S3ClientLike`.
+ */
+export type PresignedPutSigner = (
+  client: S3ClientLike,
+  command: unknown,
+  options: { expiresInSec: number }
+) => Promise<string>;
+
+/**
+ * The real signer: `@aws-sdk/s3-request-presigner.getSignedUrl`. Pure
+ * computation — the SDK presigns by walking the client's middleware stack
+ * in-memory; it performs no network I/O and never transmits the secret key
+ * anywhere. Import is static but this whole module is loaded lazily by
+ * `createStorageBackend("s3")`, so local-backend deployments never load it.
+ */
+export const defaultPresignedPutSigner: PresignedPutSigner = async (
+  client,
+  command,
+  { expiresInSec }
+) =>
+  getSignedUrl(
+    client as unknown as Parameters<typeof getSignedUrl>[0],
+    command as Parameters<typeof getSignedUrl>[1],
+    { expiresIn: expiresInSec }
+  );
 
 // ---------------------------------------------------------------------------
 // Configuration — SERVER-SIDE env vars only. Fail closed on anything missing.

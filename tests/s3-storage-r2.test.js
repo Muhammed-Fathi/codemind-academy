@@ -754,8 +754,29 @@ async function main() {
     const s3src = read("src/lib/media-s3.ts");
     ok(!/AKIA[0-9A-Z]{16}/.test(s3src), "no AWS access-key literals in media-s3.ts");
     ok(!/cloudflarestorage\.com\/[a-f0-9]{32}/i.test(s3src), "no embedded account tokens");
-    ok(!/s3-request-presigner|getSignedUrl/.test(s3src),
-      "no signed-URL construction in the backend (no presigner import/calls)");
+    // Phase 23: a presigned PUT capability now EXISTS — but it is CONFINED
+    // and PUT-only. The old invariant ("no presigner anywhere") is replaced
+    // by a stronger one: the only signing call site is
+    // S3StorageBackend.createPresignedPutUrl, which builds its own
+    // PutObjectCommand internally (callers cannot pass a command), so no
+    // GET/LIST/multipart command can ever be presigned.
+    ok(/s3-request-presigner/.test(s3src) && /getSignedUrl/.test(s3src),
+      "the presigner is wired in the backend module (direct-upload support)");
+    eq((s3src.match(/getSignedUrl\(/g) || []).length, 1,
+      "exactly one getSignedUrl call site in the entire backend");
+    {
+      const callIdx = s3src.indexOf("getSignedUrl(");
+      const fnStart = s3src.indexOf("async createPresignedPutUrl");
+      ok(fnStart !== -1 && fnStart < callIdx, "the presign call lives inside createPresignedPutUrl");
+      const fnEnd = s3src.indexOf("\n  }", fnStart); // method-level closing brace
+      const methodBody = s3src.slice(fnStart, fnEnd);
+      ok(/new PutObjectCommand\(/.test(methodBody),
+        "createPresignedPutUrl presigns a PutObjectCommand it built itself");
+      ok(!/GetObjectCommand|ListObjectsCommand|CreateMultipartUploadCommand/.test(methodBody),
+        "no GET / LIST / multipart command is ever presigned");
+    }
+    ok(!/ListObjectsCommand|CreateMultipartUploadCommand|PresignedPost/.test(s3src),
+      "no LIST / multipart / presigned-POST surface in the backend");
     ok(!/public-read/i.test(s3src), "no public ACL anywhere in the backend");
   }
 

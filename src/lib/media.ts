@@ -288,6 +288,13 @@ export type PrivateFileStat = {
   size: number;
   /** Last modification time, when the backend exposes one. */
   lastModified: Date | null;
+  /**
+   * The stored object's Content-Type, when the backend records one.
+   * `null` when the backend cannot report it (the local fs stores no MIME).
+   * Phase 23 presigned-upload completion uses it to verify that the bytes
+   * actually in the bucket carry the content type the server signed.
+   */
+  contentType?: string | null;
 };
 
 /**

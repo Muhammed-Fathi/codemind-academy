@@ -353,7 +353,12 @@ section("2. No R2 URL, key or credential exposure anywhere");
   const libRefs = filesUnder("src/lib").filter((rel) => /R2_(ACCOUNT_ID|BUCKET)/.test(read(rel)));
   eq(libRefs, ["src/lib/media-s3.ts"], "R2_* referenced only by the server-side s3 backend module");
 
-  // No signed/public URL construction, no bucket hostname outside the backend.
+  // Signed/public URL construction is now a CONFINED capability (Phase 23):
+  // only the s3 storage backend may sign URLs (a short-lived presigned PUT),
+  // and the upload orchestrator may NAME the backend's presign method — but
+  // neither may sign anything PUT-shaped beyond one exact key, and no other
+  // file in src/ may touch signing at all. Reads stay server-proxied: there
+  // is still no presigned GET and no bucket LIST anywhere.
   const signed = [];
   const hosts = [];
   for (const rel of filesUnder("src")) {
@@ -362,7 +367,13 @@ section("2. No R2 URL, key or credential exposure anywhere");
     if (/r2\.cloudflarestorage\.com/.test(text) && rel !== "src/lib/media-s3.ts") hosts.push(rel);
     if (/NEXT_PUBLIC[A-Z0-9_]*(R2|S3|AWS)[A-Z0-9_]*/.test(text)) hosts.push(rel + " (NEXT_PUBLIC)");
   }
-  eq(signed, [], "no signed/presigned URL construction anywhere in src/");
+  eq(signed.sort(), ["src/lib/media-s3.ts", "src/lib/media-upload.ts"],
+    "signed-URL surface confined to the s3 backend + the upload orchestrator");
+  // The orchestrator only DELEGATES to the backend's presign method — it
+  // never signs URLs itself and never imports the presigner.
+  const orchestrator = read("src/lib/media-upload.ts");
+  ok(!/getSignedUrl|s3-request-presigner|X-Amz-Signature|PresignedPost/i.test(orchestrator),
+    "the upload orchestrator never constructs signed URLs itself");
   eq(hosts, [], "no bucket hostname or NEXT_PUBLIC storage credential outside the backend module");
 
   // The byte-serving routes stay proxies: they answer with bytes, never a URL.

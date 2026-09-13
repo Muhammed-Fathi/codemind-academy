@@ -24,6 +24,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Users, Upload, Link2, Video, Trash2, Loader2, CheckCircle2 } from "lucide-react";
+import { directUpload } from "@/lib/direct-upload";
 
 type Batch = {
   id: string;
@@ -327,14 +328,51 @@ function PublishVideoCard({
     try {
       let res: Response;
       if (method === "UPLOAD") {
-        const form = new FormData();
-        form.set("batchId", batch.id);
-        form.set("title", title);
-        form.set("titleAr", titleAr || title);
-        form.set("description", description);
-        form.set("publish", String(publish));
-        form.set("file", file!);
-        res = await fetch("/api/admin/session-videos", { method: "POST", body: form });
+        // Phase 23 — direct browser → private R2 upload (short-lived presigned
+        // PUT): bytes no longer buffer through the app server. When the active
+        // backend cannot serve direct uploads (MEDIA_BACKEND=local), the init
+        // endpoint answers PRESIGNED_UNSUPPORTED and we fall back to the
+        // buffered multipart POST below.
+        const out = await directUpload({
+          purpose: "SESSION_VIDEO",
+          file: file!,
+          initFields: { batchId: batch.id },
+          completeFields: {
+            batchId: batch.id,
+            title,
+            titleAr: titleAr || title,
+            description,
+            publish,
+          },
+          // No browser-side hash for videos: a 512 MB buffer just to hash it
+          // is worse than skipping the optional integrity proof.
+          sha256: null,
+        });
+        if (out.ok) {
+          toast.success(tr(publish ? "admin.237" : "admin.238"));
+          reset();
+          onPublished();
+          return;
+        }
+        if (out.code === "PRESIGNED_UNSUPPORTED") {
+          const form = new FormData();
+          form.set("batchId", batch.id);
+          form.set("title", title);
+          form.set("titleAr", titleAr || title);
+          form.set("description", description);
+          form.set("publish", String(publish));
+          form.set("file", file!);
+          res = await fetch("/api/admin/session-videos", { method: "POST", body: form });
+        } else {
+          const stageText =
+            out.stage === "init"
+              ? tr("admin.506")
+              : out.stage === "transfer"
+                ? tr("admin.507")
+                : tr("admin.508");
+          toast.error(out.error ? `${stageText} (${out.error})` : stageText);
+          return;
+        }
       } else {
         res = await fetch("/api/admin/session-videos", {
           method: "POST",

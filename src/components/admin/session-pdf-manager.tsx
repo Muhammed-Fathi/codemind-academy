@@ -36,6 +36,7 @@ import {
   serverErrorText,
   type AdminSessionMaterialSummary,
 } from "@/components/admin/session-workflow-shared";
+import { directUpload, sha256HexOfFile } from "@/lib/direct-upload";
 
 export function SessionPdfManager({
   lessonId,
@@ -63,25 +64,65 @@ export function SessionPdfManager({
     if (!f) return;
     setUploading(true);
     try {
-      const form = new FormData();
-      form.append("file", f);
-      if (customTitle.trim()) form.append("title", customTitle.trim());
-      // INHERIT omits the field: the server defaults to the lesson's scope.
-      if (explicitScope && explicitScope !== "INHERIT") {
-        form.append("trackScope", explicitScope);
-      }
-      const res = await fetchJson<{ material: { id: string } }>(
-        `/api/admin/lessons/${encodeURIComponent(lessonId)}/materials`,
-        { method: "POST", body: form }
-      );
-      if (!res.ok) {
-        toast.error(serverErrorText(tr, res.error));
+      // Phase 23 — direct browser → private R2 upload (short-lived presigned
+      // PUT). No file bytes pass through the app server. On deployments whose
+      // active backend cannot serve direct uploads (MEDIA_BACKEND=local) the
+      // server answers PRESIGNED_UNSUPPORTED and we transparently fall back
+      // to the buffered multipart endpoint below.
+      const sha256 = await sha256HexOfFile(f);
+      const out = await directUpload({
+        purpose: "LESSON_PDF",
+        file: f,
+        initFields: { lessonId },
+        completeFields: {
+          lessonId,
+          ...(customTitle.trim() ? { title: customTitle.trim() } : {}),
+          // INHERIT omits the field: the server defaults to the lesson's scope.
+          ...(explicitScope && explicitScope !== "INHERIT"
+            ? { trackScope: explicitScope }
+            : {}),
+        },
+        sha256,
+      });
+      if (out.ok) {
+        toast.success(tr("admin.424"));
+        setFile(null);
+        setTitle("");
+        onChanged();
         return;
       }
-      toast.success(tr("admin.424"));
-      setFile(null);
-      setTitle("");
-      onChanged();
+      if (out.code === "PRESIGNED_UNSUPPORTED") {
+        const form = new FormData();
+        form.append("file", f);
+        if (customTitle.trim()) form.append("title", customTitle.trim());
+        if (explicitScope && explicitScope !== "INHERIT") {
+          form.append("trackScope", explicitScope);
+        }
+        const res = await fetchJson<{ material: { id: string } }>(
+          `/api/admin/lessons/${encodeURIComponent(lessonId)}/materials`,
+          { method: "POST", body: form }
+        );
+        if (!res.ok) {
+          toast.error(serverErrorText(tr, res.error));
+          return;
+        }
+        toast.success(tr("admin.424"));
+        setFile(null);
+        setTitle("");
+        onChanged();
+        return;
+      }
+      const stageText =
+        out.stage === "init"
+          ? tr("admin.506")
+          : out.stage === "transfer"
+            ? tr("admin.507")
+            : tr("admin.508");
+      const detail =
+        out.error && out.error !== "admin.001"
+          ? ` — ${serverErrorText(tr, out.error)}`
+          : "";
+      toast.error(`${stageText}${detail}`);
     } finally {
       setUploading(false);
       setReplaceScope(null);

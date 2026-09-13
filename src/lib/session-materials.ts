@@ -60,6 +60,7 @@ import {
   writePrivateFile,
   validatePdfUpload,
   MAX_PDF_BYTES,
+  type ManagedPrivateStorageValue,
   type PdfValidationResult,
 } from "@/lib/media";
 import {
@@ -143,6 +144,55 @@ export type MaterialUploadResult =
       message: string;
       validation?: PdfValidationResult;
     };
+
+/**
+ * Result of the shared PDF row finalization (`finalizeLessonPdfMaterial`).
+ * The presigned flow's concurrency gate returns the same shape, so a skipped
+ * twin flows through the caller unchanged.
+ */
+export type FinalizeLessonPdfResult =
+  | {
+      ok: true;
+      material: {
+        id: string;
+        lessonId: string;
+        title: string;
+        kind: "ADMIN_UPLOADED";
+        trackScope: TrackScope;
+        isActive: true;
+        mediaAssetId: string;
+        downloadUrl: string;
+        mimeType: string;
+        sizeBytes: number;
+        originalName: string;
+      };
+      replaced: { materialId: string; mediaAssetId: string | null }[];
+      cleanedUpAssets: string[];
+      /**
+       * Set by the presigned flow's concurrency gate when this outcome is an
+       * idempotent REPLAY of an already-finalized twin completion (no rows
+       * were written by this call). Never set on the buffered path.
+       */
+      replay?: boolean;
+    }
+  | {
+      ok: false;
+      code: "INVALID_TRACK_SCOPE" | "ALREADY_LINKED";
+      message: string;
+    };
+
+/**
+ * Concurrency gate for `finalizeLessonPdfMaterial` (Phase 23 presigned
+ * completion). Runs FIRST inside the SAME transaction that performs the row
+ * writes — this is where the caller acquires the per-storage-key database
+ * serialization lock and re-checks the persisted storageKey linkage under
+ * it. Returning `proceed: false` aborts row creation (and the replace +
+ * refcount-cleanup side effects) and returns `outcome` verbatim: the
+ * idempotent replay result, or a fail-closed ALREADY_LINKED refusal.
+ */
+export type FinalizeLessonPdfSerializeGate =
+  | { proceed: true }
+  | { proceed: false; outcome: FinalizeLessonPdfResult };
 
 export type MaterialAccessReason =
   | AccessReason
@@ -306,17 +356,189 @@ export function parseMaterialTrackScopeInput(
 }
 
 /**
+ * DB finalization for an ALREADY-VERIFIED lesson-PDF upload (Phase 23).
+ *
+ * Creates the Material(ADMIN_UPLOADED) + MediaAsset(DOCUMENT) rows for bytes
+ * that are ALREADY in private storage under `storageKey` — either written by
+ * `uploadLessonPdfMaterial` (buffered path) or uploaded by the browser
+ * directly to R2 and verified by the presigned completion flow. Ordering is
+ * the same everywhere: BYTES FIRST → verification → ROWS, so a DB failure can
+ * never strand a phantom MediaAsset, and the caller owns deleting the object
+ * when finalization throws.
+ *
+ * Steps (unchanged from the original inline implementation):
+ *   1. Resolve the display title.
+ *   2. Capture prior active Material rows of the same (lesson × trackScope).
+ *   3. In one transaction: deactivate the prior rows, create the MediaAsset
+ *      (recording `storage`, the backend that actually holds the bytes) and
+ *      the Material row.
+ *   4. Reference-count cleanup of orphaned prior assets (after commit).
+ *
+ * Throws on DB failure; returns the same `ok` shape as
+ * `uploadLessonPdfMaterial` on success.
+ */
+export async function finalizeLessonPdfMaterial(
+  input: {
+    /** The (already validated, non-archived) lesson these rows attach to. */
+    lesson: { id: string; title: string | null };
+    trackScope: TrackScope;
+    title?: string | null;
+    /** The `MediaAsset.storage` value describing where the bytes live. */
+    storage: ManagedPrivateStorageValue;
+    storageKey: string;
+    mimeType: string;
+    sizeBytes: number;
+    originalName: string;
+    actorUserId?: string | null;
+  },
+  client: typeof db = db,
+  options?: {
+    /**
+     * Phase 23 concurrency gate — runs FIRST inside the same transaction
+     * that performs the row writes. See `FinalizeLessonPdfSerializeGate`.
+     */
+    serialize?: (tx: any) => Promise<FinalizeLessonPdfSerializeGate>;
+  }
+): Promise<FinalizeLessonPdfResult> {
+  // The caller-supplied `storageKey` is ALWAYS server-generated — either the
+  // buffered path's `makeStorageKey` output or the exact key bound inside the
+  // HMAC intent token (Phase 23). Destructured so the row creation below uses
+  // it directly, never reading it from a request-shaped object.
+  const { storage, storageKey, mimeType, sizeBytes, originalName, trackScope } = input;
+  const title =
+    (typeof input.title === "string" && input.title.trim()) ||
+    input.originalName ||
+    `${input.lesson.title} PDF`;
+
+  // Capture prior active materials so we can deactivate + maybe clean up.
+  const prior = await client.material.findMany({
+    where: {
+      lessonId: input.lesson.id,
+      trackScope: input.trackScope,
+      isActive: true,
+      kind: "ADMIN_UPLOADED",
+    },
+    select: { id: true, mediaAssetId: true },
+  });
+
+  const apply = async (
+    tx: any
+  ): Promise<
+    | {
+        created: {
+          asset: { id: string };
+          material: { id: string; title: string };
+        };
+      }
+    | { gate: FinalizeLessonPdfResult }
+  > => {
+    // Phase 23 — concurrency gate: under the per-storage-key database lock,
+    // re-check whether the presigned upload was already finalized by a twin
+    // completion. `proceed: false` short-circuits the ENTIRE finalize (no
+    // deactivate, no rows, no refcount cleanup) and returns the twin's own
+    // outcome — the sequential-replay idempotency guarantee, now held under
+    // concurrency as well.
+    if (options?.serialize) {
+      const gate = await options.serialize(tx);
+      if (!gate.proceed) return { gate: gate.outcome };
+    }
+    if (prior.length > 0) {
+      await tx.material.updateMany({
+        where: { id: { in: prior.map((p) => p.id) } },
+        data: { isActive: false },
+      });
+    }
+
+    const asset = await tx.mediaAsset.create({
+      data: {
+        kind: "DOCUMENT",
+        // The backend that ACTUALLY holds these bytes (LOCAL_PRIVATE | S3) —
+        // resolved by the caller from the active selector or, for the
+        // presigned flow, the backend that received the direct upload.
+        storage,
+        storageKey,
+        mimeType,
+        sizeBytes,
+        originalName,
+        isPrivate: true,
+        createdById: input.actorUserId ?? null,
+      },
+    });
+
+    const material = await tx.material.create({
+      data: {
+        lessonId: input.lesson.id,
+        kind: "ADMIN_UPLOADED",
+        title: title.slice(0, 200),
+        mediaAssetId: asset.id,
+        // storageKey on Material is legacy; the asset owns the key. Leave null
+        // so nothing ever confuses the two.
+        storageKey: null,
+        trackScope,
+        isActive: true,
+      },
+    });
+
+    return { created: { asset, material } };
+  };
+
+  let created: Awaited<ReturnType<typeof apply>>;
+  if (typeof (client as { $transaction?: unknown }).$transaction === "function") {
+    created = await (client as typeof db).$transaction(apply);
+  } else {
+    created = await apply(client);
+  }
+  // A twin completion won the race: the gate already produced the final
+  // outcome (idempotent replay / fail-closed) — nothing was written, so the
+  // refcount cleanup below must NOT run.
+  if ("gate" in created) return created.gate;
+  const { asset: createdAsset } = created.created;
+
+  // Reference-counted cleanup: detach deactivated materials from their prior
+  // assets, then delete any asset that nothing else still references. An asset
+  // still pointed at by another active Material (or a SessionVideo / evidence
+  // row) is retained — never delete shared bytes.
+  const cleanedUpAssets = await releaseDetachedAssets(
+    prior
+      .map((p) => p.mediaAssetId)
+      .filter((id): id is string => !!id && id !== createdAsset.id),
+    client
+  );
+
+  return {
+    ok: true,
+    material: {
+      id: created.created.material.id,
+      lessonId: input.lesson.id,
+      title: created.created.material.title,
+      kind: "ADMIN_UPLOADED",
+      trackScope: input.trackScope,
+      isActive: true,
+      mediaAssetId: createdAsset.id,
+      downloadUrl: `/api/materials/${created.created.material.id}`,
+      mimeType,
+      sizeBytes,
+      originalName,
+    },
+    replaced: prior.map((p) => ({
+      materialId: p.id,
+      mediaAssetId: p.mediaAssetId,
+    })),
+    cleanedUpAssets,
+  };
+}
+
+/**
  * Upload (or replace) the active PDF material for a lesson × trackScope.
  *
  * Side effects, in order, inside a transaction where possible:
  *   1. Validate bytes (MIME / extension / magic / size).
  *   2. Write private file under an unguessable key, into the ACTIVE backend.
- *   3. Create MediaAsset(DOCUMENT, storage=active backend, isPrivate) — the
- *      recorded `storage` is LOCAL_PRIVATE under MEDIA_BACKEND=local and S3
- *      under MEDIA_BACKEND=s3, taken from the selector (never from the key).
- *   4. Deactivate prior active Material rows of the same (lesson, trackScope).
- *   5. Create the new Material(ADMIN_UPLOADED) row.
- *   6. Reference-count cleanup of orphaned prior assets (after commit).
+ *   3. Finalize rows via `finalizeLessonPdfMaterial`: deactivate prior active
+ *      Material rows of the same (lesson, trackScope), create
+ *      MediaAsset(DOCUMENT, storage=active backend, isPrivate) + the new
+ *      Material(ADMIN_UPLOADED) row, then reference-count cleanup of orphaned
+ *      prior assets (after commit).
  *
  * NEVER writes `Lesson.pdfUrl`. NEVER trusts a client-supplied storageKey.
  */
@@ -405,99 +627,37 @@ export async function uploadLessonPdfMaterial(
     originalName: validation.originalName,
   });
 
-  const title =
-    (typeof input.title === "string" && input.title.trim()) ||
-    validation.originalName ||
-    `${lesson.title} PDF`;
-
-  // Capture prior active materials so we can deactivate + maybe clean up.
-  const prior = await client.material.findMany({
-    where: {
-      lessonId: lesson.id,
+  const finalized = await finalizeLessonPdfMaterial(
+    {
+      lesson: { id: lesson.id, title: lesson.title },
       trackScope,
-      isActive: true,
-      kind: "ADMIN_UPLOADED",
-    },
-    select: { id: true, mediaAssetId: true },
-  });
-
-  const apply = async (tx: any) => {
-    if (prior.length > 0) {
-      await tx.material.updateMany({
-        where: { id: { in: prior.map((p) => p.id) } },
-        data: { isActive: false },
-      });
-    }
-
-    const asset = await tx.mediaAsset.create({
-      data: {
-        kind: "DOCUMENT",
-        // The active backend's value (LOCAL_PRIVATE | S3), resolved above.
-        storage,
-        storageKey,
-        mimeType: validation.mimeType,
-        sizeBytes: validation.sizeBytes,
-        originalName: validation.originalName,
-        isPrivate: true,
-        createdById: input.actorUserId ?? null,
-      },
-    });
-
-    const material = await tx.material.create({
-      data: {
-        lessonId: lesson.id,
-        kind: "ADMIN_UPLOADED",
-        title: title.slice(0, 200),
-        mediaAssetId: asset.id,
-        // storageKey on Material is legacy; the asset owns the key. Leave null
-        // so nothing ever confuses the two.
-        storageKey: null,
-        trackScope,
-        isActive: true,
-      },
-    });
-
-    return { asset, material };
-  };
-
-  let created: Awaited<ReturnType<typeof apply>>;
-  if (typeof (client as { $transaction?: unknown }).$transaction === "function") {
-    created = await (client as typeof db).$transaction(apply);
-  } else {
-    created = await apply(client);
-  }
-
-  // Reference-counted cleanup: detach deactivated materials from their prior
-  // assets, then delete any asset that nothing else still references. An asset
-  // still pointed at by another active Material (or a SessionVideo / evidence
-  // row) is retained — never delete shared bytes.
-  const cleanedUpAssets = await releaseDetachedAssets(
-    prior
-      .map((p) => p.mediaAssetId)
-      .filter((id): id is string => !!id && id !== created.asset.id),
-    client
-  );
-
-  return {
-    ok: true,
-    material: {
-      id: created.material.id,
-      lessonId: lesson.id,
-      title: created.material.title,
-      kind: "ADMIN_UPLOADED",
-      trackScope,
-      isActive: true,
-      mediaAssetId: created.asset.id,
-      downloadUrl: `/api/materials/${created.material.id}`,
+      title: typeof input.title === "string" ? input.title : null,
+      storage,
+      storageKey,
       mimeType: validation.mimeType,
       sizeBytes: validation.sizeBytes,
       originalName: validation.originalName,
+      actorUserId: input.actorUserId,
     },
-    replaced: prior.map((p) => ({
-      materialId: p.id,
-      mediaAssetId: p.mediaAssetId,
-    })),
-    cleanedUpAssets,
+    client
+  );
+  if (!finalized.ok) {
+    if (finalized.code === "ALREADY_LINKED") {
+      // UNREACHABLE on the buffered path: no serialize gate is passed, so
+      // the ALREADY_LINKED outcome can never be produced here. Refuse
+      // loudly instead of widening MaterialUploadResult with the presigned
+      // flow's concurrency concerns.
+      throw new Error(
+        "finalizeLessonPdfMaterial reported ALREADY_LINKED without a concurrency gate"
+      );
+    }
+    return { ok: false, code: finalized.code, message: finalized.message };
+  }
+  return {
+    ok: true,
+    material: finalized.material,
+    replaced: finalized.replaced,
+    cleanedUpAssets: finalized.cleanedUpAssets,
   };
 }
 

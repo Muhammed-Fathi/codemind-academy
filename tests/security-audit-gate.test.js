@@ -490,12 +490,32 @@ section("10. Verified non-exposures (documented, not speculative controls)");
     "no server-side fetch of a caller-supplied URL exists (SSRF non-exposure)"
   );
 
-  // SQL injection: every query goes through the ORM.
-  let rawSql = 0;
-  for (const f of srcFiles) {
-    if (/\$queryRaw|\$executeRaw|\$queryRawUnsafe|\$executeRawUnsafe/.test(read(f))) rawSql++;
+  // SQL injection: every query goes through the ORM. Phase 23 carve-out: the
+  // presigned upload finalization takes a PostgreSQL TRANSACTION-SCOPED
+  // ADVISORY LOCK on the exact storage key — lock-only raw SQL in exactly
+  // one server module, provider-gated to a deliberate no-op on SQLite (no
+  // data query anywhere is provider-specific). Any other raw SQL in src/ is
+  // still a gate failure.
+  const rawFiles = srcFiles.filter((f) =>
+    /\$queryRaw|\$executeRaw|\$queryRawUnsafe|\$executeRawUnsafe/.test(read(f))
+  );
+  const rawCarveOut = rawFiles.filter((f) => f === "src/lib/db-serialization.ts");
+  ok(
+    rawFiles.length === rawCarveOut.length && rawCarveOut.length === 1,
+    "raw SQL is confined to the provider-gated advisory-lock helper (all access is parameterised ORM)"
+  );
+  if (rawCarveOut.length === 1) {
+    const ser = read("src/lib/db-serialization.ts");
+    ok(
+      /pg_advisory_xact_lock/.test(ser) &&
+        !/INSERT|UPDATE\s+|DELETE\s+FROM|SELECT\s+\*/.test(ser),
+      "the raw SQL is lock-only (no data reads/writes bypass the ORM)"
+    );
+    ok(
+      /provider !== "postgresql"\s*\) return;/.test(ser),
+      "the advisory lock never executes on SQLite (portability preserved)"
+    );
   }
-  ok(rawSql === 0, "no raw/unsafe SQL is executed anywhere in src/ (all access is parameterised ORM)");
 
   // Command injection: no shell execution in the request path.
   let shell = 0;

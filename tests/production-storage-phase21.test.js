@@ -176,7 +176,30 @@ async function main() {
       }
     };
     walk(path.join(REPO, "src"));
-    ok(rawHits.length === 0, `no raw SQL in src/ (${rawHits.slice(0, 3).join(", ") || "clean"})`);
+    // Phase 23 carve-out: the presigned upload finalization acquires a
+    // PostgreSQL TRANSACTION-SCOPED ADVISORY LOCK on the exact storage key —
+    // lock-only raw SQL, gated on the detected provider, a deliberate NO-OP
+    // on SQLite (local development never depends on PostgreSQL). The
+    // portability property this section protects is unchanged: no data query
+    // in src/ is provider-specific, and the single lock statement can never
+    // run on SQLite. Any OTHER raw SQL in src/ still fails this suite.
+    const lockHits = rawHits.filter((h) =>
+      h.startsWith("src/lib/db-serialization.ts:$executeRaw")
+    );
+    const otherRaw = rawHits.filter((h) => !lockHits.includes(h));
+    ok(otherRaw.length === 0, `no raw SQL in src/ outside the advisory-lock helper (${otherRaw.slice(0, 3).join(", ") || "clean"})`);
+    if (lockHits.length === 1) {
+      const serSrc = fs.readFileSync(path.join(REPO, "src/lib/db-serialization.ts"), "utf8");
+      ok(/pg_advisory_xact_lock/.test(serSrc), "the raw SQL is the per-key advisory lock");
+      ok(/provider !== "postgresql"\s*\) return;/.test(serSrc),
+        "the advisory lock is provider-gated (no-op on SQLite — portability preserved)");
+      ok(!/INSERT|UPDATE|DELETE FROM|SELECT\s+\*/.test(serSrc),
+        "the helper performs no data queries (lock-only raw SQL)");
+      ok(/resolveDatabaseProvider/.test(serSrc) && /DATABASE_URL/.test(serSrc),
+        "provider detection is derived from DATABASE_URL (the value Prisma dispatches on)");
+    } else {
+      ok(false, `expected exactly the advisory-lock $executeRaw carve-out, got ${lockHits.length}`);
+    }
   }
 
   // ---------------------------------------------------------------------------
