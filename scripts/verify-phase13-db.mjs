@@ -219,6 +219,14 @@ const BASE_SKIP_COLUMNS = {
   ExamQuestion: ["schoolType"],
   Quiz: ["trackScope"],
   Homework: ["trackScope"],
+  Payment: [
+    "senderPhone",
+    "requestedGroupId",
+    "requestedPlanId",
+    "rejectionReason",
+    "reviewedAt",
+    "reviewedByUserId",
+  ],
 };
 
 /** Tables created by a migration, so absent from the base. */

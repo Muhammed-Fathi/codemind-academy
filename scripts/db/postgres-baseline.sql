@@ -816,6 +816,12 @@ CREATE TABLE "Payment" (
   "notes" TEXT,
   "createdAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" TIMESTAMPTZ(3) NOT NULL,
+  "senderPhone" TEXT,
+  "requestedGroupId" TEXT,
+  "requestedPlanId" TEXT,
+  "rejectionReason" TEXT,
+  "reviewedAt" TIMESTAMPTZ(3),
+  "reviewedByUserId" TEXT,
   CONSTRAINT "Payment_pkey" PRIMARY KEY ("id"),
   CONSTRAINT "Payment_subscriptionId_fkey" FOREIGN KEY ("subscriptionId") REFERENCES "Subscription" ("id") ON UPDATE CASCADE,
   CONSTRAINT "Payment_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON UPDATE CASCADE
@@ -913,6 +919,8 @@ CREATE INDEX "SessionVideoView_isCompleted_idx" ON "SessionVideoView" ("isComple
 CREATE INDEX "StudentBadge_studentId_idx" ON "StudentBadge" ("studentId");
 CREATE INDEX "StudyTask_studentId_scheduledDate_idx" ON "StudyTask" ("studentId", "scheduledDate");
 CREATE INDEX "Subscription_status_idx" ON "Subscription" ("status");
+CREATE INDEX "Payment_status_createdAt_idx" ON "Payment" ("status", "createdAt");
+CREATE INDEX "Payment_subscriptionId_status_idx" ON "Payment" ("subscriptionId", "status");
 CREATE INDEX "UserSession_userId_revokedAt_idx" ON "UserSession" ("userId", "revokedAt");
 CREATE INDEX "UserSession_expiresAt_idx" ON "UserSession" ("expiresAt");
 CREATE INDEX "UserSession_deviceHash_idx" ON "UserSession" ("deviceHash");

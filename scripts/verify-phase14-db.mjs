@@ -81,6 +81,14 @@ const BASE_SKIP_COLUMNS = {
   Homework: ["trackScope"],
   // Phase 14 column is added by its migration, so base has no trackScope.
   Material: ["trackScope"],
+  Payment: [
+    "senderPhone",
+    "requestedGroupId",
+    "requestedPlanId",
+    "rejectionReason",
+    "reviewedAt",
+    "reviewedByUserId",
+  ],
 };
 
 const BASE_SKIP_TABLES = new Set([
