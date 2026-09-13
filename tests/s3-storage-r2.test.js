@@ -710,7 +710,8 @@ async function main() {
             const p = path.join(d, entry.name);
             const text = fs.readFileSync(p, "utf8");
             if (/R2_(ACCOUNT_ID|ACCESS_KEY_ID|SECRET_ACCESS_KEY|BUCKET|REGION|S3_ENDPOINT)/.test(text)) {
-              hits.push(path.relative(REPO, p));
+              const relativePath = path.relative(REPO, p);
+              hits.push(relativePath.split(path.sep).join("/"));
             }
           }
         }
