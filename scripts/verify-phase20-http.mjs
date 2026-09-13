@@ -499,6 +499,11 @@ try {
   {
     const r = await fetch(`${BASE}/csp`);
     const csp = r.headers.get("content-security-policy");
+    // Drain the body. An undici response whose body is never consumed keeps
+    // its socket out of the keep-alive pool's idle list, so the connection is
+    // still live when this process terminates — see the teardown note at the
+    // bottom of this file. Headers are readable before or after draining.
+    await r.arrayBuffer();
     ok(r.status === 200, "CSP route answers 200");
     ok(csp && csp.length > 0, "Content-Security-Policy header present on the response");
     ok(csp && !csp.includes("unsafe-eval"), "production CSP over the wire has NO unsafe-eval");
@@ -506,6 +511,7 @@ try {
     ok(csp && csp.includes("object-src 'none'"), "object-src 'none' present over the wire");
 
     const ro = await fetch(`${BASE}/csp-report-only`);
+    await ro.arrayBuffer(); // drain — see the teardown note at the bottom
     eq(
       ro.headers.get("content-security-policy-report-only") !== null &&
         ro.headers.get("content-security-policy") === null,
@@ -513,6 +519,7 @@ try {
       "CSP_REPORT_ONLY downgrades to the report-only header over the wire"
     );
     const off = await fetch(`${BASE}/csp-disabled`);
+    await off.arrayBuffer(); // drain — see the teardown note at the bottom
     eq(
       off.headers.get("content-security-policy") === null &&
         off.headers.get("content-security-policy-report-only") === null,
@@ -580,13 +587,38 @@ try {
     eq((await expired.json()).reason, "EXPIRED", "expired session → EXPIRED");
   }
 } finally {
-  server.close();
+  // Tear the server down for real before this process terminates.
+  //
+  // `server.close()` alone is fire-and-forget: it stops accepting and then
+  // returns immediately, so the Server handle is still open afterwards and the
+  // sockets undici keeps alive (fetch's default keep-alive) keep it from
+  // closing at all. Dropping those idle connections first lets `close()`
+  // finish, and awaiting it guarantees the handle is gone before exit.
+  //
+  // This matters because the process used to end with `process.exit()` while
+  // those handles were still live. On Windows + Node 23/24 that reliably
+  // aborts inside libuv: Node tears the environment down and calls
+  // uv_async_send() on a handle that uv_close() has already marked
+  // UV_HANDLE_CLOSING, tripping
+  //   Assertion failed: !(handle->flags & UV_HANDLE_CLOSING),
+  //   file src\win\async.c, line 76
+  // (upstream nodejs/node#56645). All 26 assertions had already passed at that
+  // point — only the exit path was broken, which is why the suite reported a
+  // "crash" next to a perfect assertion record.
+  server.closeAllConnections();
+  await new Promise((done) => server.close(done));
 }
 
 console.log(`\nPhase 20 HTTP verify: ${pass} passed, ${fail} failed`);
+sqlite.close();
 if (fail) {
   console.error("PHASE20_HTTP_FAIL");
-  process.exit(1);
+  // Set the code and let the event loop drain instead of calling
+  // process.exit(): every handle above is already closed, so the process ends
+  // on its own immediately — no forced teardown, no arbitrary delay, and any
+  // teardown error still surfaces instead of being swallowed.
+  process.exitCode = 1;
+} else {
+  console.log("PHASE20_HTTP_OK");
+  process.exitCode = 0;
 }
-console.log("PHASE20_HTTP_OK");
-process.exit(0);
