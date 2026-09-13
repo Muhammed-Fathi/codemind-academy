@@ -394,7 +394,7 @@ bun run db:migrate
 # (internally: prisma migrate dev — prompts for a migration name)
 
 # Apply migrations in production
-bunx prisma migrate deploy
+bunx prisma migrate deploy --schema prisma/schema.postgresql.prisma
 ```
 
 This creates timestamped migration files in `prisma/migrations/` that
@@ -553,7 +553,7 @@ bun install
 
 # 5. Push any schema changes (idempotent)
 bun run db:push
-# (or for PostgreSQL: bunx prisma migrate deploy)
+# (or for PostgreSQL: bunx prisma migrate deploy --schema prisma/schema.postgresql.prisma)
 
 # 6. Rebuild the standalone bundle
 bun run build

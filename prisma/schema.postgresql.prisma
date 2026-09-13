@@ -664,8 +664,19 @@ model Payment {
   notes          String?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
+  // Phase 25 PR1 (ledger only): nullable, no defaults, no relations.
+  // New writers arrive in PR2a+; approval/review writers in PR3.
+  senderPhone      String?
+  requestedGroupId String?
+  requestedPlanId  String?
+  rejectionReason  String?
+  reviewedAt       DateTime?
+  reviewedByUserId String?
   subscription   Subscription? @relation(fields: [subscriptionId], references: [id])
   user           User          @relation(fields: [userId], references: [id])
+
+  @@index([status, createdAt])
+  @@index([subscriptionId, status])
 }
 
 model Notification {

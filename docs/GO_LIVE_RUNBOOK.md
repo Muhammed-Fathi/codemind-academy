@@ -96,8 +96,8 @@ node scripts/db/verify-postgres.mjs --target "$DATABASE_URL"  # must end VERIFY_
 **Already on PostgreSQL — apply pending migrations:**
 
 ```bash
-npx prisma migrate deploy
-npx prisma migrate status   # must report "Database schema is up to date"
+npx prisma migrate deploy --schema prisma/schema.postgresql.prisma
+npx prisma migrate status --schema prisma/schema.postgresql.prisma   # must report "Database schema is up to date"
 ```
 
 No `prisma migrate reset`, `prisma db push --accept-data-loss`, `DROP DATABASE`, or `TRUNCATE ALL`.
