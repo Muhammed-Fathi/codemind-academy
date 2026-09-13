@@ -476,38 +476,77 @@ console.log("HARNESS_JSON " + JSON.stringify(results));
   }
 
   // ---------------------------------------------------------------------------
-  section("10. setup-production (complete, provider-safe, no teacher provisioning)");
+  section("10. setup-production (safe selective baseline, Phase 22)");
   // ---------------------------------------------------------------------------
   {
     const setup = read("scripts/setup-production.ts");
-    // Every destructive-table deleteMany present (55 models minus Setting/SubscriptionPlan/User-handled).
-    const parsed = pgLib.parseSchema();
-    const missingDeletes = [];
-    for (const name of parsed.models.keys()) {
-      if (name === "Setting" || name === "SubscriptionPlan") continue;
-      if (!setup.includes(`prisma.${name[0].toLowerCase() + name.slice(1)}.deleteMany`)) {
-        missingDeletes.push(name);
-      }
-    }
-    ok(missingDeletes.length === 0, `setup-production deletes all 53 non-preserved models (${missingDeletes.slice(0, 4).join(", ") || "complete"})`);
-    ok(!/prisma\.setting\.deleteMany/.test(setup) && !/prisma\.subscriptionPlan\.deleteMany/.test(setup),
-      "Settings + SubscriptionPlans preserved (no deleteMany)");
-    // New-table coverage (the Phase 21 additions).
-    for (const t of ["sessionVideo", "mockExam", "enrollment", "material", "sessionPublication",
-      "teacherApplication", "teacherActivationToken", "userSession", "passwordResetToken",
-      "securityRateLimit", "securityEvent", "quizAttemptEvidence", "mediaAsset", "batch"]) {
-      ok(setup.includes(`prisma.${t}.deleteMany`), `setup-production clears ${t}`);
-    }
-    // No teacher provisioning, no hardcoded secrets.
-    const createBlock = /prisma\.user\.create\(\{[\s\S]*?\}\)/.exec(setup);
-    ok(createBlock && /Role\.ADMIN/.test(createBlock[0]) && !/TEACHER/.test(createBlock[0]),
-      "setup-production creates exactly one ADMIN (no TEACHER creation path)");
-    ok(!/role:\s*"TEACHER"/.test(setup), "no TEACHER role literal in setup-production");
-    ok(/password\.length < 8/.test(setup), "admin password floor is 8 (audit-gate minimum)");
-    ok(/--dry-run/.test(setup), "--dry-run supported (report only)");
-    ok(/TeacherApplications : .*must be 0/.test(setup) && /UserSessions.*must be 0/.test(setup) && /SecurityEvents.*must be 0/.test(setup),
-      "final verification asserts zero provisioning/security rows");
-    ok(/MediaAsset rows are deleted last/.test(setup), "Restrict-safe MediaAsset ordering documented");
+    // Phase 22 rework (5b758b1): safe selective baseline, NOT destructive full wipe.
+    // Preserves curriculum/media/assessments/audit, creates 2 ADMIN + 1 TEACHER allowlist,
+    // verified backup before mutation, transactional, fail-closed.
+
+    // 1. No unscoped destructive deleteMany wipe across production models
+    ok(/NO unscoped.*deleteMany/i.test(setup), "setup-production documents no unscoped deleteMany");
+    const preservedNoWipe = ["course","part","unit","topic","lesson","track","group","batch","mediaAsset","sessionVideo","material","quiz","question","examQuestion","mockExam","homework","auditLog","securityEvent","setting","subscriptionPlan"];
+    const unscopedHits = preservedNoWipe.filter((t) => {
+      const reEmpty = new RegExp(`prisma\\.${t}\\.deleteMany\\s*\\(\\s*\\)`);
+      const reEmptyObj = new RegExp(`prisma\\.${t}\\.deleteMany\\s*\\(\\s*\\{\\s*\\}\\s*\\)`);
+      return reEmpty.test(setup) || reEmptyObj.test(setup);
+    });
+    ok(unscopedHits.length === 0, `no unscoped deleteMany for preserved models (${unscopedHits.join(",") || "clean"})`);
+    ok([...setup.matchAll(/prisma\.\w+\.deleteMany\s*\(\s*\)/g)].length === 0, "no unscoped prisma.*.deleteMany() at all");
+
+    // 2. Scoped user-owned cleanup exists where required (RESTRICT / no-FK edges)
+    const scoped = [...setup.matchAll(/tx\.\w+\.deleteMany\s*\(\s*\{\s*where:\s*\{\s*userId\s*\}\s*\}\s*\)/g)];
+    ok(scoped.length >= 3, `scoped user-owned cleanup exists (found ${scoped.length} tx.*.deleteMany where userId)`);
+    ok(/removeUser/.test(setup) && /tx\.user\.delete/.test(setup) && /payment\.deleteMany.*where.*userId/.test(setup), "removeUser with cascade + scoped Payment/NotificationPreference/CouponRedemption deletes");
+
+    // 3. Preserved curriculum/content/media/audit not blanket-deleted
+    ok(/NO deletion of Course/.test(setup) && /NO deletion of MediaAsset/.test(setup) && /NO deletion of.*Quiz/.test(setup) && /NO blanket wipe of AuditLog/.test(setup) && /NO deletion of physical media files/.test(setup),
+      "preservation of curriculum/media/assessments/audit/media-files documented");
+    ok(/contentSnapshot/.test(setup) && /MediaAsset/.test(setup) && /SessionVideo/.test(setup) && /Material/.test(setup) && /Course/.test(setup),
+      "contentSnapshot includes Course/MediaAsset/SessionVideo/Material for preservation check");
+
+    // 4. Production allowlist exactly 3 bootstrap users
+    ok(/PRODUCTION_USERS/.test(setup) && /mudiifathii@gmail\.com/.test(setup) && /abdelrahmanmohamedhafez7@gmail\.com/.test(setup) && /muhammedfathi2005@gmail\.com/.test(setup),
+      "allowlist contains exactly 3 bootstrap users (2 ADMIN + 1 TEACHER)");
+    const prodBlock = (setup.match(/PRODUCTION_USERS[\s\S]*?\];/) || [""])[0];
+    ok(/PRODUCTION_ALLOWLIST/.test(setup) && (prodBlock.match(/role:\s*Role\.ADMIN/g) || []).length === 2 && (prodBlock.match(/role:\s*Role\.TEACHER/g) || []).length === 1,
+      "PRODUCTION_ALLOWLIST derived from PRODUCTION_USERS with 2 ADMIN + 1 TEACHER");
+
+    // 5. Role distribution exactly 2 ADMIN, 1 TEACHER, 0 STUDENT, 0 PARENT
+    ok(/ADMIN.*expect 2/.test(setup) && /TEACHER.*expect 1/.test(setup) && /STUDENT.*expect 0/.test(setup) && /PARENT.*expect 0/.test(setup) && /TOTAL.*expect 3/.test(setup),
+      "verification expects 2 ADMIN, 1 TEACHER, 0 STUDENT, 0 PARENT, 3 total");
+    ok(/adminCount !== 2/.test(setup) && /teacherCount !== 1/.test(setup) && /studentCount !== 0/.test(setup) && /parentCount !== 0/.test(setup) && /totalUsers !== 3/.test(setup),
+      "verification fails closed on role count mismatch");
+
+    // 6. Intentional TEACHER bootstrap allowed only as known production owner path
+    ok(/deliberate one-time production bootstrap of a KNOWN owner/.test(setup) || /one-time production bootstrap/.test(setup), "TEACHER bootstrap documented as deliberate one-time known-owner path");
+    ok(/if\s*\(spec\.role === Role\.TEACHER\)/.test(setup) && /teacher\.findUnique/.test(setup) && /teacher\.create/.test(setup), "TEACHER row created only for allowlisted TEACHER spec");
+    ok(!/role:\s*"TEACHER"/.test(setup), "no string literal role: \"TEACHER\" (uses Role enum)");
+
+    // 7. Passwords not hardcoded and minimum length validation remains
+    ok(/hashPassword/.test(setup) && /askHidden/.test(setup) && !/password\s*:\s*"[^"\n]+"/.test(setup) && !/password\s*=\s*"[^"\n]+"/.test(setup), "passwords hashed via hashPassword, prompted hidden, no hardcoded literal");
+    ok(/MIN_PASSWORD_LENGTH/.test(setup) && /pw\.length < MIN_PASSWORD_LENGTH/.test(setup), "minimum password length 8 enforced via MIN_PASSWORD_LENGTH");
+
+    // 8. Backup creation/verification occurs before mutation
+    ok(/createVerifiedBackup/.test(setup) && /plannedBackupPath/.test(setup) && /backupDir/.test(setup) && /VACUUM INTO/.test(setup) && /backup-postgres\.sh/.test(setup) && /sha256/.test(setup) && /Backup preserved at/.test(setup),
+      "backup creation via createVerifiedBackup + VACUUM INTO + backup-postgres.sh, verified sha256");
+    const backupIdx = setup.indexOf("createVerifiedBackup");
+    const txIdx = setup.indexOf("prisma.$transaction");
+    ok(backupIdx !== -1 && txIdx !== -1 && backupIdx < txIdx, "backup occurs BEFORE first mutation (transaction)");
+
+    // 9. Final verification checks role counts, identity, curriculum, official-code uniqueness, content preservation, FK integrity, backup state
+    ok(/Verification/.test(setup) && /identity\/state mismatch/.test(setup) && /isActive/.test(setup) && /OFFICIAL_COURSE_SLUG/.test(setup) && /EXPECTED_OFFICIAL_COUNTS/.test(setup) && /OFFICIAL_LESSON_CODES/.test(setup),
+      "final verification checks role counts, identity, curriculum (OFFICIAL_COURSE_SLUG, EXPECTED_COUNTS, OFFICIAL_CODES)");
+    ok(/groupBy/.test(setup) && /officialCode/.test(setup) && /duplicate/.test(setup) && /missing.*official.*codes/i.test(setup) && /contentSnapshot/.test(setup) && /contentBefore/.test(setup) && /contentAfter/.test(setup) && /SHRANK/.test(setup) && /foreign_key_check/.test(setup) && /Backup preserved at/.test(setup),
+      "final verification checks official-code uniqueness, content preservation (no shrink), FK integrity, backup state");
+
+    // 10. MediaAsset / SessionVideo / Material preservation instead of obsolete delete-ordering
+    ok(/MediaAsset/.test(setup) && /SessionVideo/.test(setup) && /Material/.test(setup) && /must not shrink|preserved|NO deletion/.test(setup) && !/MediaAsset rows are deleted last/.test(setup),
+      "MediaAsset/SessionVideo/Material preservation asserted, obsolete delete-last removed");
+
+    // 11. Dry-run safety remains verified
+    ok(/--dry-run/.test(setup) && /dry-run.*nothing was changed|ZERO mutations|no backup was created/.test(setup), "dry-run supported and reports zero mutations/no backup");
   }
 
   // ---------------------------------------------------------------------------
