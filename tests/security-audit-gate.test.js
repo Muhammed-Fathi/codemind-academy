@@ -477,12 +477,29 @@ section("10. Verified non-exposures (documented, not speculative controls)");
   // exception is pinned to its exact shape below — a blanket file exclusion
   // is NOT acceptable: the carve-out must fail on ANY shape deviation.
   const DIRECT_UPLOAD = "src/lib/direct-upload.ts";
-  const srcFiles = execSync(
-    "find src -name '*.ts' -o -name '*.tsx' | head -400",
-    { cwd: REPO, encoding: "utf8" }
-  )
-    .trim()
-    .split("\n");
+  // Cross-platform enumeration of every .ts/.tsx file under src/, replacing
+  // the former `find src -name '*.ts' -o -name '*.tsx' | head -400` pipeline
+  // (Unix-only: Windows cmd has neither GNU find nor head). A pure fs/path
+  // walk — no shell, no pipelines. Paths are repo-relative and normalized to
+  // POSIX "/" so the exact-string carve-outs below ("src/lib/direct-upload.ts",
+  // "src/lib/db-serialization.ts", the __ssrf_probe__ prefixes) match on every
+  // platform, ordering is sorted (deterministic, unlike raw find), and the
+  // same 400-file safety bound is applied to the sorted list.
+  const listTsFiles = () => {
+    const files = [];
+    const walk = (dir) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const abs = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(abs);
+        else if (entry.isFile() && /\.tsx?$/.test(entry.name))
+          files.push(path.relative(REPO, abs).split(path.sep).join("/"));
+      }
+    };
+    walk(path.join(REPO, "src"));
+    files.sort();
+    return files.slice(0, 400); // head -400 safety bound, preserved
+  };
+  const srcFiles = listTsFiles();
   const isClientFile = (t) =>
     t.startsWith('"use client"') || t.includes('\n"use client"');
   const fetchArgsOf = (t) =>
