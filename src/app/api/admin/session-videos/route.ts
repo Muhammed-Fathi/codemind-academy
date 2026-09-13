@@ -3,7 +3,11 @@
 //   POST /api/admin/session-videos   (multipart OR json)
 //
 // Two publishing methods are supported:
-//   1. Uploaded video file  -> stored ONCE in private storage as a MediaAsset.
+//   1. Uploaded video file  -> stored ONCE in private storage as a MediaAsset,
+//      in whichever managed private backend is ACTIVE:
+//      MEDIA_BACKEND=local → storage=LOCAL_PRIVATE (private volume),
+//      MEDIA_BACKEND=s3    → storage=S3 (Cloudflare R2 bucket).
+//      Either way it is served only by the authorized /api/media/[id] proxy.
 //   2. Video URL            -> stored as a MediaAsset with storage=EXTERNAL_URL.
 //
 // The media is stored once and associated with the batch. Publishing makes it
@@ -13,6 +17,7 @@ import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireRole } from "@/lib/api";
 import {
+  activeMediaStorageValue,
   MAX_VIDEO_BYTES,
   extFromMime,
   isAllowedVideoMime,
@@ -138,20 +143,27 @@ export async function POST(req: NextRequest) {
 
     const storageKey = makeStorageKey("session-videos", extFromMime(mime));
     const buffer = Buffer.from(await file.arrayBuffer());
+    const originalName = (file as { name?: string }).name?.slice(0, 200) || null;
+    // WHERE these bytes go is decided by the ACTIVE backend selector — never
+    // inferred from the key/path: LOCAL_PRIVATE under MEDIA_BACKEND=local, S3
+    // under MEDIA_BACKEND=s3. Resolved BEFORE the write so an unsupported
+    // MEDIA_BACKEND fails closed with nothing written anywhere.
+    const storage = activeMediaStorageValue();
     // Phase 21 — volume quota, checked BEFORE any byte is written. No-op
     // unless the operator sets MEDIA_QUOTA_BYTES.
     const quota = await assertVolumeQuota(buffer.length);
     if (!quota.ok) return err("Media storage quota exceeded", 413);
-    await writePrivateFile(storageKey, buffer);
+    await writePrivateFile(storageKey, buffer, { mimeType: mime, originalName });
 
     const asset = await db.mediaAsset.create({
       data: {
         kind: "VIDEO",
-        storage: "LOCAL_PRIVATE",
+        // Matches the backend that just took the bytes.
+        storage,
         storageKey,
         mimeType: mime,
         sizeBytes: buffer.length,
-        originalName: (file as any).name?.slice(0, 200) || null,
+        originalName,
         isPrivate: true,
         createdById: user?.id || null,
       },

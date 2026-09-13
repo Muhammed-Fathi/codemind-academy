@@ -1,7 +1,14 @@
 // GET /api/materials/[id]
 //
 // The ONLY way to read a private session PDF. Bytes live outside the public
-// web root under an unguessable random key; there is no public URL at all.
+// web root under an unguessable random key; there is no public URL at all —
+// neither on the local private volume (MediaAsset.storage = LOCAL_PRIVATE) nor
+// in the S3/R2 bucket (MediaAsset.storage = S3). Both are proxied:
+//
+//   Browser → this route (authorized) → StorageBackend → bytes
+//
+// No signed URL, no redirect to the object store, no credential, no bucket
+// hostname ever appears in a response.
 //
 // Authorization is the Phase 14 10-check contract (see
 // `authorizeMaterialDownload` in src/lib/session-materials.ts):
@@ -14,14 +21,16 @@
 //   7. lifecycle availability (PUBLISHED for students/parents)
 //   8. progression eligibility (students)
 //   9. material belongs to lesson and is active
-//  10. asset exists, is LOCAL_PRIVATE, isPrivate
+//  10. asset exists, isPrivate, and is MANAGED PRIVATE storage
+//      (LOCAL_PRIVATE or S3) with a storageKey
 //
 // Query:
 //   ?download=1  → Content-Disposition: attachment
 //   (default)    → Content-Disposition: inline
 //
 // Headers always include Cache-Control: no-store and X-Content-Type-Options:
-// nosniff. Range requests are supported for large documents.
+// nosniff. Range requests are supported for large documents, served by the
+// storage abstraction's ranged STREAM (the document is never buffered whole).
 
 import { NextRequest, NextResponse } from "next/server";
 import {
@@ -30,7 +39,11 @@ import {
   applyRateLimit,
   rateLimitedResponse,
 } from "@/lib/api";
-import { readPrivateFile, privateFileStat } from "@/lib/media";
+import {
+  privateFileStat,
+  readPrivateFileStream,
+  storageStreamToWebResponseBody,
+} from "@/lib/media";
 import {
   authorizeMaterialDownload,
   materialAccessHttpStatus,
@@ -80,18 +93,14 @@ export async function GET(
 
   const { asset, material } = access;
 
-  const stat = await privateFileStat(asset.storageKey);
-  if (!stat) return err("Not found", 404);
-
-  const buffer = await readPrivateFile(asset.storageKey).catch(() => null);
-  if (!buffer) return err("Not found", 404);
-
+  // `asset.storage` names the backend holding these bytes (LOCAL_PRIVATE or
+  // S3). Authorization (the 10-check contract above) has already passed — no
+  // byte is requested from any backend before that verdict.
   const url = new URL(req.url);
   const asDownload =
     url.searchParams.get("download") === "1" ||
     url.searchParams.get("download") === "true";
 
-  const total = buffer.length;
   const contentType = asset.mimeType || "application/pdf";
   const filename =
     asset.originalName ||
@@ -118,9 +127,20 @@ export async function GET(
   }
 
   const range = req.headers.get("range");
+  // Inclusive window to serve, or null for a full 200. An unparseable Range
+  // header is IGNORED (full response) exactly as before; a parseable but
+  // unsatisfiable one is a 416.
+  let window: { start: number; end: number } | null = null;
+  // Whole-object size — only needed to validate a range and to build the 416
+  // `Content-Range: bytes */TOTAL`. A plain full read skips this round trip and
+  // takes the size from the streamed result instead.
+  let total = 0;
   if (range) {
     const match = /bytes=(\d*)-(\d*)/.exec(range);
     if (match) {
+      const stat = await privateFileStat(asset.storageKey, asset.storage);
+      if (!stat) return err("Not found", 404);
+      total = stat.size;
       const start = match[1] ? parseInt(match[1], 10) : 0;
       const end = match[2] ? parseInt(match[2], 10) : total - 1;
       if (
@@ -137,20 +157,47 @@ export async function GET(
           headers: { ...baseHeaders, "Content-Range": `bytes */${total}` },
         });
       }
-      const chunk = buffer.subarray(start, end + 1);
-      return new NextResponse(new Uint8Array(chunk), {
-        status: 206,
-        headers: {
-          ...baseHeaders,
-          "Content-Range": `bytes ${start}-${end}/${total}`,
-          "Content-Length": String(chunk.length),
-        },
-      });
+      window = { start, end };
     }
   }
 
-  return new NextResponse(new Uint8Array(buffer), {
+  // STREAM the document (or exactly the requested window) rather than holding
+  // the whole PDF in memory; range resolution is shared by every backend, so
+  // the 206/416 bookkeeping is identical on the local volume and in R2.
+  let result;
+  try {
+    result = await readPrivateFileStream(
+      asset.storageKey,
+      window ?? undefined,
+      asset.storage
+    );
+  } catch (e) {
+    // Validated against `total` above, so a RangeError here means the object
+    // changed size underneath us — answered with the same 416 shape.
+    if (e instanceof RangeError) {
+      return new NextResponse(null, {
+        status: 416,
+        headers: { ...baseHeaders, "Content-Range": `bytes */${total}` },
+      });
+    }
+    throw e;
+  }
+  // Missing object → the same non-oracle 404 as an unknown material id.
+  if (!result) return err("Not found", 404);
+
+  if (window) {
+    return new NextResponse(storageStreamToWebResponseBody(result.stream), {
+      status: 206,
+      headers: {
+        ...baseHeaders,
+        "Content-Range": `bytes ${result.start}-${result.end}/${result.size}`,
+        "Content-Length": String(result.contentLength),
+      },
+    });
+  }
+
+  return new NextResponse(storageStreamToWebResponseBody(result.stream), {
     status: 200,
-    headers: { ...baseHeaders, "Content-Length": String(total) },
+    headers: { ...baseHeaders, "Content-Length": String(result.size) },
   });
 }

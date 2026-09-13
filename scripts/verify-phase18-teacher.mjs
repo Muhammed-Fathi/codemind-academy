@@ -219,12 +219,32 @@ class NextResponse {
     const m = this._headers;
     return { get: (k) => m.get(String(k).toLowerCase()) ?? null };
   }
+  // The real NextResponse (an undici Response) accepts a Buffer, a string OR a
+  // web ReadableStream body — the media routes stream through a ReadableStream
+  // so the shim must too, or it would only model the buffered case.
+  async _readAll() {
+    const body = this._body;
+    if (body === null || body === undefined) return Buffer.alloc(0);
+    if (Buffer.isBuffer(body)) return body;
+    if (typeof body === "string") return Buffer.from(body);
+    if (typeof body.getReader === "function") {
+      const reader = body.getReader();
+      const chunks = [];
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(Buffer.isBuffer(value) ? value : Buffer.from(value.buffer, value.byteOffset, value.byteLength));
+      }
+      return Buffer.concat(chunks);
+    }
+    return Buffer.from(body);
+  }
   async json() {
     if (this._json !== undefined) return this._json;
-    return JSON.parse(Buffer.from(this._body || []).toString("utf8"));
+    return JSON.parse((await this._readAll()).toString("utf8"));
   }
   async arrayBuffer() {
-    const b = Buffer.isBuffer(this._body) ? this._body : Buffer.from(this._body ?? []);
+    const b = await this._readAll();
     return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
   }
 }

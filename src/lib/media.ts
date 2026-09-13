@@ -4,11 +4,24 @@
 // quiz evidence. Nothing is ever duplicated per student.
 //
 // Two storage back-ends are supported:
-//   * EXTERNAL_URL  — an admin-provided URL (YouTube / Vimeo / CDN).
-//   * LOCAL_PRIVATE — an uploaded file written OUTSIDE the public web root
-//                     (local filesystem, or Cloudflare R2 via the
-//                     S3-compatible backend in `src/lib/media-s3.ts`) and
-//                     only readable through an authorized API route.
+//   * EXTERNAL_URL  — an admin-provided URL (YouTube / Vimeo / CDN). The
+//                     client uses it directly; this server never proxies it.
+//   * MANAGED PRIVATE — an uploaded file written OUTSIDE the public web root
+//                     and only readable through an authorized API route. A
+//                     managed private object lives in EXACTLY ONE of two
+//                     places, recorded on `MediaAsset.storage`:
+//                       LOCAL_PRIVATE — the private filesystem volume under
+//                                       MEDIA_ROOT (`LocalStorageBackend`);
+//                       S3            — an S3-compatible object store
+//                                       (Cloudflare R2, `src/lib/media-s3.ts`).
+//                     Both are the SAME contract (`StorageBackend`) and both
+//                     are private: no signed URLs, no public bucket access, no
+//                     credential ever reaches a browser.
+//
+// `MANAGED_PRIVATE_STORAGE_VALUES` / `isManagedPrivateStorage` below are the
+// SINGLE definition of "a private object this server manages". Every read,
+// delete and purge gate uses them, so no gate can drift back to assuming that
+// managed private bytes are local-only.
 //
 // Private files are never placed in /public and their names are random, so
 // they are not guessable.
@@ -23,7 +36,7 @@
 import { promises as fs } from "fs";
 import path from "path";
 import { createHash, randomBytes } from "crypto";
-import type { Readable } from "stream";
+import { Readable } from "stream";
 
 export const MEDIA_ROOT =
   process.env.MEDIA_STORAGE_PATH || path.join(process.cwd(), "storage", "media");
@@ -484,6 +497,113 @@ export class LocalStorageBackend implements StorageBackend {
   }
 }
 
+// ---------------------------------------------------------------------------
+// `MediaAsset.storage` ↔ storage backend — the single source of truth
+// ---------------------------------------------------------------------------
+//
+// A managed private object is addressed by `MediaAsset.storageKey` and lives in
+// exactly one backend. WHICH one is recorded on the row's `storage` column, and
+// the value written there at upload time comes from the ACTIVE BACKEND — never
+// from the shape of the key/path (a key looks identical in both worlds:
+// `<scope>/<random>.<ext>`).
+
+/** Every `MediaStorage` enum value (mirrors prisma/schema.prisma — unchanged). */
+export const MEDIA_STORAGE_VALUES = [
+  "EXTERNAL_URL",
+  "LOCAL_PRIVATE",
+  "S3",
+] as const;
+export type MediaStorageValue = (typeof MEDIA_STORAGE_VALUES)[number];
+
+/**
+ * The `MediaAsset.storage` values that mean "private bytes THIS SERVER manages
+ * through the StorageBackend abstraction":
+ *   LOCAL_PRIVATE — the private filesystem volume under MEDIA_ROOT;
+ *   S3            — an S3-compatible object store (Cloudflare R2).
+ *
+ * `EXTERNAL_URL` is deliberately NOT managed: it is a third-party URL the
+ * client fetches directly and this server never proxies, reads or deletes.
+ *
+ * EVERY read gate, delete gate and purge gate in the application asks
+ * `isManagedPrivateStorage(asset.storage)` instead of comparing against one
+ * literal, so accepting S3 can never mean relaxing privacy: the bytes stay
+ * behind the same authorized routes whichever backend holds them.
+ */
+export const MANAGED_PRIVATE_STORAGE_VALUES = [
+  "LOCAL_PRIVATE",
+  "S3",
+] as const;
+export type ManagedPrivateStorageValue =
+  (typeof MANAGED_PRIVATE_STORAGE_VALUES)[number];
+
+/**
+ * Normalise a stored `MediaAsset.storage` value to the enum spelling, or
+ * `null` when it is not one of ours. Tolerates case/whitespace drift from raw
+ * SQL fixtures without ever inventing a value.
+ */
+export function normalizeMediaStorageValue(
+  storage: unknown
+): MediaStorageValue | null {
+  if (storage === null || storage === undefined) return null;
+  const v = String(storage).trim().toUpperCase();
+  return (MEDIA_STORAGE_VALUES as readonly string[]).includes(v)
+    ? (v as MediaStorageValue)
+    : null;
+}
+
+/**
+ * True iff `storage` marks a MANAGED PRIVATE object (LOCAL_PRIVATE or S3).
+ * Fail-closed: null / undefined / empty / EXTERNAL_URL / anything unknown →
+ * false, so an unexpected row value can never be served or deleted as if it
+ * were private managed bytes.
+ */
+export function isManagedPrivateStorage(storage: unknown): boolean {
+  const v = normalizeMediaStorageValue(storage);
+  return v !== null && (MANAGED_PRIVATE_STORAGE_VALUES as readonly string[]).includes(v);
+}
+
+/**
+ * The `MediaAsset.storage` value that describes objects written by `name`.
+ * Exhaustive over `StorageBackendName`: adding a backend without deciding what
+ * its rows record is a COMPILE error, not a silent LOCAL_PRIVATE.
+ */
+export function mediaStorageValueForBackend(
+  name: StorageBackendName
+): ManagedPrivateStorageValue {
+  switch (name) {
+    case "local":
+      return "LOCAL_PRIVATE";
+    case "s3":
+      return "S3";
+    default: {
+      const unimplemented: never = name;
+      throw new Error(`no MediaStorage value for backend: ${String(unimplemented)}`);
+    }
+  }
+}
+
+/** Inverse of `mediaStorageValueForBackend`; `null` for non-managed values. */
+export function backendNameForStorageValue(
+  storage: unknown
+): StorageBackendName | null {
+  const v = normalizeMediaStorageValue(storage);
+  if (v === "LOCAL_PRIVATE") return "local";
+  if (v === "S3") return "s3";
+  return null;
+}
+
+/**
+ * The `MediaAsset.storage` value a NEW upload must record: the ACTIVE backend
+ * (`MEDIA_BACKEND`), resolved through the same fail-closed selector the write
+ * itself uses. Throws on an unsupported MEDIA_BACKEND rather than recording a
+ * value that would misdescribe where the bytes went.
+ */
+export function activeMediaStorageValue(
+  env: NodeJS.ProcessEnv = process.env
+): ManagedPrivateStorageValue {
+  return mediaStorageValueForBackend(resolveStorageBackendName(env));
+}
+
 /**
  * Resolve the active backend name from `MEDIA_BACKEND`.
  *
@@ -535,26 +655,94 @@ export async function createStorageBackend(
   }
 }
 
-let activeBackendPromise: Promise<StorageBackend> | null = null;
+/**
+ * Per-name backend cache. One instance per backend name per process, so a
+ * deployment that serves both LOCAL_PRIVATE (legacy objects still on the
+ * volume) and S3 objects builds at most one S3 client and one local backend.
+ */
+const backendCache = new Map<StorageBackendName, Promise<StorageBackend>>();
+let activeBackendNamePromise: Promise<StorageBackendName> | null = null;
+
+function cachedBackend(name: StorageBackendName): Promise<StorageBackend> {
+  let promise = backendCache.get(name);
+  if (!promise) {
+    promise = createStorageBackend(name);
+    backendCache.set(name, promise);
+  }
+  return promise;
+}
+
+/** The ACTIVE backend name (`MEDIA_BACKEND`), resolved once per process. */
+function resolveActiveBackendName(): Promise<StorageBackendName> {
+  if (!activeBackendNamePromise) {
+    // Wrapped so a fail-closed selector throw becomes a REJECTED PROMISE that
+    // is cached — the process stays fail-closed instead of retrying a
+    // known-bad configuration on every request.
+    activeBackendNamePromise = Promise.resolve().then(() =>
+      resolveStorageBackendName()
+    );
+  }
+  return activeBackendNamePromise;
+}
 
 /**
  * The process-wide backend, resolved lazily on first use and then cached. A
- * misconfigured `MEDIA_BACKEND` therefore throws on the first storage
+ * misconfigured `MEDIA_BACKEND` therefore rejects on the first storage
  * operation (a clear server-side error) instead of at import time. The
  * promise is cached even on failure: the process stays fail-closed rather
  * than retrying a known-bad configuration.
+ *
+ * Pass `name` to address a SPECIFIC backend — used for objects whose
+ * `MediaAsset.storage` says where their bytes live, so a fleet that switched
+ * `MEDIA_BACKEND` can still read/delete the objects it wrote earlier.
  */
-export function getStorageBackend(): Promise<StorageBackend> {
-  if (!activeBackendPromise) activeBackendPromise = createStorageBackend();
-  return activeBackendPromise;
+export function getStorageBackend(
+  name?: StorageBackendName
+): Promise<StorageBackend> {
+  if (name !== undefined) return cachedBackend(name);
+  return resolveActiveBackendName().then(cachedBackend);
+}
+
+/**
+ * The backend that owns the bytes of an object recorded as `storage`.
+ *
+ *   LOCAL_PRIVATE → the private filesystem volume (no credentials involved);
+ *   S3            → the S3/R2 object store;
+ *   omitted       → the ACTIVE backend (the historical call shape);
+ *   anything else → THROWS. A non-managed value (EXTERNAL_URL, junk, an empty
+ *                   column) has no bytes for this server to move, and failing
+ *                   closed is how every other selector here behaves.
+ */
+export async function storageBackendForObject(
+  storage?: unknown
+): Promise<StorageBackend> {
+  if (storage === undefined || storage === null) return getStorageBackend();
+  const name = backendNameForStorageValue(storage);
+  if (!name) {
+    throw new Error(
+      `Refusing to move bytes for a non-managed MediaAsset.storage value: ` +
+        `${JSON.stringify(String(storage).slice(0, 32))}. Managed private ` +
+        `storage is ${MANAGED_PRIVATE_STORAGE_VALUES.join(" or ")}.`
+    );
+  }
+  return getStorageBackend(name);
 }
 
 // ---------------------------------------------------------------------------
-// Public helpers — names and signatures preserved; they delegate to the
-// active backend, so no caller had to change.
+// Public helpers — names and existing call shapes preserved. Each one accepts
+// the object's recorded `MediaAsset.storage` as an OPTIONAL last argument so a
+// read/delete/stat targets the backend that actually holds those bytes;
+// omitted means "the active backend", exactly as before.
 // ---------------------------------------------------------------------------
 
-/** Persist bytes into private storage. Returns the storage key. */
+/**
+ * Persist bytes into private storage with the ACTIVE backend. Returns the
+ * storage key.
+ *
+ * A new `MediaAsset` row must record `activeMediaStorageValue()` alongside the
+ * key: the active backend/selector is the source of truth for where these
+ * bytes live — never the shape of the key or a filesystem path.
+ */
 export async function writePrivateFile(
   storageKey: string,
   data: Buffer | Uint8Array,
@@ -563,33 +751,65 @@ export async function writePrivateFile(
   return (await getStorageBackend()).write(storageKey, data, metadata);
 }
 
-export async function readPrivateFile(storageKey: string): Promise<Buffer> {
-  return (await getStorageBackend()).read(storageKey);
-}
-
-export async function deletePrivateFile(storageKey: string): Promise<void> {
-  return (await getStorageBackend()).delete(storageKey);
-}
-
-export async function privateFileStat(
-  storageKey: string
-): Promise<PrivateFileStat | null> {
-  return (await getStorageBackend()).stat(storageKey);
+export async function readPrivateFile(
+  storageKey: string,
+  storage?: unknown
+): Promise<Buffer> {
+  return (await storageBackendForObject(storage)).read(storageKey);
 }
 
 /**
- * Streaming, optionally ranged read of a private object.
+ * Delete a managed private object.
  *
- * Introduced to establish the contract an object-store backend will implement
- * so large private videos stop being fully buffered into memory. NOT yet
- * consumed by any route — the routes keep their current behaviour (and their
- * existing strict Range/416 handling) until they are migrated deliberately.
+ * Callers MUST delete the OBJECT before the `MediaAsset` row: if the object
+ * delete fails the row survives, the reference stays visible, and the next
+ * cleanup run retries — the bytes are never orphaned silently.
+ */
+export async function deletePrivateFile(
+  storageKey: string,
+  storage?: unknown
+): Promise<void> {
+  return (await storageBackendForObject(storage)).delete(storageKey);
+}
+
+export async function privateFileStat(
+  storageKey: string,
+  storage?: unknown
+): Promise<PrivateFileStat | null> {
+  return (await storageBackendForObject(storage)).stat(storageKey);
+}
+
+/**
+ * Streaming, optionally ranged read of a private object — the operation the
+ * byte-serving routes use so a large video/PDF is never fully buffered into
+ * memory. Range resolution is shared by every backend
+ * (`resolveStorageReadRange`), so 206/416 behaviour is identical whether the
+ * bytes are on the local volume or in R2. The ROUTE still owns the HTTP
+ * mapping (status, `Content-Range`, `Content-Length`, security headers).
  */
 export async function readPrivateFileStream(
   storageKey: string,
-  range?: StorageReadRange
+  range?: StorageReadRange,
+  storage?: unknown
 ): Promise<StorageStreamResult | null> {
-  return (await getStorageBackend()).readStream(storageKey, range);
+  return (await storageBackendForObject(storage)).readStream(storageKey, range);
+}
+
+/**
+ * Adapt a backend byte stream to a web `ReadableStream` — the body type a Next
+ * route handler returns — WITHOUT buffering it. This is what keeps a 512 MB
+ * session video out of server memory: the response is piped, not collected.
+ *
+ * The cast is a type-system artefact only (Node's `stream/web` ReadableStream
+ * vs the DOM lib's); at runtime it IS the web stream undici accepts. Nothing
+ * here decides authorization, sets a header, or exposes a backend URL — the
+ * route still owns status codes, `Content-Range`/`Content-Length` and every
+ * security header.
+ */
+export function storageStreamToWebResponseBody(
+  stream: Readable
+): ReadableStream<Uint8Array> {
+  return Readable.toWeb(stream) as unknown as ReadableStream<Uint8Array>;
 }
 
 // ---------------------------------------------------------------------------
@@ -602,8 +822,11 @@ export function sha256Buffer(data: Buffer | Uint8Array): string {
 }
 
 /** SHA-256 hex of a private-storage object, streamed (no full buffering). */
-export async function sha256PrivateFile(storageKey: string): Promise<string> {
-  return (await getStorageBackend()).sha256(storageKey);
+export async function sha256PrivateFile(
+  storageKey: string,
+  storage?: unknown
+): Promise<string> {
+  return (await storageBackendForObject(storage)).sha256(storageKey);
 }
 
 export function extFromMime(mime: string): string {

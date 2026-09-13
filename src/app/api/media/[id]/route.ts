@@ -1,17 +1,31 @@
 // GET /api/media/[id]
 //
-// The ONLY way to read a private media asset. Files live outside the public
-// web root under an unguessable random key, so there is no public URL at all.
+// The ONLY way to read a private media asset. Bytes live outside the public
+// web root under an unguessable random key, so there is no public URL at all —
+// neither on the local private volume (MediaAsset.storage = LOCAL_PRIVATE) nor
+// in the S3/R2 bucket (MediaAsset.storage = S3). Both are proxied:
+//
+//   Browser → this route (authorized) → StorageBackend → bytes
+//
+// No signed URL, no redirect to the object store, no credential, no bucket
+// hostname ever appears in a response.
+//
 // Every request is authorized here:
 //   * Session videos  -> admin/teacher, or a student of the owning batch when
 //                        the video is published.
 //   * Quiz evidence   -> ADMIN only (sensitive personal data).
-// Supports HTTP Range so videos can seek.
+// Supports HTTP Range so videos can seek. Bytes are STREAMED through the
+// storage abstraction's ranged read — a large video is never buffered whole.
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireUser, err } from "@/lib/api";
-import { readPrivateFile, privateFileStat } from "@/lib/media";
+import {
+  isManagedPrivateStorage,
+  privateFileStat,
+  readPrivateFileStream,
+  storageStreamToWebResponseBody,
+} from "@/lib/media";
 import { logSecurityEvent } from "@/lib/security";
 import { normalizeSchoolType } from "@/lib/school-type";
 
@@ -44,11 +58,14 @@ export async function GET(
   });
   if (!asset) return err("Not found", 404);
 
-  // External URLs are not proxied — the client uses them directly. A 404 (not
-  // a 400) keeps this route from confirming that the id is a REAL asset whose
-  // bytes simply live elsewhere: probing ids must never distinguish "exists
-  // but external" from "does not exist".
-  if (asset.storage === "EXTERNAL_URL" || !asset.storageKey) {
+  // External URLs are not proxied — the client uses them directly. Everything
+  // this route DOES serve is a managed private object: LOCAL_PRIVATE (private
+  // volume) or S3 (R2 bucket). A 404 (not a 400) keeps this route from
+  // confirming that the id is a REAL asset whose bytes simply live elsewhere:
+  // probing ids must never distinguish "exists but external" from "does not
+  // exist". Fail-closed — an unexpected/empty storage value is refused here
+  // too, never served as if it were private managed bytes.
+  if (!isManagedPrivateStorage(asset.storage) || !asset.storageKey) {
     return err("Not found", 404);
   }
 
@@ -104,13 +121,9 @@ export async function GET(
   }
 
   // ---- Serve (with Range support) -----------------------------------------
-  const stat = await privateFileStat(asset.storageKey);
-  if (!stat) return err("Not found", 404);
-
-  const buffer = await readPrivateFile(asset.storageKey).catch(() => null);
-  if (!buffer) return err("Not found", 404);
-
-  const total = buffer.length;
+  // `asset.storage` names the backend that holds these bytes (LOCAL_PRIVATE or
+  // S3); the storage abstraction does the I/O either way. Nothing below is
+  // reached before the authorization verdict above.
   const contentType = asset.mimeType || "application/octet-stream";
   const baseHeaders: Record<string, string> = {
     "Content-Type": contentType,
@@ -122,13 +135,23 @@ export async function GET(
   };
 
   const range = req.headers.get("range");
+  // The inclusive window to serve, or null for a full 200 response. A Range
+  // header that does not parse is IGNORED (full response) exactly as before;
+  // one that parses but cannot be satisfied is a 416.
+  let window: { start: number; end: number } | null = null;
+  // Whole-object size — only needed to validate a range and to build the 416
+  // `Content-Range: bytes */TOTAL`. A plain full read skips this round trip and
+  // takes the size from the streamed result instead.
+  let total = 0;
   if (range) {
     // Phase 20 — strict Range parsing (parity with /api/materials/[id]):
     // non-numeric / negative / out-of-range bounds are refused with 416
-    // rather than producing a malformed partial response (NaN coerces to 0 in
-    // `subarray`, which previously yielded a bogus 206 `bytes NaN-NaN/…`).
+    // rather than producing a malformed partial response.
     const match = /^bytes=(\d*)-(\d*)$/.exec(range.trim());
     if (match) {
+      const stat = await privateFileStat(asset.storageKey, asset.storage);
+      if (!stat) return err("Not found", 404);
+      total = stat.size;
       const startRaw = match[1];
       const endRaw = match[2];
       const start = startRaw === "" ? 0 : Number(startRaw);
@@ -147,20 +170,49 @@ export async function GET(
           headers: { ...baseHeaders, "Content-Range": `bytes */${total}` },
         });
       }
-      const chunk = buffer.subarray(start, end + 1);
-      return new NextResponse(new Uint8Array(chunk), {
-        status: 206,
-        headers: {
-          ...baseHeaders,
-          "Content-Range": `bytes ${start}-${end}/${total}`,
-          "Content-Length": String(chunk.length),
-        },
-      });
+      window = { start, end };
     }
   }
 
-  return new NextResponse(new Uint8Array(buffer), {
+  // STREAM the object (or exactly the requested window) instead of buffering
+  // it: a session video may be hundreds of megabytes, and the ranged read is
+  // resolved identically by every backend, so 206 bookkeeping does not depend
+  // on where the bytes live.
+  let result;
+  try {
+    result = await readPrivateFileStream(
+      asset.storageKey,
+      window ?? undefined,
+      asset.storage
+    );
+  } catch (e) {
+    // The window was validated against `total` above, so a RangeError here
+    // means the object changed size underneath us — still an unsatisfiable
+    // range, answered with the same 416 shape.
+    if (e instanceof RangeError) {
+      return new NextResponse(null, {
+        status: 416,
+        headers: { ...baseHeaders, "Content-Range": `bytes */${total}` },
+      });
+    }
+    throw e;
+  }
+  // Missing object → the same non-oracle 404 as an unknown id.
+  if (!result) return err("Not found", 404);
+
+  if (window) {
+    return new NextResponse(storageStreamToWebResponseBody(result.stream), {
+      status: 206,
+      headers: {
+        ...baseHeaders,
+        "Content-Range": `bytes ${result.start}-${result.end}/${result.size}`,
+        "Content-Length": String(result.contentLength),
+      },
+    });
+  }
+
+  return new NextResponse(storageStreamToWebResponseBody(result.stream), {
     status: 200,
-    headers: { ...baseHeaders, "Content-Length": String(total) },
+    headers: { ...baseHeaders, "Content-Length": String(result.size) },
   });
 }

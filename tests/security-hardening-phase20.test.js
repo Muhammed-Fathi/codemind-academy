@@ -256,7 +256,16 @@ section("3. Authorization matrix — every content route × the 10 checks");
   ok(/resolveLessonCourseId/.test(sp), "check #4/#6 (course + session-in-course) via chain resolution");
   const sm = read("src/lib/session-materials.ts");
   ok(/canAccessLesson\(student\.id, lesson\.id\)/.test(sm), "material check #3–8 reuses canAccessLesson");
-  ok(/storage !== \"LOCAL_PRIVATE\"/.test(sm), "material check #10 (asset private + local)");
+  // Check #10 — the asset must be PRIVATE and live in a MANAGED PRIVATE
+  // backend. Managed private storage is LOCAL_PRIVATE (the private volume) OR
+  // S3 (the R2 bucket); the predicate is the SHARED one from src/lib/media.ts,
+  // so widening the backend set cannot relax privacy and no gate can drift back
+  // to a local-only assumption. Refusal is still the non-oracle ASSET_NOT_FOUND.
+  ok(/!isManagedPrivateStorage\(asset\.storage\)/.test(sm), "material check #10 (asset in managed private storage)");
+  ok(/isManagedPrivateStorage,/.test(sm) && /from \"@\/lib\/media\"/.test(sm), "material check #10 uses the shared storage predicate from lib/media");
+  ok(/!asset\.storageKey/.test(sm), "material check #10 still requires a storageKey");
+  ok(/asset\.isPrivate !== true/.test(sm), "material check #10 still requires isPrivate");
+  ok(/MANAGED_PRIVATE_STORAGE_VALUES = \[\s*\"LOCAL_PRIVATE\",\s*\"S3\",\s*\]/.test(read("src/lib/media.ts")), "managed private storage is exactly LOCAL_PRIVATE + S3 (EXTERNAL_URL excluded)");
   ok(/isActive/.test(sm), "material check #9 (active material)");
 }
 

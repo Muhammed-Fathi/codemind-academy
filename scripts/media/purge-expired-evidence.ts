@@ -15,16 +15,31 @@
 //     moved. Evidence retention and security/audit retention are separate
 //     systems; this job cannot blur them.
 //
+// WHICH BACKEND HOLDS THE BYTES
+//   A detached asset's `MediaAsset.storage` says where its bytes live, and this
+//   script deletes them through the SAME storage abstraction the application
+//   uses (`src/lib/media.ts`), so BOTH managed private backends are supported:
+//     LOCAL_PRIVATE -> the private volume under --media-root (LocalStorageBackend)
+//     S3            -> the S3/R2 bucket, configured by the server-side R2_* env
+//                      vars (S3StorageBackend; no signed URL, no public access,
+//                      no credential ever printed)
+//   An S3-backed object is NEVER silently skipped: if the object store is not
+//   configured in this environment, the failure is RECORDED per object and the
+//   run exits 2 for a retry, exactly like a file that could not be unlinked.
+//
 // SAFETY
 //   * DRY RUN IS THE DEFAULT. Deletion requires BOTH --live AND --yes.
 //     Dry-run opens SQLite read-only and issues only SELECTs on PostgreSQL,
 //     so a dry run literally cannot write.
-//   * Evidence rows delete in ONE transaction (all-or-nothing); private files
-//     delete AFTER the commit, per-file best-effort with failures RECORDED in
-//     the metrics (a file that fails to delete is retried on the next run —
+//   * Evidence rows delete in ONE transaction (all-or-nothing); private objects
+//     delete AFTER the commit, per-object best-effort with failures RECORDED in
+//     the metrics (an object that fails to delete is retried on the next run —
 //     the next run finds an unreferenced asset and finishes the job).
-//   * Every file deletion is traversal-safe (resolved under --media-root;
-//     keys escaping the root are refused and recorded).
+//   * Every LOCAL deletion is traversal-safe (resolved under --media-root;
+//     keys escaping the root are refused and recorded). S3 keys are addressed
+//     verbatim inside the configured bucket — there is no filesystem to escape.
+//   * Deletions are VERIFIED (a stat after the delete), so an object that
+//     survives is reported as a failure rather than counted as removed.
 //   * Metrics JSON (--metrics path, default stdout-adjacent <db>.purge.json step
 //     is skipped unless requested… default: printed to stdout only) records
 //     scanned/expired/deleted/detached/failed + protected-table counts, so a
@@ -41,7 +56,14 @@ import {
   selectExpiredEvidence,
   EVIDENCE_PURGE_PROTECTED_TABLES,
 } from "@/lib/evidence-retention";
-import { MEDIA_ROOT } from "@/lib/media";
+import {
+  MEDIA_ROOT,
+  LocalStorageBackend,
+  backendNameForStorageValue,
+  createStorageBackend,
+  isManagedPrivateStorage,
+  type StorageBackend,
+} from "@/lib/media";
 
 type Args = {
   sqlite?: string;
@@ -230,7 +252,9 @@ async function main() {
     const ph = (i: number) => (isSqlite ? "?" : `$${i}`);
     const expiredIds = expired.map((e) => e.id);
     let deletedEvidenceRows = 0;
-    const detachedKeys: string[] = [];
+    // Detached managed-private objects: { key, storage } — `storage` decides
+    // WHICH backend has to delete the bytes (LOCAL_PRIVATE volume vs S3/R2).
+    const detachedObjects: { key: string; storage: string }[] = [];
     await backend.begin();
     try {
       if (expiredIds.length) {
@@ -265,11 +289,23 @@ async function main() {
         if (!asset.length) continue;
         await backend.run(`DELETE FROM "MediaAsset" WHERE "id" = ${ph(1)}`, [assetId]);
         metrics["deletedAssetRows"] = Number(metrics["deletedAssetRows"]) + 1;
-        if (asset[0].storage === "LOCAL_PRIVATE" && asset[0].storageKey) {
-          detachedKeys.push(String(asset[0].storageKey));
+        // BOTH managed private backends are collected. A non-managed value
+        // (EXTERNAL_URL, empty, unknown) has no bytes of ours to remove.
+        if (isManagedPrivateStorage(asset[0].storage) && asset[0].storageKey) {
+          detachedObjects.push({
+            key: String(asset[0].storageKey),
+            storage: String(asset[0].storage).trim().toUpperCase(),
+          });
         }
       }
-      metrics["detachedAssets"] = detachedKeys.length;
+      metrics["detachedAssets"] = detachedObjects.length;
+      metrics["detachedByStorage"] = detachedObjects.reduce<Record<string, number>>(
+        (acc, o) => {
+          acc[o.storage] = (acc[o.storage] ?? 0) + 1;
+          return acc;
+        },
+        {}
+      );
       await backend.commit();
     } catch (e) {
       await backend.rollback();
@@ -277,21 +313,59 @@ async function main() {
     }
     metrics["deletedEvidenceRows"] = deletedEvidenceRows;
 
-    // 4. Files AFTER commit (best-effort per file; failures recorded + retried
-    // on the next run, which finds the asset row already gone and the key
-    // still on disk via the manifest… note: asset row is gone, so a failed
-    // file delete leaves an orphaned FILE (safe direction — bytes without a
-    // DB pointer are invisible to the app and reported in metrics).
+    // 4. Objects AFTER commit (best-effort per object; failures recorded +
+    // retried on the next run, which finds the asset row already gone… note:
+    // the asset row is gone, so a failed object delete leaves orphaned BYTES
+    // (the safe direction — objects without a DB pointer are invisible to the
+    // app and are reported in the metrics, never skipped silently).
+    //
+    // Deletion goes through the storage abstraction, so an S3-backed object is
+    // removed from the bucket and a LOCAL_PRIVATE object from the volume.
+    const backendCache = new Map<string, Promise<StorageBackend>>();
+    const backendFor = (storageValue: string): Promise<StorageBackend> => {
+      const name = backendNameForStorageValue(storageValue) ?? "local";
+      let promise = backendCache.get(name);
+      if (!promise) {
+        promise =
+          name === "local"
+            ? // --media-root is the operator's override for the local volume.
+              Promise.resolve(new LocalStorageBackend(o.mediaRoot))
+            : // S3/R2: built from server env (fail-closed when unconfigured —
+              // recorded per object below, so nothing is skipped silently).
+              createStorageBackend(name);
+        backendCache.set(name, promise);
+      }
+      return promise;
+    };
+
     let deletedFiles = 0;
     const failedFiles: string[] = [];
-    for (const key of detachedKeys) {
-      const abs = resolveSafePath(o.mediaRoot, key);
-      if (!abs) { failedFiles.push(`${key}: escapes media root`); continue; }
+    for (const object of detachedObjects) {
+      const key = object.key;
+      let storage: StorageBackend;
       try {
-        await fs.promises.unlink(abs);
+        storage = await backendFor(object.storage);
+      } catch (e: any) {
+        failedFiles.push(`${key}: ${e?.message || e}`);
+        continue;
+      }
+      if (storage.name === "local") {
+        // Traversal guard for the filesystem volume (unchanged behaviour).
+        const abs = resolveSafePath(o.mediaRoot, key);
+        if (!abs) { failedFiles.push(`${key}: escapes media root`); continue; }
+      }
+      try {
+        await storage.delete(key);
+        // `delete` is idempotent and the local backend swallows I/O errors, so
+        // VERIFY convergence instead of trusting the call: an object that
+        // survives is a recorded failure (exit 2 → retry run), never a silent
+        // skip. A missing object (already gone) is convergence, as before.
+        if (await storage.stat(key)) {
+          failedFiles.push(`${key}: still present after delete`);
+          continue;
+        }
         deletedFiles++;
       } catch (e: any) {
-        if (e?.code === "ENOENT") { deletedFiles++; continue; } // already gone = converged
         failedFiles.push(`${key}: ${e?.message || e}`);
       }
     }

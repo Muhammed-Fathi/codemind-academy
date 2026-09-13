@@ -7,7 +7,7 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireRole } from "@/lib/api";
-import { deletePrivateFile } from "@/lib/media";
+import { deletePrivateFile, isManagedPrivateStorage } from "@/lib/media";
 import { getServerT } from "@/lib/i18n-server";
 
 export async function PATCH(
@@ -61,8 +61,15 @@ export async function DELETE(
     where: { mediaAssetId: video.mediaAssetId },
   });
   if (stillUsed === 0) {
-    if (video.media.storage === "LOCAL_PRIVATE" && video.media.storageKey) {
-      await deletePrivateFile(video.media.storageKey);
+    // Managed private bytes — LOCAL_PRIVATE on the private volume OR S3 in the
+    // R2 bucket — are removed through the SAME storage abstraction, addressed
+    // by the backend the row records. ORDER IS THE SAFETY PROPERTY: the object
+    // goes first, the MediaAsset row second, so a failed object delete (an S3
+    // service error, a volume failure) rejects this handler and leaves the row
+    // in place — the bytes keep a pointer and the delete can be retried, rather
+    // than being orphaned silently.
+    if (isManagedPrivateStorage(video.media.storage) && video.media.storageKey) {
+      await deletePrivateFile(video.media.storageKey, video.media.storage);
     }
     await db.mediaAsset.delete({ where: { id: video.mediaAssetId } }).catch(() => {});
   }
