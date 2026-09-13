@@ -171,7 +171,15 @@ async function main() {
         if (!full.endsWith(".ts")) continue;
         const text = fs.readFileSync(full, "utf8");
         for (const pat of ["$queryRaw", "$executeRaw", "$queryRawUnsafe", "$executeRawUnsafe"]) {
-          if (text.includes(pat)) rawHits.push(`${path.relative(REPO, full)}:${pat}`);
+          if (text.includes(pat)) {
+            // Normalize the discovered relative path to POSIX separators so the
+            // carve-out comparison below is platform-independent: on Windows
+            // path.relative yields "src\lib\db-serialization.ts", which would
+            // never match the POSIX literal (and would misclassify the approved
+            // advisory-lock helper as forbidden raw SQL).
+            const rel = path.relative(REPO, full).split(path.sep).join("/");
+            rawHits.push(`${rel}:${pat}`);
+          }
         }
       }
     };

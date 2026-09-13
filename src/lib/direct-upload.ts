@@ -1,3 +1,5 @@
+"use client";
+
 // CodeMind Academy — browser-side presigned direct-upload helper (Phase 23).
 //
 // Runs in the ADMIN UI only. Implements the three legs of the direct flow:

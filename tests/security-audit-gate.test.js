@@ -467,28 +467,179 @@ section("10. Verified non-exposures (documented, not speculative controls)");
 // ---------------------------------------------------------------------------
 {
   // SSRF: no server-side fetch of a caller-supplied URL exists. The only
-  // outbound network I/O is nodemailer (SMTP) and the z-ai SDK.
+  // outbound network I/O is nodemailer (SMTP), the z-ai SDK, and the ONE
+  // browser-side leg of the Phase 23 presigned direct upload (the pinned
+  // carve-out below).
+  // Original threat: server code (API routes / server components / server
+  // actions) fetching a caller-influenced URL could reach cloud-metadata and
+  // internal-network endpoints. The rule: every fetch() in a non-client src
+  // file must target a LITERAL same-origin path. The single sanctioned
+  // exception is pinned to its exact shape below — a blanket file exclusion
+  // is NOT acceptable: the carve-out must fail on ANY shape deviation.
+  const DIRECT_UPLOAD = "src/lib/direct-upload.ts";
   const srcFiles = execSync(
     "find src -name '*.ts' -o -name '*.tsx' | head -400",
     { cwd: REPO, encoding: "utf8" }
   )
     .trim()
     .split("\n");
-  let serverFetches = 0;
-  for (const f of srcFiles) {
-    const t = read(f);
-    if (t.startsWith('"use client"') || t.includes('\n"use client"')) continue;
-    // A server-side fetch is one whose target is not a literal same-origin path.
-    for (const m of t.matchAll(/\bfetch\(\s*([^,)]+)/g)) {
-      const arg = m[1].trim();
-      if (/^["'`]\//.test(arg)) continue; // "/api/..." — same-origin, not SSRF
-      serverFetches++;
+  const isClientFile = (t) =>
+    t.startsWith('"use client"') || t.includes('\n"use client"');
+  const fetchArgsOf = (t) =>
+    [...t.matchAll(/\bfetch\(\s*([^,)]+)/g)].map((m) => m[1].trim());
+  const genericSsrfViolations = (files) => {
+    const v = [];
+    for (const f of files) {
+      if (f === DIRECT_UPLOAD) continue; // pinned to its exact shape below — never skipped blind
+      const t = read(f);
+      if (isClientFile(t)) continue;
+      // A server-side fetch is one whose target is not a literal same-origin path.
+      for (const arg of fetchArgsOf(t)) {
+        if (/^["'`]\//.test(arg)) continue; // "/api/..." — same-origin, not SSRF
+        v.push(`${f}: fetch(${arg})`);
+      }
+    }
+    return v;
+  };
+  const ssrfViolations = genericSsrfViolations(srcFiles);
+  ok(
+    ssrfViolations.length === 0,
+    `no server-side fetch of a caller-supplied URL exists (SSRF non-exposure)${
+      ssrfViolations.length ? " (" + ssrfViolations.slice(0, 3).join(", ") + ")" : ""
+    }`
+  );
+
+  // Phase 23 PINNED carve-out: the browser-side direct-upload helper is the
+  // ONLY src module that may fetch a non-literal URL, and only in exactly
+  // this shape — each check below is a fail-closed pin:
+  //   * a client-only module ("use client"), imported only by client
+  //     components → no server-side execution path exists (a future server
+  //     import would receive a client reference it cannot call);
+  //   * legs 1/3: fixed POSTs to the literal same-origin endpoints
+  //     /api/admin/media-uploads/init and .../complete (session-authenticated
+  //     + rate-limited on the server), defaults locked to those literals;
+  //   * leg 2: exactly ONE fetch of `upload.uploadUrl` — the short-lived
+  //     presigned PUT grant returned by the init endpoint (method pinned to
+  //     "PUT" server-side in src/lib/media-upload.ts);
+  //   * no credentials option (browser default "same-origin" — the
+  //     cross-origin R2 PUT carries no cookies), no redirect override, no
+  //     other variable fetch anywhere in the file.
+  const auditDirectUpload = (du) => {
+    const v = [];
+    const args = fetchArgsOf(du);
+    if (!/^"use client";?\s*$/.test(du.split("\n")[0] ?? ""))
+      v.push("missing the leading 'use client' directive");
+    if (args.length !== 2)
+      v.push(`expected exactly 2 fetch calls, found ${args.length}: ${args.join(", ")}`);
+    if (!args.includes("upload.uploadUrl"))
+      v.push("leg 2 no longer fetches the init-granted upload.uploadUrl");
+    if (!args.includes("url"))
+      v.push("postJson fetch target is no longer its endpoint parameter");
+    if (!/fetch\(\s*upload\.uploadUrl\s*,\s*{\s*method:\s*upload\.method\s*\|\|\s*"PUT"/.test(du))
+      v.push("leg 2 is not the fixed PUT (server-granted method, 'PUT' fallback)");
+    if (!/fetch\(\s*url\s*,\s*{\s*method:\s*"POST"/.test(du))
+      v.push("postJson is no longer a fixed POST");
+    if (!/input\.initEndpoint\s*\?\?\s*"\/api\/admin\/media-uploads\/init"/.test(du))
+      v.push("init endpoint default is no longer the same-origin literal");
+    if (!/input\.completeEndpoint\s*\?\?\s*"\/api\/admin\/media-uploads\/complete"/.test(du))
+      v.push("complete endpoint default is no longer the same-origin literal");
+    const calls = [...du.matchAll(/\bpostJson\(\s*([A-Za-z_$][\w$]*)\s*,/g)].map((m) => m[1]);
+    if (calls.length !== 2 || calls[0] !== "initEndpoint" || calls[1] !== "completeEndpoint")
+      v.push(`postJson called with unpinned arguments: ${JSON.stringify(calls)}`);
+    if (!/const\s+upload\s*=\s*init\.data\.upload/.test(du))
+      v.push("the upload grant is no longer sourced from the init response");
+    if (/credentials\s*:/.test(du))
+      v.push("a credentials option is attached to a fetch");
+    if (/redirect\s*:/.test(du))
+      v.push("redirect handling is overridden");
+    return v;
+  };
+  const duImporters = srcFiles.filter(
+    (f) => f !== DIRECT_UPLOAD && /from\s+["']@\/lib\/direct-upload["']/.test(read(f))
+  );
+  ok(
+    duImporters.length > 0 && duImporters.every((f) => isClientFile(read(f))),
+    `direct-upload imported only by client components (${
+      duImporters.length ? duImporters.join(", ") : "none found"
+    })`
+  );
+  const duViolations = auditDirectUpload(read(DIRECT_UPLOAD));
+  ok(
+    duViolations.length === 0,
+    `direct-upload is pinned to the approved browser direct-upload shape${
+      duViolations.length ? " (" + duViolations.join("; ") + ")" : ""
+    }`
+  );
+  const mediaUpload = read("src/lib/media-upload.ts");
+  ok(
+    /uploadUrl:\s*grant\.url/.test(mediaUpload) && /method:\s*"PUT"/.test(mediaUpload),
+    "the init grant pins method 'PUT' and the presigned uploadUrl (server-issued, no credential)"
+  );
+
+  // Negative tests — the carve-out and the generic rule must still FAIL on
+  // regressions. Production source is only READ here: in-memory mutations
+  // prove the shape pins, and two throwaway probe files (created and removed
+  // within this run) prove the end-to-end generic rule over the real tree.
+  const duSrc = read(DIRECT_UPLOAD);
+  ok(
+    auditDirectUpload(duSrc.replace('method: upload.method || "PUT"', 'method: "GET"')).length > 0,
+    "negative: changing leg 2 off the fixed PUT is caught"
+  );
+  ok(
+    auditDirectUpload(duSrc.replace('method: upload.method || "PUT",', 'method: upload.method || "PUT",\n      credentials: "include",')).length > 0,
+    "negative: attaching credentials to the transfer fetch is caught"
+  );
+  ok(
+    auditDirectUpload(duSrc.replace("fetch(upload.uploadUrl, {", "fetch(input.uploadUrl, {")).length > 0,
+    "negative: a caller-provided transfer URL is caught"
+  );
+  ok(
+    auditDirectUpload(duSrc.replace('input.initEndpoint ?? "/api/admin/media-uploads/init"', "input.initEndpoint")).length > 0,
+    "negative: losing the same-origin init-endpoint default is caught"
+  );
+  ok(
+    auditDirectUpload(duSrc + "\nexport async function rawFetch(u: string) { return fetch(u); }\n").length > 0,
+    "negative: a new variable-URL fetch inside the helper is caught"
+  );
+  ok(
+    auditDirectUpload(duSrc.replace('"use client";\n', "")).length > 0,
+    "negative: dropping the 'use client' boundary is caught"
+  );
+  {
+    const probeDir = path.join(REPO, "src", "app", "api", "__ssrf_probe__");
+    const probeLib = path.join(REPO, "src", "__ssrf_probe__.ts");
+    try {
+      fs.mkdirSync(probeDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(probeDir, "route.ts"),
+        "export async function GET(req: Request) {\n" +
+        "  const u = new URL(req.url).searchParams.get(\"u\") ?? \"\";\n" +
+        "  const r = await fetch(u);\n" +
+        "  return new Response(await r.text());\n" +
+        "}\n"
+      );
+      fs.writeFileSync(
+        probeLib,
+        "export async function probeFetch(u: string) {\n  return fetch(u);\n}\n"
+      );
+      const probeViolations = genericSsrfViolations([
+        ...srcFiles,
+        "src/app/api/__ssrf_probe__/route.ts",
+        "src/__ssrf_probe__.ts",
+      ]);
+      ok(
+        probeViolations.some((x) => x.startsWith("src/app/api/__ssrf_probe__/route.ts:")),
+        "negative: a server API route doing fetch(userUrl) is caught"
+      );
+      ok(
+        probeViolations.some((x) => x.startsWith("src/__ssrf_probe__.ts:")),
+        "negative: another src/ file adding fetch(variable) is caught"
+      );
+    } finally {
+      fs.rmSync(probeDir, { recursive: true, force: true });
+      fs.rmSync(probeLib, { force: true });
     }
   }
-  ok(
-    serverFetches === 0,
-    "no server-side fetch of a caller-supplied URL exists (SSRF non-exposure)"
-  );
 
   // SQL injection: every query goes through the ORM. Phase 23 carve-out: the
   // presigned upload finalization takes a PostgreSQL TRANSACTION-SCOPED
