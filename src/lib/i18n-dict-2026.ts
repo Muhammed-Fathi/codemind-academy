@@ -599,6 +599,19 @@ export const DICT_2026: Record<string, DictEntry> = {
     ar: "تعذر حساب المستلمين — الإخطار هيتم بالقواعد نفسها عند الفتح",
     en: "Could not compute recipients — notification follows the same rules at open",
   },
+  // Phase 23 — presigned direct-upload failure states (per flow stage).
+  "admin.506": {
+    ar: "تعذّر بدء الرفع. حاول تاني.",
+    en: "Could not start the upload. Please try again.",
+  },
+  "admin.507": {
+    ar: "فشل رفع الملف للتخزين. حاول تاني.",
+    en: "Uploading the file to storage failed. Please try again.",
+  },
+  "admin.508": {
+    ar: "تعذّر تأكيد الرفع — الملف ما اتخزنش.",
+    en: "Could not finalize the upload — the file was not saved.",
+  },
 
   // ---------------- Phase 18: teacher workflow completion ----------------
   // Server messages for homework authoring, question management, track-scope

@@ -76,8 +76,9 @@ const nextConfig: NextConfig = {
   // only when MEDIA_BACKEND=s3. Keep the SDK OUT of the webpack bundle and
   // resolve it from node_modules at runtime: it is server-only, never needed
   // in a MEDIA_BACKEND=local deployment, and @smithy internals misbehave when
-  // bundled by webpack in standalone output.
-  serverExternalPackages: ["@aws-sdk/client-s3"],
+  // bundled by webpack in standalone output. The request presigner (Phase 23
+  // direct uploads) is part of the same server-only SDK family.
+  serverExternalPackages: ["@aws-sdk/client-s3", "@aws-sdk/s3-request-presigner"],
   // Remove the X-Powered-By: Next.js banner (framework fingerprinting).
   poweredByHeader: false,
   async headers() {
