@@ -22,6 +22,7 @@ const { execFileSync, execSync } = require("child_process");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const { pathToFileURL } = require("node:url");
 
 const REPO = path.join(__dirname, "..");
 const read = (rel) => fs.readFileSync(path.join(REPO, rel), "utf8");
@@ -343,9 +344,11 @@ async function main() {
     // 8a. Pure-TS rule behavior via a tsx harness (canonical module, not a copy).
     const harnessDir = fs.mkdtempSync(path.join(os.tmpdir(), "cm-p21-harness-"));
     const harness = path.join(harnessDir, "rule.mts");
+    const evidenceRetentionUrl = pathToFileURL(path.join(REPO, "src", "lib", "evidence-retention.ts")).href;
+    const storageQuotasUrl = pathToFileURL(path.join(REPO, "src", "lib", "storage-quotas.ts")).href;
     fs.writeFileSync(harness, `
-import { selectExpiredEvidence, isEvidenceExpired, resolveRetentionDays, EVIDENCE_PURGE_PROTECTED_TABLES } from ${JSON.stringify(path.join(REPO, "src", "lib", "evidence-retention.ts"))};
-import { parseBytesEnv, checkQuota, assertVolumeQuota } from ${JSON.stringify(path.join(REPO, "src", "lib", "storage-quotas.ts"))};
+import { selectExpiredEvidence, isEvidenceExpired, resolveRetentionDays, EVIDENCE_PURGE_PROTECTED_TABLES } from ${JSON.stringify(evidenceRetentionUrl)};
+import { parseBytesEnv, checkQuota, assertVolumeQuota } from ${JSON.stringify(storageQuotasUrl)};
 const now = new Date("2026-09-11T00:00:00.000Z");
 const rows = [
   { id: "past", retainUntil: new Date("2026-01-01T00:00:00.000Z") },
