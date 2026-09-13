@@ -5,7 +5,10 @@
 //   * kind=STATUS   — a camera state change (granted / denied / unavailable /
 //                     interrupted / unclear). No media is stored.
 //   * kind=SNAPSHOT — a single still image captured with the student's
-//                     consent. Stored privately, never in a public path.
+//                     consent. Stored privately in the ACTIVE managed backend
+//                     (LOCAL_PRIVATE volume, or the S3/R2 bucket when
+//                     MEDIA_BACKEND=s3), never in a public path, and readable
+//                     only through the ADMIN-only /api/media/[id] proxy.
 //
 // Privacy: snapshots only (no continuous recording), a strict size/type limit,
 // a retention deadline, and a hard cap per attempt so we never store more data
@@ -16,6 +19,7 @@ import { db } from "@/lib/db";
 import { requireUser, ok, err, denyProgression } from "@/lib/api";
 import { canAccessQuiz } from "@/lib/session-progress";
 import {
+  activeMediaStorageValue,
   MAX_IMAGE_BYTES,
   extFromMime,
   isAllowedImageMime,
@@ -124,16 +128,22 @@ export async function POST(
 
   const storageKey = makeStorageKey("quiz-evidence", extFromMime(mime));
   const buffer = Buffer.from(await file.arrayBuffer());
+  // WHERE the snapshot goes is decided by the ACTIVE backend selector — never
+  // inferred from the key/path: LOCAL_PRIVATE under MEDIA_BACKEND=local, S3
+  // under MEDIA_BACKEND=s3. Resolved BEFORE the write so an unsupported
+  // MEDIA_BACKEND fails closed with nothing stored anywhere.
+  const storage = activeMediaStorageValue();
   // Phase 21 — volume quota, checked BEFORE any byte is written. No-op
   // unless the operator sets MEDIA_QUOTA_BYTES.
   const quota = await assertVolumeQuota(buffer.length);
   if (!quota.ok) return err(tApi("api.215"), 413);
-  await writePrivateFile(storageKey, buffer);
+  await writePrivateFile(storageKey, buffer, { mimeType: mime });
 
   const asset = await db.mediaAsset.create({
     data: {
       kind: "IMAGE",
-      storage: "LOCAL_PRIVATE",
+      // Matches the backend that just took the bytes.
+      storage,
       storageKey,
       mimeType: mime,
       sizeBytes: buffer.length,

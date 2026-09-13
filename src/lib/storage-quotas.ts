@@ -18,6 +18,11 @@
 //     staging dir in front of object storage). It never assumes a filesystem
 //     type, never shells out (no `du`), and never follows symlinks out of the
 //     root (see getDirectoryBytes).
+//   * BACKEND AWARE: it is a LOCAL-VOLUME quota. When the active backend is
+//     `s3` (objects in a bucket, not files on MEDIA_ROOT) it reports
+//     `enforced: false, reason: "BACKEND_NOT_LOCAL_VOLUME"` rather than
+//     measuring an unrelated directory — see assertVolumeQuota. Local
+//     enforcement (MEDIA_BACKEND unset or "local") is unchanged.
 //
 // ENV
 //   MEDIA_QUOTA_BYTES="10737418240"    total volume cap (plain bytes, or a
@@ -27,7 +32,7 @@
 
 import { promises as fs } from "fs";
 import path from "path";
-import { MEDIA_ROOT } from "@/lib/media";
+import { MEDIA_ROOT, resolveStorageBackendName } from "@/lib/media";
 
 export type QuotaConfig = {
   /** 0 = unlimited. */
@@ -78,7 +83,12 @@ export function resolveQuotaConfig(env: NodeJS.ProcessEnv = process.env): QuotaC
 }
 
 export type QuotaVerdict =
-  | { ok: true; enforced: false }
+  | {
+      ok: true;
+      enforced: false;
+      /** Why nothing was measured. Absent on older call paths. */
+      reason?: "UNSET" | "BACKEND_NOT_LOCAL_VOLUME";
+    }
   | { ok: true; enforced: true; currentBytes: number; incomingBytes: number; quotaBytes: number }
   | {
       ok: false;
@@ -152,13 +162,30 @@ export async function getDirectoryBytes(root: string = MEDIA_ROOT): Promise<numb
  * Enforce the volume quota for an incoming upload of `incomingBytes`.
  * Zero I/O when MEDIA_QUOTA_BYTES is unset (the default). Call BEFORE writing
  * any file or DB row.
+ *
+ * BACKEND AWARENESS: this quota measures the LOCAL private volume (MEDIA_ROOT),
+ * because that is the resource it exists to protect — a disk an operator can
+ * fill. Under `MEDIA_BACKEND=s3` the bytes are objects in a bucket, so walking
+ * a filesystem would measure the WRONG store and (worse) would charge new
+ * uploads for unrelated bytes left on the local disk from before the switch.
+ * In that case the verdict says so explicitly
+ * (`reason: "BACKEND_NOT_LOCAL_VOLUME"`) instead of pretending to enforce:
+ * bucket-side limits belong to the operator's object-store policy. Passing an
+ * explicit `root` (tests, or a local staging directory in front of object
+ * storage) still measures that root whatever the active backend is.
  */
 export async function assertVolumeQuota(
   incomingBytes: number,
   opts: { root?: string; env?: NodeJS.ProcessEnv } = {}
 ): Promise<QuotaVerdict> {
   const { quotaBytes } = resolveQuotaConfig(opts.env);
-  if (!(quotaBytes > 0)) return { ok: true, enforced: false };
+  if (!(quotaBytes > 0)) return { ok: true, enforced: false, reason: "UNSET" };
+  if (
+    opts.root === undefined &&
+    resolveStorageBackendName(opts.env) !== "local"
+  ) {
+    return { ok: true, enforced: false, reason: "BACKEND_NOT_LOCAL_VOLUME" };
+  }
   const currentBytes = await getDirectoryBytes(opts.root ?? MEDIA_ROOT);
   return checkQuota({ currentBytes, incomingBytes, quotaBytes });
 }

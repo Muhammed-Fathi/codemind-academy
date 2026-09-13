@@ -2,14 +2,22 @@
 //
 // THE CONTRACT
 // ===========
-// Session PDFs are stored ONCE as a `MediaAsset(DOCUMENT, LOCAL_PRIVATE)` and
-// referenced by a `Material(ADMIN_UPLOADED)` row hanging off a Lesson. There is
-// no second PDF table, no public filesystem path, and no new `pdfUrl` writes.
+// Session PDFs are stored ONCE as a `MediaAsset(DOCUMENT, <managed private
+// storage>)` and referenced by a `Material(ADMIN_UPLOADED)` row hanging off a
+// Lesson. There is no second PDF table, no public filesystem path, and no new
+// `pdfUrl` writes.
 //
 //   Lesson
 //     └── Material(lessonId, kind=ADMIN_UPLOADED, trackScope, isActive, mediaAssetId)
-//           └── MediaAsset(kind=DOCUMENT, storage=LOCAL_PRIVATE, storageKey, isPrivate)
-//                 └── bytes under MEDIA_ROOT (never under /public)
+//           └── MediaAsset(kind=DOCUMENT, storage=LOCAL_PRIVATE|S3, storageKey, isPrivate)
+//                 └── bytes in the ACTIVE private backend (never under /public)
+//
+// `storage` is LOCAL_PRIVATE when MEDIA_BACKEND=local and S3 when
+// MEDIA_BACKEND=s3 — the two managed private backends behind the SAME
+// `StorageBackend` abstraction (`src/lib/media.ts`, `src/lib/media-s3.ts`).
+// Whichever backend holds the bytes, delivery is identical: browser →
+// CodeMind server → backend, behind the 10-check authorization below. No
+// signed URL, no public bucket, no credential ever reaches a client.
 //
 // THE RULES THIS MODULE OWNS
 // ==========================
@@ -45,7 +53,9 @@
 
 import { db } from "@/lib/db";
 import {
+  activeMediaStorageValue,
   deletePrivateFile,
+  isManagedPrivateStorage,
   makeStorageKey,
   writePrivateFile,
   validatePdfUpload,
@@ -300,8 +310,10 @@ export function parseMaterialTrackScopeInput(
  *
  * Side effects, in order, inside a transaction where possible:
  *   1. Validate bytes (MIME / extension / magic / size).
- *   2. Write private file under an unguessable key.
- *   3. Create MediaAsset(DOCUMENT, LOCAL_PRIVATE, isPrivate).
+ *   2. Write private file under an unguessable key, into the ACTIVE backend.
+ *   3. Create MediaAsset(DOCUMENT, storage=active backend, isPrivate) — the
+ *      recorded `storage` is LOCAL_PRIVATE under MEDIA_BACKEND=local and S3
+ *      under MEDIA_BACKEND=s3, taken from the selector (never from the key).
  *   4. Deactivate prior active Material rows of the same (lesson, trackScope).
  *   5. Create the new Material(ADMIN_UPLOADED) row.
  *   6. Reference-count cleanup of orphaned prior assets (after commit).
@@ -369,6 +381,12 @@ export async function uploadLessonPdfMaterial(
   const buffer = Buffer.isBuffer(input.buffer)
     ? input.buffer
     : Buffer.from(input.buffer);
+  // WHERE these bytes will live is decided by the ACTIVE backend selector —
+  // LOCAL_PRIVATE under MEDIA_BACKEND=local, S3 under MEDIA_BACKEND=s3 — and
+  // never inferred from the key or a filesystem path. Resolved BEFORE any byte
+  // is written so an unsupported MEDIA_BACKEND fails closed with nothing
+  // touched (no object, no row).
+  const storage = activeMediaStorageValue();
   // Phase 21 — volume quota, checked BEFORE any byte is written or any DB row
   // is created. No-op unless the operator sets MEDIA_QUOTA_BYTES.
   const quota = await assertVolumeQuota(buffer.length);
@@ -379,7 +397,13 @@ export async function uploadLessonPdfMaterial(
       message: "Media storage quota exceeded",
     };
   }
-  await writePrivateFile(storageKey, buffer);
+  // Bytes go to that same active backend. mimeType/originalName ride along for
+  // backends that can persist them (S3 ContentType); the MediaAsset row stays
+  // the source of truth for both.
+  await writePrivateFile(storageKey, buffer, {
+    mimeType: validation.mimeType,
+    originalName: validation.originalName,
+  });
 
   const title =
     (typeof input.title === "string" && input.title.trim()) ||
@@ -408,7 +432,8 @@ export async function uploadLessonPdfMaterial(
     const asset = await tx.mediaAsset.create({
       data: {
         kind: "DOCUMENT",
-        storage: "LOCAL_PRIVATE",
+        // The active backend's value (LOCAL_PRIVATE | S3), resolved above.
+        storage,
         storageKey,
         mimeType: validation.mimeType,
         sizeBytes: validation.sizeBytes,
@@ -517,6 +542,10 @@ export async function deactivateMaterial(
  * Delete a MediaAsset (and its private bytes) only when NOTHING still
  * references it: no Material, no SessionVideo, no QuizAttemptEvidence.
  * Returns true when the asset was removed.
+ *
+ * The bytes may live in EITHER managed private backend — LOCAL_PRIVATE (the
+ * private volume) or S3 (Cloudflare R2) — and both are removed through the
+ * same storage abstraction, addressed by the backend the row records.
  */
 export async function cleanupUnreferencedMediaAsset(
   mediaAssetId: string,
@@ -540,8 +569,14 @@ export async function cleanupUnreferencedMediaAsset(
   // is: do not delete bytes while any Material row references them.
   if (materialRefs > 0 || videoRefs > 0 || evidenceRefs > 0) return false;
 
-  if (asset.storage === "LOCAL_PRIVATE" && asset.storageKey) {
-    await deletePrivateFile(asset.storageKey);
+  // ORDER IS THE SAFETY PROPERTY: delete the OBJECT first, the row second.
+  // If the object delete throws (an S3/R2 service error, a permissions
+  // problem, a volume failure) this function rejects and the MediaAsset row
+  // SURVIVES — the reference stays visible and the next cleanup run retries.
+  // Deleting the row first would orphan the bytes with nothing left to point
+  // at them.
+  if (isManagedPrivateStorage(asset.storage) && asset.storageKey) {
+    await deletePrivateFile(asset.storageKey, asset.storage);
   }
   await client.mediaAsset.delete({ where: { id: mediaAssetId } }).catch(() => {});
   return true;
@@ -598,7 +633,9 @@ export async function releaseDetachedAssets(
  *        + PUBLISHED + not archived) + material trackScope in parent scopes
  *   3–8. for TEACHER/ADMIN: material exists + asset private — staff may review
  *   9. material belongs to its lesson and is active
- *  10. asset exists, is LOCAL_PRIVATE, has a storageKey
+ *  10. asset exists, isPrivate, and is MANAGED PRIVATE storage
+ *      (LOCAL_PRIVATE or S3) with a storageKey — the backend that holds the
+ *      bytes never changes who may read them
  */
 export async function authorizeMaterialDownload(params: {
   materialId: string;
@@ -659,7 +696,16 @@ export async function authorizeMaterialDownload(params: {
   }
   const asset = material.media;
   if (
-    asset.storage !== "LOCAL_PRIVATE" ||
+    // Check #10 — the asset must be a MANAGED PRIVATE object this server holds
+    // the bytes for: LOCAL_PRIVATE (the private volume) OR S3 (the R2 bucket).
+    // Accepting S3 widens WHICH private backend may satisfy the check; it does
+    // NOT widen WHO may read. Everything before this line (auth, role, the
+    // lesson gate, track scope, lifecycle, active material) is unchanged, and
+    // the verdict below is still "authorized → server proxies bytes from the
+    // backend". No signed URL, no redirect, no external fetch is ever produced
+    // from this gate, and a non-managed value (EXTERNAL_URL / empty / unknown)
+    // is refused with the same non-oracle reason as a missing asset.
+    !isManagedPrivateStorage(asset.storage) ||
     !asset.storageKey ||
     // Documents must be private; never serve a non-private document asset
     // through this route (defense in depth against a mis-tagged row).
