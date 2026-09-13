@@ -5,7 +5,9 @@
 //
 // Two storage back-ends are supported:
 //   * EXTERNAL_URL  — an admin-provided URL (YouTube / Vimeo / CDN).
-//   * LOCAL_PRIVATE — an uploaded file written OUTSIDE the public web root and
+//   * LOCAL_PRIVATE — an uploaded file written OUTSIDE the public web root
+//                     (local filesystem, or Cloudflare R2 via the
+//                     S3-compatible backend in `src/lib/media-s3.ts`) and
 //                     only readable through an authorized API route.
 //
 // Private files are never placed in /public and their names are random, so
@@ -304,8 +306,9 @@ export type StorageWriteMetadata = {
   originalName?: string | null;
 };
 
-/** Backends compiled into THIS build. Object storage lands in a later step. */
-export const SUPPORTED_STORAGE_BACKENDS = ["local"] as const;
+/** Backends compiled into THIS build: the local filesystem (default) and an
+ * S3-compatible object store (Cloudflare R2, see `src/lib/media-s3.ts`). */
+export const SUPPORTED_STORAGE_BACKENDS = ["local", "s3"] as const;
 export type StorageBackendName = (typeof SUPPORTED_STORAGE_BACKENDS)[number];
 
 export interface StorageBackend {
@@ -339,6 +342,57 @@ function assertSafeByteOffset(value: number, label: string): void {
   if (!Number.isSafeInteger(value) || value < 0) {
     throw new RangeError(`Invalid storage range ${label}: ${value}`);
   }
+}
+
+/**
+ * Resolve an optional INCLUSIVE byte range against an object of `size` bytes.
+ *
+ * Shared by EVERY backend so range semantics are identical regardless of
+ * where the bytes live:
+ *   * `start` at or beyond EOF is unsatisfiable → RangeError, and the caller
+ *     answers 416 (the HTTP mapping stays the route's job, as today);
+ *   * `end` beyond EOF is CLAMPED to the last byte (S3 does the same);
+ *   * either bound may be omitted ("from the start" / "to the end");
+ *   * `start > end`, negative or non-integer bounds → RangeError;
+ *   * any range against an empty object → RangeError.
+ *
+ * Returns the effective inclusive `[start, end]` window.
+ */
+export function resolveStorageReadRange(
+  range: StorageReadRange | undefined,
+  size: number
+): { start: number; end: number } {
+  const rangeRequested =
+    !!range && (range.start !== undefined || range.end !== undefined);
+
+  // Degenerate case: an empty object has no addressable byte.
+  if (size === 0) {
+    if (rangeRequested) {
+      throw new RangeError("Unsatisfiable storage range: object is empty");
+    }
+    return { start: 0, end: -1 };
+  }
+
+  let start = 0;
+  let end = size - 1;
+  if (range?.start !== undefined) {
+    assertSafeByteOffset(range.start, "start");
+    start = range.start;
+  }
+  if (range?.end !== undefined) {
+    assertSafeByteOffset(range.end, "end");
+    end = range.end;
+  }
+  if (start > end) {
+    throw new RangeError(`Invalid storage range: start ${start} > end ${end}`);
+  }
+  if (start >= size) {
+    throw new RangeError(
+      `Unsatisfiable storage range: start ${start} for a ${size}-byte object`
+    );
+  }
+  if (end > size - 1) end = size - 1;
+  return { start, end };
 }
 
 /**
@@ -414,31 +468,10 @@ export class LocalStorageBackend implements StorageBackend {
       return { stream: createReadStream(target), size: 0, start: 0, end: -1, contentLength: 0 };
     }
 
-    // Resolve the inclusive range using S3/R2 semantics, so the object-store
-    // backend added next behaves identically and the routes need no special
-    // casing per backend:
-    //   * `start` at or beyond EOF is unsatisfiable -> throw, and the caller
-    //     answers 416 (the HTTP mapping stays the route's job, as today);
-    //   * `end` beyond EOF is CLAMPED to the last byte (S3 does the same).
-    let start = 0;
-    let end = size - 1;
-    if (range?.start !== undefined) {
-      assertSafeByteOffset(range.start, "start");
-      start = range.start;
-    }
-    if (range?.end !== undefined) {
-      assertSafeByteOffset(range.end, "end");
-      end = range.end;
-    }
-    if (start > end) {
-      throw new RangeError(`Invalid storage range: start ${start} > end ${end}`);
-    }
-    if (start >= size) {
-      throw new RangeError(
-        `Unsatisfiable storage range: start ${start} for a ${size}-byte object`
-      );
-    }
-    if (end > size - 1) end = size - 1;
+    // Inclusive-range resolution lives in `resolveStorageReadRange` so the
+    // S3/R2 backend behaves byte-for-byte identically (start past EOF throws
+    // for the route's 416; end past EOF is clamped; open-ended bounds work).
+    const { start, end } = resolveStorageReadRange(range, size);
 
     const isPartial = start !== 0 || end !== size - 1;
     return {
@@ -456,9 +489,9 @@ export class LocalStorageBackend implements StorageBackend {
  *
  * FAIL-CLOSED BY DESIGN. An unset or empty value means `local`, which is the
  * historical behaviour, so existing deployments are unaffected. Any other
- * unsupported value THROWS rather than degrading: `MEDIA_BACKEND=s3` silently
- * falling back to the local filesystem would write bytes to an ephemeral disk
- * while the operator believes they are durable.
+ * unsupported value THROWS rather than degrading: silently falling back to
+ * the local filesystem would write bytes to an ephemeral disk while the
+ * operator believes they are durable in object storage.
  */
 export function resolveStorageBackendName(
   env: NodeJS.ProcessEnv = process.env
@@ -476,13 +509,23 @@ export function resolveStorageBackendName(
   );
 }
 
-/** Build a backend by name. */
-export function createStorageBackend(
+/**
+ * Build a backend by name.
+ *
+ * Async because the `s3` backend is LAZY-LOADED from `./media-s3` (which
+ * carries the AWS SDK) — a `MEDIA_BACKEND=local` deployment never pays for
+ * importing it, and a missing/broken SDK can never affect the local path.
+ */
+export async function createStorageBackend(
   name: StorageBackendName = resolveStorageBackendName()
-): StorageBackend {
+): Promise<StorageBackend> {
   switch (name) {
     case "local":
       return new LocalStorageBackend();
+    case "s3": {
+      const { createS3StorageBackendFromEnv } = await import("./media-s3");
+      return createS3StorageBackendFromEnv();
+    }
     default: {
       // Exhaustiveness guard: widening SUPPORTED_STORAGE_BACKENDS without
       // implementing the case here is a COMPILE error, not a runtime surprise.
@@ -492,16 +535,18 @@ export function createStorageBackend(
   }
 }
 
-let activeBackend: StorageBackend | null = null;
+let activeBackendPromise: Promise<StorageBackend> | null = null;
 
 /**
  * The process-wide backend, resolved lazily on first use and then cached. A
  * misconfigured `MEDIA_BACKEND` therefore throws on the first storage
- * operation (a clear server-side error) instead of at import time.
+ * operation (a clear server-side error) instead of at import time. The
+ * promise is cached even on failure: the process stays fail-closed rather
+ * than retrying a known-bad configuration.
  */
-export function getStorageBackend(): StorageBackend {
-  if (!activeBackend) activeBackend = createStorageBackend();
-  return activeBackend;
+export function getStorageBackend(): Promise<StorageBackend> {
+  if (!activeBackendPromise) activeBackendPromise = createStorageBackend();
+  return activeBackendPromise;
 }
 
 // ---------------------------------------------------------------------------
@@ -515,21 +560,21 @@ export async function writePrivateFile(
   data: Buffer | Uint8Array,
   metadata?: StorageWriteMetadata
 ): Promise<string> {
-  return getStorageBackend().write(storageKey, data, metadata);
+  return (await getStorageBackend()).write(storageKey, data, metadata);
 }
 
 export async function readPrivateFile(storageKey: string): Promise<Buffer> {
-  return getStorageBackend().read(storageKey);
+  return (await getStorageBackend()).read(storageKey);
 }
 
 export async function deletePrivateFile(storageKey: string): Promise<void> {
-  return getStorageBackend().delete(storageKey);
+  return (await getStorageBackend()).delete(storageKey);
 }
 
 export async function privateFileStat(
   storageKey: string
 ): Promise<PrivateFileStat | null> {
-  return getStorageBackend().stat(storageKey);
+  return (await getStorageBackend()).stat(storageKey);
 }
 
 /**
@@ -544,7 +589,7 @@ export async function readPrivateFileStream(
   storageKey: string,
   range?: StorageReadRange
 ): Promise<StorageStreamResult | null> {
-  return getStorageBackend().readStream(storageKey, range);
+  return (await getStorageBackend()).readStream(storageKey, range);
 }
 
 // ---------------------------------------------------------------------------
@@ -558,7 +603,7 @@ export function sha256Buffer(data: Buffer | Uint8Array): string {
 
 /** SHA-256 hex of a private-storage object, streamed (no full buffering). */
 export async function sha256PrivateFile(storageKey: string): Promise<string> {
-  return getStorageBackend().sha256(storageKey);
+  return (await getStorageBackend()).sha256(storageKey);
 }
 
 export function extFromMime(mime: string): string {
