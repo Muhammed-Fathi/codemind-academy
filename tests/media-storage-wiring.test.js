@@ -288,10 +288,12 @@ section("1. Repo-wide gate sweep — no local-only storage assumptions left");
       [/storage = activeMediaStorageValue\(\)/, "evidence upload metadata comes from the active backend selector"],
       [/storage,/, "evidence upload writes the resolved storage value"],
     ],
-    "scripts/media/purge-expired-evidence.ts": [
+    // Phase 24 — the purge operation moved to the shared core (single
+    // implementation for the CLI and the Vercel Cron route); the pins follow.
+    "src/lib/evidence-retention.ts": [
       [/isManagedPrivateStorage\(asset\[0\]\.storage\)/, "purge gate uses the shared predicate (S3 objects are collected)"],
       [/backendNameForStorageValue\(/, "purge dispatches on the recorded storage value"],
-      [/new LocalStorageBackend\(o\.mediaRoot\)/, "purge deletes local objects through the storage abstraction"],
+      [/new LocalStorageBackend\(mediaRoot\)/, "purge deletes local objects through the storage abstraction"],
       [/createStorageBackend\(name\)/, "purge deletes S3 objects through the storage abstraction"],
     ],
   };
@@ -322,9 +324,16 @@ section("1. Repo-wide gate sweep — no local-only storage assumptions left");
     const ri = text.search(rowRe);
     ok(oi !== -1 && ri !== -1 && oi < ri, `${rel}: object deleted before the MediaAsset row (no orphaning)`);
   }
-  const purge = read("scripts/media/purge-expired-evidence.ts");
-  ok(/await storage\.delete\(key\)/.test(purge) && /still present after delete/.test(purge),
+  const purgeCore = read("src/lib/evidence-retention.ts");
+  ok(/await storage\.delete\(key\)/.test(purgeCore) && /still present after delete/.test(purgeCore),
     "purge verifies convergence after deleting an object (no silent skip)");
+  // Phase 24 — single implementation: the CLI must DELEGATE to the shared
+  // core and must not carry a second copy of the retention logic.
+  const purgeCli = read("scripts/media/purge-expired-evidence.ts");
+  ok(/import\s*\{[^}]*runEvidencePurge[^}]*\}\s*from\s*"@\/lib\/evidence-retention"/.test(purgeCli),
+    "CLI imports runEvidencePurge from the shared core");
+  ok(!/DELETE FROM "QuizAttemptEvidence"/.test(purgeCli),
+    "CLI carries no duplicate deletion SQL (single implementation)");
 }
 
 // ---------------------------------------------------------------------------

@@ -11,14 +11,24 @@
 //     by nothing else (no other evidence row, no Material, no SessionVideo).
 //   * NEVER: SecurityEvent, AuditLog, TeacherApplication, TeacherActivationToken,
 //     UserSession, PasswordResetToken, SecurityRateLimit, QuizAttempt, Student,
-//     User — the script snapshots these counts before/after and FAILS if any
+//     User — the run snapshots these counts before/after and FAILS if any
 //     moved. Evidence retention and security/audit retention are separate
 //     systems; this job cannot blur them.
 //
+// SINGLE IMPLEMENTATION (Phase 24)
+//   The purge operation itself — selection, transactional row delete,
+//   reference-safe asset detach, storage-aware byte deletion (LOCAL_PRIVATE
+//   and S3) and the protected-table assertion — lives in ONE place:
+//   `runEvidencePurge()` in src/lib/evidence-retention.ts. This script is
+//   the operator CLI around it (argument parsing, backend selection,
+//   console output, metrics file, exit codes). The Vercel Cron endpoint
+//   (src/app/api/cron/purge-evidence/route.ts) calls the SAME function.
+//
 // WHICH BACKEND HOLDS THE BYTES
-//   A detached asset's `MediaAsset.storage` says where its bytes live, and this
-//   script deletes them through the SAME storage abstraction the application
-//   uses (`src/lib/media.ts`), so BOTH managed private backends are supported:
+//   A detached asset's `MediaAsset.storage` says where its bytes live, and the
+//   shared purge operation deletes them through the SAME storage abstraction
+//   the application uses (`src/lib/media.ts`), so BOTH managed private
+//   backends are supported:
 //     LOCAL_PRIVATE -> the private volume under --media-root (LocalStorageBackend)
 //     S3            -> the S3/R2 bucket, configured by the server-side R2_* env
 //                      vars (S3StorageBackend; no signed URL, no public access,
@@ -49,21 +59,10 @@
 // a live run hit an unexpected error (transaction rolled back).
 
 import fs from "node:fs";
-import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import pg from "pg";
-import {
-  selectExpiredEvidence,
-  EVIDENCE_PURGE_PROTECTED_TABLES,
-} from "@/lib/evidence-retention";
-import {
-  MEDIA_ROOT,
-  LocalStorageBackend,
-  backendNameForStorageValue,
-  createStorageBackend,
-  isManagedPrivateStorage,
-  type StorageBackend,
-} from "@/lib/media";
+import { runEvidencePurge, type PurgeSqlBackend } from "@/lib/evidence-retention";
+import { MEDIA_ROOT } from "@/lib/media";
 
 type Args = {
   sqlite?: string;
@@ -107,25 +106,28 @@ function parseArgs(): Args {
 }
 
 // --- minimal backend interface (SELECT/DELETE + tx) over sqlite/pg/pglite ---
+// The shared purge core (src/lib/evidence-retention.ts) programs against
+// `PurgeSqlBackend`; this CLI adds `close()` because it owns the connection
+// lifecycle. The core never closes a backend.
 
 type Row = Record<string, any>;
 
-interface Backend {
+interface Backend extends PurgeSqlBackend {
   kind: string;
-  all(sql: string, params?: any[]): Promise<Row[]>;
-  run(sql: string, params?: any[]): Promise<number>;
-  begin(): Promise<void>;
-  commit(): Promise<void>;
-  rollback(): Promise<void>;
   close(): Promise<void>;
 }
 
 function sqliteBackend(file: string, readOnly: boolean): Backend {
   const db = new DatabaseSync(file, { readOnly });
+  // node:sqlite's DatabaseSync is typed against its own SQLInputValue union;
+  // the shared backend contract is unknown[], so widen once at the boundary
+  // (the values are the same strings/numbers the rest of the app binds).
+  const bind = (params: unknown[]) => params as any[];
   return {
     kind: `sqlite:${file}`,
-    all: async (sql, params = []) => db.prepare(sql).all(...params) as Row[],
-    run: async (sql, params = []) => Number(db.prepare(sql).run(...params).changes),
+    dialect: "sqlite",
+    all: async (sql, params = []) => db.prepare(sql).all(...bind(params)) as Row[],
+    run: async (sql, params = []) => Number(db.prepare(sql).run(...bind(params)).changes),
     begin: async () => { db.exec("BEGIN"); },
     commit: async () => { db.exec("COMMIT"); },
     rollback: async () => { try { db.exec("ROLLBACK"); } catch { /* already failed */ } },
@@ -137,6 +139,7 @@ function pgBackend(pool: pg.Pool): Backend {
   const q = (sql: string, params: any[] = []) => pool.query(sql, params);
   return {
     kind: "pg",
+    dialect: "postgresql",
     all: async (sql, params = []) => (await q(sql, params)).rows as Row[],
     run: async (sql, params = []) => (await q(sql, params)).rowCount ?? 0,
     begin: async () => { await q("BEGIN"); },
@@ -151,6 +154,7 @@ async function pgliteBackend(dir: string): Promise<Backend> {
   const db = new PGlite(dir);
   return {
     kind: `pglite:${dir}`,
+    dialect: "postgresql",
     all: async (sql, params = []) => ((await db.query(sql, params)).rows as Row[]) || [],
     run: async (sql, params = []) => {
       const r = await db.query(sql, params);
@@ -161,13 +165,6 @@ async function pgliteBackend(dir: string): Promise<Backend> {
     rollback: async () => { try { await db.query("ROLLBACK"); } catch { /* already failed */ } },
     close: async () => { await db.close(); },
   };
-}
-
-function resolveSafePath(root: string, key: string): string | null {
-  const target = path.resolve(root, key);
-  const base = path.resolve(root);
-  if (target !== base && !target.startsWith(base + path.sep)) return null;
-  return target;
 }
 
 async function main() {
@@ -191,206 +188,57 @@ async function main() {
   }
 
   try {
-    // 1. Snapshot protected tables (BEFORE).
-    const isSqlite = !!o.sqlite;
-    const protectedBefore: Record<string, number> = {};
-    for (const t of EVIDENCE_PURGE_PROTECTED_TABLES) {
-      const rows = await backend.all(`SELECT COUNT(*) AS n FROM "${t}"`);
-      protectedBefore[t] = Number(rows[0].n);
-    }
-
-    // 2. Select the purge set. The DB pre-filters to stamped rows; the
-    // canonical TS rule (src/lib/evidence-retention.ts) makes the final call
-    // per row, so dialect datetime quirks can never widen the delete set.
-    const stamped = await backend.all(
-      `SELECT "id","attemptId","mediaAssetId","kind","retainUntil" FROM "QuizAttemptEvidence" WHERE "retainUntil" IS NOT NULL`
-    );
-    const unstamped = await backend.all(
-      `SELECT COUNT(*) AS n FROM "QuizAttemptEvidence" WHERE "retainUntil" IS NULL`
-    );
-    const scanned = stamped.length + Number(unstamped[0].n);
-    const { expired, retained } = selectExpiredEvidence(
-      stamped.map((r) => ({
-        id: String(r.id),
-        attemptId: String(r.attemptId),
-        mediaAssetId: r.mediaAssetId === null || r.mediaAssetId === undefined ? null : String(r.mediaAssetId),
-        kind: String(r.kind),
-        retainUntil: r.retainUntil as Date | string | number | null,
-      })),
-      o.now
-    );
-    const retainedTotal = retained.length + Number(unstamped[0].n);
-
-    console.log(`${dryRun ? "DRY RUN" : "LIVE"}: scanned=${scanned} expired=${expired.length} retained=${retainedTotal} (now=${o.now.toISOString()})`);
+    // The purge operation itself — identical to the one the Vercel Cron
+    // endpoint (GET /api/cron/purge-evidence) runs — lives in the shared
+    // core. This CLI only supplies the backend + operator settings.
+    const report = await runEvidencePurge({
+      backend,
+      now: o.now,
+      mediaRoot: o.mediaRoot,
+      dryRun,
+    });
 
     const metrics: Record<string, unknown> = {
       tool: "purge-expired-evidence (Phase 21)",
       createdAt: new Date().toISOString(),
       dryRun,
-      now: o.now.toISOString(),
-      scanned,
-      expired: expired.length,
-      retained: retainedTotal,
-      expiredIds: expired.map((e) => e.id),
-      deletedEvidenceRows: 0,
-      detachedAssets: 0,
-      deletedAssetRows: 0,
-      deletedFiles: 0,
-      failedFiles: [] as string[],
-      protectedTables: protectedBefore,
-      ok: false,
+      now: report.now,
+      scanned: report.scanned,
+      expired: report.expired,
+      retained: report.retained,
+      expiredIds: report.expiredIds,
+      deletedEvidenceRows: report.deletedEvidenceRows,
+      detachedAssets: report.detachedAssets,
+      deletedAssetRows: report.deletedAssetRows,
+      deletedFiles: report.deletedFiles,
+      failedFiles: report.failedFiles,
+      protectedTables: report.protectedTables,
+      ok: report.ok,
+    };
+    if (!dryRun) {
+      metrics.detachedByStorage = report.detachedByStorage;
+      metrics.protectedTablesAfter = report.protectedTablesAfter;
+    }
+    const writeMetrics = () => {
+      if (o.metrics) fs.writeFileSync(o.metrics, `${JSON.stringify(metrics, null, 2)}\n`);
     };
 
+    console.log(`${dryRun ? "DRY RUN" : "LIVE"}: scanned=${report.scanned} expired=${report.expired} retained=${report.retained} (now=${o.now.toISOString()})`);
+
     if (dryRun) {
-      metrics.ok = true;
-      if (o.metrics) fs.writeFileSync(o.metrics, `${JSON.stringify(metrics, null, 2)}\n`);
-      console.log(`PURGE_DRY_RUN_OK expired=${expired.length}`);
+      writeMetrics();
+      console.log(`PURGE_DRY_RUN_OK expired=${report.expired}`);
       return;
     }
 
-    // 3. LIVE: delete evidence rows + detach assets in ONE transaction.
-    const ph = (i: number) => (isSqlite ? "?" : `$${i}`);
-    const expiredIds = expired.map((e) => e.id);
-    let deletedEvidenceRows = 0;
-    // Detached managed-private objects: { key, storage } — `storage` decides
-    // WHICH backend has to delete the bytes (LOCAL_PRIVATE volume vs S3/R2).
-    const detachedObjects: { key: string; storage: string }[] = [];
-    await backend.begin();
-    try {
-      if (expiredIds.length) {
-        // Chunked delete (drivers cap bound params; 500 ids/chunk is safely small).
-        for (let i = 0; i < expiredIds.length; i += 500) {
-          const chunk = expiredIds.slice(i, i + 500);
-          const placeholders = chunk.map((_, j) => ph(j + 1)).join(",");
-          deletedEvidenceRows += await backend.run(
-            `DELETE FROM "QuizAttemptEvidence" WHERE "id" IN (${placeholders})`,
-            chunk
-          );
-        }
-      }
-      // Detached assets: referenced nowhere after the delete.
-      const assetIds = [...new Set(expired.map((e) => e.mediaAssetId).filter((x): x is string => !!x))];
-      for (const assetId of assetIds) {
-        const p1 = ph(1);
-        const refs = await backend.all(
-          `SELECT (SELECT COUNT(*) FROM "QuizAttemptEvidence" WHERE "mediaAssetId" = ${p1}) AS e,
-                  (SELECT COUNT(*) FROM "Material" WHERE "mediaAssetId" = ${p1}) AS m,
-                  (SELECT COUNT(*) FROM "SessionVideo" WHERE "mediaAssetId" = ${p1}) AS s`,
-          [assetId, assetId, assetId].slice(0, isSqlite ? 3 : 1)
-        );
-        // NOTE: sqlite needs one bound value per `?` (3 copies above); pg
-        // reuses $1 (slice to 1). Both spellings are built from the same query.
-        const r = refs[0];
-        if (Number(r.e) + Number(r.m) + Number(r.s) > 0) continue;
-        const asset = await backend.all(
-          `SELECT "storageKey","storage" FROM "MediaAsset" WHERE "id" = ${ph(1)}`,
-          [assetId]
-        );
-        if (!asset.length) continue;
-        await backend.run(`DELETE FROM "MediaAsset" WHERE "id" = ${ph(1)}`, [assetId]);
-        metrics["deletedAssetRows"] = Number(metrics["deletedAssetRows"]) + 1;
-        // BOTH managed private backends are collected. A non-managed value
-        // (EXTERNAL_URL, empty, unknown) has no bytes of ours to remove.
-        if (isManagedPrivateStorage(asset[0].storage) && asset[0].storageKey) {
-          detachedObjects.push({
-            key: String(asset[0].storageKey),
-            storage: String(asset[0].storage).trim().toUpperCase(),
-          });
-        }
-      }
-      metrics["detachedAssets"] = detachedObjects.length;
-      metrics["detachedByStorage"] = detachedObjects.reduce<Record<string, number>>(
-        (acc, o) => {
-          acc[o.storage] = (acc[o.storage] ?? 0) + 1;
-          return acc;
-        },
-        {}
-      );
-      await backend.commit();
-    } catch (e) {
-      await backend.rollback();
-      throw e;
-    }
-    metrics["deletedEvidenceRows"] = deletedEvidenceRows;
-
-    // 4. Objects AFTER commit (best-effort per object; failures recorded +
-    // retried on the next run, which finds the asset row already gone… note:
-    // the asset row is gone, so a failed object delete leaves orphaned BYTES
-    // (the safe direction — objects without a DB pointer are invisible to the
-    // app and are reported in the metrics, never skipped silently).
-    //
-    // Deletion goes through the storage abstraction, so an S3-backed object is
-    // removed from the bucket and a LOCAL_PRIVATE object from the volume.
-    const backendCache = new Map<string, Promise<StorageBackend>>();
-    const backendFor = (storageValue: string): Promise<StorageBackend> => {
-      const name = backendNameForStorageValue(storageValue) ?? "local";
-      let promise = backendCache.get(name);
-      if (!promise) {
-        promise =
-          name === "local"
-            ? // --media-root is the operator's override for the local volume.
-              Promise.resolve(new LocalStorageBackend(o.mediaRoot))
-            : // S3/R2: built from server env (fail-closed when unconfigured —
-              // recorded per object below, so nothing is skipped silently).
-              createStorageBackend(name);
-        backendCache.set(name, promise);
-      }
-      return promise;
-    };
-
-    let deletedFiles = 0;
-    const failedFiles: string[] = [];
-    for (const object of detachedObjects) {
-      const key = object.key;
-      let storage: StorageBackend;
-      try {
-        storage = await backendFor(object.storage);
-      } catch (e: any) {
-        failedFiles.push(`${key}: ${e?.message || e}`);
-        continue;
-      }
-      if (storage.name === "local") {
-        // Traversal guard for the filesystem volume (unchanged behaviour).
-        const abs = resolveSafePath(o.mediaRoot, key);
-        if (!abs) { failedFiles.push(`${key}: escapes media root`); continue; }
-      }
-      try {
-        await storage.delete(key);
-        // `delete` is idempotent and the local backend swallows I/O errors, so
-        // VERIFY convergence instead of trusting the call: an object that
-        // survives is a recorded failure (exit 2 → retry run), never a silent
-        // skip. A missing object (already gone) is convergence, as before.
-        if (await storage.stat(key)) {
-          failedFiles.push(`${key}: still present after delete`);
-          continue;
-        }
-        deletedFiles++;
-      } catch (e: any) {
-        failedFiles.push(`${key}: ${e?.message || e}`);
-      }
-    }
-    metrics["deletedFiles"] = deletedFiles;
-    metrics["failedFiles"] = failedFiles;
-
-    // 5. Prove protected tables did not move.
-    const protectedAfter: Record<string, number> = {};
-    const moved: string[] = [];
-    for (const t of EVIDENCE_PURGE_PROTECTED_TABLES) {
-      const rows = await backend.all(`SELECT COUNT(*) AS n FROM "${t}"`);
-      protectedAfter[t] = Number(rows[0].n);
-      if (protectedAfter[t] !== protectedBefore[t]) moved.push(`${t}: ${protectedBefore[t]} -> ${protectedAfter[t]}`);
-    }
-    metrics["protectedTablesAfter"] = protectedAfter;
-    if (moved.length) {
-      metrics["ok"] = false;
-      if (o.metrics) fs.writeFileSync(o.metrics, `${JSON.stringify(metrics, null, 2)}\n`);
-      console.error(`FATAL: protected tables moved: ${moved.join("; ")}`);
+    if (report.protectedMoved.length) {
+      writeMetrics();
+      console.error(`FATAL: protected tables moved: ${report.protectedMoved.join("; ")}`);
       process.exit(2);
     }
-    metrics["ok"] = true;
-    if (o.metrics) fs.writeFileSync(o.metrics, `${JSON.stringify(metrics, null, 2)}\n`);
-    console.log(`PURGE_LIVE_OK deleted=${deletedEvidenceRows} assets=${metrics["deletedAssetRows"]} files=${deletedFiles} failed=${failedFiles.length}`);
-    if (failedFiles.length) process.exitCode = 2; // files need a retry run
+    writeMetrics();
+    console.log(`PURGE_LIVE_OK deleted=${report.deletedEvidenceRows} assets=${report.deletedAssetRows} files=${report.deletedFiles} failed=${report.failedFiles.length}`);
+    if (report.failedFiles.length) process.exitCode = 2; // files need a retry run
   } finally {
     await backend.close();
   }
