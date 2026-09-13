@@ -246,10 +246,39 @@ async function main() {
   section("6. Backup/restore scripts (verified procedure)");
   // ---------------------------------------------------------------------------
   {
-    for (const s of ["scripts/db/backup-postgres.sh", "scripts/db/restore-postgres.sh"]) {
-      run(`bash -n ${s}`);
-      ok(true, `${s} passes bash -n`);
-      ok((fs.statSync(path.join(REPO, s)).mode & 0o111) !== 0, `${s} is executable`);
+    const shScripts = ["scripts/db/backup-postgres.sh", "scripts/db/restore-postgres.sh"];
+    // Probe for a USABLE bash functionally, not by binary existence: on
+    // Windows the WSL launcher stub (C:\Windows\System32\bash.exe) sits on
+    // PATH even when no distribution is installed, and every invocation
+    // just prints "Windows Subsystem for Linux has no installed
+    // distributions." and exits non-zero. `bash --version` is a
+    // zero-side-effect probe — it only succeeds on a working bash.
+    let bashUsable = true;
+    try {
+      run("bash --version", { stdio: ["ignore", "pipe", "pipe"] });
+    } catch {
+      bashUsable = false;
+    }
+    if (bashUsable) {
+      for (const s of shScripts) {
+        run(`bash -n ${s}`); // a genuine syntax error still fails the suite
+        ok(true, `${s} passes bash -n`);
+      }
+    } else {
+      console.log("NOTE: no usable bash on PATH (e.g. Windows without WSL/Git Bash) — " +
+        "skipping the `bash -n` syntax check; the shell-free content checks below still apply.");
+    }
+    // Executability: on POSIX the filesystem exec bit is authoritative; on
+    // Windows (NTFS) it is unobservable, so verify the COMMITTED git index
+    // mode instead — the repository's executability intent, cross-platform.
+    for (const s of shScripts) {
+      if (process.platform === "win32") {
+        const mode = run(`git ls-files -s -- ${s}`, { stdio: ["ignore", "pipe", "pipe"] })
+          .trim().split(/\s+/)[0];
+        ok(mode === "100755", `${s} committed executable (100755) in git index (found ${mode || "none"})`);
+      } else {
+        ok((fs.statSync(path.join(REPO, s)).mode & 0o111) !== 0, `${s} is executable`);
+      }
     }
     const backup = read("scripts/db/backup-postgres.sh");
     ok(/pg_dump.*--format=custom/.test(backup), "backup uses pg_dump custom format");
