@@ -268,8 +268,13 @@ section("4. F-04 — enrolment binds groupId to courseId");
     "the course/group binding is checked before any seat is consumed"
   );
   ok(
-    enroll.indexOf("group.courseId !== course.id") < enroll.indexOf("db.$transaction"),
-    "the binding is checked before the enrolment transaction runs"
+    enroll.indexOf("group.courseId !== course.id") <
+      Math.min(
+        ...[enroll.indexOf("db.$transaction"), enroll.indexOf("submitPaymentRequest(")].filter(
+          (i) => i >= 0
+        )
+      ),
+    "the binding is checked before the enrolment transaction runs (Phase 25 PR2a: the transaction body lives in submitPaymentRequest — the call site is the boundary)"
   );
   // The course id is now resolved server-side, not taken on trust.
   ok(

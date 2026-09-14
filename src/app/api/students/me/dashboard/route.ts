@@ -10,6 +10,8 @@ import {
   getUnlockedLessonIds,
   orderCourseLessons,
 } from "@/lib/session-progress";
+import { fetchStudentPayments } from "@/lib/payment-submission";
+import { resolveStudentEntitlement } from "@/lib/subscription-entitlement";
 
 // GET /api/students/me/dashboard
 // Aggregated student dashboard data.
@@ -257,24 +259,46 @@ export async function GET(_req: NextRequest) {
   activity.sort((a, b) => b.date.getTime() - a.date.getTime());
   const recentActivity = activity.slice(0, 5);
 
-  // ----- Subscription status -----
-  let subscriptionStatus: "ACTIVE" | "EXPIRING" | "EXPIRED" | "NONE" = "NONE";
-  let subscriptionEnd: Date | null = null;
-  let daysToExpiry = 0;
-  if (student.subscription) {
-    const sub = student.subscription;
-    subscriptionEnd = sub.endDate;
-    if (sub.status === "ACTIVE" && sub.endDate) {
-      daysToExpiry = Math.ceil(
-        (sub.endDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)
-      );
-      subscriptionStatus = daysToExpiry <= 7 ? "EXPIRING" : "ACTIVE";
-    } else if (sub.status === "EXPIRED" || (sub.endDate && sub.endDate < new Date())) {
-      subscriptionStatus = "EXPIRED";
-    } else {
-      subscriptionStatus = "ACTIVE";
-    }
-  }
+  // ----- Subscription status (Phase 25 PR2a: TRUTHFUL entitlement) -----
+  // THE REGRESSION THIS BLOCK PREVENTS: the pre-25 fallback labeled ANY
+  // unrecognized state (a fresh PENDING request, a CANCELLED row) as
+  // "ACTIVE" — presenting a payment request as a paid entitlement. The label
+  // now comes from the single entitlement policy:
+  //   PENDING row        -> "PENDING"  (a request under review, never "Active")
+  //   ACTIVE, endDate past -> "EXPIRED" (lazy expiry; nothing is written)
+  //   CANCELLED / none   -> "NONE"     (no live paid entitlement)
+  //   grouped + no row   -> "NONE" here, while `grandfathered: true` and the
+  //                        central access gate keep their legacy content
+  //                        access — the dashboard never claims a PAID state
+  //                        that does not exist.
+  // The pending/rejected REQUESTS are surfaced separately from the
+  // entitlement so PR3 can render "under review" without ever conflating the
+  // two. (Data contract only — the visual redesign is PR3's scope.)
+  const [entitlement, paymentRequests] = await Promise.all([
+    resolveStudentEntitlement(student.id),
+    fetchStudentPayments(db, user.id),
+  ]);
+  const rawState = entitlement?.state ?? "NONE";
+  const subscriptionStatus: "ACTIVE" | "EXPIRING" | "PENDING" | "EXPIRED" | "NONE" =
+    rawState === "ACTIVE" || rawState === "EXPIRING" || rawState === "PENDING" || rawState === "EXPIRED"
+      ? rawState
+      : "NONE";
+  const subscriptionEnd: Date | null = entitlement?.endDate ?? null;
+  const daysToExpiry = entitlement?.daysToExpiry ?? 0;
+  const compactRequest = (p: Awaited<ReturnType<typeof fetchStudentPayments>>["latestPending"]) =>
+    p
+      ? {
+          id: p.id,
+          amount: p.amount,
+          method: p.method,
+          reference: p.reference,
+          senderPhone: p.senderPhone,
+          requestedPlan: p.requestedPlan,
+          requestedGroup: p.requestedGroup,
+          createdAt: p.createdAt,
+          duplicateReference: p.duplicateReference,
+        }
+      : null;
 
   // Canonical chain first (official lessons are unit-linked); legacy
   // topic chain as fallback. Either may be null for chain-less rows.
@@ -381,7 +405,32 @@ export async function GET(_req: NextRequest) {
       status: subscriptionStatus,
       endDate: subscriptionEnd,
       daysToExpiry,
-      planName: student.subscription?.plan?.nameAr || student.subscription?.plan?.name || null,
+      planName: entitlement?.plan?.nameAr || entitlement?.plan?.name || null,
+      // Phase 25 PR2a server-truth additions (PR3 owns the visual UX):
+      /** Raw stored Subscription.status (never relabeled), null if no row. */
+      rawStatus: entitlement?.subscriptionStatus ?? null,
+      /** Whether the paid-content gate CURRENTLY opens for this student. */
+      accessAllowed: entitlement?.accessAllowed ?? false,
+      /** Legacy access without a Subscription row (paid-state stays NONE). */
+      grandfathered: entitlement?.grandfathered ?? false,
+      hasSubscription: entitlement?.hasSubscription ?? false,
+    },
+    /** The REQUEST side of the model, kept separate from the entitlement. */
+    paymentRequests: {
+      pending: compactRequest(paymentRequests.latestPending),
+      rejected: paymentRequests.latestRejected
+        ? {
+            id: paymentRequests.latestRejected.id,
+            amount: paymentRequests.latestRejected.amount,
+            method: paymentRequests.latestRejected.method,
+            reference: paymentRequests.latestRejected.reference,
+            rejectionReason: paymentRequests.latestRejected.rejectionReason,
+            reviewedAt: paymentRequests.latestRejected.reviewedAt,
+            createdAt: paymentRequests.latestRejected.createdAt,
+            requestedPlan: paymentRequests.latestRejected.requestedPlan,
+            requestedGroup: paymentRequests.latestRejected.requestedGroup,
+          }
+        : null,
     },
     recentActivity,
   });

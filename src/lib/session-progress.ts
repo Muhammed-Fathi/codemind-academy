@@ -22,6 +22,7 @@ import {
 } from "@/lib/track-scope";
 import { normalizeSchoolType, type SchoolType } from "@/lib/school-type";
 import { getStudentSchoolType } from "@/lib/enrollment";
+import { evaluateAccessDecision } from "@/lib/subscription-entitlement";
 
 // ---------------------------------------------------------------------------
 // The progression UNIVERSE — how a lesson is attached to a course
@@ -487,18 +488,30 @@ export async function canAccessLesson(
   // here would let a student whose group was deactivated keep opening lesson
   // content even though /api/courses/[slug] already refuses them — an
   // inconsistency between two authorization paths is a bug in itself.
+  //
+  // PHASE 25 PR2a: the row also carries the CURRENT entitlement singleton,
+  // and the verdict comes from the shared decision in
+  // `subscription-entitlement.ts` — PENDING / REJECTED-only / CANCELLED /
+  // lazily-expired subscriptions all deny paid access HERE (so quizzes,
+  // homework and materials inherit it through delegation), while a grouped
+  // student with no Subscription row stays grandfathered. The check is pure
+  // and read-only: authorization never mutates a row to expire one.
   const student = await db.student.findUnique({
     where: { id: studentId },
     select: {
       schoolType: true,
       group: { select: { courseId: true, isActive: true } },
+      subscription: { select: { status: true, endDate: true } },
     },
   });
-  if (
-    !student?.group ||
-    !student.group.isActive ||
-    student.group.courseId !== courseId
-  ) {
+  const entitled = evaluateAccessDecision({
+    groupActive:
+      !!student?.group &&
+      student.group.isActive &&
+      student.group.courseId === courseId,
+    subscription: student?.subscription,
+  });
+  if (!entitled.allowed) {
     return { allowed: false, reason: "NOT_ENROLLED", status: null };
   }
 
@@ -606,11 +619,34 @@ export async function canAccessHomework(
  * Used by list endpoints (course tree, homework list, dashboard) so a single
  * request cannot describe the protected content of sessions the student has
  * not unlocked. One progression computation for the whole course — no N+1.
+ *
+ * PHASE 25 PR2a — the ENTITLEMENT check is applied here too, not just in
+ * `canAccessLesson`: the dashboard and the homework list derive their
+ * unlocked sets from THIS helper with a caller-supplied `courseId`, so a
+ * list surface would otherwise keep describing sessions the student may no
+ * longer open (e.g. while a renewal/first payment is PENDING). Denied ⇒ the
+ * EMPTY set, which every existing caller already handles as "nothing open".
+ * The entitlement gate only ever REMOVES lessons from the set — never
+ * unlocks — so Phase 4 progression semantics are untouched.
  */
 export async function getUnlockedLessonIds(
   studentId: string,
   courseId: string
 ): Promise<Set<string>> {
+  const student = await db.student.findUnique({
+    where: { id: studentId },
+    select: {
+      group: { select: { isActive: true, courseId: true } },
+      subscription: { select: { status: true, endDate: true } },
+    },
+  });
+  const entitled = evaluateAccessDecision({
+    groupActive:
+      !!student?.group && student.group.isActive && student.group.courseId === courseId,
+    subscription: student?.subscription,
+  });
+  if (!entitled.allowed) return new Set<string>();
+
   const progress = await getCourseSessionProgress(studentId, courseId);
   return new Set(
     progress.sessions.filter((s) => s.unlocked).map((s) => s.lessonId)

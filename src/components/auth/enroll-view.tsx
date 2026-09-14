@@ -94,6 +94,11 @@ export function EnrollView() {
   const [planId, setPlanId] = React.useState<string | null>(null);
   const [method, setMethod] = React.useState<string | null>(null);
   const [reference, setReference] = React.useState("");
+  // Phase 25 PR2a: the sender phone is part of the required submission
+  // contract (manual InstaPay / e& Cash request). The full wizard redesign
+  // — WhatsApp proof buttons included — is PR3's scope; this is only the
+  // field the V2 API validates.
+  const [senderPhone, setSenderPhone] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
   const [couponCode, setCouponCode] = React.useState("");
   const [couponResult, setCouponResult] = React.useState<any>(null);
@@ -242,6 +247,8 @@ export function EnrollView() {
                 setMethod={setMethod}
                 reference={reference}
                 setReference={setReference}
+                senderPhone={senderPhone}
+                setSenderPhone={setSenderPhone}
                 couponCode={couponCode}
                 setCouponCode={setCouponCode}
                 couponResult={couponResult}
@@ -265,6 +272,7 @@ export function EnrollView() {
                 planId={planId}
                 method={method}
                 reference={reference}
+                senderPhone={senderPhone}
                 submitting={submitting}
                 couponResult={couponResult}
                 onSubmit={async () => {
@@ -279,6 +287,7 @@ export function EnrollView() {
                         planId,
                         method,
                         reference,
+                        senderPhone,
                         couponCode: couponResult?.valid ? couponCode : undefined,
                       }),
                     });
@@ -532,6 +541,8 @@ function PaymentPicker({
   setMethod,
   reference,
   setReference,
+  senderPhone,
+  setSenderPhone,
   couponCode,
   setCouponCode,
   couponResult,
@@ -542,6 +553,8 @@ function PaymentPicker({
   setMethod: (m: string) => void;
   reference: string;
   setReference: (s: string) => void;
+  senderPhone: string;
+  setSenderPhone: (s: string) => void;
   couponCode: string;
   setCouponCode: (s: string) => void;
   couponResult: any;
@@ -661,7 +674,18 @@ function PaymentPicker({
       </div>
 
       <div className="rounded-xl bg-muted/40 border border-border/60 p-4">
-        <Label htmlFor="ref" className="text-xs font-semibold">
+        <Label htmlFor="sender-phone" className="text-xs font-semibold">
+          {t("auth.226")}</Label>
+        <Input
+          id="sender-phone"
+          value={senderPhone}
+          onChange={(e) => setSenderPhone(e.target.value)}
+          placeholder={t("auth.227")}
+          inputMode="tel"
+          dir="ltr"
+          className="mt-1.5 font-mono"
+        />
+        <Label htmlFor="ref" className="text-xs font-semibold block mt-3">
           Transaction Reference Number
         </Label>
         <Input
@@ -695,6 +719,7 @@ function ConfirmCard({
   planId,
   method,
   reference,
+  senderPhone,
   submitting,
   couponResult,
   onSubmit,
@@ -705,6 +730,7 @@ function ConfirmCard({
   planId: string | null;
   method: string | null;
   reference: string;
+  senderPhone: string;
   submitting: boolean;
   couponResult: any;
   onSubmit: () => void;
@@ -733,6 +759,7 @@ function ConfirmCard({
             }
           />
           <Row label="Reference" value={reference || "—"} />
+          <Row label={t("auth.226")} value={senderPhone.trim() || "—"} />
           {hasCoupon && (
             <Row
               label={t("auth.092", { p1: couponResult.coupon.code })}

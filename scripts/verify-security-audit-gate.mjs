@@ -29,7 +29,10 @@
 //      foreign task id is a 404 and the victim's row is provably unchanged,
 //      while the owner's own task still updates;
 //   4. POST /api/enroll binds groupId to courseId (F-04): a cross-course
-//      group is refused and the student is not moved;
+//      group is refused and the student is not moved. Since Phase 25 PR2a the
+//      endpoint is SUBMISSION-ONLY: the V2 fields (senderPhone/reference) are
+//      required, the PENDING request carries its own intent, and the student
+//      is never moved into the group at submission (approval assigns it);
 //   5. the 8-character password floor holds on every provisioning path
 //      (F-09): self-registration and admin-created teachers;
 //   6. teacher activation replays, expired tokens and rejected applicants are
@@ -656,6 +659,10 @@ try {
         groupId: "g-arb",   // …but asks for a seat in the Arabic course's group
         planId: "p-monthly",
         method: "INSTAPAY",
+        // Complete V2 fields, so the refusal below is provably the F-04
+        // course/group BINDING refusal and not a validation shortcut.
+        senderPhone: "01099942942",
+        reference: "AUDIT-CROSS-1",
       },
     });
     eq(cross.status, 400, "a cross-course group is refused (400)");
@@ -666,8 +673,13 @@ try {
     const payments = db.prepare(`SELECT COUNT(*) AS c FROM "Payment"`).get().c;
     eq(payments, 0, "no pending payment was created for the refused enrolment");
 
-    // The legitimate pairing still works.
-    const legit = await call("POST", "/api/enroll", {
+    // Phase 25 PR2a: the legitimate pairing creates a PENDING REQUEST — it
+    // does not enrol. The V2 contract fields are required; without them the
+    // submission is refused, and with them the request is recorded on the
+    // Payment row while Student.groupId stays untouched. (The legacy
+    // "matching pair assigns the group immediately" behaviour belonged to the
+    // pre-25 flow; the group is assigned when an admin APPROVES — PR2b.)
+    const missingV2 = await call("POST", "/api/enroll", {
       cookie: "cm_session=bob-token",
       body: {
         courseId: "c-lang",
@@ -676,9 +688,38 @@ try {
         method: "INSTAPAY",
       },
     });
-    eq(legit.status, 200, "a matching course/group pair still enrols (no regression)");
+    eq(missingV2.status, 400, "a V2 submission without senderPhone/reference is refused (400)");
+
+    const legit = await call("POST", "/api/enroll", {
+      cookie: "cm_session=bob-token",
+      body: {
+        courseId: "c-lang",
+        groupId: "g-lang",
+        planId: "p-monthly",
+        method: "INSTAPAY",
+        senderPhone: "01147422177",
+        reference: "AUDIT-REF-42",
+      },
+    });
+    eq(legit.status, 200, "a matching course/group pair with the V2 fields is accepted (200)");
     const bobAfter = db.prepare(`SELECT "groupId" FROM "Student" WHERE "id" = ?`).get("s-bob");
-    eq(bobAfter.groupId, "g-lang", "Bob is enrolled in the group he asked for");
+    eq(bobAfter.groupId, null, "submitting payment does NOT assign the group (PR2a: approval does)");
+
+    const bobPay = db
+      .prepare(
+        `SELECT "status","senderPhone","reference","requestedGroupId","requestedPlanId" FROM "Payment" WHERE "userId" = ? ORDER BY "createdAt" DESC, "id" DESC LIMIT 1`
+      )
+      .get("u-bob");
+    eq(bobPay.status, "PENDING", "the request is a PENDING payment");
+    eq(bobPay.senderPhone, "01147422177", "Payment.senderPhone persisted");
+    eq(bobPay.reference, "AUDIT-REF-42", "Payment.reference persisted");
+    eq(bobPay.requestedGroupId, "g-lang", "the requested group lives on the Payment (intent)");
+    eq(bobPay.requestedPlanId, "p-monthly", "the requested plan lives on the Payment (intent)");
+    const bobSub = db
+      .prepare(`SELECT "status","planId" FROM "Subscription" WHERE "studentId" = ?`)
+      .get("s-bob");
+    eq(bobSub.status, "PENDING", "the pending entitlement singleton is PENDING (no paid access)");
+    eq(bobSub.planId, "p-monthly", "the singleton carries the requested plan");
 
     // Non-students cannot enrol at all.
     const admin = await call("POST", "/api/enroll", {
