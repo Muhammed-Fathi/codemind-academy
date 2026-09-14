@@ -107,6 +107,10 @@ function makeMockDb() {
     quizAttempt: [], lessonProgress: [], attendance: [], liveSession: [],
     teacher: [], teacherNote: [], subscription: [], subscriptionPlan: [],
     examAttempt: [], mockExam: [],
+    // Phase 25 PR2a: the student dashboard now also reads the payment request
+    // history (pending/rejected block); the generic delegate answers an empty
+    // table exactly like Prisma would for a student with no requests.
+    payment: [],
   };
   const clone = (v) => (v === undefined ? v : structuredClone(v));
   const byId = (arr, id) => arr.find((r) => r.id === id) || null;

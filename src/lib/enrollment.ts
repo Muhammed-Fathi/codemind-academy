@@ -3,8 +3,19 @@
 // The platform expresses enrollment as: Student.groupId -> Group.courseId,
 // with Subscription carrying the paid state. There is no separate Enrollment
 // table and none is introduced.
+//
+// PHASE 25 PR2a — `isEnrolled` is now ENTITLEMENT-AWARE: a student counts as
+// enrolled only while their group is ACTIVE, bound to a course, AND their
+// Subscription row (the current entitlement singleton) permits access. A
+// student with NO Subscription row keeps legacy grandfathered access; once a
+// row exists it is authoritative (PENDING / CANCELLED / expired ⇒ no paid
+// access). The whole rule lives in `src/lib/subscription-entitlement.ts` —
+// this module only applies it, so every downstream surface (courses, lessons,
+// materials, quizzes, videos, homework, progress, dashboard, parent preview)
+// inherits one policy. Reads only: resolution never mutates anything.
 
 import { db } from "@/lib/db";
+import { evaluateAccessDecision } from "@/lib/subscription-entitlement";
 import { normalizeSchoolType, type SchoolType } from "@/lib/school-type";
 
 export type Enrollment = {
@@ -16,22 +27,29 @@ export type Enrollment = {
   schoolType: SchoolType | null;
   /**
    * Raw Subscription.status, surfaced for the dashboard//me/enrollment UI
-   * (renewal banners, "expiring soon" prompts).
+   * (renewal banners, "expiring soon" prompts). It is the STORED value —
+   * a lazily-expired ACTIVE row reads "ACTIVE" here while `isEnrolled` is
+   * already false, so status-label consumers must use
+   * `describeSubscriptionState` (or the dashboard/`/me/payments` payloads)
+   * for the truth, never this field, to decide what a badge says.
    *
-   * DELIBERATELY NOT AN ACCESS GATE. Content access is decided solely by
-   * `isEnrolled` (an ACTIVE group bound to a course) in `canAccessCourse` /
-   * `canAccessLesson`. Turning this into a paywall would revoke content from
-   * every currently-enrolled student whose subscription row is missing or
-   * lapsed, which is a business decision and not part of this upgrade. If a
-   * subscription gate is ever wanted, it belongs in `canAccessCourse` so the
-   * server stays the single source of truth — never in the UI.
+   * PHASE 25 PR2a: entitlement IS an access gate now — `isEnrolled` above
+   * applies the subscription-entitlement policy centrally (pending/rejected/
+   * expired/cancelled payment requests do NOT grant paid course access), with
+   * legacy grandfathering preserved for grouped students without a row.
    */
   subscriptionStatus: string | null;
+  /** True when a Subscription row exists — then it is authoritative. */
+  hasSubscription: boolean;
+  /** Legacy grandfathered access: ACTIVE group, NO Subscription row. */
+  grandfathered: boolean;
 };
 
 /**
- * Resolve the enrollment of a student. A student is considered enrolled when
- * they belong to an active group bound to a course.
+ * Resolve the enrollment of a student. A student counts as enrolled only when
+ * they belong to an active group bound to a course AND their current
+ * entitlement permits access (see the module header; one shared policy in
+ * `subscription-entitlement.ts`).
  */
 export async function getEnrollment(studentId: string): Promise<Enrollment> {
   const student = await db.student.findUnique({
@@ -41,13 +59,23 @@ export async function getEnrollment(studentId: string): Promise<Enrollment> {
       batchId: true,
       schoolType: true,
       group: { select: { id: true, isActive: true, course: { select: { id: true, slug: true } } } },
-      subscription: { select: { status: true } },
+      subscription: { select: { status: true, endDate: true } },
     },
   });
 
   const schoolType = normalizeSchoolType(student?.schoolType);
 
-  if (!student?.group?.isActive || !student.group.course) {
+  const groupActiveCourse =
+    !!student?.group?.isActive && !!student.group.course;
+  // PHASE 25: the group half of the rule is unchanged; the entitlement half
+  // comes from the shared decision so this path and `canAccessLesson` can
+  // never disagree about what "may open paid content" means.
+  const entitlement = evaluateAccessDecision({
+    groupActive: groupActiveCourse,
+    subscription: student?.subscription,
+  });
+
+  if (!entitlement.allowed || !student?.group?.course) {
     return {
       isEnrolled: false,
       courseId: null,
@@ -56,6 +84,8 @@ export async function getEnrollment(studentId: string): Promise<Enrollment> {
       batchId: student?.batchId ?? null,
       schoolType,
       subscriptionStatus: student?.subscription?.status ?? null,
+      hasSubscription: entitlement.hasSubscription,
+      grandfathered: entitlement.grandfathered,
     };
   }
 
@@ -67,6 +97,8 @@ export async function getEnrollment(studentId: string): Promise<Enrollment> {
     batchId: student.batchId,
     schoolType,
     subscriptionStatus: student.subscription?.status ?? null,
+    hasSubscription: entitlement.hasSubscription,
+    grandfathered: entitlement.grandfathered,
   };
 }
 

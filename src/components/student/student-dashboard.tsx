@@ -1014,7 +1014,7 @@ function SubscriptionPill({
   planName,
   onRenew,
 }: {
-  status: "ACTIVE" | "EXPIRING" | "EXPIRED" | "NONE";
+  status: "ACTIVE" | "EXPIRING" | "EXPIRED" | "PENDING" | "NONE";
   daysToExpiry: number;
   planName: string | null;
   onRenew: () => void;
@@ -1025,6 +1025,17 @@ function SubscriptionPill({
       <Button size="sm" onClick={onRenew}>
         <CreditCard className="w-4 h-4 ms-1.5" />
         {t("student.167")}</Button>
+    );
+  }
+  // Phase 25 PR2a: a PENDING request is a request, never a paid state.
+  if (status === "PENDING") {
+    return (
+      <Badge
+        variant="outline"
+        className="border-sky-400/40 text-sky-600 dark:text-sky-400 bg-sky-400/10 px-3 py-1 text-xs"
+      >
+        <Clock className="w-3.5 h-3.5 ms-1" />
+        {t("student.249")}</Badge>
     );
   }
   if (status === "ACTIVE") {

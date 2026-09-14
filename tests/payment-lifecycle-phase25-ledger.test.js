@@ -8,9 +8,14 @@
 //   * prisma/schema.prisma gains exactly the 6 nullable fields + 2 @@index
 //     (no defaults, no relations), and the derived artifacts
 //     (schema.postgresql.prisma + postgres-baseline.sql) are regen-in-sync.
-//   * No application code references the new Payment fields (zero behavior
-//     change), and the PR4 operator report queries (A-F, read-only) return
-//     the expected rows on both engines.
+//   * §0 now enforces PR2a's FIELD-OWNORIZATION boundary instead of PR1's
+//     "zero references": the request fields (senderPhone/requestedGroupId/
+//     requestedPlanId) may be referenced ONLY by the enroll V2 submission +
+//     student read-contract files, the review-read pair (reviewedAt/
+//     rejectionReason) only by the read contract, and reviewedByUserId stays
+//     unreferenced in src/ until PR2b/PR3 wire the audit write.
+//   * The PR4 operator report queries (A-F, read-only) return the expected
+//     rows on both engines.
 //
 // Engines: scratch SQLite via built-in node:sqlite (temp dir, never the real
 // DB) + real PostgreSQL via @electric-sql/pglite (in-memory, devDependency).
@@ -111,24 +116,52 @@ async function main() {
   const migrationSql = fs.readFileSync(MIGRATION_SQL, "utf8");
 
   // ---------------------------------------------------------------------------
-  section("0. Behavior-neutrality: no application code touches the new fields");
+  section("0. Field ownership: PR2a wrote exactly its slice, no further");
   // ---------------------------------------------------------------------------
+  // PR1 originally pinned this as "zero references" (behavior-neutral ledger).
+  // PR2a RE-PINS — not relaxes — the invariant: the REQUEST fields are now
+  // written by /api/enroll (via src/lib/payment-submission.ts) and read by the
+  // student payments contract, and the fields may appear in NO other file;
+  // the REVIEW-writer side (rejectionReason/reviewedAt writers, reviewedByUserId
+  // at all) stays un-wired until PR2b/PR3. A new file touching either half of
+  // this list fails here until its phase re-pins it deliberately.
   const srcFiles = walkFiles(path.join(REPO, "src"), [".ts", ".tsx"]);
   ok(srcFiles.length > 0, `src tree scanned (${srcFiles.length} TS files)`);
-  const uniqueNames = ["senderPhone", "requestedGroupId", "requestedPlanId", "rejectionReason"];
+  const REL = (f) => path.relative(REPO, f).split(path.sep).join("/");
+  const REQUEST_FIELDS = ["senderPhone", "requestedGroupId", "requestedPlanId"];
+  const PR2A_REQUEST_ALLOWLIST = new Set([
+    "src/lib/payment-submission.ts", // writer (enroll V2) + student read contract
+    "src/app/api/enroll/route.ts", // route wiring + the release-coupling warning
+    "src/app/api/students/me/payments/route.ts", // read API
+    "src/app/api/students/me/dashboard/route.ts", // pending/rejected request block
+    "src/components/auth/enroll-view.tsx", // senderPhone input (minimal wizard hook)
+  ]);
   const uniqueHits = srcFiles.filter((f) =>
-    uniqueNames.some((n) => new RegExp(`\\b${n}\\b`).test(fs.readFileSync(f, "utf8"))));
-  ok(uniqueHits.length === 0, `Payment-unique new names absent from src/ (${uniqueHits.join(", ") || "none"})`);
+    REQUEST_FIELDS.some((n) => new RegExp(`\\b${n}\\b`).test(fs.readFileSync(f, "utf8"))));
+  ok(
+    uniqueHits.every((f) => PR2A_REQUEST_ALLOWLIST.has(REL(f))) && uniqueHits.length > 0,
+    `request fields referenced ONLY by the PR2a allowlist (${uniqueHits.map(REL).join(", ") || "none"})`
+  );
   // reviewedAt/reviewedByUserId pre-exist on TeacherApplication, so scope the
-  // check: files that touch the payment delegate must not mention them.
+  // check: files that touch the payment delegate must not carry review WRITERS.
   const paymentFiles = srcFiles.filter((f) => /\.payment\b/.test(fs.readFileSync(f, "utf8")));
   ok(paymentFiles.length > 0, `payment-delegate files found (${paymentFiles.length})`);
+  const PR2A_REVIEW_READER_ALLOWLIST = new Set([
+    "src/lib/payment-submission.ts", // selects reviewedAt for the student's own history
+    "src/app/api/students/me/payments/route.ts", // payload comments for the same rows
+  ]);
   const reviewHits = paymentFiles.filter((f) => {
     const t = fs.readFileSync(f, "utf8");
-    return /\breviewedAt\b/.test(t) || /\breviewedByUserId\b/.test(t);
+    return /\breviewedAt\b/.test(t) || /\brejectionReason\b/.test(t);
   });
-  ok(reviewHits.length === 0,
-    `no payment-delegate file mentions reviewedAt/reviewedByUserId (${reviewHits.join(", ") || "none"})`);
+  ok(reviewHits.every((f) => PR2A_REVIEW_READER_ALLOWLIST.has(REL(f))),
+    `review fields appear ONLY in the PR2a read-contract files (${reviewHits.map(REL).join(", ") || "none"})`);
+  // reviewedByUserId may exist for OTHER review features (TeacherApplication
+  // precedent) but must not appear in ANY payment-delegate file: PR2b/PR3 own
+  // the reviewer audit write on Payment.
+  const reviewerHits = paymentFiles.filter((f) => /\breviewedByUserId\b/.test(fs.readFileSync(f, "utf8")));
+  ok(reviewerHits.length === 0,
+    `reviewedByUserId unreferenced by payment code — PR2b/PR3 owns the reviewer audit write (${reviewerHits.map(REL).join(", ") || "none"})`);
 
   // ---------------------------------------------------------------------------
   section("1. Migration SQL is forward-only additive (static scan)");

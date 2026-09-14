@@ -778,4 +778,27 @@ export const DICT_2026: Record<string, DictEntry> = {
   "teacher.201": { ar: "توزيع المسارات", en: "Track split" },
   "teacher.202": { ar: "أضف سؤال", en: "Add question" },
   "teacher.203": { ar: "تراك السؤال", en: "Question track" },
+
+  // ---------------- Phase 25 PR2a: payment-lifecycle submission V2 ----------------
+  // Server-side submission contract (manual InstaPay / e& Cash requests).
+  // Final payment-page copy is PR3's scope; these keys only carry what the
+  // V2 API validates so Arabic surfaces never receive hardcoded English.
+  "api.266": {
+    ar: "طريقة الدفع دي مش متاحة حاليًا (التحويل يدوي عن طريق InstaPay أو e& Cash)",
+    en: "This payment method is not available right now (manual transfer via InstaPay or e& Cash only)",
+  },
+  "api.267": {
+    ar: "لازم تدخل رقم الموبايل اللي حوّلت منه (رقم مصري صحيح)",
+    en: "Enter the Egyptian phone number you sent the payment from",
+  },
+  "api.268": {
+    ar: "رقم العملية مطلوب — تلاقيه في رسالة التحويل (من 3 لـ 64 حرفًا)",
+    en: "The transaction reference is required — you'll find it in the transfer confirmation (3–64 characters)",
+  },
+  "auth.226": { ar: "رقم الموبايل اللي حوّلت منه", en: "Sender phone number" },
+  "auth.227": { ar: "مثال: 01012345678", en: "e.g. 01012345678" },
+  "student.249": {
+    ar: "طلب الدفع قيد المراجعة",
+    en: "Payment request under review",
+  },
 };
