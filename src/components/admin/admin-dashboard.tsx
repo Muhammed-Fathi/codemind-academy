@@ -8,6 +8,13 @@ import { useT , pickAuto, useLocale } from "@/lib/i18n";
 // ============================================================
 import * as React from "react";
 import { useApp } from "@/lib/store";
+// Phase 25 PR3 — the payment review drawer is the ONLY caller of the PR2b
+// approve/reject endpoints (queue columns + review workflow live in §7).
+import {
+  PaymentReviewDrawer,
+  type AdminPaymentRow,
+} from "@/components/admin/payment-review-drawer";
+import { paymentMethodLabel } from "@/lib/payment-ux";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import {
@@ -2680,22 +2687,14 @@ function AddQuestionDialog({
 }
 
 // ============================================================
-// 7. Payments
+// 7. Payments — Phase 25 PR3 review workflow
 // ============================================================
-type PaymentRow = {
-  id: string;
-  userName: string;
-  userEmail: string;
-  userRole: string;
-  amount: number;
-  method: string;
-  status: string;
-  reference: string | null;
-  notes: string | null;
-  createdAt: string;
-  subscription: { id: string; status: string; plan: { nameAr: string } } | null;
-};
-
+// The queue is a READ projection of the PR1 ledger; every decision goes through
+// the PR2b API via the review drawer (src/components/admin/payment-review-drawer.tsx).
+// This view adds the columns an operator needs to triage (sender phone,
+// requested plan/group, duplicate-reference and newer-request warnings) and
+// routes every approve/reject through the drawer, which is the only place the
+// decision endpoints are called.
 function PaymentsView() {
   const tr = useT();
   const [status, setStatus] = React.useState("all");
@@ -2703,12 +2702,20 @@ function PaymentsView() {
   const [importing, setImporting] = React.useState(false);
   const [importResult, setImportResult] = React.useState<any>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  // The drawer reads the CURRENT row from the loaded queue (by id), so a
+  // post-decision reload refreshes the open drawer instead of leaving a stale
+  // object on screen — and a vanished row closes it.
+  const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const query = React.useMemo(() => {
     const params = new URLSearchParams();
     if (status !== "all") params.set("status", status);
     return `/api/admin/payments?${params.toString()}`;
   }, [status]);
-  const { data, loading, error, reload } = useApi<{ payments: PaymentRow[] }>(query, [status]);
+  const { data, loading, error, reload } = useApi<{ payments: AdminPaymentRow[] }>(query, [status]);
+  const selected = React.useMemo(
+    () => data?.payments.find((p) => p.id === selectedId) ?? null,
+    [data, selectedId]
+  );
 
   const handleImport = async (file: File) => {
     setImporting(true);
@@ -2744,34 +2751,6 @@ function PaymentsView() {
     a.download = "payments-template.xlsx";
     a.click();
     URL.revokeObjectURL(url);
-  };
-
-  const approve = async (id: string) => {
-    try {
-      const res = await fetch(`/api/admin/payments/${id}/approve`, { method: "POST" });
-      if (!res.ok) {
-        const j = await res.json();
-        throw new Error(j.error || "err");
-      }
-      toast.success(tr("admin.198"));
-      reload();
-    } catch (e: any) {
-      toast.error(e.message || tr("admin.001"));
-    }
-  };
-
-  const reject = async (id: string) => {
-    try {
-      const res = await fetch(`/api/admin/payments/${id}/reject`, { method: "POST" });
-      if (!res.ok) {
-        const j = await res.json();
-        throw new Error(j.error || "err");
-      }
-      toast.success(tr("pay.rejectedToast"));
-      reload();
-    } catch (e: any) {
-      toast.error(e.message || tr("admin.001"));
-    }
   };
 
   return (
@@ -2913,7 +2892,7 @@ function PaymentsView() {
         ) : !data || data.payments.length === 0 ? (
           <EmptyBlock message={tr("pay.empty")} />
         ) : (
-          <div className="max-h-[70vh] overflow-auto">
+          <div className="max-h-[70vh] overflow-auto" data-testid="payments-queue">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -2921,6 +2900,9 @@ function PaymentsView() {
                   <TableHead>{tr("pay.colAmount")}</TableHead>
                   <TableHead>{tr("pay.colMethod")}</TableHead>
                   <TableHead>{tr("pay.colReference")}</TableHead>
+                  <TableHead>{tr("pay.colSenderPhone")}</TableHead>
+                  <TableHead>{tr("pay.requestedPlan")}</TableHead>
+                  <TableHead>{tr("pay.requestedGroup")}</TableHead>
                   <TableHead>{tr("pay.colDate")}</TableHead>
                   <TableHead>{tr("admin.025")}</TableHead>
                   <TableHead>{tr("pay.colActions")}</TableHead>
@@ -2930,64 +2912,82 @@ function PaymentsView() {
                 {data.payments.map((p) => (
                   <TableRow
                     key={p.id}
-                    className={p.status === "PENDING" ? "bg-amber-500/5" : ""}
+                    className={p.status === "PENDING" ? "bg-amber-500/5 cursor-pointer" : "cursor-pointer"}
+                    onClick={() => setSelectedId(p.id)}
+                    data-testid="payment-row"
                   >
                     <TableCell>
                       <div className="text-sm font-medium">{p.userName}</div>
                       <div className="text-xs text-muted-foreground">{p.userEmail}</div>
+                      {p.studentContext?.groupName && (
+                        <div className="text-[11px] text-muted-foreground">
+                          {tr("pay.currentGroup")}: {p.studentContext.groupName}
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell>
-                      <span className="font-bold text-primary">
+                      <span className="font-bold text-primary whitespace-nowrap">
                         {p.amount.toLocaleString("en-US")} EGP
                       </span>
                     </TableCell>
                     <TableCell className="text-xs">
-                      <Badge variant="outline">{p.method.replace("_", " ")}</Badge>
+                      <Badge variant="outline" className="whitespace-nowrap">
+                        {paymentMethodLabel(p.method)}
+                      </Badge>
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      {p.reference || "—"}
+                      <span dir="ltr">{p.reference || "—"}</span>
+                      {p.duplicateReference && (
+                        <Badge
+                          variant="outline"
+                          className="ms-1.5 border-amber-400/50 text-amber-600 whitespace-nowrap"
+                          data-testid="duplicate-reference-badge"
+                        >
+                          {tr("pay.duplicateReferenceWarning")}
+                        </Badge>
+                      )}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
+                      <span dir="ltr">{p.senderPhone || "—"}</span>
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {p.requestedPlan
+                        ? pickAuto(p.requestedPlan.nameAr, p.requestedPlan.name)
+                        : "—"}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {p.requestedGroup?.name || "—"}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                       {fmtDate(p.createdAt)}
                     </TableCell>
-                    <TableCell>{statusBadge(p.status)}</TableCell>
                     <TableCell>
-                      {p.status === "PENDING" ? (
-                        <div className="flex items-center gap-1">
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  size="icon"
-                                  variant="outline"
-                                  className="h-7 w-7 text-emerald-600 border-emerald-500/40 hover:bg-emerald-500/10"
-                                  onClick={() => approve(p.id)}
-                                >
-                                  <CheckCircle2 className="w-3.5 h-3.5" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>Approve</TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  size="icon"
-                                  variant="outline"
-                                  className="h-7 w-7 text-red-600 border-red-500/40 hover:bg-red-500/10"
-                                  onClick={() => reject(p.id)}
-                                >
-                                  <XCircle className="w-3.5 h-3.5" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>Reject</TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        </div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
+                      <div className="flex flex-wrap items-center gap-1">
+                        {statusBadge(p.status)}
+                        {p.isLatestPending === false && (
+                          <Badge
+                            variant="outline"
+                            className="border-amber-400/50 text-amber-600 whitespace-nowrap"
+                            data-testid="stale-badge"
+                          >
+                            {tr("pay.staleBadge")}
+                          </Badge>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedId(p.id);
+                        }}
+                        aria-label={`${tr("pay.reviewOpen")} — ${p.userName}`}
+                        data-testid="review-button"
+                      >
+                        {tr("pay.reviewOpen")}
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -2996,6 +2996,17 @@ function PaymentsView() {
           </div>
         )}
       </Card>
+
+      {/* Review drawer — the ONLY caller of the PR2b approve/reject endpoints */}
+      <PaymentReviewDrawer
+        payment={selected}
+        onClose={() => setSelectedId(null)}
+        onDecided={() => {
+          // The server is the authority: re-read the queue after any outcome so
+          // the row reflects committed state (approved / rejected / conflicted).
+          reload();
+        }}
+      />
     </motion.div>
   );
 }

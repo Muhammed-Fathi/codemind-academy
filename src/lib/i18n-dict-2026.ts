@@ -856,4 +856,364 @@ export const DICT_2026: Record<string, DictEntry> = {
     ar: "حصلت مشكلة غير متوقعة. جرب تاني ولو استمرت تواصل معانا.",
     en: "An unexpected problem occurred. Please retry, and contact us if it persists.",
   },
+
+  // =======================================================================
+  // Phase 25 PR3 — PAYMENT EXPERIENCE / UI
+  // Student payment page + WhatsApp proof + student request states + the
+  // admin payment review workflow. Arabic (Egyptian, simple + professional)
+  // is the primary polished experience; en mirrors every key.
+  //
+  // Product-language rules enforced here:
+  //   * activation is always worded as opening the subscription and the course
+  //     content — "تفعيل اشتراكك وفتح محتوى الكورس" (pay.activateMeaning) —
+  //     never the colloquial "activate the account" phrasing;
+  //   * a PENDING request is "طلب الدفع تحت المراجعة", NEVER "active";
+  //   * a rejected request never claims the student lost current access
+  //     (pay.rejectedEntitlementKept);
+  //   * the internal "grandfathered" term is never shown to a student —
+  //     the copy says their current course stays accessible.
+  // =======================================================================
+
+  // ---- Request summary (real course / group / plan / amount) ----
+  "pay.summaryTitle": { ar: "ملخص طلبك", en: "Your request summary" },
+  "pay.summaryHint": {
+    ar: "اتأكد إن البيانات دي مطابقة لللي اخترته قبل ما تحوّل.",
+    en: "Make sure these details match your selection before you transfer.",
+  },
+  "pay.planDuration": { ar: "المدة: {p1} شهر", en: "Duration: {p1} month(s)" },
+  "pay.durationLabel": { ar: "المدة", en: "Duration" },
+  "pay.scheduleLabel": { ar: "المواعيد", en: "Schedule" },
+  "pay.submittedLabel": { ar: "تاريخ الطلب", en: "Submitted" },
+  "pay.couponDiscountGeneric": { ar: "خصم الكوبون", en: "Coupon discount" },
+  "pay.monthsCount": { ar: "{p1} شهر", en: "{p1} month(s)" },
+  "pay.groupSchedule": { ar: "المواعيد: {p1}", en: "Schedule: {p1}" },
+  "pay.groupSeatsLeft": { ar: "{p1} / {p2} طالب", en: "{p1} / {p2} students" },
+  "pay.originalPrice": { ar: "السعر الأساسي", en: "Original price" },
+  "pay.couponDiscount": { ar: "خصم الكوبون ({p1})", en: "Coupon discount ({p1})" },
+  "pay.finalAmount": { ar: "المبلغ المطلوب تحويله", en: "Amount to transfer" },
+  "pay.egp": { ar: "جنيه", en: "EGP" },
+  "pay.notSelectedYet": { ar: "لسه ما اخترتش", en: "Not selected yet" },
+
+  // ---- Payment method + destination ----
+  "pay.methodTitle": { ar: "طريقة الدفع", en: "Payment method" },
+  "pay.methodComingSoon": { ar: "قريبًا", en: "Coming soon" },
+  "pay.methodUnavailable": { ar: "مش متاحة حاليًا", en: "Not available right now" },
+  "pay.destinationLabel": { ar: "حوّل على", en: "Transfer to" },
+  "pay.destinationInstapayHint": {
+    ar: "افتح تطبيق InstaPay، اختار «تحويل»، وادخل الرقم ده.",
+    en: "Open the InstaPay app, choose Transfer, and enter this number.",
+  },
+  "pay.destinationEtisalatHint": {
+    ar: "افتح تطبيق e& Cash، اختار «تحويل»، وادخل الرقم ده.",
+    en: "Open the e& Cash app, choose Transfer, and enter this number.",
+  },
+  "pay.destinationMissing": {
+    ar: "مفيش رقم محدد للطريقة دي — كلم الدعم قبل ما تحوّل.",
+    en: "No destination is configured for this method — contact support before transferring.",
+  },
+  "pay.copyNumber": { ar: "نسخ الرقم", en: "Copy number" },
+  "pay.copied": { ar: "اتنسخ الرقم", en: "Number copied" },
+  "pay.copyFailed": { ar: "مش قادر ننسخ الرقم", en: "Could not copy the number" },
+
+  // ---- Sender phone ----
+  "pay.senderPhoneHint": {
+    ar: "اكتب الرقم اللي حوّلت منه المبلغ بالظبط — الإدارة بتطابق التحويل بيه.",
+    en: "Enter exactly the number you sent the money from — the admin matches the transfer by it.",
+  },
+  "pay.senderPhoneExample": {
+    ar: "مثال: 01147422177 أو ‎+20 1147422177",
+    en: "e.g. 01147422177 or +20 1147422177",
+  },
+  "pay.senderPhoneInvalid": {
+    ar: "تأكد إن الرقم مصري وصحيح (11 رقم يبدأ بـ 01)",
+    en: "Enter a valid Egyptian mobile number (11 digits starting with 01)",
+  },
+
+  // ---- Transaction reference ----
+  "pay.referenceLabel": {
+    ar: "رقم العملية / Transaction Reference",
+    en: "Transaction Reference",
+  },
+  "pay.referenceHint": {
+    ar: "هتلاقيه في تفاصيل عملية التحويل داخل التطبيق بعد إتمام الدفع. الاسم ممكن يظهر كـ Transaction ID أو Reference حسب التطبيق.",
+    en: "You'll find it in the transfer details inside the app after the payment completes. It may appear as Transaction ID or Reference depending on the app.",
+  },
+  "pay.referenceInvalid": {
+    ar: "اكتب رقم العملية (من 3 لـ 64 حرفًا)",
+    en: "Enter the transaction reference (3–64 characters)",
+  },
+  "pay.findReferenceTitle": { ar: "تلاقي رقم العملية فين؟", en: "Where is the reference?" },
+  "pay.findReferenceBody": {
+    ar: "بعد ما التحويل يتم، هتلاقي تفاصيل العملية داخل التطبيق نفسه، وفيها رقم ممكن يظهر باسم Transaction ID أو Reference. انسخه زي ما هو.",
+    en: "Once the transfer completes, the app shows the transaction details, which include a number labelled Transaction ID or Reference. Copy it exactly as it appears.",
+  },
+
+  // ---- Payment instructions card ----
+  "pay.instructionsTitle": { ar: "إزاي تدفع", en: "How to pay" },
+  "pay.instructionsIntro": {
+    ar: "الدفع تحويل يدوي — مفيش دفع أوتوماتيك على المنصة.",
+    en: "Payment is a manual transfer — there is no automatic payment on the platform.",
+  },
+  "pay.stepTransfer": {
+    ar: "حوّل المبلغ المطلوب على رقم الطريقة اللي اخترتها.",
+    en: "Transfer the requested amount to the number of the method you chose.",
+  },
+  "pay.stepReference": {
+    ar: "افتح تفاصيل عملية التحويل وانسخ رقم العملية.",
+    en: "Open the transfer details and copy the transaction reference.",
+  },
+  "pay.stepScreenshot": {
+    ar: "خد Screenshot لتفاصيل عملية التحويل.",
+    en: "Take a screenshot of the transfer details.",
+  },
+  "pay.stepWhatsapp": {
+    ar: "سجّل الطلب هنا، وبعدين ابعت الصورة على رقم واتساب واحد فقط.",
+    en: "Submit your request here, then send the screenshot to ONE WhatsApp number only.",
+  },
+  "pay.stepWait": {
+    ar: "استنى مراجعة الإدارة — ممكن تستغرق لحد {p1} ساعة.",
+    en: "Wait for the admin review — it can take up to {p1} hours.",
+  },
+
+  // ---- WhatsApp proof ----
+  "pay.proofTitle": { ar: "إثبات الدفع على واتساب", en: "WhatsApp payment proof" },
+  "pay.proofBody": {
+    ar: "مفيش رفع صورة على المنصة. ابعت صورة التحويل يدوي على واتساب بعد ما تسجّل الطلب.",
+    en: "There is no image upload on the platform. Send the transfer screenshot manually on WhatsApp after submitting.",
+  },
+  "pay.oneNumberOnly": {
+    ar: "مش محتاج تبعت الصورة على الرقمين — اختار رقم واحد فقط.",
+    en: "Don't send the screenshot to both numbers — pick ONE only.",
+  },
+  "pay.manualAttachment": {
+    ar: "الرابط بيفتح المحادثة والرسالة جاهزة — صورة التحويل بتتلزق يدوي من عندك.",
+    en: "The link opens the chat with the message ready — you attach the screenshot yourself.",
+  },
+  "pay.reviewTime": {
+    ar: "مراجعة طلب الدفع ممكن تستغرق لحد {p1} ساعة.",
+    en: "Payment review can take up to {p1} hours.",
+  },
+  "pay.proofNumberLabel": { ar: "واتساب {p1}", en: "WhatsApp {p1}" },
+  "pay.proofMessage": {
+    ar: "السلام عليكم، أنا {p1}.\nتم تحويل مبلغ {p2} جنيه عن طريق {p3}.\nرقم العملية: {p4}\nرقم الموبايل المحول منه: {p5}\nوهبعت صورة التحويل هنا.",
+    en: "Hello, I'm {p1}.\nI transferred {p2} EGP via {p3}.\nTransaction reference: {p4}\nSender phone: {p5}\nI'll send the transfer screenshot here.",
+  },
+
+  // ---- Submission ----
+  "pay.submitAction": {
+    ar: "أنا حوّلت — سجّل طلب الدفع",
+    en: "I've transferred — submit my request",
+  },
+  "pay.needMethod": { ar: "اختار طريقة الدفع الأول", en: "Choose a payment method first" },
+  "pay.needSenderPhone": {
+    ar: "اكتب رقم الموبايل اللي حوّلت منه",
+    en: "Enter the phone number you transferred from",
+  },
+  "pay.needReference": { ar: "اكتب رقم العملية", en: "Enter the transaction reference" },
+  "pay.paymentPageTitle": { ar: "إتمام الدفع", en: "Complete your payment" },
+  "pay.paymentPageHint": {
+    ar: "حوّل المبلغ، وبعدين سجّل بيانات التحويل هنا.",
+    en: "Transfer the amount, then record the transfer details here.",
+  },
+
+  // ---- PENDING state ----
+  "pay.pendingTitle": { ar: "طلب الدفع تحت المراجعة", en: "Payment request under review" },
+  "pay.pendingNewStudent": {
+    ar: "بعد مراجعة الدفع وتأكيده، اشتراكك هيتفعل ومحتوى الكورس هيتفتح ليك.",
+    en: "Once the admin reviews and confirms your payment, your subscription activates and the course content opens for you.",
+  },
+  "pay.pendingRenewal": {
+    ar: "طلب التجديد تحت المراجعة، واشتراكك الحالي مستمر لحد تاريخ انتهائه.",
+    en: "Your renewal request is under review, and your current subscription stays active until its end date.",
+  },
+  "pay.pendingCurrentEndsAt": {
+    ar: "اشتراكك الحالي صالح لحد {p1}",
+    en: "Your current access is valid until {p1}",
+  },
+  "pay.pendingAccessStillOn": {
+    ar: "محتوى الكورس الحالي شغال عادي أثناء المراجعة.",
+    en: "Your current course content keeps working while the review runs.",
+  },
+  "pay.pendingSubmittedAt": { ar: "اتسجل الطلب: {p1}", en: "Submitted: {p1}" },
+  "pay.pendingExistingBanner": {
+    ar: "عندك طلب دفع تحت المراجعة بالفعل — مش محتاج تقدم طلب تاني لنفس التحويل.",
+    en: "You already have a payment request under review — no need to submit another one for the same transfer.",
+  },
+  "pay.openNewRequest": { ar: "تقديم طلب دفع جديد", en: "Submit a new payment request" },
+  "pay.requestedPlan": { ar: "الباقة المطلوبة", en: "Requested plan" },
+  "pay.requestedGroup": { ar: "الجروب المطلوب", en: "Requested group" },
+
+  // ---- REJECTED state ----
+  "pay.rejectedTitle": { ar: "تم رفض طلب الدفع", en: "Payment request rejected" },
+  "pay.rejectedReasonLabel": { ar: "سبب الرفض", en: "Rejection reason" },
+  "pay.reviewedAtLabel": { ar: "تاريخ المراجعة", en: "Reviewed" },
+  "pay.rejectedRetry": {
+    ar: "راجع بيانات التحويل وحاول تقديم طلب دفع جديد.",
+    en: "Check your transfer details and submit a new payment request.",
+  },
+  "pay.rejectedEntitlementKept": {
+    ar: "اشتراكك الحالي مستمر زي ما هو — رفض طلب التجديد مش بيلغي وصولك الحالي للكورس.",
+    en: "Your current subscription is unchanged — a rejected renewal never removes your current course access.",
+  },
+
+  // ---- APPROVED / ACTIVE state ----
+  "pay.confirmedTitle": { ar: "تم تأكيد اشتراكك", en: "Your subscription is confirmed" },
+  "pay.activateMeaning": {
+    ar: "تفعيل اشتراكك وفتح محتوى الكورس",
+    en: "Activate your subscription and open the course content",
+  },
+  "pay.renewMeaning": { ar: "تجديد اشتراكك", en: "Renew your subscription" },
+  "pay.activeStatusLabel": { ar: "حالة الاشتراك", en: "Subscription status" },
+  "pay.activeStartLabel": { ar: "من تاريخ", en: "Starts" },
+  "pay.activeEndLabel": { ar: "لحد تاريخ", en: "Valid until" },
+  "pay.currentEntitlement": { ar: "اشتراكك الحالي", en: "Your current subscription" },
+  "pay.noSubscriptionYet": {
+    ar: "لسه مفيش اشتراك مفعّل.",
+    en: "No active subscription yet.",
+  },
+
+  // ---- Request history (student-facing, not an admin ledger) ----
+  "pay.historyTitle": { ar: "طلبات الدفع", en: "Payment requests" },
+  "pay.historyEmpty": { ar: "مفيش طلبات دفع لحد دلوقتي.", en: "No payment requests yet." },
+  "pay.requestStatusLabel": { ar: "حالة الطلب", en: "Request status" },
+  "pay.statusPending": { ar: "تحت المراجعة", en: "Under review" },
+  "pay.statusApproved": { ar: "مؤكد", en: "Approved" },
+  "pay.statusRejected": { ar: "مرفوض", en: "Rejected" },
+  "pay.statusOther": { ar: "مغلق", en: "Closed" },
+  "pay.duplicateReferenceWarning": {
+    ar: "رقم عملية مكرر",
+    en: "Duplicate transaction reference",
+  },
+  "pay.historyLoadFailed": {
+    ar: "مش قادر نجيب سجل الطلبات دلوقتي.",
+    en: "Could not load your payment requests right now.",
+  },
+
+  // ---- Admin: review queue + drawer ----
+  "pay.reviewTitle": { ar: "مراجعة طلب الدفع", en: "Review payment request" },
+  "pay.reviewOpen": { ar: "مراجعة", en: "Review" },
+  "pay.reviewStudent": { ar: "الطالب", en: "Student" },
+  "pay.reviewPayment": { ar: "طلب الدفع", en: "Payment request" },
+  "pay.reviewContext": { ar: "سياق القرار", en: "Decision context" },
+  "pay.colSenderPhone": { ar: "رقم المحوّل", en: "Sender phone" },
+  "pay.registeredPhone": { ar: "رقم التليفون المسجل", en: "Registered phone" },
+  "pay.registeredEmail": { ar: "الإيميل", en: "Email" },
+  "pay.currentGroup": { ar: "الجروب الحالي", en: "Current group" },
+  "pay.currentPlan": { ar: "الباقة الحالية", en: "Current plan" },
+  "pay.currentEnd": { ar: "تاريخ الانتهاء", en: "End date" },
+  "pay.noGroupYet": { ar: "لسه مش متعيين في جروب", en: "No group assigned yet" },
+  "pay.entitlementActive": {
+    ar: "عنده اشتراك مفعّل حاليًا",
+    en: "Currently has an active entitlement",
+  },
+  "pay.entitlementInactive": {
+    ar: "مفيش اشتراك مفعّل حاليًا",
+    en: "No active entitlement right now",
+  },
+  "pay.decisionRenewal": {
+    ar: "تجديد لاشتراك مفعّل — التاريخ بيتزاد على الحالي",
+    en: "Renewal of an active subscription — the end date stacks on the current one",
+  },
+  "pay.decisionNewActivation": {
+    ar: "تفعيل جديد بعد الموافقة (اتجاه المقعد + الجروب)",
+    en: "New activation on approval (seat + group assignment)",
+  },
+  "pay.decisionExistingAccess": {
+    ar: "الطالب عنده وصول حالي للكورس — الموافقة بتسجّل الاشتراك من غير انقطاع",
+    en: "The student already has course access — approval records the subscription without interruption",
+  },
+  "pay.groupOverride": { ar: "الجروب عند الموافقة", en: "Group on approval" },
+  "pay.groupOverrideHint": {
+    ar: "سيبه فاضي عشان الموافقة تتم بالجروب المطلوب في الطلب.",
+    en: "Leave it empty to approve with the group requested in the payment.",
+  },
+  "pay.groupSeats": { ar: "{p1} / {p2} مقعد", en: "{p1} / {p2} seats" },
+  "pay.selectGroupPlaceholder": { ar: "اختار جروب", en: "Choose a group" },
+  "pay.noGroupOptions": { ar: "مفيش جروبات متاحة للاختيار.", en: "No groups available to choose from." },
+  "pay.capacityHint": {
+    ar: "العدد للتوضيح فقط — القرار النهائي على السيرفر.",
+    en: "The seat count is informational — the server makes the final call.",
+  },
+  "pay.approveAction": { ar: "تأكيد الدفع", en: "Approve payment" },
+  "pay.approving": { ar: "جارٍ التأكيد…", en: "Approving…" },
+  "pay.approveSuccess": {
+    ar: "اتأكد الدفع واتفعّل الاشتراك",
+    en: "Payment approved and the subscription activated",
+  },
+  "pay.rejectAction": { ar: "رفض الطلب", en: "Reject request" },
+  "pay.rejectTitle": { ar: "رفض طلب الدفع", en: "Reject payment request" },
+  "pay.rejectReasonLabel": { ar: "سبب الرفض (مطلوب)", en: "Rejection reason (required)" },
+  "pay.rejectReasonHint": {
+    ar: "السبب بيظهر للطالب، فاكتبه بوضوح.",
+    en: "The student sees this reason — write it clearly.",
+  },
+  "pay.rejectReasonRequired": { ar: "لازم تكتب سبب الرفض", en: "A rejection reason is required" },
+  "pay.rejectReasonTooLong": {
+    ar: "السبب طويل (الحد الأقصى {p1} حرف)",
+    en: "The reason is too long (maximum {p1} characters)",
+  },
+  "pay.rejectConfirmHint": {
+    ar: "الرفض بيقفل الطلب ده نهائيًا — الطالب هيقدم طلب جديد لو محتاج.",
+    en: "Rejecting closes this request for good — the student submits a new one if needed.",
+  },
+  "pay.rejectConfirm": { ar: "أنا متأكد — ارفض الطلب", en: "I'm sure — reject the request" },
+  "pay.rejectCancel": { ar: "إلغاء", en: "Cancel" },
+  "pay.stillPendingNote": { ar: "الطلب لسه تحت المراجعة.", en: "The request is still pending." },
+  "pay.staleBadge": { ar: "في طلب أحدث", en: "Newer request exists" },
+  "pay.refreshQueue": { ar: "تحديث البيانات", en: "Refresh" },
+  "pay.paymentNotFound": { ar: "الطلب مش موجود.", en: "This request no longer exists." },
+
+  // ---- Admin: domain-error copy (PR2b codes → clear UI messages) ----
+  "pay.errorGroupRequired": {
+    ar: "مفيش جروب واضح للطلب ده — اختار جروب من القائمة وكرر التأكيد.",
+    en: "No group can be resolved for this request — pick a group from the list and approve again.",
+  },
+  "pay.errorGroupFull": {
+    ar: "الجروب المختار مكتمل. اختار جروب تاني وحاول مرة أخرى.",
+    en: "The selected group is full. Choose another group and try again.",
+  },
+  "pay.errorStale": {
+    ar: "في طلب دفع أحدث للطالب. راجع أحدث طلب قبل اتخاذ القرار.",
+    en: "A newer payment request exists for this student. Review the newest request before deciding.",
+  },
+  "pay.errorInvalidTransition": {
+    ar: "الطلب ده اتراجع عليه بالفعل (ممكن من أدمن تاني). تم تحديث البيانات.",
+    en: "This request was already decided (possibly by another admin). The data has been refreshed.",
+  },
+  "pay.errorPlanRequired": {
+    ar: "مفيش باقة واضحة للطلب ده — مش ممكن التأكيد، والطلب لسه تحت المراجعة.",
+    en: "No plan can be resolved for this request — it cannot be approved, and it stays under review.",
+  },
+  "pay.errorPlanNotFound": {
+    ar: "الباقة المطلوبة مش متاحة — مش ممكن التأكيد، والطلب لسه تحت المراجعة.",
+    en: "The requested plan is not available — it cannot be approved, and the request stays under review.",
+  },
+  "pay.errorGroupNotFound": {
+    ar: "الجروب مش متاح أو مش مفعّل — اختار جروب تاني.",
+    en: "The group is unavailable or inactive — choose another group.",
+  },
+  "pay.errorInvalidGroupContext": {
+    ar: "الجروب ده مش تابع لنفس كورس الطلب — اختار جروب من نفس الكورس.",
+    en: "That group does not belong to this request's course — choose a group from the same course.",
+  },
+  "pay.errorNoStudent": {
+    ar: "مفيش ملف طالب مربوط بالمستخدم ده — مش ممكن التأكيد.",
+    en: "This user has no student profile — approval is not possible.",
+  },
+  "pay.errorInvalidRejectionReason": {
+    ar: "لازم تدخل سبب رفض صحيح (من حرف لحد 500 حرف).",
+    en: "Enter a valid rejection reason (1–500 characters).",
+  },
+  "pay.errorDbConflict": {
+    ar: "حصل تعارض مؤقت في البيانات — حاول تاني بعد شوية.",
+    en: "A temporary data conflict occurred — please retry in a moment.",
+  },
+  "pay.errorInternal": {
+    ar: "حصلت مشكلة غير متوقعة. حاول تاني، ولو استمرت كلم الدعم التقني.",
+    en: "An unexpected problem occurred. Please retry, and contact technical support if it persists.",
+  },
+  "pay.errorGeneric": {
+    ar: "مش قادر ننفذ العملية دي دلوقتي.",
+    en: "This action could not be completed right now.",
+  },
 };
