@@ -226,15 +226,45 @@ export function normalizeRejectionReason(raw: unknown): string | null {
  * representation (`SubscriptionPlan.durationMonths`), with day-overflow
  * CLAMPED to the target month's last day (Jan 31 + 1 month = Feb 28, never
  * Mar 3). This is pure and deterministic — the tests pin the exact results.
+ *
+ * SUBSCRIPTION TIMESTAMPS ARE ABSOLUTE UTC INSTANTS. All arithmetic here is
+ * therefore done with the UTC accessors (`getUTC*`) and `Date.UTC` ONLY —
+ * never with the local-time accessors (`getMonth` / `setDate` / …) or the
+ * local-time `new Date(y, m, d)` constructor. Local-time month arithmetic
+ * reinterprets the same wall-clock fields under the SERVER's timezone, so
+ * whenever the source and target months fall on opposite sides of a DST
+ * transition the resulting instant is shifted by the offset delta (e.g.
+ * Africa/Cairo: 2026-10-01T00:00:00Z + 1 month produced
+ * 2026-11-01T01:00:00Z — Egypt leaves DST on the last Thursday of October,
+ * so UTC+3 became UTC+2 and the extra hour leaked into the stored endDate).
+ * The UTC form is invariant to the machine's TZ: the time-of-day and the
+ * calendar day are preserved exactly, so
+ * 2026-10-01T00:00:00.000Z + 1 month === 2026-11-01T00:00:00.000Z
+ * under every timezone. `base` is never mutated.
  */
 export function addMonths(base: Date, months: number): Date {
-  const d = new Date(base.getTime());
-  const day = d.getDate();
-  d.setDate(1);
-  d.setMonth(d.getMonth() + months);
-  const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-  d.setDate(Math.min(day, lastDay));
-  return d;
+  // Calendar fields of the absolute instant, read in UTC.
+  const totalMonth = base.getUTCMonth() + months;
+  // Normalize so a negative `months` walks backwards across year boundaries.
+  const targetYear = base.getUTCFullYear() + Math.floor(totalMonth / 12);
+  const targetMonth = ((totalMonth % 12) + 12) % 12;
+
+  // Day-clamping rule (unchanged): the target month's last day is day 0 of
+  // the following month. `Date.UTC` normalizes both the month and day-0
+  // overflow without any local-time or DST reinterpretation.
+  const lastDay = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
+
+  return new Date(
+    Date.UTC(
+      targetYear,
+      targetMonth,
+      Math.min(base.getUTCDate(), lastDay),
+      base.getUTCHours(),
+      base.getUTCMinutes(),
+      base.getUTCSeconds(),
+      base.getUTCMilliseconds()
+    )
+  );
 }
 
 // ---------------------------------------------------------------------------
