@@ -135,6 +135,7 @@ async function main() {
     "src/app/api/students/me/payments/route.ts", // read API
     "src/app/api/students/me/dashboard/route.ts", // pending/rejected request block
     "src/components/auth/enroll-view.tsx", // senderPhone input (minimal wizard hook)
+    "src/lib/payment-transitions.ts", // PR2b decision service (reads the request intent)
   ]);
   const uniqueHits = srcFiles.filter((f) =>
     REQUEST_FIELDS.some((n) => new RegExp(`\\b${n}\\b`).test(fs.readFileSync(f, "utf8"))));
@@ -149,6 +150,8 @@ async function main() {
   const PR2A_REVIEW_READER_ALLOWLIST = new Set([
     "src/lib/payment-submission.ts", // selects reviewedAt for the student's own history
     "src/app/api/students/me/payments/route.ts", // payload comments for the same rows
+    "src/lib/payment-transitions.ts", // PR2b: writes reviewedAt/rejectionReason/reviewedByUserId
+    "src/app/api/admin/payments/[id]/reject/route.ts", // PR2b: echoes result.payment.rejectionReason into the notification
   ]);
   const reviewHits = paymentFiles.filter((f) => {
     const t = fs.readFileSync(f, "utf8");
@@ -157,11 +160,19 @@ async function main() {
   ok(reviewHits.every((f) => PR2A_REVIEW_READER_ALLOWLIST.has(REL(f))),
     `review fields appear ONLY in the PR2a read-contract files (${reviewHits.map(REL).join(", ") || "none"})`);
   // reviewedByUserId may exist for OTHER review features (TeacherApplication
-  // precedent) but must not appear in ANY payment-delegate file: PR2b/PR3 own
-  // the reviewer audit write on Payment.
+  // precedent). PR2b RE-PINS — not relaxes — the reviewer-audit invariant:
+  // the reviewer write on Payment is now owned by exactly ONE file, the
+  // decision service (the routes derive the reviewer from the session and
+  // never read/write the field themselves). Any new file touching it fails
+  // here until its phase re-pins it deliberately.
+  const PR2B_REVIEWER_WRITER_ALLOWLIST = new Set([
+    "src/lib/payment-transitions.ts", // PR2b: the sole Payment review-field writer
+  ]);
   const reviewerHits = paymentFiles.filter((f) => /\breviewedByUserId\b/.test(fs.readFileSync(f, "utf8")));
-  ok(reviewerHits.length === 0,
-    `reviewedByUserId unreferenced by payment code — PR2b/PR3 owns the reviewer audit write (${reviewerHits.map(REL).join(", ") || "none"})`);
+  ok(
+    reviewerHits.length > 0 && reviewerHits.every((f) => PR2B_REVIEWER_WRITER_ALLOWLIST.has(REL(f))),
+    `reviewedByUserId referenced ONLY by the PR2b decision service (${reviewerHits.map(REL).join(", ") || "none"})`
+  );
 
   // ---------------------------------------------------------------------------
   section("1. Migration SQL is forward-only additive (static scan)");
