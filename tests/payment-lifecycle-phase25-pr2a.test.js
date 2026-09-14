@@ -671,13 +671,27 @@ async function main() {
   }
 
   // -------------------------------------------------------------------------
-  section("15. PR2b boundary — approval/rejection untouched; schema intact");
+  section("15. PR2b boundary — decision routes delegate to the shared service; schema intact");
   // -------------------------------------------------------------------------
   {
     const approve = read("src/app/api/admin/payments/[id]/approve/route.ts");
     const reject = read("src/app/api/admin/payments/[id]/reject/route.ts");
-    ok(!/requestedGroupId|requestedPlanId|senderPhone/.test(approve), "legacy approve route was NOT rewritten in PR2a (PR2b owns it)");
-    ok(!/requestedGroupId|requestedPlanId|rejectionReason/.test(reject), "legacy reject route was NOT rewritten in PR2a");
+
+    // PR2b RE-PIN (the deliberate-protocol replacement for the old
+    // "legacy route NOT rewritten" pins, which PR2b intentionally breaks):
+    // the decision logic lives in EXACTLY ONE place — @/lib/payment-
+    // transitions. The routes (1) authenticate the ADMIN, (2) forward the
+    // narrow client inputs (group override / rejection reason), (3) map the
+    // service's domain errors to HTTP. No route carries a second copy of
+    // the rules (no in-route transaction, no payment.update).
+    ok(/from "@\/lib\/payment-transitions"/.test(approve), "approve route delegates to the PR2b shared service");
+    ok(/approvePayment\s*\(/.test(approve), "approve route calls approvePayment (the service, not an in-route copy)");
+    ok(/runApprovalPostCommitEffects\s*\(/.test(approve), "approve route runs the shared failure-tolerant post-commit helper");
+    ok(!/\$transaction\s*\(/.test(approve) && !/payment\.update\s*\(/.test(approve), "approve route carries NO decision logic (no transaction, no payment.update)");
+    ok(/from "@\/lib\/payment-transitions"/.test(reject), "reject route delegates to the PR2b shared service");
+    ok(/rejectPayment\s*\(/.test(reject), "reject route calls rejectPayment (the service, not an in-route copy)");
+    ok(/normalizeRejectionReason\s*\(/.test(reject), "reject route validates the reason with the shared normalizer (route and service can never disagree)");
+    ok(!/\$transaction\s*\(/.test(reject) && !/payment\.update\s*\(/.test(reject), "reject route carries NO decision logic (no transaction, no payment.update)");
 
     const lib = read("src/lib/payment-submission.ts");
     ok(!/status:\s*"APPROVED"/.test(lib) && !/status:\s*"REJECTED"/.test(lib), "PR2a writes ONLY PENDING — no approval/rejection transitions");

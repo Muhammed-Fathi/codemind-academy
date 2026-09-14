@@ -1,13 +1,24 @@
 import { getServerT } from "@/lib/i18n-server";
 // CodeMind Academy — Admin Bulk Payment Import API
 // Accepts an xlsx file, parses payment records, creates them in bulk.
+//
+// PHASE 25 PR2b — import is CONSTRAINED TO PENDING LEDGER ENTRIES.
+// The decision path (APPROVED / REJECTED) is owned exclusively by the shared
+// transition service (`src/lib/payment-transitions.ts`), reached through the
+// per-payment approve/reject endpoints — with their strict transition
+// guards, stale-payment protection, capacity enforcement, reviewer audit
+// fields and coupon handling. An import can therefore never mint a decided
+// state or touch entitlements: a row that requests a decision status is
+// created PENDING for later review (the result row reports `importedAs`),
+// and import never writes Subscription / Student rows.
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
 import * as XLSX from "xlsx";
 
 // Expected columns: userEmail, amount, method (INSTAPAY|VODAFONE_CASH|ETISALAT_CASH),
-// reference, status (PENDING|APPROVED|REJECTED), notes
+// reference, status (any value reads as PENDING — decisions happen in review),
+// notes
 
 export async function POST(req: NextRequest) {
   const tApi = await getServerT();
@@ -74,18 +85,18 @@ export async function POST(req: NextRequest) {
           ? method
           : "INSTAPAY";
 
-      // Validate status
-      const validStatus =
-        status === "APPROVED" || status === "REJECTED" || status === "EXPIRED"
-          ? status
-          : "PENDING";
+      // PHASE 25 PR2b: import creates PENDING ledger entries ONLY — the
+      // decision (approve/reject) belongs to the shared transition service,
+      // which import must not bypass. A row that requested another status is
+      // still created, but PENDING for later review (the result reports it).
+      const requestedNonPending = status !== "PENDING";
 
       const payment = await db.payment.create({
         data: {
           userId: targetUser.id,
           amount,
           method: validMethod as any,
-          status: validStatus as any,
+          status: "PENDING" as any,
           reference,
           notes,
         },
@@ -99,6 +110,10 @@ export async function POST(req: NextRequest) {
         method: validMethod,
         paymentId: payment.id,
         status: "created",
+        importedAs: "PENDING",
+        ...(requestedNonPending
+          ? { note: "decision status ignored — imported PENDING for review" }
+          : {}),
       });
       created++;
     }
@@ -121,13 +136,15 @@ export async function GET() {
   const { error } = await requireRole("ADMIN");
   if (error) return error;
 
+  // Phase 25 PR2b: the template teaches the import contract — imported rows
+  // are ALWAYS created PENDING (decisions happen through the review flow).
   const template = [
     {
       userEmail: "student@codemind.academy",
       amount: 200,
       method: "INSTAPAY",
       reference: "REF123456",
-      status: "APPROVED",
+      status: "PENDING",
       notes: tApi("api.044"),
     },
     {

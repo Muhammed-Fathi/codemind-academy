@@ -801,4 +801,59 @@ export const DICT_2026: Record<string, DictEntry> = {
     ar: "طلب الدفع قيد المراجعة",
     en: "Payment request under review",
   },
+
+  // Phase 25 PR2b — payment decision layer (approve/reject domain errors +
+  // truthful post-decision notifications). ar+en for every key.
+  "api.269": {
+    ar: "الدفع ده اتراجع عليه بالفعل — حالة الدفعة اتغيرت ومش ممكن تراجعها تاني",
+    en: "This payment has already been decided — its state changed, so it cannot be decided again",
+  },
+  "api.270": {
+    ar: "في طلب دفع أحدث لنفس الطالب — راجع أحدث طلب مش ده",
+    en: "A newer payment request exists for this student — review the most recent request instead",
+  },
+  "api.271": {
+    ar: "لازم يكون ليك ملف طالب عشان تتم الموافقة على الدفعة",
+    en: "This payment's user has no student profile — a student profile is required to approve",
+  },
+  "api.272": {
+    ar: "مفيش مجموعة واضحة للطلب ده — حدد مجموعة للموافقة وكرر",
+    en: "No group can be resolved for this payment — provide a group for approval and retry",
+  },
+  "api.273": { ar: "المجموعة المطلوبة مش متاحة", en: "The requested group is not available" },
+  "api.274": { ar: "المجموعة ممتلئة — مفيش مقاعد حاليًا", en: "The group is full — no seats available right now" },
+  "api.275": { ar: "مفيش خطة واضحة للطلب ده — مش ممكن موافقة من غير خطة", en: "No plan can be resolved for this payment — approval requires a plan" },
+  "api.276": { ar: "الخطة المطلوبة مش متاحة", en: "The requested plan is not available" },
+  "api.277": {
+    ar: "المجموعة دي مش في نفس سياق كورس الطلب ده",
+    en: "The group does not belong to this payment's course context",
+  },
+  "api.278": {
+    ar: "لازم تدخل سبب الرفض (نص، من حرف واحد لحد 500 حرف)",
+    en: "A rejection reason is required (1–500 characters)",
+  },
+  "api.279": {
+    ar: "حصل تعارض مؤقت في قاعدة البيانات — جرب تاني بعد شوية",
+    en: "A transient database conflict occurred — please retry in a moment",
+  },
+  "api.280": {
+    ar: "تم تفعيل اشتراكك — محتوى الكورس متاح دلوقتي",
+    en: "Your subscription is now active — course content is available",
+  },
+  "api.281": {
+    ar: "تم تجديد اشتراكك — صالح حتى {p1}",
+    en: "Your subscription was renewed — valid until {p1}",
+  },
+  "api.282": {
+    ar: "تم تأكيد اشتراكك — صالح حتى {p1}",
+    en: "Your subscription is confirmed — valid until {p1}",
+  },
+  "api.283": {
+    ar: "للأسف اترفضت دفعتك. سبب الرفض: {p1}",
+    en: "Unfortunately your payment was rejected. Reason: {p1}",
+  },
+  "api.284": {
+    ar: "حصلت مشكلة غير متوقعة. جرب تاني ولو استمرت تواصل معانا.",
+    en: "An unexpected problem occurred. Please retry, and contact us if it persists.",
+  },
 };
