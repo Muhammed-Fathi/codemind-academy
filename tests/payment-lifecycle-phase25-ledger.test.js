@@ -118,6 +118,11 @@ async function main() {
   // ---------------------------------------------------------------------------
   section("0. Field ownership: PR2a wrote exactly its slice, no further");
   // ---------------------------------------------------------------------------
+  // PR3 note: the same deliberate-re-pin protocol PR2a/PR2b used. The pins now
+  // assert the PR3 contract (presentation may READ the request/review fields,
+  // never write them; intent ids stay server-side; no reviewer identity is
+  // rendered) instead of the fields' mere absence.
+  //
   // PR1 originally pinned this as "zero references" (behavior-neutral ledger).
   // PR2a RE-PINS — not relaxes — the invariant: the REQUEST fields are now
   // written by /api/enroll (via src/lib/payment-submission.ts) and read by the
@@ -129,19 +134,65 @@ async function main() {
   ok(srcFiles.length > 0, `src tree scanned (${srcFiles.length} TS files)`);
   const REL = (f) => path.relative(REPO, f).split(path.sep).join("/");
   const REQUEST_FIELDS = ["senderPhone", "requestedGroupId", "requestedPlanId"];
+  // PR3 RE-PIN (deliberate, not a relaxation — the PR2a/PR2b protocol):
+  // the presentation layer now renders the request intent, so the allowlist
+  // gains the PR3 read/display files. The invariant gets STRICTER at the same
+  // time: (a) the intent IDS may appear in server files only — no component
+  // ever sends or decides a group/plan id; (b) every newly allowlisted file is
+  // proven read-only (no Payment mutation, no transaction).
   const PR2A_REQUEST_ALLOWLIST = new Set([
     "src/lib/payment-submission.ts", // writer (enroll V2) + student read contract
     "src/app/api/enroll/route.ts", // route wiring + the release-coupling warning
     "src/app/api/students/me/payments/route.ts", // read API
     "src/app/api/students/me/dashboard/route.ts", // pending/rejected request block
-    "src/components/auth/enroll-view.tsx", // senderPhone input (minimal wizard hook)
+    "src/components/auth/enroll-view.tsx", // PR3 payment page: senderPhone input + summary
     "src/lib/payment-transitions.ts", // PR2b decision service (reads the request intent)
+    // --- PR3 (presentation / operator review, read-only) ---
+    "src/lib/payment-ux.ts", // proof-message facts (senderPhone is a display fact)
+    "src/components/student/payment-status.tsx", // student request panel
+    "src/components/admin/payment-review-drawer.tsx", // admin review drawer
+    "src/components/admin/admin-dashboard.tsx", // admin queue columns
+    "src/app/api/admin/payments/route.ts", // admin queue READ projection
   ]);
   const uniqueHits = srcFiles.filter((f) =>
     REQUEST_FIELDS.some((n) => new RegExp(`\\b${n}\\b`).test(fs.readFileSync(f, "utf8"))));
   ok(
     uniqueHits.every((f) => PR2A_REQUEST_ALLOWLIST.has(REL(f))) && uniqueHits.length > 0,
-    `request fields referenced ONLY by the PR2a allowlist (${uniqueHits.map(REL).join(", ") || "none"})`
+    `request fields referenced ONLY by the PR3 allowlist (${uniqueHits.map(REL).join(", ") || "none"})`
+  );
+  // PR3 tightening #1: the group/plan INTENT IDS stay server-side. A component
+  // that names them could send an intent the server never asked for.
+  const INTENT_IDS = ["requestedGroupId", "requestedPlanId"];
+  const intentIdHits = srcFiles.filter((f) =>
+    INTENT_IDS.some((n) => new RegExp(`\\b${n}\\b`).test(fs.readFileSync(f, "utf8"))));
+  ok(
+    intentIdHits.length > 0 && intentIdHits.every((f) => !REL(f).startsWith("src/components/")),
+    `requested group/plan ids appear in server files only (${intentIdHits.map(REL).join(", ") || "none"})`
+  );
+  // PR3 tightening #2: the presentation layer writes nothing.
+  const PR3_PRESENTATION_FILES = [
+    "src/lib/payment-ux.ts",
+    "src/components/student/payment-status.tsx",
+    "src/components/admin/payment-review-drawer.tsx",
+    "src/components/admin/admin-dashboard.tsx",
+  ];
+  ok(
+    PR3_PRESENTATION_FILES.every((rel) => {
+      const text = fs.readFileSync(path.join(REPO, rel), "utf8");
+      return (
+        !/payment\.(update|create|delete)\(/.test(text) && !/\$transaction\(/.test(text)
+      );
+    }),
+    "PR3 presentation files never mutate a Payment (read + decision API only)"
+  );
+  const adminReadRoute = fs.readFileSync(
+    path.join(REPO, "src/app/api/admin/payments/route.ts"),
+    "utf8"
+  );
+  ok(
+    !/payment\.(update|create|delete)\(/.test(adminReadRoute) &&
+      !/\$transaction\(/.test(adminReadRoute),
+    "the admin queue route is a pure read projection (no write, no transaction)"
   );
   // reviewedAt/reviewedByUserId pre-exist on TeacherApplication, so scope the
   // check: files that touch the payment delegate must not carry review WRITERS.
@@ -152,13 +203,24 @@ async function main() {
     "src/app/api/students/me/payments/route.ts", // payload comments for the same rows
     "src/lib/payment-transitions.ts", // PR2b: writes reviewedAt/rejectionReason/reviewedByUserId
     "src/app/api/admin/payments/[id]/reject/route.ts", // PR2b: echoes result.payment.rejectionReason into the notification
+    // --- PR3: read-only display of the decision outcome ---
+    "src/app/api/admin/payments/route.ts", // admin queue exposes reviewedAt + rejectionReason
+    "src/components/auth/enroll-view.tsx", // student rejection banner shows the reason
   ]);
   const reviewHits = paymentFiles.filter((f) => {
     const t = fs.readFileSync(f, "utf8");
     return /\breviewedAt\b/.test(t) || /\brejectionReason\b/.test(t);
   });
   ok(reviewHits.every((f) => PR2A_REVIEW_READER_ALLOWLIST.has(REL(f))),
-    `review fields appear ONLY in the PR2a read-contract files (${reviewHits.map(REL).join(", ") || "none"})`);
+    `review fields appear ONLY in the PR2a/PR3 read-contract files (${reviewHits.map(REL).join(", ") || "none"})`);
+  // PR3 tightening #3: the student-facing rejection copy may show the REASON,
+  // never who wrote it.
+  ok(
+    !/\breviewedBy\w*\b/.test(fs.readFileSync(path.join(REPO, "src/components/auth/enroll-view.tsx"), "utf8")) &&
+      !/\breviewedBy\w*\b/.test(fs.readFileSync(path.join(REPO, "src/components/student/payment-status.tsx"), "utf8")) &&
+      !/\breviewedBy\w*\b/.test(fs.readFileSync(path.join(REPO, "src/components/admin/payment-review-drawer.tsx"), "utf8")),
+    "no PR3 surface names or renders a reviewer identity"
+  );
   // reviewedByUserId may exist for OTHER review features (TeacherApplication
   // precedent). PR2b RE-PINS — not relaxes — the reviewer-audit invariant:
   // the reviewer write on Payment is now owned by exactly ONE file, the

@@ -17,6 +17,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { useApp } from "@/lib/store";
+// Phase 25 PR3 — the payment experience panel (entitlement vs request).
+import {
+  StudentPaymentPanel,
+  type StudentPaymentRequestView,
+} from "@/components/student/payment-status";
 import { navigateDeepLink, parseDeepLink } from "@/lib/deep-link";
 import { brand } from "@/lib/brand";
 import { toast } from "sonner";
@@ -133,10 +138,27 @@ type DashboardData = {
     }[];
   };
   subscription: {
-    status: "ACTIVE" | "EXPIRING" | "EXPIRED" | "NONE";
+    // Phase 25 PR2a truth: PENDING is its own state (a request, never a paid
+    // subscription) and an expired ACTIVE row is labelled EXPIRED.
+    status: "ACTIVE" | "EXPIRING" | "EXPIRED" | "PENDING" | "NONE";
     endDate: string | null;
     daysToExpiry: number;
     planName: string | null;
+    /** Raw stored Subscription.status (never relabeled), null if no row. */
+    rawStatus?: string | null;
+    /** Whether the paid-content gate currently opens for this student. */
+    accessAllowed?: boolean;
+    /** Legacy access without a Subscription row (paid state stays NONE). */
+    grandfathered?: boolean;
+    hasSubscription?: boolean;
+  };
+  /**
+   * The REQUEST side of the model, kept separate from the entitlement
+   * (Phase 25 PR2a contract, rendered by PR3's `StudentPaymentPanel`).
+   */
+  paymentRequests?: {
+    pending: StudentPaymentRequestView | null;
+    rejected: StudentPaymentRequestView | null;
   };
   recentActivity: ActivityItem[];
 };
@@ -333,6 +355,16 @@ function DashboardHome({
           onRenew={() => setView("enroll")}
         />
       </motion.div>
+
+      {/* ===== Payment: entitlement (primary) + request state (PR3) ===== */}
+      <StudentPaymentPanel
+        subscription={data.subscription}
+        pending={data.paymentRequests?.pending ?? null}
+        rejected={data.paymentRequests?.rejected ?? null}
+        groupName={data.group?.name ?? null}
+        courseName={data.group?.course?.nameAr || data.group?.course?.name || null}
+        onNewRequest={() => setView("enroll")}
+      />
 
       {/* ===== Top grid: Continue Learning + Progress Ring ===== */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
