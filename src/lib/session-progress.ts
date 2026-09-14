@@ -504,6 +504,13 @@ export async function canAccessLesson(
       subscription: { select: { status: true, endDate: true } },
     },
   });
+  // A null Student row has no group and no Subscription, so the shared
+  // entitlement policy below can never grant it access (it answers NO_GROUP).
+  // Rejecting here keeps the observable result identical (NOT_ENROLLED) while
+  // restoring the explicit guard PR2a's optional-chaining refactor dropped —
+  // which is what lets TypeScript narrow `student` for the track gate below.
+  if (!student) return { allowed: false, reason: "NOT_ENROLLED", status: null };
+
   const entitled = evaluateAccessDecision({
     groupActive:
       !!student?.group &&
