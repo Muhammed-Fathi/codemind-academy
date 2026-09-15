@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { ok, err, requireUser } from "@/lib/api";
 import { db } from "@/lib/db";
 import { getStudentSchoolType } from "@/lib/enrollment";
@@ -46,11 +47,16 @@ export async function GET(req: NextRequest) {
 
   const url = new URL(req.url);
   const courseId = url.searchParams.get("courseId");
-  const where: {
-    isActive: boolean;
-    trackScope: string;
-    courseId?: string;
-  } = { isActive: true, trackScope: schoolType };
+  // The filter is typed as the GENERATED Prisma filter — never a hand-rolled
+  // shape: `Group.trackScope` is `TrackScope?`, so a plain `string` is not
+  // assignable to its where input. `schoolType` is the canonical SchoolType
+  // ("ARABIC" | "LANGUAGE") derived above from the student's own persisted
+  // row (fail-closed), which is a subtype of the generated TrackScope union —
+  // the exact-match eligibility predicate, unchanged.
+  const where: Prisma.GroupWhereInput = {
+    isActive: true,
+    trackScope: schoolType,
+  };
   if (courseId) where.courseId = courseId;
   const groups = await db.group.findMany({
     where,

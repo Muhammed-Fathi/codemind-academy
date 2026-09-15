@@ -37,7 +37,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const Module = require("node:module");
-const { execSync } = require("node:child_process");
+const { execSync, execFileSync } = require("node:child_process");
 
 const REPO = path.resolve(__dirname, "..");
 const OUT = fs.mkdtempSync(path.join(os.tmpdir(), "cm-phase15-test-"));
@@ -982,7 +982,12 @@ section("Q. Reader/loader contract + real end-to-end admin workflow");
   let out = "";
   let code = -1;
   try {
-    out = execSync(`${process.execPath} ${script}`, {
+    // execFileSync (no shell, argv passed straight through): the old shell
+    // command string broke on Windows the moment the Node binary or the repo
+    // path contained a space (default: C:\Program Files\nodejs\node.exe) —
+    // the child never started, exited non-zero with no summary, and Q7/Q8
+    // failed without the e2e ever running.
+    out = execFileSync(process.execPath, [script], {
       cwd: REPO,
       stdio: "pipe",
       timeout: 240000,

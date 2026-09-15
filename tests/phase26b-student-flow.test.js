@@ -37,7 +37,7 @@
 // Exit code: 0 = all pass, 1 = failure. Requires Node >= 22.
 
 /* eslint-disable @typescript-eslint/no-require-imports -- plain-node runner, repo convention */
-const { execSync } = require("child_process");
+const { execFileSync } = require("child_process");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
@@ -176,12 +176,34 @@ section("B. BEHAVIOURAL — adapter operators + payment UX truth (compiled)");
     })
   );
   try {
-    execSync(
-      `${process.execPath} ${JSON.stringify(require.resolve("typescript/bin/tsc"))} -p ${JSON.stringify(path.join(OUT, "tsconfig.json"))}`,
+    // Cross-platform: execFileSync passes argv directly to the child — no
+    // shell, so no quoting/whitespace issues when the Node binary or the temp
+    // dir lives under a path with spaces (the default Windows layout, e.g.
+    // C:\Program Files\nodejs + C:\Users\<name>\AppData\Local\Temp). A shell
+    // command string silently failed to START tsc there and the old catch
+    // swallowed it, leaving OUT without any emitted modules.
+    execFileSync(
+      process.execPath,
+      [require.resolve("typescript/bin/tsc"), "-p", path.join(OUT, "tsconfig.json")],
       { cwd: REPO, stdio: "pipe" }
     );
   } catch {
-    // expected in this sandbox (stub Prisma types); tsc still emits
+    // expected with a stub Prisma client (type errors only); tsc still emits
+  }
+  // Never run B on missing output: verify every module B2 loads was actually
+  // emitted (payment-ux pulls in @/lib/brand, so it is pinned too). This is
+  // what turns a failed tsc spawn into a clear error instead of a confusing
+  // "Cannot find module .../payment-ux.js" downstream.
+  for (const f of [
+    "src/lib/payment-ux.js",
+    "src/lib/brand.js",
+    "src/lib/i18n-core.js",
+    "src/lib/i18n-dict.js",
+    "src/lib/i18n-dict-2026.js",
+  ]) {
+    if (!fs.existsSync(path.join(OUT, f))) {
+      throw new Error(`tsc did not emit ${f} — cannot run section B (compile step failed to produce output)`);
+    }
   }
 
   // B1. sqlite-prisma-lite: increment/decrement/set round-trip (real SQLite).
@@ -257,7 +279,9 @@ section("C. MASTER GATE — the Phase 26B real-HTTP student lifecycle verifier")
   let outStr = "";
   let code = 0;
   try {
-    outStr = execSync(`${process.execPath} ${JSON.stringify(script)}`, {
+    // execFileSync (no shell) — the verifier path and the Node binary are
+    // argv entries, so spaces in either cannot break the spawn on Windows.
+    outStr = execFileSync(process.execPath, [script], {
       cwd: REPO,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
