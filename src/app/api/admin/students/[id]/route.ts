@@ -43,26 +43,47 @@ export async function PATCH(
       });
     }
   }
+  // Phase 26C — pre-parse schoolType change so group assignment can validate
+  // against the NEW value when both change in one request.
+  let pendingSchoolType: string | null | undefined = undefined;
+  if (body.schoolType !== undefined) {
+    const check = requireSchoolType(body.schoolType);
+    if (!check.ok) return err(tApi("api.210"), 400);
+    pendingSchoolType = check.value;
+  }
+
   let groupChanged = false;
+  let targetGroupIdForSchoolTypeCheck: string | null | undefined = undefined;
   if (typeof body.groupId === "string" || body.groupId === null) {
-    // Phase 26B — GROUP AUDIENCE SAFETY: a direct group assignment must be
-    // audience-compatible. A classified group (ARABIC | LANGUAGE) only ever
-    // accepts a student whose own persisted schoolType matches EXACTLY
-    // (api.286 otherwise) — the same rule the group-edit assignment path
-    // enforces, so no admin surface can bypass it. An UNCLASSIFIED (null)
-    // group imposes no constraint here, mirroring the group-edit path:
-    // classification is the operator's explicit step, and unclassified
-    // groups stay invisible/unenrollable to students regardless.
+    // Phase 26B + 26C — GROUP AUDIENCE SAFETY + operational safety:
+    // * must exist
+    // * must be active
+    // * must be classified (trackScope != null) — unclassified groups are
+    //   fail-closed for students and admin must classify first
+    // * audience must match student's (new or existing) schoolType
+    // * capacity must not be exceeded when changing groups
     if (body.groupId) {
       const group = await db.group.findUnique({
         where: { id: body.groupId },
-        select: { trackScope: true },
+        select: { id: true, trackScope: true, isActive: true, capacity: true, courseId: true, _count: { select: { students: true } } },
       });
       if (!group) return err(tApi("api.020"), 404);
+      if (!group.isActive) return err(tApi("api.085"), 409);
       const audience = normalizeSchoolType(group.trackScope);
-      if (audience && normalizeSchoolType(student.schoolType) !== audience) {
+      if (!audience) return err(tApi("api.285"), 409);
+      const effectiveSchoolType = pendingSchoolType !== undefined ? pendingSchoolType : student.schoolType;
+      if (normalizeSchoolType(effectiveSchoolType) !== audience) {
         return err(tApi("api.286"), 409);
       }
+      // Capacity check when actually moving to a different group
+      if (student.groupId !== body.groupId) {
+        if (group._count.students >= group.capacity) {
+          return err(tApi("api.274"), 409);
+        }
+      }
+      targetGroupIdForSchoolTypeCheck = body.groupId;
+    } else {
+      targetGroupIdForSchoolTypeCheck = null;
     }
     await db.student.update({
       where: { id },
@@ -81,14 +102,30 @@ export async function PATCH(
   //
   // Phase 12 — the value is validated, never normalised-then-guessed: an
   // unrecognised school type is a 400 rather than a silent "unspecified".
+  // Phase 26C — safety: if student has a group (existing or newly assigned
+  // in this request) and new schoolType is incompatible, block.
   let schoolTypeChanged = false;
-  if (body.schoolType !== undefined) {
-    const check = requireSchoolType(body.schoolType);
-    if (!check.ok) return err(tApi("api.210"), 400);
-    if (check.value !== student.schoolType) {
+  if (pendingSchoolType !== undefined) {
+    if (pendingSchoolType !== student.schoolType) {
+      // Determine effective groupId for compatibility check: if groupId was
+      // changed in this request, use that; otherwise use student's current.
+      const effectiveGroupId =
+        targetGroupIdForSchoolTypeCheck !== undefined ? targetGroupIdForSchoolTypeCheck : student.groupId;
+      if (effectiveGroupId) {
+        const group = await db.group.findUnique({
+          where: { id: effectiveGroupId },
+          select: { trackScope: true },
+        });
+        if (group) {
+          const audience = normalizeSchoolType(group.trackScope);
+          if (audience && audience !== pendingSchoolType) {
+            return err(tApi("api.286"), 409);
+          }
+        }
+      }
       await db.student.update({
         where: { id },
-        data: { schoolType: check.value },
+        data: { schoolType: pendingSchoolType },
       });
       schoolTypeChanged = true;
     }

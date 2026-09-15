@@ -198,7 +198,8 @@ async function main() {
     ok(src.includes("normalizeSchoolType"), "B9: the direct groupId assignment path is audience-gated");
     ok(src.includes("api.286"), "B9: mismatched direct assignment → 409 api.286");
     ok(/if\s*\(!group\)\s*return err\(tApi\("api\.020"\),\s*404\);/.test(src), "B9: a bogus groupId is a 404 (no dangling writes)");
-    ok(/audience\s*&&\s*normalizeSchoolType\(student\.schoolType\)\s*!==\s*audience/.test(src), "B9: classified groups enforce EXACT match; unclassified impose no constraint (mirrors the group-edit rule)");
+    // Phase 26C security hardening: unclassified groups are now fail-closed for direct admin assignment too (api.285), preventing seating into invisible groups.
+    ok(src.includes("api.285"), "B9: unclassified group assignment → 409 api.285 (Phase 26C fail-closed)");
   }
 
   // ---------------------------------------------------------------------------
