@@ -1428,6 +1428,10 @@ type GroupRow = {
   schedule: string;
   isActive: boolean;
   studentsCount: number;
+  // Phase 26B — the group's audience (student school type). ARABIC | LANGUAGE,
+  // or null while the group is still UNCLASSIFIED (fail-closed for students:
+  // never listed, never enrollable, until an admin classifies it).
+  trackScope: string | null;
 };
 
 function GroupsView() {
@@ -1492,6 +1496,23 @@ function GroupsView() {
                     <CalendarDays className="w-3.5 h-3.5" />
                     {g.schedule}
                   </div>
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="text-muted-foreground">{tr("admin.318")}:</span>
+                    <Badge
+                      variant="outline"
+                      className={
+                        g.trackScope
+                          ? "bg-teal-500/15 text-teal-700 dark:text-teal-300 border-teal-500/30"
+                          : "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30"
+                      }
+                    >
+                      {g.trackScope === "ARABIC"
+                        ? tr("admin.350")
+                        : g.trackScope === "LANGUAGE"
+                          ? tr("admin.351")
+                          : tr("admin.319")}
+                    </Badge>
+                  </div>
                 </div>
                 <div className="mt-4">
                   <div className="flex items-center justify-between text-xs mb-1">
@@ -1530,6 +1551,9 @@ function CreateGroupDialog({
     teacherId: "",
     capacity: 20,
     schedule: tr("admin.091"),
+    // Phase 26B — the audience is an explicit, required choice (ARABIC or
+    // LANGUAGE). Never inferred, never defaulted, SHARED not offered.
+    trackScope: "",
   });
   const [courses, setCourses] = React.useState<{ id: string; nameAr: string; name?: string }[]>([]);
   const [teachers, setTeachers] = React.useState<{ id: string; name: string }[]>([]);
@@ -1547,6 +1571,10 @@ function CreateGroupDialog({
       toast.error(tr("admin.092"));
       return;
     }
+    if (form.trackScope !== "ARABIC" && form.trackScope !== "LANGUAGE") {
+      toast.error(tr("admin.320"));
+      return;
+    }
     setSaving(true);
     try {
       const res = await fetch("/api/admin/groups", {
@@ -1559,7 +1587,7 @@ function CreateGroupDialog({
       toast.success(tr("admin.093"));
       onCreated();
       onOpenChange(false);
-      setForm({ name: "", courseId: "", teacherId: "", capacity: 20, schedule: tr("admin.091") });
+      setForm({ name: "", courseId: "", teacherId: "", capacity: 20, schedule: tr("admin.091"), trackScope: "" });
     } catch (e: any) {
       toast.error(e.message || tr("admin.001"));
     } finally {
@@ -1605,6 +1633,19 @@ function CreateGroupDialog({
               </SelectContent>
             </Select>
           </div>
+          <div>
+            <Label>{tr("admin.318")}</Label>
+            <Select value={form.trackScope} onValueChange={(v) => setForm({ ...form, trackScope: v })}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder={tr("admin.318")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ARABIC">{tr("admin.350")}</SelectItem>
+                <SelectItem value="LANGUAGE">{tr("admin.351")}</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground mt-1">{tr("admin.320")}</p>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>{tr("admin.103")}</Label>
@@ -1645,6 +1686,9 @@ function ManageGroupDialog({
   const [teacherId, setTeacherId] = React.useState<string | undefined>();
   const [capacity, setCapacity] = React.useState(20);
   const [schedule, setSchedule] = React.useState("");
+  // Phase 26B — the group's audience; "" means still UNCLASSIFIED (the server
+  // keeps it unclassified until an explicit ARABIC/LANGUAGE choice is saved).
+  const [trackScope, setTrackScope] = React.useState("");
   const [saving, setSaving] = React.useState(false);
   const [students, setStudents] = React.useState<StudentRow[]>([]);
 
@@ -1653,6 +1697,7 @@ function ManageGroupDialog({
       setTeacherId(group.teacherId || undefined);
       setCapacity(group.capacity);
       setSchedule(group.schedule);
+      setTrackScope(group.trackScope || "");
       fetch("/api/admin/teachers").then((r) => r.json()).then((d) => setTeachers(d.teachers || [])).catch(() => {});
       fetch("/api/admin/students").then((r) => r.json()).then((d) => {
         const all: StudentRow[] = d.students || [];
@@ -1668,14 +1713,25 @@ function ManageGroupDialog({
       const res = await fetch(`/api/admin/groups/${group.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ teacherId: teacherId || null, capacity, schedule }),
+        body: JSON.stringify({
+          teacherId: teacherId || null,
+          capacity,
+          schedule,
+          // Phase 26B — send the audience only once explicitly chosen; an
+          // unclassified group stays unclassified otherwise. The server
+          // refuses (409) an audience change that would strand members.
+          ...(trackScope ? { trackScope } : {}),
+        }),
       });
-      if (!res.ok) throw new Error("err");
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({} as any));
+        throw new Error(j.error || "err");
+      }
       toast.success(tr("admin.044"));
       onUpdated();
       onClose();
-    } catch {
-      toast.error(tr("admin.001"));
+    } catch (e: any) {
+      toast.error(e.message || tr("admin.001"));
     } finally {
       setSaving(false);
     }
@@ -1690,6 +1746,19 @@ function ManageGroupDialog({
         </DialogHeader>
         {group && (
           <div className="space-y-3">
+            <div>
+              <Label>{tr("admin.318")}</Label>
+              <Select value={trackScope} onValueChange={setTrackScope}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder={tr("admin.319")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ARABIC">{tr("admin.350")}</SelectItem>
+                  <SelectItem value="LANGUAGE">{tr("admin.351")}</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">{tr("admin.320")}</p>
+            </div>
             <div>
               <Label>{tr("admin.101")}</Label>
               <Select value={teacherId} onValueChange={setTeacherId}>

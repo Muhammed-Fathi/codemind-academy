@@ -1,9 +1,18 @@
 import { getServerT } from "@/lib/i18n-server";
 // GET /api/admin/groups — list groups with stats
 // POST /api/admin/groups — create group
+//
+// Phase 26B (owner-approved): every teaching group carries an EXPLICIT
+// student audience — `Group.trackScope` ARABIC | LANGUAGE. Create REQUIRES
+// the field (no default, no inference from the name, SHARED refused — see
+// `parseGroupTrackScope` in src/lib/track-scope.ts). Existing rows predate
+// the field and read `trackScope: null` (UNCLASSIFIED): the list surfaces
+// that state so the operator classifies them; an unclassified group is
+// invisible to students and unenrollable until classified.
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireRole } from "@/lib/api";
+import { parseGroupTrackScope } from "@/lib/track-scope";
 
 export async function GET() {
   const { error } = await requireRole("ADMIN");
@@ -30,6 +39,8 @@ export async function GET() {
       capacity: g.capacity,
       schedule: g.schedule,
       isActive: g.isActive,
+      // Phase 26B — the group's audience (null = UNCLASSIFIED legacy row).
+      trackScope: g.trackScope ?? null,
       studentsCount: g._count.students,
     })),
   });
@@ -50,6 +61,11 @@ export async function POST(req: NextRequest) {
 
   if (!name || !courseId) return err(tApi("api.021"), 400);
 
+  // Phase 26B — REQUIRED, explicit audience. Absent / SHARED / unrecognised
+  // values are rejected (never defaulted, never inferred from the name).
+  const trackScope = parseGroupTrackScope(body.trackScope);
+  if (!trackScope) return err(tApi("api.285"), 400);
+
   const course = await db.course.findUnique({ where: { id: courseId } });
   if (!course) return err(tApi("api.022"), 404);
 
@@ -60,6 +76,7 @@ export async function POST(req: NextRequest) {
       teacherId: teacherId || null,
       capacity,
       schedule,
+      trackScope,
     },
   });
 

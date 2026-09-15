@@ -133,7 +133,9 @@ const NOW = at("2026-09-15T12:00:00.000Z");
 function freshStore() {
   return {
     students: [],
-    groups: [{ id: "gA", name: "Racy Group", courseId: "c1", isActive: true, capacity: 20 }],
+    // Phase 26B — the fixture group carries the ARABIC audience; every
+    // student fixture below is ARABIC, so eligibility behaves as before.
+    groups: [{ id: "gA", name: "Racy Group", courseId: "c1", isActive: true, capacity: 20, trackScope: "ARABIC" }],
     plans: [{ id: "p1", name: "Monthly", durationMonths: 1, price: 300, isActive: true }],
     subscriptions: [],
     payments: [],
@@ -150,10 +152,10 @@ function freshStore() {
 function seedContenders(store, tag) {
   // 19 existing members + two NEW contenders, each wanting the group's LAST
   // seat (capacity 20).
-  for (let i = 1; i <= 19; i++) store.students.push({ id: `mem-${tag}-${i}`, userId: `u-m${tag}-${i}`, groupId: "gA" });
+  for (let i = 1; i <= 19; i++) store.students.push({ id: `mem-${tag}-${i}`, userId: `u-m${tag}-${i}`, groupId: "gA", schoolType: "ARABIC" });
   for (const who of ["A", "B"]) {
     const stuId = `stu-${tag}-${who}`;
-    store.students.push({ id: stuId, userId: `u-${tag}-${who}`, groupId: null });
+    store.students.push({ id: stuId, userId: `u-${tag}-${who}`, groupId: null, schoolType: "ARABIC" });
     const sub = { id: `sub-${tag}-${who}`, studentId: stuId, planId: "p1", status: "PENDING", startDate: null, endDate: null };
     store.subscriptions.push(sub);
     store.payments.push({
@@ -180,6 +182,7 @@ const studentView = (store, s) => {
     id: s.id,
     userId: s.userId,
     groupId: s.groupId ?? null,
+    schoolType: s.schoolType ?? null, // Phase 26B eligibility input
     group: s.groupId
       ? (() => {
           const g = store.groups.find((x) => x.id === s.groupId);
@@ -191,7 +194,7 @@ const studentView = (store, s) => {
 };
 const groupView = (store, id) => {
   const g = store.groups.find((x) => x.id === id);
-  return g ? { id: g.id, name: g.name, isActive: g.isActive, courseId: g.courseId, capacity: g.capacity } : null;
+  return g ? { id: g.id, name: g.name, isActive: g.isActive, courseId: g.courseId, capacity: g.capacity, trackScope: g.trackScope ?? null } : null;
 };
 const planView = (store, id) => {
   const p = store.plans.find((x) => x.id === id);
@@ -541,8 +544,8 @@ async function main() {
   {
     process.env.DATABASE_URL = "postgresql://user:pass@host:5432/db";
     const store = freshStore();
-    for (let i = 1; i <= 19; i++) store.students.push({ id: `m${i}`, userId: `u${i}`, groupId: "gA" });
-    store.students.push({ id: "stu-me", userId: "u-me", groupId: "gA" }); // the 20th member
+    for (let i = 1; i <= 19; i++) store.students.push({ id: `m${i}`, userId: `u${i}`, groupId: "gA", schoolType: "ARABIC" });
+    store.students.push({ id: "stu-me", userId: "u-me", groupId: "gA", schoolType: "ARABIC" }); // the 20th member
     const sub = { id: "sub-me", studentId: "stu-me", planId: "p1", status: "ACTIVE", startDate: at("2026-01-01T00:00:00.000Z"), endDate: at("2026-10-01T00:00:00.000Z") };
     store.subscriptions.push(sub);
     store.payments.push({

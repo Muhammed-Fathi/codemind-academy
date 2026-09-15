@@ -313,13 +313,15 @@ db.prepare(
 db.prepare(
   `INSERT INTO "Course" ("id","slug","name","nameAr","description","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?)`
 ).run("c-arb", "course-arabic", "Arabic Course", "كورس عربي", "d", now, now);
-function seedGroup(id, name, courseId) {
+// Phase 26B: groups carry an explicit audience (Group.trackScope). The
+// students here are LANGUAGE, so the enrolment group is seeded LANGUAGE.
+function seedGroup(id, name, courseId, trackScope) {
   db.prepare(
-    `INSERT INTO "Group" ("id","name","courseId","capacity","isActive","createdAt","updatedAt") VALUES (?,?,?,?,1,?,?)`
-  ).run(id, name, courseId, 25, now, now);
+    `INSERT INTO "Group" ("id","name","courseId","capacity","isActive","trackScope","createdAt","updatedAt") VALUES (?,?,?,?,1,?,?,?)`
+  ).run(id, name, courseId, 25, trackScope, now, now);
 }
-seedGroup("g-lang", "Language Group", "c-lang");
-seedGroup("g-arb", "Arabic Group", "c-arb");
+seedGroup("g-lang", "Language Group", "c-lang", "LANGUAGE");
+seedGroup("g-arb", "Arabic Group", "c-arb", "ARABIC");
 db.prepare(
   `INSERT INTO "SubscriptionPlan" ("id","name","nameAr","durationMonths","price","isPromo","createdAt") VALUES (?,?,?,?,?,0,?)`
 ).run("p-monthly", "Monthly", "شهري", 1, 200, now);

@@ -93,7 +93,13 @@ export async function POST(
           type: "PAYMENT_APPROVED",
           title: tApi("api.027"),
           message,
-          link: "dashboard",
+          // Phase 26B: the notification-link scheme (Phase 16/17) is
+          // NULL or a validated lesson:/video:/quiz:/homework: deep link.
+          // There is no payment deep link yet, so the honest value is NULL —
+          // the literal "dashboard" was a dead value the client (correctly)
+          // refused to render a button for. The message already tells the
+          // student what happened; the dashboard panel shows the state.
+          link: null,
         });
       },
     });

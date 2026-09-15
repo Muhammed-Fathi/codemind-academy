@@ -71,7 +71,9 @@ export async function POST(
         type: "PAYMENT_REJECTED",
         title: tApi("api.030"),
         message: tApi("api.283", { p1: result.payment.rejectionReason }),
-        link: "dashboard",
+        // Phase 26B: NULL per the validated deep-link scheme — the literal
+        // "dashboard" was never a navigable value (see the approve route).
+        link: null,
       });
     } catch (notifyErr) {
       console.error(

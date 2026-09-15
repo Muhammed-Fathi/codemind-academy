@@ -365,3 +365,58 @@ export const TRACK_SCOPE_LABELS: Record<
   ARABIC: { ar: "مدارس عربي", en: "Arabic School" },
   LANGUAGE: { ar: "مدارس لغات", en: "Language School" },
 };
+
+// ---------------------------------------------------------------------------
+// GROUP AUDIENCE (Phase 26B, owner-approved)
+// ---------------------------------------------------------------------------
+//
+// `Group.trackScope` (TrackScope?) is the group's explicit student AUDIENCE,
+// NOT the content-eligibility dimension:
+//
+//   ARABIC / LANGUAGE → the only values a student-facing group may carry.
+//   NULL              → UNCLASSIFIED (the transitional value for rows that
+//                       predate the field). FAIL-CLOSED everywhere: never
+//                       listed to students, never enrollable, never
+//                       approvable into — an admin must classify it first.
+//   SHARED            → valid for CONTENT, deliberately NOT part of the group
+//                       business model (no proven SHARED-group requirement):
+//                       write paths reject it and student surfaces never
+//                       match it.
+//
+// The critical difference from the content predicate above: content SHARED is
+// eligible for everyone; a group is eligible for EXACTLY ONE school type.
+// These helpers are the ONLY place that encodes that rule, so submission,
+// approval and listing can never drift apart.
+
+/**
+ * Strict parse of a GROUP audience supplied to a WRITE path (admin create /
+ * admin edit). Returns null for absent / SHARED / unrecognised values — the
+ * caller must reject rather than default: no group may silently become
+ * "shared" or "arabic" by omission. (The canonical aliases accepted for
+ * SchoolType are accepted here too — one normalisation, one truth.)
+ */
+export function parseGroupTrackScope(raw: unknown): SchoolType | null {
+  return normalizeSchoolType(raw);
+}
+
+/**
+ * THE group-eligibility predicate: may a student of `schoolType` belong to /
+ * request a group whose audience is `groupTrackScope`?
+ *
+ * EXACT canonical equality, fail-closed on BOTH sides: an unrecognised or
+ * NULL school type matches nothing, and an unclassified (NULL) or SHARED
+ * group matches nobody. Deliberately NOT `canAccessTrackScope` — that wider
+ * predicate includes SHARED, which is a content-only concept.
+ */
+export function groupTrackScopeEligible(
+  // `unknown` on purpose: the predicate is the LAST-LINE guard for values read
+  // through untyped rows (e.g. the decision authority's select). Anything not
+  // recognisably ARABIC/LANGUAGE fails closed below.
+  schoolType: unknown,
+  groupTrackScope: unknown
+): boolean {
+  const student = normalizeSchoolType(schoolType);
+  const group = normalizeSchoolType(groupTrackScope);
+  if (!student || !group) return false;
+  return student === group;
+}

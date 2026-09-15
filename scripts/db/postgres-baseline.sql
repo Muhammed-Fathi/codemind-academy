@@ -504,6 +504,7 @@ CREATE TABLE "Group" (
   "capacity" INTEGER NOT NULL DEFAULT 20,
   "schedule" TEXT NOT NULL DEFAULT 'Sat & Tue, 6:00 PM',
   "isActive" BOOLEAN NOT NULL DEFAULT TRUE,
+  "trackScope" "TrackScope",
   "createdAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" TIMESTAMPTZ(3) NOT NULL,
   CONSTRAINT "Group_pkey" PRIMARY KEY ("id"),
@@ -891,6 +892,7 @@ CREATE INDEX "PasswordResetToken_expiresAt_idx" ON "PasswordResetToken" ("expire
 CREATE INDEX "SecurityEvent_userId_createdAt_idx" ON "SecurityEvent" ("userId", "createdAt");
 CREATE INDEX "SecurityEvent_type_createdAt_idx" ON "SecurityEvent" ("type", "createdAt");
 CREATE INDEX "Group_courseId_idx" ON "Group" ("courseId");
+CREATE INDEX "Group_trackScope_idx" ON "Group" ("trackScope");
 CREATE INDEX "LiveSession_groupId_idx" ON "LiveSession" ("groupId");
 CREATE INDEX "LiveSession_startAt_idx" ON "LiveSession" ("startAt");
 CREATE INDEX "Student_schoolType_idx" ON "Student" ("schoolType");

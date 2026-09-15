@@ -85,6 +85,7 @@ import {
   evaluateAccessDecision,
   isSubscriptionValidForAccess,
 } from "@/lib/subscription-entitlement";
+import { groupTrackScopeEligible } from "@/lib/track-scope";
 
 // ---------------------------------------------------------------------------
 // Domain errors
@@ -106,6 +107,7 @@ export const PAYMENT_TRANSITION_ERROR_CODES = [
   "GROUP_FULL",
   "PLAN_REQUIRED",
   "PLAN_NOT_FOUND",
+  "GROUP_TRACK_MISMATCH",
   "INVALID_GROUP_CONTEXT",
   "INVALID_REJECTION_REASON",
 ] as const;
@@ -143,6 +145,7 @@ export const TRANSITION_ERROR_STATUS: Record<
   NO_STUDENT: 409,
   GROUP_REQUIRED: 409,
   GROUP_NOT_FOUND: 409,
+  GROUP_TRACK_MISMATCH: 409,
   GROUP_FULL: 409,
   PLAN_REQUIRED: 409,
   PLAN_NOT_FOUND: 409,
@@ -160,6 +163,7 @@ export const TRANSITION_ERROR_I18N_KEY: Record<
   NO_STUDENT: "api.271",
   GROUP_REQUIRED: "api.272",
   GROUP_NOT_FOUND: "api.273",
+  GROUP_TRACK_MISMATCH: "api.286",
   GROUP_FULL: "api.274",
   PLAN_REQUIRED: "api.275",
   PLAN_NOT_FOUND: "api.276",
@@ -296,6 +300,9 @@ const STUDENT_APPROVAL_SELECT = {
   id: true,
   userId: true,
   groupId: true,
+  // Phase 26B — the group-audience eligibility input for
+  // `resolveTargetGroupForApproval` (student side of the exact-match rule).
+  schoolType: true,
   group: { select: { id: true, isActive: true, courseId: true } },
   subscription: {
     select: { id: true, status: true, planId: true, startDate: true, endDate: true },
@@ -431,7 +438,7 @@ async function resolvePlanForApproval(
 async function resolveTargetGroupForApproval(
   tx: TxLike,
   payment: { requestedGroupId: unknown },
-  student: { groupId: unknown; },
+  student: { groupId: unknown; schoolType: unknown },
   overrideGroupId: string | null
 ) {
   let candidateId: string | null = null;
@@ -443,9 +450,28 @@ async function resolveTargetGroupForApproval(
 
   const target = await tx.group.findUnique({
     where: { id: candidateId },
-    select: { id: true, name: true, isActive: true, courseId: true, capacity: true },
+    // Phase 26B — `trackScope` feeds the audience-compatibility guard below.
+    select: { id: true, name: true, isActive: true, courseId: true, capacity: true, trackScope: true },
   });
   if (!target || target.isActive !== true) fail("GROUP_NOT_FOUND");
+
+  // Phase 26B — GROUP AUDIENCE COMPATIBILITY (decision-authority rule).
+  // The approval can assign ANY group (requested id or admin override), so
+  // THIS is where compatibility is enforced — not in the admin UI: an admin
+  // can never approve an ARABIC student into a LANGUAGE group or vice versa,
+  // not even via a direct API call. The exact same predicate the submission
+  // path uses (`groupTrackScopeEligible`), so the two layers cannot drift.
+  //   * unclassified (null) groups are refused for everyone until classified;
+  //   * a student whose school type is unknown is refused for every group;
+  //   * same-group renewals re-check their (already assigned) group — a
+  //     compatible assignment stays compatible; a legacy mismatched one is
+  //     refused with GROUP_TRACK_MISMATCH and the operator classifies the
+  //     student's school type explicitly first.
+  // This fails BEFORE the seat lock and BEFORE any write: no Payment,
+  // Subscription, group or audit mutation can half-apply (atomicity intact;
+  // capacity/locking/renewal/grandfather semantics untouched).
+  if (!groupTrackScopeEligible(student.schoolType, target.trackScope))
+    fail("GROUP_TRACK_MISMATCH");
 
   const contextCourseIds: string[] = [];
   if (payment.requestedGroupId && payment.requestedGroupId !== candidateId) {

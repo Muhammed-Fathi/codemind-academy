@@ -856,6 +856,18 @@ export const DICT_2026: Record<string, DictEntry> = {
     ar: "حصلت مشكلة غير متوقعة. جرب تاني ولو استمرت تواصل معانا.",
     en: "An unexpected problem occurred. Please retry, and contact us if it persists.",
   },
+  "api.285": {
+    ar: "لازم تختار جمهور المجموعة: مدارس عربي أو مدارس لغات.",
+    en: "Choose the group audience: Arabic school or Language school.",
+  },
+  "api.286": {
+    ar: "المجموعة دي لنوع مدارس مختلف عن نوع مدرسة الطالب — مش ممكن تعيينها أو اعتمادها.",
+    en: "This group belongs to a different school type than the student's — it cannot be assigned or approved.",
+  },
+  "api.287": {
+    ar: "في طلاب معيّنين في المجموعة دي من نوع مدارس مختلف — انقلهم الأول أو صنّف المجموعة وهي فاضية.",
+    en: "This group has assigned students of a different school type — move them out first, or classify the group while it is empty.",
+  },
 
   // =======================================================================
   // Phase 25 PR3 — PAYMENT EXPERIENCE / UI

@@ -46,6 +46,7 @@ import { NextRequest } from "next/server";
 import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
 import { reconcileStudentBatch } from "@/lib/enrollment";
+import { groupTrackScopeEligible } from "@/lib/track-scope";
 import {
   submitPaymentRequest,
   validateEnrollmentSubmission,
@@ -88,6 +89,17 @@ export async function POST(req: NextRequest) {
   const plan = await db.subscriptionPlan.findUnique({ where: { id: planId } });
   if (!plan) return err(tApi("api.084"), 404);
 
+  // Phase 26B — plan availability is enforced at SUBMISSION, not only at
+  // approval (`payment-transitions` already refuses an inactive plan with
+  // PLAN_NOT_FOUND). A plan the admin closed for sale (e.g. Early Bird) must
+  // never be purchasable by direct API tampering: it is hidden from
+  // /api/subscription-plans AND refused here. The approved decision-layer
+  // copy (api.276) is reused so the student sees the same "plan not
+  // available" truth in both places. Students already holding a live
+  // entitlement are unaffected — the entitlement policy never reads
+  // plan.isActive.
+  if (!plan.isActive) return err(tApi("api.276"), 400);
+
   const course = await db.course.findUnique({
     where: { id: courseId },
     select: { id: true },
@@ -96,7 +108,9 @@ export async function POST(req: NextRequest) {
 
   const group = await db.group.findUnique({
     where: { id: groupId },
-    select: { id: true, courseId: true, isActive: true, capacity: true },
+    // Phase 26B — `trackScope` is the eligibility input for the audience
+    // check below.
+    select: { id: true, courseId: true, isActive: true, capacity: true, trackScope: true },
   });
   if (!group || !group.isActive) return err(tApi("api.085"), 404);
 
@@ -114,6 +128,18 @@ export async function POST(req: NextRequest) {
   // Phase 25: the same binding rule still applies to the REQUESTED group —
   // the intent stored on the Payment can never name a foreign course.
   if (group.courseId !== course.id) return err(tApi("api.085"), 400);
+
+  // Phase 26B — GROUP AUDIENCE ELIGIBILITY (owner-approved schema change).
+  // A group's explicit audience (`Group.trackScope`, ARABIC | LANGUAGE) must
+  // match the student's OWN persisted school type — a request the UI would
+  // never produce (the picker already filters) is rejected here, so tampered
+  // requests can never even CREATE a Payment/Subscription, let alone grant a
+  // seat. Unclassified (null) groups are refused for everyone until an admin
+  // classifies them; a student whose school type is unknown is refused for
+  // every group (fail-closed). The refusal reuses the "group not available"
+  // message so a prober learns nothing about which group ids exist.
+  if (!groupTrackScopeEligible(student.schoolType, group.trackScope))
+    return err(tApi("api.085"), 400);
 
   // Pre-check only: the seat may be gone by the time an admin approves; the
   // authoritative capacity decision (with advisory locking) is PR2b's job at

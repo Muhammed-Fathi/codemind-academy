@@ -955,6 +955,13 @@ export function createSqlitePrisma({ db, schemaPath }) {
         params.push(v.increment);
         continue;
       }
+      if (typeof v === "object" && v !== null && "decrement" in v) {
+        // Same operator family as `increment` (Phase 25 PR2b's coupon release
+        // uses `usedCount: { decrement: 1 }`).
+        sets.push(`"${k}" = "${k}" - ?`);
+        params.push(v.decrement);
+        continue;
+      }
       if (typeof v === "object" && v !== null && "set" in v) {
         sets.push(`"${k}" = ?`);
         params.push(toSqlValue(f, v.set));
