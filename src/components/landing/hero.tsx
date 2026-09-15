@@ -258,9 +258,24 @@ function LandingNav() {
     <header className="absolute top-0 start-0 end-0 z-30">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-20 gap-2">
-          <CodeMindLogo withWordmark size={36} />
+          {/* Below `sm` the wordmark is hidden: the header row also carries the
+              theme/language controls, the login button and the primary CTA, and
+              in English at 390px the row overflowed and clipped that CTA past
+              the viewport edge (Phase 26A QA). The logo mark stays. */}
+          <CodeMindLogo withWordmark size={36} wordmarkClassName="max-sm:hidden" />
 
-          <nav className="hidden md:flex items-center gap-1 text-sm">
+          {/*
+            Breakpoint note (Phase 26A QA): this row holds the logo, the theme +
+            language controls, the login button, the primary "start free" CTA and
+            these five links. Measured in a real browser, the row needs ~1024px
+            in Arabic; at `md:` (768px) the two end buttons were pushed outside
+            the viewport (the primary CTA landed fully off-screen at 768px and
+            ~60% off-screen at 834px) and `body { overflow-x: hidden }` hid the
+            evidence. `lg:flex` shows the links exactly where they fit — the same
+            breakpoint the dashboard sidebar already uses. The links remain
+            reachable in the footer below tablet width.
+          */}
+          <nav className="hidden lg:flex items-center gap-1 text-sm">
             <NavBtn onClick={() => scrollTo("why")}>{t.nav.why}</NavBtn>
             <NavBtn onClick={() => scrollTo("curriculum")}>{t.nav.curriculum}</NavBtn>
             <NavBtn onClick={() => scrollTo("features")}>{t.nav.features}</NavBtn>

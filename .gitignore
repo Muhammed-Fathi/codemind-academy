@@ -19,10 +19,13 @@ node_modules
 /build
 
 # ── Environment Variables ───────────────────────────────────────────────────
+# EVERY env file is ignored, not just `.env` and `.env.local`: the
+# environment-specific variants (.env.test, .env.development, .env.production,
+# .env.staging) hold the same secrets — production DB URLs, SMTP credentials —
+# and the previous rules left them committable by accident.
 .env
-.env.local
-.env.*.local
-# Keep .env.example committed
+.env.*
+# Keep the template committed.
 !.env.example
 
 # ── Database ─────────────────────────────────────────────────────────────────
@@ -91,3 +94,15 @@ prompt
 *.dump.sha256
 *.pg-load.json
 *-purge-metrics.json
+
+# Phase 25 PR4 — pre-cutover inventory dumps. `scripts/phase25-pr4-inventory.mjs`
+# writes these (row counts, ids and other production-shaped inventory for the
+# Neon cutover) and docs/PHASE_25_PR4_CUTOVER_RUNBOOK.md names them explicitly.
+# They are operational records, not source — never commit them.
+inventory.json
+inventory.pg.json
+
+# Phase 12 verification scratch: the local Prisma engine mirror + compile
+# harness used when binaries.prisma.sh is unreachable. Documented as
+# deliberately uncommitted in docs/PHASE_12_FINAL_REPORT.md.
+/.verify/

@@ -51,11 +51,16 @@ export function AppShell() {
 
   // Restore session on mount
   React.useEffect(() => {
-    // Password reset links arrive as /?token=… — open the auth view directly
-    // so ForgotPasswordForm can pre-fill the token from the URL.
-    const resetToken = new URLSearchParams(window.location.search).get("token");
-    const initialView: "login" | "landing" = resetToken ? "login" : "landing";
-    if (resetToken) useApp.getState().setView("login");
+    // Password reset links arrive as /?token=… and teacher approval links as
+    // /?teacherActivation=… — open the auth view directly so the matching form
+    // can read its token from the URL. Both must be handled here: AuthView can
+    // only pick the right form if the shell actually mounts it.
+    const params = new URLSearchParams(window.location.search);
+    const resetToken = params.get("token");
+    const teacherActivationToken = params.get("teacherActivation");
+    const hasLinkToken = Boolean(resetToken || teacherActivationToken);
+    const initialView: "login" | "landing" = hasLinkToken ? "login" : "landing";
+    if (hasLinkToken) useApp.getState().setView("login");
 
     fetch("/api/auth/me")
       .then((r) => (r.ok ? r.json() : null))

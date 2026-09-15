@@ -201,7 +201,7 @@ Authorization is enforced server-side via `requireUser()` /
                               │ Prisma Client
                               ▼
 ┌──────────────────────────────────────────────────────────────┐
-│           Prisma ORM 6  →  SQLite (db/custom.db)             │
+│           Prisma ORM 6  →  SQLite (prisma/db/custom.db)      │
 │           36 models · 11 enums · cookie session store        │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -274,8 +274,11 @@ my-project/
 │       ├── notify.ts              # Notification preference helper
 │       ├── store.ts               # Zustand store (view, user, theme, sidebar)
 │       └── utils.ts               # cn() + misc helpers
-├── db/
-│   └── custom.db                  # SQLite database (gitignored)
+├── prisma/
+│   ├── schema.prisma              # 36 models · 11 enums
+│   ├── migrations/                # real migration history
+│   └── db/
+│       └── custom.db              # SQLite database (gitignored, see below)
 ├── public/
 │   ├── logo.svg
 │   ├── manifest.json              # PWA manifest
@@ -317,21 +320,88 @@ cd codemind-academy
 # 2. Install dependencies with Bun
 bun install
 
-# 3. Copy the env template
+# 3. Generate the Prisma Client (see "Local runtime contract" below).
+#    `bun install` normally does this automatically via @prisma/client's
+#    postinstall; run it explicitly whenever that step was skipped or failed.
+bun run db:generate
+
+# 4. Copy the env template
 cp .env.example .env
 # Edit .env — only DATABASE_URL is required (see below)
+# `bun run start` (production mode) additionally requires SECURITY_HASH_SECRET.
 
-# 4. Initialize the database schema
+# 5. Initialize the database schema (creates the SQLite file + tables)
 bun run db:push
 
-# 5. Seed demo data (admin / teacher / student / parent + curriculum)
-bun run scripts/seed.ts
+# 6. Seed demo data (admin / teacher / student / parent + curriculum).
+#    There is NO default password — the seeder prints one ONCE, or you pin it
+#    with SEED_ADMIN_PASSWORD / SEED_DEMO_PASSWORD.
+SEED_ADMIN_PASSWORD="..." SEED_DEMO_PASSWORD="..." bun run scripts/seed.ts
 
-# 6. Start the dev server
+# 7. Start the dev server
 bun run dev
 ```
 
 The app boots on **http://localhost:3000** (Next.js dev server).
+
+---
+
+## Local runtime contract
+
+The three runtime commands have different prerequisites. This is the exact
+supported sequence:
+
+| Command | What it runs | Requires |
+| --- | --- | --- |
+| `bun run dev` | `next dev -p 3000` | a **generated** Prisma Client + an initialized SQLite file. It does **not** run `prisma generate` or `db:push` for you. |
+| `bun run build` | `prisma generate && next build && node scripts/copy-standalone-assets.mjs` | network access to `binaries.prisma.sh` (Prisma engine download) the first time. |
+| `bun run start` | `bun scripts/start-production.mjs` → `.next/standalone/server.js` with `NODE_ENV=production` | **`bun run build` first** — `start` serves the standalone bundle and exits with a clear error if `.next/standalone/server.js` is missing. Also requires `SECURITY_HASH_SECRET` (≥ 32 chars) because production mode refuses to boot without it. |
+
+Full local sequence (development):
+
+```bash
+bun install
+bun run db:generate          # if `bun install` did not already do it
+cp .env.example .env
+bun run db:push              # creates prisma/db/custom.db + all tables
+SEED_ADMIN_PASSWORD="..." SEED_DEMO_PASSWORD="..." bun run scripts/seed.ts
+bun run dev                  # http://localhost:3000
+```
+
+And for a local production run:
+
+```bash
+bun run build                # REQUIRED before `start`
+SECURITY_HASH_SECRET="<32+ random chars>" bun run start
+```
+
+`bun run start` without a preceding `build` prints
+`start-production: …/ .next/standalone/server.js not found. Run bun run build first.`
+
+### If local login fails
+
+A failed login in the UI shows only the generic message
+"حصلت مشكلة في الاتصال. حاول تاني." / "Connection problem. Try again." — the
+client shows that for **any** non-JSON response, including an HTTP 500. So check,
+in order:
+
+1. **Is the API returning 500?** Open the browser devtools Network tab on
+   `POST /api/auth/login`. The most common cause is an un-generated Prisma
+   Client (`@prisma/client did not initialize yet. Please run "prisma generate"`)
+   → run `bun run db:generate`, then restart `bun run dev`.
+2. **Does the database file the app resolves exist and have tables?** Prisma
+   resolves a relative `file:` URL against the **schema directory**, so the
+   documented `DATABASE_URL="file:./db/custom.db"` means
+   **`prisma/db/custom.db`**, not `./db/custom.db`. If the tables are missing,
+   run `bun run db:push`. To pin the location explicitly, use an absolute URL
+   (`file:C:/path/to/custom.db` on Windows, `file:/srv/...` on Linux).
+3. **Was an account seeded?** There is no default password. Re-run the seeder
+   with `SEED_ADMIN_PASSWORD` / `SEED_DEMO_PASSWORD` set to values you know.
+
+> **Never point local write-QA at production.** Do not run registration, login,
+> password-reset, seeding or any write test against the production Neon
+> database or the production R2 bucket. Local QA must use a local SQLite
+> `file:` URL.
 
 ---
 
@@ -341,7 +411,11 @@ CodeMind is intentionally minimal on env vars. Copy `.env.example` to
 `.env` and configure the single required variable:
 
 ```bash
-# Required — SQLite connection string (relative to project root)
+# Required — SQLite connection string.
+# Prisma resolves a RELATIVE file: URL against the SCHEMA directory (prisma/),
+# so this value puts the database at ./prisma/db/custom.db (see "Local runtime
+# contract"). Use an absolute path — file:/srv/app/db/custom.db or, on Windows,
+# file:C:/app/db/custom.db — when you need a specific location.
 DATABASE_URL="file:./db/custom.db"
 
 # Optional — public URL of the deployed app (referral links, etc.)
@@ -378,9 +452,9 @@ bun run scripts/seed.ts
 To reset the database completely:
 
 ```bash
-rm -f db/custom.db
+rm -f prisma/db/custom.db          # the file the default DATABASE_URL resolves to
 bun run db:push
-bun run scripts/seed.ts
+SEED_ADMIN_PASSWORD="..." SEED_DEMO_PASSWORD="..." bun run scripts/seed.ts
 ```
 
 See [`docs/DATABASE_GUIDE.md`](docs/DATABASE_GUIDE.md) for the full
@@ -426,7 +500,9 @@ NODE_ENV=production bun run scripts/seed.ts
 ## Development Commands
 
 ```bash
-bun run dev          # Start Next.js dev server (port 3000, logs to dev.log)
+bun run dev          # Start Next.js dev server (port 3000; logs to the console)
+bun run build        # prisma generate + next build + copy standalone assets
+bun run start        # Serve the built standalone bundle (NODE_ENV=production)
 bun run lint         # ESLint (next + typescript-eslint)
 bun run db:push      # Push schema to SQLite (--accept-data-loss)
 bun run db:generate  # Regenerate Prisma Client after schema changes
@@ -440,19 +516,32 @@ bun run scripts/seed-parent-demo.ts  # Add an extra parent demo
 > start it manually unless you are running locally. Use `bun run lint`
 > to check code quality between changes.
 
+**Windows (cmd / PowerShell).** `bun` works the same, but inline
+`VAR=value cmd` prefixes are POSIX-only. Use `set VAR=value && bun run …` in
+cmd, `$env:VAR="value"; bun run …` in PowerShell, or `npx.cmd prisma generate`
+when you invoke the Prisma CLI directly.
+
 ---
 
 ## Production Build
 
-```bash
-# 1. Build the standalone Next.js bundle
-bun run build
-# (internally runs `next build` then copies static + public assets
-#  into .next/standalone/.next and .next/standalone/public)
+`bun run start` **requires `bun run build` first** and runs the production
+server with `NODE_ENV=production`, which enforces the production secret
+contract (a `SECURITY_HASH_SECRET` of at least 32 characters — the server
+refuses to boot without it).
 
-# 2. Run the production server
-bun run start
+```bash
+# 1. Build the standalone Next.js bundle (runs `prisma generate` internally)
+bun run build
+# (internally runs `prisma generate && next build` then copies static + public
+#  assets into .next/standalone/.next and .next/standalone/public)
+
+# 2. Run the production server (needs the build from step 1)
+SECURITY_HASH_SECRET="<32+ random chars>" bun run start
 # (runs NODE_ENV=production bun .next/standalone/server.js, logs to server.log)
+# Without a build, it exits with: "start-production: …/ .next/standalone/server.js not found."
+# On a CI host that has no production secrets, prefix the BUILD only with
+# SKIP_PRODUCTION_ENV_CHECK=1 — the runtime server still enforces them.
 ```
 
 `next.config.ts` sets `output: "standalone"`, producing a self-contained
