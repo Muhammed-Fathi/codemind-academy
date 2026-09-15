@@ -6,18 +6,27 @@ type LogoProps = {
   size?: number;
   withWordmark?: boolean;
   className?: string;
+  /**
+   * Extra classes for the wordmark block ("CodeMind / ACADEMY"). Used by the
+   * landing header, which shares its single row with the theme/language
+   * controls and both CTAs: at 390px in English the row did not fit and the
+   * primary CTA was clipped past the viewport edge, so the hero hides the
+   * wordmark below `sm` and keeps the mark (Phase 26A QA fix).
+   */
+  wordmarkClassName?: string;
 };
 
 export function CodeMindLogo({
   size = 36,
   withWordmark = false,
   className = "",
+  wordmarkClassName = "",
 }: LogoProps) {
   return (
     <div className={`inline-flex items-center gap-2.5 ${className}`}>
       <LogoMark size={size} />
       {withWordmark && (
-        <div className="flex flex-col leading-none">
+        <div className={`flex flex-col leading-none ${wordmarkClassName}`}>
           <span className="font-extrabold text-lg tracking-tight">
             CodeMind
           </span>
