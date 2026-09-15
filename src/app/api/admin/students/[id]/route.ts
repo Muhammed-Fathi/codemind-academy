@@ -4,6 +4,10 @@ import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireRole } from "@/lib/api";
 import { requireSchoolType, normalizeSchoolType } from "@/lib/school-type";
+// Phase 26C hotfix — the GENERATED Prisma enum is the only type this route may
+// persist for `Student.schoolType`; it is imported type-only (erased at build
+// time) and used to type the `pendingSchoolType` holder below.
+import type { SchoolType } from "@prisma/client";
 import { reconcileStudentBatch } from "@/lib/enrollment";
 import { logSecurityEvent } from "@/lib/security";
 import { revokeAllSessions } from "@/lib/auth";
@@ -45,7 +49,15 @@ export async function PATCH(
   }
   // Phase 26C — pre-parse schoolType change so group assignment can validate
   // against the NEW value when both change in one request.
-  let pendingSchoolType: string | null | undefined = undefined;
+  //
+  // Typed with the generated Prisma enum, NOT `string`: `requireSchoolType`
+  // already narrows the incoming value to a canonical ARABIC | LANGUAGE (or it
+  // rejects the request), so widening that result to `string` only discarded
+  // the proof and made the write below fail `StudentUpdateInput.schoolType`
+  // (TS2322). `undefined` = "this request does not touch schoolType". `null`
+  // is deliberately not part of the type: PATCH rejects a null/blank school
+  // type with api.210 instead of silently clearing the student's track.
+  let pendingSchoolType: SchoolType | undefined = undefined;
   if (body.schoolType !== undefined) {
     const check = requireSchoolType(body.schoolType);
     if (!check.ok) return err(tApi("api.210"), 400);
