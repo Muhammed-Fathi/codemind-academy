@@ -50,7 +50,7 @@
 // (`postgresql://` / `postgres://` vs everything else, which includes
 // SQLite's `file:` URLs) — the same value Prisma itself dispatches on via
 // the selected schema (prisma/schema.prisma = sqlite,
-// prisma/schema.postgresql.prisma = postgresql).
+// prisma/postgres/schema.prisma = postgresql).
 
 const POSTGRES_URL_RE = /^postgres(ql)?:\/\//i;
 

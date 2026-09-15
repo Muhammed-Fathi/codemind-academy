@@ -96,8 +96,8 @@ node scripts/db/verify-postgres.mjs --target "$DATABASE_URL"  # must end VERIFY_
 **Already on PostgreSQL — apply pending migrations:**
 
 ```bash
-npx prisma migrate deploy --schema prisma/schema.postgresql.prisma
-npx prisma migrate status --schema prisma/schema.postgresql.prisma   # must report "Database schema is up to date"
+npx prisma migrate deploy --schema prisma/postgres/schema.prisma
+npx prisma migrate status --schema prisma/postgres/schema.prisma   # must report "Database schema is up to date"
 ```
 
 No `prisma migrate reset`, `prisma db push --accept-data-loss`, `DROP DATABASE`, or `TRUNCATE ALL`.
@@ -244,12 +244,17 @@ node -e "import {DatabaseSync} from 'node:sqlite'; const db=new DatabaseSync('db
 
 ```bash
 bun install
-npx prisma generate   # or bunx prisma generate (requires network; where unreachable use committed postgres-baseline.sql)
-SKIP_PRODUCTION_ENV_CHECK=1 bun run build   # typechecks; on the prod host the real SECRET is present so omit the skip flag
+npx prisma generate --schema prisma/postgres/schema.prisma   # PostgreSQL client (requires network; where unreachable, vendor the generated client)
+SKIP_PRODUCTION_ENV_CHECK=1 bun run build:postgres   # typechecks; on the prod host the real SECRET is present so omit the skip flag
 # Standalone server behind Caddy
 bun run start
 # or: node .next/standalone/server.js
 ```
+
+> `bun run build:postgres` (not `bun run build`) is mandatory here: it runs
+> `prisma generate --schema prisma/postgres/schema.prisma` INSIDE the build.
+> A plain `bun run build` would regenerate the SQLite client and overwrite the
+> PostgreSQL one during the same build.
 
 Health checks:
 
@@ -499,7 +504,7 @@ node scripts/media/migrate-media.mjs --source /var/backups/media --dest /var/lib
 
 ```bash
 git checkout <previous tag>
-bun run build
+bun run build:postgres
 systemctl restart codemind
 ```
 

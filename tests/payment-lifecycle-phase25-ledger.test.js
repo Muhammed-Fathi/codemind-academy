@@ -7,7 +7,7 @@
 //     SQLite (local dev) and PostgreSQL (production Neon) via real engines.
 //   * prisma/schema.prisma gains exactly the 6 nullable fields + 2 @@index
 //     (no defaults, no relations), and the derived artifacts
-//     (schema.postgresql.prisma + postgres-baseline.sql) are regen-in-sync.
+//     (prisma/postgres/schema.prisma + postgres-baseline.sql) are regen-in-sync.
 //   * §0 now enforces PR2a's FIELD-OWNORIZATION boundary instead of PR1's
 //     "zero references": the request fields (senderPhone/requestedGroupId/
 //     requestedPlanId) may be referenced ONLY by the enroll V2 submission +
@@ -293,7 +293,7 @@ async function main() {
     ok(baseline.includes(`CREATE INDEX "${name}" ON "Payment" (${cols.map((c) => `"${c}"`).join(", ")});`),
       `baseline carries index "${name}"`);
   }
-  const derived = fs.readFileSync(path.join(REPO, "prisma", "schema.postgresql.prisma"), "utf8");
+  const derived = fs.readFileSync(path.join(REPO, "prisma", "postgres", "schema.prisma"), "utf8");
   const derivedBlock = derived.split("model Payment {")[1].split("\n}\n")[0];
   ok(Object.keys(fieldTypes).every((n) => new RegExp(`^\\s*${n}\\s+`, "m").test(derivedBlock)),
     "derived PG schema carries all 6 fields");

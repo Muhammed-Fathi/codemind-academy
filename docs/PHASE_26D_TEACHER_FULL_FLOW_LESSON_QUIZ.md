@@ -92,6 +92,23 @@ All additive. `prisma/schema.prisma` is the single source; `prisma/schema.postgr
 and `scripts/db/postgres-baseline.sql` are **derived** by
 `scripts/db/make-postgres-schema.mjs` (`--check` run twice, in sync both times).
 
+> **POST-MERGE CORRECTION (2026-09-15, Phase 26D hotfix).** The migration
+> shipped with the assumption that "PostgreSQL is baselined from
+> `scripts/db/postgres-baseline.sql` … old SQLite migrations are never
+> replayed there", so the SQLite migration file "only ever runs on SQLite".
+> That assumption was WRONG: `bunx prisma migrate deploy --schema
+> prisma/schema.postgresql.prisma` reads the migrations directory NEXT TO the
+> schema file — the shared `prisma/migrations` — and the production deploy on
+> Neon failed with `type "datetime" does not exist` (42704) on the first DDL
+> statement. The PostgreSQL schema now lives at `prisma/postgres/schema.prisma`
+> and owns `prisma/postgres/migrations/` (`0_init` + a PostgreSQL-native
+> edition of this phase's migration with the same name). See
+> `docs/POSTGRES_CUTOVER_RUNBOOK.md` §5 + §11 and
+> `tests/migration-providers.test.js`. The already-applied SQLite migration
+> file is intentionally left byte-identical (its sha256 is recorded in every
+> applied `_prisma_migrations` ledger); the false comment inside it is
+> superseded by this note and by the runbook.
+
 **`Quiz` (+5)**
 | Field | Type | Default | Why |
 |---|---|---|---|
@@ -319,8 +336,10 @@ hazard is **PostgreSQL-only**, i.e. production-only.
 Option B (nullable FK / `SET NULL`) was **rejected** on evidence, not preference:
 
 - SQLite rejects both `ALTER TABLE … DROP CONSTRAINT` and `ALTER TABLE … ALTER COLUMN`
-  (tested directly), and the repository runs **one** `migration.sql` verbatim against both
-  dialects with no dialect branching. The FK therefore cannot be altered convergently.
+  (tested directly), and at design time the repository ran **one** `migration.sql` verbatim
+  against both dialects with no dialect branching (since the hotfix there are two
+  provider-specific editions, but neither may rebuild `QuizAnswer`). The FK therefore
+  cannot be altered convergently.
 - Legacy pre-26D attempts have NULL snapshots and read via `snapshot ?? r.question`
   (`src/lib/session-quiz.ts`). Nulling `questionId` would break exactly the rows that still
   depend on the live question — trading a narrow hazard for a certain one.

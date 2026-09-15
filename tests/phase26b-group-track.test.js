@@ -109,7 +109,7 @@ async function main() {
   {
     const mig = read("scripts/lib/migrate-sqlite.mjs");
     ok(/Group:\s*\["trackScope"\]/.test(mig), "B2: SQLite migrator skips re-adding Group.trackScope (baseline column wins)");
-    const pgSchema = read("prisma/schema.postgresql.prisma");
+    const pgSchema = read("prisma/postgres/schema.prisma");
     ok(/model Group \{[\s\S]*?trackScope\s+TrackScope\?/.test(pgSchema), "B2: regenerated PG schema carries Group.trackScope");
     const baseline = read("scripts/db/postgres-baseline.sql");
     ok(baseline.includes('"trackScope"'), "B2: regenerated PG baseline carries the trackScope column");

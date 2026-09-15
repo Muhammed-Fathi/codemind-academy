@@ -73,17 +73,33 @@ async function main() {
       console.error(String(e.stdout || e.message || e).slice(0, 500));
     }
     const src = read("prisma/schema.prisma");
-    const derived = read("prisma/schema.postgresql.prisma");
-    ok(/^\/\/ CodeMind Academy — Phase 21 PostgreSQL schema \(DERIVED ARTIFACT\)/m.test(derived),
+    const derived = read("prisma/postgres/schema.prisma");
+    ok(/^\/\/ CodeMind Academy — PostgreSQL schema \(DERIVED ARTIFACT\)/m.test(derived),
       "derived schema carries the DO-NOT-EDIT header");
     ok(/provider\s*=\s*"postgresql"/.test(derived), "derived schema targets postgresql");
     ok(/provider\s*=\s*"sqlite"/.test(src), "source schema still targets sqlite (dev)");
     const stripHeader = derived.slice(derived.indexOf("generator client"));
     const expectSwapped = src.replace(/provider\s*=\s*"sqlite"/, 'provider = "postgresql"');
     ok(stripHeader === expectSwapped, "derived schema is byte-identical to source except the provider line");
-    // No other .prisma file may define models (no competing schema).
-    const prismaFiles = fs.readdirSync(path.join(REPO, "prisma")).filter((f) => f.endsWith(".prisma"));
-    ok(prismaFiles.length === 2, `exactly 2 .prisma files (source + derived), found ${prismaFiles.join(",")}`);
+    // No other .prisma file may define models (no competing schema). Since the
+    // Phase 26D hotfix the derived schema lives in prisma/postgres/ (it must
+    // own its own migrations directory), so this walks the whole repo —
+    // stronger than the original flat prisma/ readdir.
+    const walkPrismaFiles = (dir) => {
+      const out = [];
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (e.name === "node_modules" || e.name === ".git" || e.name === ".next") continue;
+        const p = path.join(dir, e.name);
+        if (e.isDirectory()) out.push(...walkPrismaFiles(p));
+        else if (e.name.endsWith(".prisma")) out.push(path.relative(REPO, p));
+      }
+      return out.sort();
+    };
+    const prismaFiles = walkPrismaFiles(REPO);
+    ok(prismaFiles.length === 2 &&
+       prismaFiles[0] === path.join("prisma", "postgres", "schema.prisma") &&
+       prismaFiles[1] === path.join("prisma", "schema.prisma"),
+      `exactly 2 .prisma files (SQLite source + PostgreSQL derived in its own directory), found ${prismaFiles.join(",")}`);
     // Migration history: 11 migrations, all present (9 baselined SQLite,
     // Phase 25 PR1 dual-dialect ledger, and the Phase 26B owner-approved
     // group-audience migration; see tests/payment-lifecycle-phase25-ledger.test.js).

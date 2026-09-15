@@ -1001,11 +1001,20 @@ Short form (details + rollback in the runbook):
    node scripts/db/make-postgres-schema.mjs        # regenerates both
    node scripts/db/make-postgres-schema.mjs --check # CI / pre-cutover gate
    ```
-   This produces `prisma/schema.postgresql.prisma` (provider-only swap) and
-   `scripts/db/postgres-baseline.sql` (21 enums + 55 tables + 67 indexes).
-2. **Apply the baseline** to an empty database (`psql -f
-   scripts/db/postgres-baseline.sql`, or `prisma db push` from the derived
-   schema where engines are reachable).
+   This produces `prisma/postgres/schema.prisma` (provider-only swap) and
+   `scripts/db/postgres-baseline.sql` (21 enums + 56 tables).
+   The PostgreSQL schema lives in its own directory and therefore owns its own
+   migrations: `prisma/postgres/migrations/` (`0_init` = the frozen pre-26D
+   production schema + one migration per schema change). The SQLite schema
+   keeps `prisma/migrations/` — the two histories are NEVER shared (Phase 26D
+   hotfix, 2026-09-15; enforced by `tests/migration-providers.test.js`).
+2. **Provision a fresh empty database** with the one supported path:
+   ```bash
+   bunx prisma migrate deploy --schema prisma/postgres/schema.prisma
+   ```
+   (The engines-unreachable fallback is `psql -f
+   scripts/db/postgres-baseline.sql`, which produces the same shape — see the
+   runbook §5 for the ledger-baseline step that path requires.)
 3. **Load** (one transaction, fail-closed, count+hash verified):
    ```bash
    node scripts/db/migrate-sqlite-to-postgres.mjs --source db/custom.db \
@@ -1014,9 +1023,9 @@ Short form (details + rollback in the runbook):
 4. **Verify**: `node scripts/db/verify-postgres.mjs --target "$DATABASE_URL"`
    must end `VERIFY_POSTGRES_OK` (presence, orphans, duplicates, Teacher
    lifecycle, security tables, rate-limit probe, app-shaped queries).
-5. **Baseline the ledger** (`prisma migrate resolve --applied …`) so the 9
-   SQLite migrations are never replayed on PostgreSQL, then switch
-   `DATABASE_URL` per the runbook.
+5. **Switch `DATABASE_URL`** per the runbook. PostgreSQL schema changes from
+   here on are NEW migrations in `prisma/postgres/migrations/`, deployed with
+   `bunx prisma migrate deploy --schema prisma/postgres/schema.prisma`.
 
 ### Schema compatibility notes (verified, not assumed)
 
@@ -1048,4 +1057,4 @@ Short form (details + rollback in the runbook):
 **Status**: PostgreSQL cutover is **IMPLEMENTED and drill-verified**
 (`PHASE21_MIGRATION_OK` + `PHASE21_RESTORE_OK` on disposable PostgreSQL).
 `prisma/schema.prisma` still ships `provider = "sqlite"` for development; the
-derived `prisma/schema.postgresql.prisma` is the production target.
+derived `prisma/postgres/schema.prisma` is the production target.

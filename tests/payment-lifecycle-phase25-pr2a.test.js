@@ -701,7 +701,7 @@ async function main() {
     const payBlock = /model Payment \{[\s\S]*?\n\}/.exec(schema)[0];
     ok(/reference\s+String\?/.test(payBlock) && !/@@unique/.test(payBlock), "NO unique constraint on Payment.reference (PR1 rule preserved)");
     ok(/senderPhone\s+String\?/.test(schema) && /requestedGroupId\s+String\?/.test(schema) && /requestedPlanId\s+String\?/.test(schema), "PR1 ledger fields still present in schema.prisma");
-    const pg = read("prisma/schema.postgresql.prisma");
+    const pg = read("prisma/postgres/schema.prisma");
     ok(/senderPhone\s+String\?/.test(pg) && /rejectionReason\s+String\?/.test(pg), "and in the derived PostgreSQL schema");
     const migrations = fs.readdirSync(path.join(REPO, "prisma/migrations"));
     // Phase 26D added the Lesson Quiz attempt-architecture migration, so the

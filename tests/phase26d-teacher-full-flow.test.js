@@ -95,7 +95,7 @@ function ok(cond, label) {
   ok(/CREATE TABLE "QuizRetryGrant"/.test(pg), "the postgres baseline carries QuizRetryGrant");
   ok(/"QuizAttempt_quizId_studentId_attemptNumber_key" UNIQUE/.test(pg), "the postgres baseline carries the unique attempt-number constraint");
   ok(/"QuizAttempt_retryGrantId_fkey" FOREIGN KEY/.test(pg), "the postgres baseline carries the properly named grant FK");
-  ok(/QuizRetryGrant/.test(read("prisma/schema.postgresql.prisma")), "the derived postgres schema carries the new model");
+  ok(/QuizRetryGrant/.test(read("prisma/postgres/schema.prisma")), "the derived postgres schema carries the new model");
 
   // Every harness that derives a base schema must skip the migration-added
   // columns, or the scratch DB would collide with the migration.

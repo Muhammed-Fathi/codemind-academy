@@ -18,8 +18,11 @@ Related: `docs/PHASE_21_PRODUCTION_DATABASE_STORAGE.md` (design + evidence),
 | Item | Location / command |
 |---|---|
 | Source of truth schema | `prisma/schema.prisma` (SQLite, dev) |
-| Derived PG schema | `prisma/schema.postgresql.prisma` (regenerate: `node scripts/db/make-postgres-schema.mjs`; verify: `… --check`) |
-| Baseline DDL | `scripts/db/postgres-baseline.sql` (same generator) |
+| Derived PG schema | `prisma/postgres/schema.prisma` (regenerate: `node scripts/db/make-postgres-schema.mjs`; verify: `… --check`) |
+| PG migrations | `prisma/postgres/migrations/` (`0_init` + timestamped, provider = postgresql) |
+| SQLite migrations | `prisma/migrations/` (provider = sqlite — NEVER deploy these on PostgreSQL) |
+| Baseline DDL | `scripts/db/postgres-baseline.sql` (same generator; reference/restore/verification artifact) |
+| Read-only state checker | `node scripts/db/check-pg-migration-state.mjs --target <pg-url>` |
 | Cutover loader | `node scripts/db/migrate-sqlite-to-postgres.mjs --source <sqlite> --target <pg-url> --manifest <path>` |
 | Verification battery | `node scripts/db/verify-postgres.mjs --target <pg-url>` |
 | Backup | `scripts/db/backup-postgres.sh --out-dir <dir>` |
@@ -43,10 +46,14 @@ Confirm `pg_dump`/`pg_restore`/`psql` client versions match the server major.
    default privileges) and `codemind_owner` (owns schema objects, used only for
    DDL/restore). The app NEVER runs as a superuser.
 2. **Create the empty database** (`createdb -O codemind_owner codemind`) and
-   apply the baseline — pick ONE:
-   - Engines available: `prisma db push --schema prisma/schema.postgresql.prisma`
-     (or `migrate deploy` after `migrate resolve --applied`, §5), or
-   - Engines unreachable / byte-reviewable path: `psql "$URL" -f scripts/db/postgres-baseline.sql`.
+   provision the schema — the ONE supported path (engines available):
+   `bunx prisma migrate deploy --schema prisma/postgres/schema.prisma`
+   (applies `0_init` and everything after it — no baseline.sql, no
+   `migrate resolve`, no manual steps).
+   Engines unreachable / byte-reviewable fallback:
+   `psql "$URL" -f scripts/db/postgres-baseline.sql` produces the same shape,
+   but then baseline the ledger exactly as §5 describes BEFORE the next
+   `migrate deploy`, or deploy will try to re-create the schema.
    Then: `node scripts/db/verify-postgres.mjs --target "$URL"` — expect A1–A5
    present with zero rows (B/C trivially pass, D1–D4 pass vacuously, F1 passes,
    G-queries return 0 rows — run WITHOUT `--expect-fixtures`).
@@ -109,15 +116,47 @@ What it checks (fail = stop, roll back per §7):
 Then compare the loader manifest counts against the SQLite snapshot counts
 (table by table — the manifest JSON has per-table rows + sha256).
 
-## 5. Migration-ledger baseline (engines available only)
+## 5. Migration architecture (provider-split) and the ledger baseline
 
-PostgreSQL must never replay the 9 SQLite migrations. After the load validates:
-`prisma migrate resolve --applied "<each of the 9 names>" --schema prisma/schema.postgresql.prisma`
-(or mark the latest as applied per Prisma's baseline docs for your version).
-Future schema changes then flow through normal `prisma migrate` on the
-postgresql schema. If engines are unreachable, SKIP this step — the baseline
-DDL + loader manifest ARE the ledger until engines are available (record that
-decision in the cutover log).
+**The rule (Phase 26D hotfix, 2026-09-15): each provider owns its own
+migrations directory, because Prisma reads the migrations directory NEXT TO
+the schema file.**
+
+- `prisma/schema.prisma` (sqlite) → `prisma/migrations/` — 12 SQLite
+  migrations. These contain SQLite-flavoured SQL (`DATETIME`, …) and MUST
+  NEVER be deployed against PostgreSQL.
+- `prisma/postgres/schema.prisma` (postgresql) → `prisma/postgres/migrations/`
+  — `0_init` (the frozen pre-26D production schema) plus every PostgreSQL
+  migration after it.
+
+Before the hotfix, `prisma/schema.postgresql.prisma` lived directly in
+`prisma/`, shared `prisma/migrations` with SQLite, and
+`bunx prisma migrate deploy --schema prisma/schema.postgresql.prisma`
+replayed the SQLite Phase 26D migration on Neon — it failed on the first DDL
+statement with `type "datetime" does not exist` (42704). Recovery for THAT
+incident is §11. The architecture is enforced by
+`tests/migration-providers.test.js` (CI: `.github/workflows/migration-providers-postgres.yml`).
+
+**Ledger state on the production database:** the cutover-era
+`migrate resolve --applied` records (11 pre-26D SQLite-named rows) and — after
+the §11 recovery — one `0_init` row, one rolled-back Phase 26D row and one
+applied Phase 26D row. Rows whose names are not in the active directory are
+inert history: `migrate deploy` ignores them, `migrate status` stays clean
+(proven by the CI gate on a real PostgreSQL).
+
+**Going forward:** every PostgreSQL schema change is a NEW timestamped
+migration in `prisma/postgres/migrations/` (never an edit to an applied file —
+its sha256 is recorded in every environment's `_prisma_migrations`), deployed
+with:
+`bunx prisma migrate deploy --schema prisma/postgres/schema.prisma`
+
+**If a database was provisioned from `scripts/db/postgres-baseline.sql` (or
+restored from a backup taken before `0_init` was recorded) and therefore has
+no `0_init` ledger row:** run `bunx prisma migrate resolve --applied 0_init
+--schema prisma/postgres/schema.prisma` once, after verifying with
+`node scripts/db/check-pg-migration-state.mjs --target "$URL"` that the live
+schema really matches `0_init`'s inventory. Otherwise the next deploy will
+try to re-create the schema and fail (loudly) on duplicate objects.
 
 ## 6. Switch (DNS / connection)
 
@@ -207,3 +246,125 @@ battery), then re-point. RPO = last backup; RTO = restore + battery time
 | App: `too many connections` | Size Prisma `connection_limit` ≤ (Postgres `max_connections` − superuser_reserved − headroom) / instances. Single standalone instance: default is fine. |
 | App: prepared-statement errors | Only behind PgBouncer in transaction mode → add `pgbouncer=true` to `DATABASE_URL`. Never set it without a pooler. |
 | `prisma migrate` wants to recreate indexes | Cosmetic name drift between `postgres-baseline.sql` names and Prisma's generated names. Let the FIRST post-cutover migration reconcile them (review the diff — it must contain ONLY index renames). |
+| `migrate deploy` fails with `type "datetime" does not exist` (42704) / P3018 | A SQLite-flavoured migration was deployed against PostgreSQL — the schema's migrations directory is shared with SQLite. Fixed by the Phase 26D provider split; if it recurs, a `.prisma` file for PostgreSQL is living directly in `prisma/` (the layout test `tests/migration-providers.test.js` guards this). See §5. |
+| `migrate deploy`/`status` reports P3009 (failed migration) | A previous deploy failed and left a FAILED `_prisma_migrations` row. Diagnose read-only with `node scripts/db/check-pg-migration-state.mjs --target "$URL"`, then follow the §11 recovery sequence (resolve --rolled-back → resolve --applied 0_init → deploy). Never delete ledger rows by hand. |
+
+## 11. Phase 26D failed-deploy recovery on Neon (2026-09-15 incident)
+
+**What happened.** After Phase 26D merged, `bunx prisma migrate deploy
+--schema prisma/schema.postgresql.prisma` was run against production Neon.
+The (then-shared) migrations directory contained the SQLite-flavoured Phase
+26D migration; it failed on its FIRST DDL statement with
+`ERROR: type "datetime" does not exist` (SQLSTATE 42704, Prisma P3018 on the
+deploy attempt; every later deploy/status reports P3009 “found failed
+migrations”). `migrate status` shows
+`Following migration have failed: 20260915180000_phase26d_quiz_attempt_architecture`.
+No recovery command has been run since. The failure was on the first
+statement and PostgreSQL DDL is transactional, so NOTHING from the migration
+was created — but this MUST be verified, not assumed.
+
+**What the fix changed.** The PostgreSQL schema now lives at
+`prisma/postgres/schema.prisma` and owns `prisma/postgres/migrations/`
+containing `0_init` (the frozen pre-26D production schema — exactly what Neon
+has, modulo verification) and the PostgreSQL-native Phase 26D migration with
+the same name and the same logical change (`TIMESTAMPTZ(3)` instead of
+`DATETIME`, canonical constraint names). See §5.
+
+### 11.1 Read-only verification (run FIRST — changes nothing)
+
+```bash
+node scripts/db/check-pg-migration-state.mjs --target "$PROD_DATABASE_URL"
+```
+
+The script issues SELECTs only (it succeeds even under a SELECT-only role —
+proven in CI) and prints: every Phase 26D object it can find (all must be
+ABSENT), the full `_prisma_migrations` ledger with states and checksums, and a
+complete inventory diff of the live schema against `0_init`. It exits 0 ONLY
+if the database is in the expected pre-recovery state:
+
+- no `QuizRetryGrant` table;
+- no `Quiz` blueprint columns (quizMode, questionCount, maxAttempts,
+  shuffleOptions, difficultyPlan);
+- no `QuizAttempt` attemptNumber / status / retryGrantId, no
+  `QuizAttempt_quizId_studentId_attemptNumber_key`, no
+  `QuizAttempt_retryGrantId_fkey`;
+- no `QuizAnswer` snapshot columns (orderIndex … schoolTypeSnapshot);
+- the schema otherwise matches `0_init` exactly;
+- exactly one FAILED ledger row for
+  `20260915180000_phase26d_quiz_attempt_architecture`
+  (finished_at NULL, rolled_back_at NULL, applied_steps_count 0), 11 applied
+  cutover-era rows, and no `0_init` row yet.
+
+If it exits 1: STOP. Do not run anything below; investigate the printed diff
+first. (If it reports the 26D row as already ROLLED-BACK, skip step 11.2.2.)
+
+Equivalent manual psql checks (if you prefer to see the raw state):
+
+```sql
+SELECT to_regclass('public."QuizRetryGrant"') AS quizretrygrant;  -- expect NULL
+SELECT column_name FROM information_schema.columns
+ WHERE table_schema='public' AND table_name='Quiz'
+   AND column_name IN ('quizMode','questionCount','maxAttempts','shuffleOptions','difficultyPlan');  -- expect 0 rows
+SELECT column_name FROM information_schema.columns
+ WHERE table_schema='public' AND table_name='QuizAttempt'
+   AND column_name IN ('attemptNumber','status','retryGrantId');  -- expect 0 rows
+SELECT column_name FROM information_schema.columns
+ WHERE table_schema='public' AND table_name='QuizAnswer'
+   AND column_name IN ('orderIndex','questionType','promptSnapshot','promptArSnapshot','optionsSnapshot',
+                       'answerSnapshot','explanationSnapshot','difficultySnapshot','marksSnapshot','schoolTypeSnapshot');  -- expect 0 rows
+SELECT conname FROM pg_constraint WHERE connamespace='public'::regnamespace
+  AND conname IN ('QuizAttempt_quizId_studentId_attemptNumber_key','QuizAttempt_retryGrantId_fkey');  -- expect 0 rows
+SELECT migration_name, finished_at, rolled_back_at, applied_steps_count
+  FROM _prisma_migrations ORDER BY started_at;  -- one FAILED 26D row, 11 applied rows
+```
+
+### 11.2 Recovery (only after 11.1 exits 0 and you have approval)
+
+Take a fresh backup first (`scripts/db/backup-postgres.sh`). Then, from the
+repository root (engines available; all commands are additive — no DROP,
+TRUNCATE or DELETE anywhere):
+
+```bash
+export DATABASE_URL="$PROD_DATABASE_URL"   # secret manager; never in the shell history you commit
+
+# 1. Clear the failed record so deploy is willing to run again.
+#    (Marks the row rolled_back_at; the row stays as an audit trail.)
+bunx prisma migrate resolve --rolled-back 20260915180000_phase26d_quiz_attempt_architecture \
+  --schema prisma/postgres/schema.prisma
+
+# 2. Record that the pre-26D schema is already there (0_init == what 11.1 verified).
+bunx prisma migrate resolve --applied 0_init \
+  --schema prisma/postgres/schema.prisma
+
+# 3. Apply the PostgreSQL-native Phase 26D migration (additive only).
+bunx prisma migrate deploy --schema prisma/postgres/schema.prisma
+
+# 4. Confirm.
+bunx prisma migrate status --schema prisma/postgres/schema.prisma
+# expect: "Database schema is up to date!"
+```
+
+Step 3 applies exactly: `CREATE TABLE QuizRetryGrant` (+ 3 indexes), 5 `Quiz`
+columns, 3 `QuizAttempt` columns + named FK + unique constraint, 10
+`QuizAnswer` columns, and the two documented backfills (attempt renumbering,
+status projection). It contains no destructive statement.
+
+### 11.3 Post-recovery checks
+
+- `bunx prisma migrate status --schema prisma/postgres/schema.prisma` →
+  “Database schema is up to date!” and a second
+  `migrate deploy` → “No pending migrations”.
+- `node scripts/db/verify-postgres.mjs --target "$URL"` still passes.
+- App smoke test as each role; then one teacher→student quiz round-trip
+  (blueprint select → attempt start → submit → frozen snapshot visible).
+- The ledger now contains: 11 cutover-era rows (inert), one rolled-back 26D
+  row (audit trail), one applied `0_init` row, one applied 26D row. That
+  shape is expected and is asserted by the CI gate.
+
+### 11.4 Restore-from-backup variant
+
+A backup taken BEFORE the failed deploy has the same pre-26D schema and the
+11 applied rows but NO failed 26D row: skip step 11.2.1 and run steps
+11.2.2–11.2.4 unchanged. A backup taken AFTER the failed deploy is exactly
+the §11.1 state. Both variants are exercised in
+`tests/migration-providers.test.js`.
