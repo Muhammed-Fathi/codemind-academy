@@ -170,15 +170,15 @@ The inventory exit code is `2` for NO-GO, `0` otherwise, so CI can gate on it.
 
 All commands are **read-only** and **never log the password**.
 
-### 6.1 Windows PowerShell (recommended on Windows)
+### 6.1 Windows PowerShell (recommended on Windows — masked input)
 
 Open **PowerShell** (not CMD). Paste line by line — **do not** `echo $env:DATABASE_URL`.
 
 ```powershell
-# 1. Set production DATABASE_URL without echoing it (input is masked/hidden)
-$env:DATABASE_URL = Read-Host "Paste production DATABASE_URL"
-# Alternative if Read-Host is unavailable: set via Windows Environment Variables UI
-# or: $env:DATABASE_URL = [System.Net.NetworkCredential]::new("", (Read-Host "Paste production DATABASE_URL" -AsSecureString)).Password
+# 1. Set production DATABASE_URL securely — input is masked, not echoed, not in history/argv
+$secureDatabaseUrl = Read-Host "Paste production DATABASE_URL" -AsSecureString
+$env:DATABASE_URL = [System.Net.NetworkCredential]::new("", $secureDatabaseUrl).Password
+Remove-Variable secureDatabaseUrl
 
 # 2. Verify it is set without revealing it (host only, via redaction)
 node -e "const u=process.env.DATABASE_URL; const {URL}=require('url'); try{const x=new URL(u); console.log('host:', x.host, 'db:', x.pathname)} catch{ console.log('URL set')}"
@@ -208,9 +208,12 @@ type inventory.json
 
 ### 6.2 Windows CMD
 
+> **For production, do not use CMD `set /p` to enter the production secret — it echoes the secret and is not masked.** Use the secure PowerShell flow in §6.1.
+
+If you must use CMD for subsequent read-only checks after `DATABASE_URL` was already set securely via PowerShell in the same session:
+
 ```cmd
-REM Set DATABASE_URL without echoing it (use SET /P to avoid logging)
-set /p DATABASE_URL="Paste production DATABASE_URL: "
+REM DATABASE_URL was already set securely via PowerShell §6.1 — do not re-enter it here
 npx.cmd prisma migrate status --schema prisma/schema.postgresql.prisma
 REM Production reads DATABASE_URL from env — do NOT use --target with real credentials
 node scripts\phase25-pr4-inventory.mjs --json-out inventory.json
@@ -218,11 +221,15 @@ node scripts\db\verify-postgres.mjs
 type inventory.json
 ```
 
+Alternatively, set `DATABASE_URL` via **Windows Environment Variables UI** (System Properties → Environment Variables) — not via `set /p` on the command line.
+
 ### 6.3 WSL / Git Bash
 
 ```bash
-# Set without echoing (read from tty)
-read -s -p "Paste production DATABASE_URL: " DATABASE_URL; export DATABASE_URL; echo
+# Set without echoing (read from tty) — input is hidden, not in argv
+read -s -p "Paste production DATABASE_URL: " DATABASE_URL
+echo
+export DATABASE_URL
 npx prisma migrate status --schema prisma/schema.postgresql.prisma
 # Production reads DATABASE_URL from env — do NOT use --target with real credentials
 node scripts/phase25-pr4-inventory.mjs --json-out inventory.json
@@ -571,8 +578,10 @@ Confirmed launch truth (do not change):
 On the operator's Windows machine (not in the sandbox):
 
 ```powershell
-# 1. Set production DATABASE_URL without echoing it (input hidden)
-$env:DATABASE_URL = Read-Host "Paste production DATABASE_URL"
+# 1. Set production DATABASE_URL securely — masked input, not echoed, not in history/argv
+$secureDatabaseUrl = Read-Host "Paste production DATABASE_URL" -AsSecureString
+$env:DATABASE_URL = [System.Net.NetworkCredential]::new("", $secureDatabaseUrl).Password
+Remove-Variable secureDatabaseUrl
 
 # 2. Migration status — must be "Database schema is up to date"
 #    ANY pending or history mismatch → STOP / NO-GO — do NOT run migrate deploy.

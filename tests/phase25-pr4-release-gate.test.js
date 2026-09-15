@@ -137,8 +137,21 @@ async function main() {
     ok(!/postgresql:\/\/[^\s]*:[^\s]*@/i.test(inv2), "inventory script has no postgresql:// URL with credentials literal");
     // 10.3: production command examples rely on DATABASE_URL from environment
     ok(rb.includes("reads DATABASE_URL from env") || rb.includes("process.env.DATABASE_URL"), "runbook says production reads DATABASE_URL from env");
-    ok(rb.includes('Read-Host \"Paste production DATABASE_URL\"') || rb.includes("Read-Host"), "runbook uses Read-Host for secure input (no echo)");
+    ok(rb.includes("-AsSecureString"), "production PowerShell example contains -AsSecureString (masked input)");
+    ok(rb.includes('$secureDatabaseUrl = Read-Host \"Paste production DATABASE_URL\" -AsSecureString'), "runbook has secure $secureDatabaseUrl = Read-Host ... -AsSecureString pattern");
+    ok(rb.includes('$env:DATABASE_URL = [System.Net.NetworkCredential]::new(\"\", $secureDatabaseUrl).Password'), "runbook has NetworkCredential conversion");
+    ok(rb.includes("Remove-Variable secureDatabaseUrl"), "runbook cleans up secure variable");
+    ok(!rb.includes("$env:DATABASE_URL = Read-Host"), "runbook does NOT contain plain $env:DATABASE_URL = Read-Host (would echo)");
     ok(!rb.includes("--target postgresql://"), "runbook production examples do not use --target postgresql:// (production must use env, not argv)");
+    // CMD must not recommend plain set /p as secure production entry
+    ok(!rb.includes('set /p DATABASE_URL="') && !rb.includes("set /p DATABASE_URL='") && !rb.includes('set /p DATABASE_URL='), "runbook does NOT recommend set /p DATABASE_URL as secure input (CMD echoes)");
+    const hasSetPDatabaseUrl = /set\s*\/p\s+DATABASE_URL/i.test(rb);
+    if (hasSetPDatabaseUrl) {
+      ok(/do not use.*set\s*\/p/i.test(rb) && /PowerShell/.test(rb), "if set /p DATABASE_URL appears, it is in a 'do not use — use PowerShell' warning");
+    } else {
+      ok(true, "runbook has no set /p DATABASE_URL command (correct — PowerShell is authoritative)");
+    }
+    ok(rb.includes('read -s -p \"Paste production DATABASE_URL: \" DATABASE_URL'), "WSL guidance uses read -s (masked)");
     // inventory help documents env authority and forbids argv for production
     ok(inv2.includes("Do NOT pass real production credentials via --target") || inv2.includes("Do NOT pass real production credentials"), "inventory help forbids passing real production credentials via --target (argv)");
     ok(inv2.includes("Production: set DATABASE_URL in the environment and run without --target") || inv2.includes("process.env.DATABASE_URL"), "inventory help documents production env authority (set DATABASE_URL in env, no --target)");
