@@ -56,6 +56,27 @@ export async function PATCH(
     return err(tApi("api.172"), 403);
   }
 
+  // Phase 26D FIX — validate the STUDENT before writing anything.
+  //
+  // This route will happily CREATE a submission for a student who never
+  // submitted ("teacher pre-grades"), so an unvalidated `studentId` went
+  // straight into an INSERT. Two consequences:
+  //   * a nonexistent id hit the foreign key and surfaced as an unhandled 500
+  //     rather than a clean refusal;
+  //   * more seriously, a VALID id from another teacher's course would have
+  //     been graded — the homework was scope-checked, the student was not.
+  // Both are now refused: unknown student → 404, a student outside the
+  // teacher's own courses → 403.
+  const target = await db.student.findUnique({
+    where: { id: studentId },
+    select: { id: true, group: { select: { courseId: true } } },
+  });
+  if (!target) return err(tApi("api.168"), 404);
+  const targetCourseId = target.group?.courseId ?? null;
+  if (!targetCourseId || !teacherCourseIds.includes(targetCourseId)) {
+    return err(tApi("api.172"), 403);
+  }
+
   // Find or create the submission row
   const existing = await db.homeworkSubmission.findUnique({
     where: { homeworkId_studentId: { homeworkId, studentId } },

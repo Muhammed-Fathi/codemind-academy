@@ -204,3 +204,110 @@ export async function acquireGroupSeatLock(
   if (typeof raw !== "function") return;
   await executeAdvisoryXactLock(tx as TxWithRaw, groupSeatLockId(groupId));
 }
+
+// ---------------------------------------------------------------------------
+// Phase 26D — quiz/question DESTRUCTIVE-DELETE advisory lock
+// ---------------------------------------------------------------------------
+//
+// THE RACE THIS CLOSES
+// ====================
+// `QuizAnswer.question` is `onDelete: Cascade`. Under PostgreSQL READ COMMITTED
+// a plain `$transaction` does NOT serialize a destructive delete against a
+// concurrent attempt start, because a bare read takes no lock that conflicts
+// with an insert into the REFERENCING table:
+//
+//   Tx A (delete question q)        Tx B (start attempt)
+//   begin
+//   read refs WHERE questionId=q
+//     -> 0                          begin
+//                                   insert QuizAttempt row
+//                                   insert QuizAnswer row (questionId=q)  <-- FK ok
+//                                   commit
+//   delete the Question row (id=q)
+//     -> CASCADE removes the QuizAnswer row Tx B just committed
+//   commit
+//
+// (Lower-case SQL verbs above are deliberate: this file is scanned by the
+// Phase 21 and security-audit gates, which assert that the ONLY raw SQL here is
+// the advisory lock. Keeping the narrative free of upper-case DML keywords means
+// those guards keep matching real statements and nothing else.)
+//
+// Net effect: the attempt EXISTS but its frozen question row is GONE — exactly
+// the history-destruction the delete guard was meant to prevent. Wrapping the
+// check and the delete in one transaction does not help; the window is between
+// the check and the delete, and READ COMMITTED gives Tx A no visibility of, and
+// no conflict with, Tx B's insert.
+//
+// THE PROTOCOL
+// ============
+// Both sides acquire the SAME transaction-scoped advisory lock, keyed by the
+// quiz id, BEFORE doing anything else:
+//
+//   * `POST /api/quizzes/[id]/start` acquires it before creating the attempt and
+//     freezing its `QuizAnswer` rows;
+//   * `DELETE /api/teacher/questions/[id]` and `DELETE /api/teacher/quizzes/[id]`
+//     acquire it before reading references.
+//
+// The key is the QUIZ id (not the question id) on purpose: a question delete and
+// an attempt start on the same quiz must contend, and a quiz delete must exclude
+// every attempt on that quiz. Keying a question delete by its own id would not
+// conflict with an attempt start that had already read the pool.
+//
+// Ordering then becomes total, and exactly one of two safe outcomes happens:
+//   * delete wins -> the attempt's FK insert fails, so the attempt never exists
+//     with a missing frozen row; or
+//   * attempt wins -> the delete re-reads references under the lock, sees the
+//     frozen rows, and returns 409.
+//
+// MECHANISM (PostgreSQL — production)
+// -----------------------------------
+// `pg_advisory_xact_lock(<63-bit id>)`, transaction-scoped and exclusive across
+// every connection, process and isolate sharing the database. Released
+// automatically at COMMIT/ROLLBACK, so a crashed isolate cannot strand it.
+//
+// MECHANISM (SQLite — local development / tests)
+// ----------------------------------------------
+// Deliberate NO-OP. There is no advisory-lock primitive, and SQLite permits at
+// most ONE writer at a time (database-level write lock), so two concurrent write
+// transactions cannot both commit; the loser fails rather than half-applying.
+// Local development never depends on PostgreSQL.
+
+const QUIZ_DELETE_LOCK_NAMESPACE = "cm:phase26d:quiz-destructive";
+
+/**
+ * Deterministic 63-bit advisory lock id for destructive work on ONE quiz
+ * (deleting the quiz, or deleting one of its questions) versus starting an
+ * attempt on it. Same quiz => same lock; different quizzes => (effectively)
+ * different locks, so unrelated quizzes never serialize against each other.
+ */
+export function quizDestructiveLockId(quizId: string): bigint {
+  return fnv1a63(`${QUIZ_DELETE_LOCK_NAMESPACE}\u0000${quizId}`);
+}
+
+/**
+ * Acquire the per-quiz DESTRUCTIVE-DELETE lock INSIDE the caller's transaction.
+ *
+ * Callers MUST call this as the FIRST statement of the transaction, before any
+ * reference read or write — acquiring it later reopens the window it exists to
+ * close.
+ *
+ *   PostgreSQL — `pg_advisory_xact_lock(quizDestructiveLockId(quizId))`:
+ *   exclusive for that quiz across every connection, process and instance, held
+ *   until COMMIT/ROLLBACK.
+ *
+ *   SQLite — a deliberate NO-OP: no advisory primitive exists, and the
+ *   database's own single-writer lock already serializes concurrent write
+ *   transactions.
+ *
+ * A tx surface without raw-SQL support (some test fakes) also skips the call.
+ */
+export async function acquireQuizDestructiveLock(
+  tx: unknown,
+  quizId: string,
+  provider: DatabaseProvider = resolveDatabaseProvider()
+): Promise<void> {
+  if (provider !== "postgresql") return;
+  const raw = (tx as Partial<TxWithRaw>).$executeRaw;
+  if (typeof raw !== "function") return;
+  await executeAdvisoryXactLock(tx as TxWithRaw, quizDestructiveLockId(quizId));
+}

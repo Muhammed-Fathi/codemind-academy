@@ -694,10 +694,21 @@ pinned(
 section("F. Source pins — frozen attempts and FIXED mock-exam pins");
 // ---------------------------------------------------------------------------
 
+// Phase 26D: the reference check moved INSIDE the delete transaction, and the
+// transaction now takes a shared per-quiz advisory lock first — that lock, not
+// the transaction boundary, is what orders this against a concurrent attempt
+// start (see src/lib/db-serialization.ts). The invariant asserted here is
+// unchanged: deletion is decided by the reference counter, never by a client
+// flag.
 pinned(
   R.questionById,
-  /const \{ references \} = await loadQuestionReferences\(id\);\n  const guard = canDeleteQuestion\(references\);/,
+  /const refs = await loadQuestionReferences\(id, tx\);\n      const guard = canDeleteQuestion\(refs\.references\);/,
   "F: deletion is decided by the reference counter, not by a client flag"
+);
+pinned(
+  R.questionById,
+  /db\.\$transaction\(async \(tx\)/,
+  "F: the reference check and the delete run in ONE transaction (Phase 26D)"
 );
 pinned(
   R.questionById,
@@ -714,15 +725,27 @@ pinned(
   /if \(patch\.schoolType !== undefined\) data\.schoolType = v\.schoolType;/,
   "F: an omitted tag never re-tags an existing question"
 );
+// Phase 26D: same rule, now enforced inside the delete transaction and mapped
+// to the same 409.
 pinned(
   R.quizById,
-  /if \(attempts\.length > 0\) return err\(tApi\("api\.249"\), 409\);/,
+  /if \(attempts\.length > 0\) throw new QuizDeleteBlockedError\("HAS_ATTEMPTS"\);/,
   "F: a quiz with attempts can never be destroyed"
 );
 pinned(
   R.quizById,
-  /if \(references\.fixedExamPins > 0\) return err\(tApi\("api\.246"\), 409\);/,
+  /e\.reason === "FIXED_EXAM_PIN" \? tApi\("api\.246"\) : tApi\("api\.249"\)/,
+  "F: a destroyed-quiz refusal still distinguishes attempts from FIXED pins"
+);
+pinned(
+  R.quizById,
+  /if \(references\.fixedExamPins > 0\) throw new QuizDeleteBlockedError\("FIXED_EXAM_PIN"\);/,
   "F: a FIXED-pinned question keeps its quiz alive"
+);
+pinned(
+  R.quizById,
+  /const \{ references \} = await loadQuestionReferences\(q\.id, tx\);/,
+  "F: the quiz delete checks question pins on the TRANSACTION client (Phase 26D)"
 );
 pinned(
   R.quizQuestions,

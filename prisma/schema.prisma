@@ -29,6 +29,8 @@ model User {
   sessions      UserSession[]
   resetTokens   PasswordResetToken[]
   securityEvents SecurityEvent[]
+  /// Phase 26D — the Admin's audit trail of retry permissions they issued.
+  grantedQuizRetries QuizRetryGrant[] @relation("QuizRetryGrantGranter")
 
   @@index([role])
   @@index([status])
@@ -62,6 +64,8 @@ model Student {
   lessonProgress    LessonProgress[]
   parentLinks       ParentStudentLink[]
   quizAttempts      QuizAttempt[]
+  /// Phase 26D — Admin-issued retry permissions targeting this student.
+  retryGrants       QuizRetryGrant[]
   referralsReceived Referral[]           @relation("ReferredRelation")
   referralsMade     Referral[]           @relation("ReferrerRelation")
   group             Group?               @relation(fields: [groupId], references: [id])
@@ -487,9 +491,45 @@ model Quiz {
   passMark    Int           @default(60)
   timeLimit   Int?
   order       Int           @default(0)
+
+  // -------------------------------------------------------------------------
+  // Phase 26D — LESSON QUIZ BLUEPRINT
+  // -------------------------------------------------------------------------
+  // Before 26D a Quiz *was* its question list: every student received every
+  // eligible question of the quiz, in the same order, forever. The blueprint
+  // columns turn a Quiz into a SELECTION RULE over the Question Bank instead,
+  // while `quizMode = "FIXED"` keeps the old behaviour byte-for-byte for every
+  // quiz that already exists (see `resolveQuizBlueprint` in
+  // src/lib/quiz-blueprint.ts — the single reader of these five columns).
+  //
+  // All five are ADDITIVE. A pre-26D row therefore reads
+  // `FIXED / null / 1 / false / null`, which is exactly the behaviour that row
+  // had before, except that `maxAttempts` is now 1 — the one-attempt default
+  // is the whole point of the phase and is deliberately NOT opt-out.
+
+  /// `FIXED` = freeze every eligible question (legacy). `BLUEPRINT` = the
+  /// server selects `questionCount` questions per attempt from the pool,
+  /// honouring `difficultyPlan`. Stored as TEXT like `QuizAttempt.cameraStatus`
+  /// and `ExamAttempt.examType` — no new enum, no client-visible contract.
+  quizMode        String        @default("FIXED")
+  /// Requested question count for a BLUEPRINT quiz. NULL means "all eligible".
+  questionCount   Int?
+  /// How many attempts one student may ever hold on this quiz. ONE by default:
+  /// starting the quiz consumes the entitlement. Only an Admin `QuizRetryGrant`
+  /// raises the ceiling for a specific student — never a client-supplied value.
+  maxAttempts     Int           @default(1)
+  /// Optional answer-choice shuffle policy, applied server-side at freeze time
+  /// (the frozen option order is snapshotted per attempt, so a refresh cannot
+  /// reshuffle a running attempt).
+  shuffleOptions  Boolean       @default(false)
+  /// JSON difficulty plan, e.g. `{"EASY":2,"MEDIUM":3,"HARD":1}`. NULL = no
+  /// difficulty constraint. Only meaningful in BLUEPRINT mode.
+  difficultyPlan  String?
+
   questions   Question[]
   lesson      Lesson        @relation(fields: [lessonId], references: [id], onDelete: Cascade)
   attempts    QuizAttempt[]
+  retryGrants QuizRetryGrant[]
 
   @@index([lessonId])
 }
@@ -526,11 +566,35 @@ model QuizAttempt {
   startedAt  DateTime     @default(now())
   finishedAt DateTime?
   cameraStatus String     @default("NOT_REQUESTED")
+
+  // -------------------------------------------------------------------------
+  // Phase 26D — ATTEMPT SEQUENCE, STATE AND RETRY LINEAGE
+  // -------------------------------------------------------------------------
+  // Before 26D an attempt was identified only by `finishedAt IS NULL`, which
+  // made "how many attempts has this student used" a derived count and left the
+  // state machine implicit. These three columns make both explicit WITHOUT
+  // reinterpreting any existing row: `finishedAt` remains the historical truth
+  // and `status` is a projection of it, kept for queryability and for the one
+  // state `finishedAt` cannot express on its own (EXPIRED).
+
+  /// 1-based sequence of this attempt within (quiz, student). Server-computed;
+  /// never accepted from a client. The unique index below is what makes
+  /// "exactly one attempt #N" a database guarantee rather than a convention.
+  attemptNumber Int        @default(1)
+  /// `OPEN` | `SUBMITTED` | `EXPIRED`. `OPEN` ⇔ `finishedAt IS NULL`.
+  status        String     @default("OPEN")
+  /// The Admin grant that permitted this attempt beyond the first, if any.
+  /// `onDelete: SetNull` so deleting a grant row can never delete history —
+  /// the attempt and its score survive the loss of their lineage pointer.
+  retryGrantId  String?
+
   answers    QuizAnswer[]
   evidence   QuizAttemptEvidence[]
+  retryGrant QuizRetryGrant? @relation(fields: [retryGrantId], references: [id], onDelete: SetNull)
   student    Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
   quiz       Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
 
+  @@unique([quizId, studentId, attemptNumber])
   @@index([quizId, studentId])
   @@index([studentId])
 }
@@ -541,6 +605,49 @@ model QuizAnswer {
   questionId String
   selected   String
   isCorrect  Boolean     @default(false)
+
+  // -------------------------------------------------------------------------
+  // Phase 26D — FROZEN QUESTION SNAPSHOT
+  // -------------------------------------------------------------------------
+  // Phase 5 froze WHICH questions an attempt covers (these rows) but not WHAT
+  // they said: prompt, options, the correct answer, marks and difficulty were
+  // all read from the LIVE `Question` row at serve time and at grading time.
+  // A Question Bank edit therefore silently rewrote a submitted result — the
+  // stored `score` could disagree with the answer key the student was later
+  // shown, and an option re-order invalidated an index-based `selected`.
+  //
+  // These columns are the fix. They are written ONCE, when the attempt's
+  // question set is frozen at attempt start, and are never read from the live
+  // bank again for that attempt.
+  //
+  // WHY EVERY COLUMN IS NULLABLE
+  //   A pre-26D attempt has none of them. NULL means "no snapshot" and the
+  //   reader falls back to the live `Question` row — i.e. EXACTLY the old
+  //   behaviour, for exactly the rows that already relied on it. No backfill
+  //   invention, no regrading of history, no destructive rewrite. Every attempt
+  //   created after this migration is self-describing.
+  //
+  // `optionsSnapshot` is the FROZEN option order (JSON array) — when the quiz's
+  // shuffle policy is on, it is the shuffled order this student saw, and
+  // `answerSnapshot`/`selected` are indexes into THAT array, so grading a
+  // historical attempt can never be invalidated by a later option edit.
+
+  /// `orderIndex` — this question's position in the frozen attempt set.
+  orderIndex          Int?
+  questionType        String?
+  promptSnapshot      String?
+  promptArSnapshot    String?
+  /// Frozen JSON array of option strings, in the order this attempt saw them.
+  optionsSnapshot     String?
+  /// Frozen correct answer (an index into `optionsSnapshot`).
+  answerSnapshot      String?
+  explanationSnapshot String?
+  difficultySnapshot  String?
+  marksSnapshot       Int?
+  /// Frozen track tag; grading a historical attempt must not change because the
+  /// live question was later retagged into another track.
+  schoolTypeSnapshot  String?
+
   question   Question    @relation(fields: [questionId], references: [id], onDelete: Cascade)
   attempt    QuizAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
 
@@ -550,6 +657,52 @@ model QuizAnswer {
   @@unique([attemptId, questionId])
   @@index([attemptId])
   @@index([questionId])
+}
+
+/// Phase 26D — the ONLY mechanism by which a student may hold more than one
+/// attempt on a Lesson Quiz.
+///
+/// WHY A MODEL AND NOT A COLUMN ON QuizAttempt
+///   A retry is not a property of an attempt: it is a *permission issued before
+///   the attempt exists*, by someone who is not the student, at a time that must
+///   be recorded independently of the attempt. Modelling it as
+///   `QuizAttempt.finishedAt = null` on the old row would destroy the result it
+///   is granting a retry *from*; modelling it as a deleted row would destroy the
+///   history outright. Both were explicitly rejected. This model adds a row and
+///   touches nothing.
+///
+/// SEMANTICS
+///   * ONE grant ⇒ exactly ONE extra attempt. `consumedAt` is written when the
+///     student starts the new attempt, and a consumed grant can never be spent
+///     again — the grant is a single-use token, not a flag.
+///   * `grantedByUserId` + `grantedAt` make the decision attributable. Only an
+///     ADMIN can create a row here (`/api/admin/quiz-retries`); a Teacher or a
+///     Student gets a 403 and no row.
+///   * Audited as `QUIZ_RETRY_GRANTED` in `AuditLog` at creation.
+///   * `attempts` is the lineage back-link (`QuizAttempt.retryGrantId`), so an
+///     inspection surface can show "attempt #3 was permitted by grant X, granted
+///     by admin Y at time Z".
+///   * `onDelete: SetNull` on the attempt side means pruning a grant never prunes
+///     an attempt or a score.
+model QuizRetryGrant {
+  id          String    @id @default(cuid())
+  studentId   String
+  quizId      String
+  grantedByUserId String
+  grantedAt   DateTime  @default(now())
+  /// NULL = still available. Non-NULL = spent by the attempt in `attempts`.
+  consumedAt  DateTime?
+  /// Optional, length-bounded by the API (RETRY_REASON_MAX). Never required.
+  reason      String?
+
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  quiz        Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  grantedBy   User     @relation("QuizRetryGrantGranter", fields: [grantedByUserId], references: [id], onDelete: Cascade)
+  attempts    QuizAttempt[]
+
+  @@index([studentId, quizId])
+  @@index([quizId])
+  @@index([grantedByUserId])
 }
 
 model Homework {

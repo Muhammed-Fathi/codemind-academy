@@ -339,6 +339,11 @@ CREATE TABLE "Quiz" (
   "passMark" INTEGER NOT NULL DEFAULT 60,
   "timeLimit" INTEGER,
   "order" INTEGER NOT NULL DEFAULT 0,
+  "quizMode" TEXT NOT NULL DEFAULT 'FIXED',
+  "questionCount" INTEGER,
+  "maxAttempts" INTEGER NOT NULL DEFAULT 1,
+  "shuffleOptions" BOOLEAN NOT NULL DEFAULT FALSE,
+  "difficultyPlan" TEXT,
   CONSTRAINT "Quiz_pkey" PRIMARY KEY ("id"),
   CONSTRAINT "Quiz_lessonId_fkey" FOREIGN KEY ("lessonId") REFERENCES "Lesson" ("id") ON UPDATE CASCADE ON DELETE CASCADE
 );
@@ -694,6 +699,20 @@ CREATE TABLE "ParentStudentLink" (
   CONSTRAINT "ParentStudentLink_parentId_fkey" FOREIGN KEY ("parentId") REFERENCES "Parent" ("id") ON UPDATE CASCADE ON DELETE CASCADE
 );
 
+CREATE TABLE "QuizRetryGrant" (
+  "id" TEXT NOT NULL,
+  "studentId" TEXT NOT NULL,
+  "quizId" TEXT NOT NULL,
+  "grantedByUserId" TEXT NOT NULL,
+  "grantedAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "consumedAt" TIMESTAMPTZ(3),
+  "reason" TEXT,
+  CONSTRAINT "QuizRetryGrant_pkey" PRIMARY KEY ("id"),
+  CONSTRAINT "QuizRetryGrant_studentId_fkey" FOREIGN KEY ("studentId") REFERENCES "Student" ("id") ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT "QuizRetryGrant_quizId_fkey" FOREIGN KEY ("quizId") REFERENCES "Quiz" ("id") ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT "QuizRetryGrant_grantedByUserId_fkey" FOREIGN KEY ("grantedByUserId") REFERENCES "User" ("id") ON UPDATE CASCADE ON DELETE CASCADE
+);
+
 CREATE TABLE "QuizAttempt" (
   "id" TEXT NOT NULL,
   "quizId" TEXT NOT NULL,
@@ -705,7 +724,12 @@ CREATE TABLE "QuizAttempt" (
   "startedAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "finishedAt" TIMESTAMPTZ(3),
   "cameraStatus" TEXT NOT NULL DEFAULT 'NOT_REQUESTED',
+  "attemptNumber" INTEGER NOT NULL DEFAULT 1,
+  "status" TEXT NOT NULL DEFAULT 'OPEN',
+  "retryGrantId" TEXT,
   CONSTRAINT "QuizAttempt_pkey" PRIMARY KEY ("id"),
+  CONSTRAINT "QuizAttempt_quizId_studentId_attemptNumber_key" UNIQUE ("quizId", "studentId", "attemptNumber"),
+  CONSTRAINT "QuizAttempt_retryGrantId_fkey" FOREIGN KEY ("retryGrantId") REFERENCES "QuizRetryGrant" ("id") ON UPDATE CASCADE ON DELETE SET NULL,
   CONSTRAINT "QuizAttempt_studentId_fkey" FOREIGN KEY ("studentId") REFERENCES "Student" ("id") ON UPDATE CASCADE ON DELETE CASCADE,
   CONSTRAINT "QuizAttempt_quizId_fkey" FOREIGN KEY ("quizId") REFERENCES "Quiz" ("id") ON UPDATE CASCADE ON DELETE CASCADE
 );
@@ -716,6 +740,16 @@ CREATE TABLE "QuizAnswer" (
   "questionId" TEXT NOT NULL,
   "selected" TEXT NOT NULL,
   "isCorrect" BOOLEAN NOT NULL DEFAULT FALSE,
+  "orderIndex" INTEGER,
+  "questionType" TEXT,
+  "promptSnapshot" TEXT,
+  "promptArSnapshot" TEXT,
+  "optionsSnapshot" TEXT,
+  "answerSnapshot" TEXT,
+  "explanationSnapshot" TEXT,
+  "difficultySnapshot" TEXT,
+  "marksSnapshot" INTEGER,
+  "schoolTypeSnapshot" TEXT,
   CONSTRAINT "QuizAnswer_pkey" PRIMARY KEY ("id"),
   CONSTRAINT "QuizAnswer_attemptId_questionId_key" UNIQUE ("attemptId", "questionId"),
   CONSTRAINT "QuizAnswer_questionId_fkey" FOREIGN KEY ("questionId") REFERENCES "Question" ("id") ON UPDATE CASCADE ON DELETE CASCADE,
@@ -909,6 +943,9 @@ CREATE INDEX "LessonNote_studentId_idx" ON "LessonNote" ("studentId");
 CREATE INDEX "LessonProgress_studentId_idx" ON "LessonProgress" ("studentId");
 CREATE INDEX "LessonProgress_lessonId_idx" ON "LessonProgress" ("lessonId");
 CREATE INDEX "LessonProgress_videoCompleted_idx" ON "LessonProgress" ("videoCompleted");
+CREATE INDEX "QuizRetryGrant_studentId_quizId_idx" ON "QuizRetryGrant" ("studentId", "quizId");
+CREATE INDEX "QuizRetryGrant_quizId_idx" ON "QuizRetryGrant" ("quizId");
+CREATE INDEX "QuizRetryGrant_grantedByUserId_idx" ON "QuizRetryGrant" ("grantedByUserId");
 CREATE INDEX "QuizAttempt_quizId_studentId_idx" ON "QuizAttempt" ("quizId", "studentId");
 CREATE INDEX "QuizAttempt_studentId_idx" ON "QuizAttempt" ("studentId");
 CREATE INDEX "QuizAnswer_attemptId_idx" ON "QuizAnswer" ("attemptId");

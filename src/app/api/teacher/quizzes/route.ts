@@ -42,6 +42,11 @@ import {
   resolveQuestionSchoolType,
 } from "@/lib/track-scope";
 import {
+  blueprintToStorage,
+  resolveQuizBlueprint,
+  validateBlueprintInput,
+} from "@/lib/quiz-blueprint";
+import {
   LESSON_PLACEMENT_SELECT,
   TEACHER_LIMITS,
   boundedText,
@@ -209,6 +214,10 @@ export async function GET(req: NextRequest) {
       // Phase 12/18 — the quiz's own eligibility, surfaced so the teacher sees
       // what they configured instead of inferring it from the lesson.
       trackScope: normalizeTrackScope(q.trackScope) ?? "SHARED",
+      // Phase 26D — the selection rule the teacher authored, read back through
+      // the SAME resolver the start route uses, so the UI cannot show a rule
+      // the server would not apply.
+      blueprint: resolveQuizBlueprint(q),
       // The lesson stamp is SHARED with the picker (teacher-content.ts), so the
       // list the teacher picks from and the list they manage can never disagree
       // about officialCode / trackScope / lifecycle.
@@ -416,6 +425,20 @@ export async function POST(req: NextRequest) {
     validatedQuestions.push(validated.question);
   }
 
+  // Phase 26D — optional blueprint. Absent fields resolve to the legacy
+  // defaults (FIXED / all eligible questions / ONE attempt), so a teacher who
+  // does not send them gets exactly the pre-26D quiz, with the one-attempt rule.
+  const blueprintCheck = validateBlueprintInput(
+    body.blueprint && typeof body.blueprint === "object" && !Array.isArray(body.blueprint)
+      ? (body.blueprint as Record<string, unknown>)
+      : {},
+    resolveQuizBlueprint({})
+  );
+  if (!blueprintCheck.ok) {
+    return err(tApi("api.288"), 400);
+  }
+  const blueprintStorage = blueprintToStorage(blueprintCheck.blueprint);
+
   const createdQuiz = await db.quiz.create({
     data: {
       lessonId,
@@ -426,6 +449,12 @@ export async function POST(req: NextRequest) {
       timeLimit: timeLimit ?? null,
       order: 0,
       trackScope: quizTrackScope,
+      // Phase 26D blueprint columns.
+      quizMode: blueprintStorage.quizMode,
+      questionCount: blueprintStorage.questionCount,
+      difficultyPlan: blueprintStorage.difficultyPlan,
+      shuffleOptions: blueprintStorage.shuffleOptions,
+      maxAttempts: blueprintStorage.maxAttempts,
       questions: {
         create: validatedQuestions.map((q) => {
           // Phase 12 — EVERY created question gets an explicit school type.

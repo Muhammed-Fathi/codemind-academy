@@ -24,6 +24,7 @@ import {
   teacherCourseIds,
   type ChainLesson,
 } from "@/lib/teacher-content";
+import { acquireQuizDestructiveLock } from "@/lib/db-serialization";
 
 async function loadOwnedQuiz(
   quizId: string,
@@ -171,21 +172,68 @@ export async function DELETE(
 
   // Two independent reasons a quiz may not be destroyed, checked before any
   // write so a refusal can never leave a half-deleted assessment behind.
-  const attempts = await db.quizAttempt.findMany({
-    where: { quizId: id },
-    select: { id: true },
-  });
-  if (attempts.length > 0) return err(tApi("api.249"), 409);
+  //
+  // Phase 26D FIX (two parts) — one transaction, and a database-level lock as
+  // its FIRST statement.
+  //
+  // This path is the more dangerous of the two: `Quiz -> Question -> QuizAnswer`
+  // cascades TWO levels, so one delete can erase the frozen history of every
+  // attempt ever taken on the quiz.
+  //
+  // A transaction alone did not close the race. Under PostgreSQL READ COMMITTED
+  // the attempt count below is a bare SELECT, which takes no lock conflicting
+  // with an INSERT into `QuizAnswer`; a concurrent `POST /start` could commit a
+  // new attempt (and its frozen rows) after the count read zero, and this delete
+  // would then cascade them away.
+  //
+  // Locking ONLY the Quiz row is also not sufficient, and is deliberately not
+  // relied on: `QuizAnswer.questionId` references `Question`, not `Quiz`, so a
+  // lock on the Quiz row does not conflict with the `QuizAnswer` insert at all.
+  // Instead this route takes the SAME per-quiz advisory lock that
+  // `POST /api/quizzes/[id]/start` takes before freezing an attempt, which
+  // orders the two totally. See src/lib/db-serialization.ts.
+  let questionCount: number;
+  try {
+    questionCount = await db.$transaction(async (tx) => {
+      // MUST be first: acquiring it after the reads reopens the window.
+      await acquireQuizDestructiveLock(tx, id);
+      const attempts = await tx.quizAttempt.findMany({
+        where: { quizId: id },
+        select: { id: true },
+      });
+      if (attempts.length > 0) throw new QuizDeleteBlockedError("HAS_ATTEMPTS");
 
-  const questions = await db.question.findMany({
-    where: { quizId: id },
-    select: { id: true },
-  });
-  for (const q of questions) {
-    const { references } = await loadQuestionReferences(q.id);
-    if (references.fixedExamPins > 0) return err(tApi("api.246"), 409);
+      const questions = await tx.question.findMany({
+        where: { quizId: id },
+        select: { id: true },
+      });
+      for (const q of questions) {
+        const { references } = await loadQuestionReferences(q.id, tx);
+        if (references.fixedExamPins > 0) throw new QuizDeleteBlockedError("FIXED_EXAM_PIN");
+      }
+
+      await tx.quiz.delete({ where: { id } });
+      return questions.length;
+    });
+  } catch (e) {
+    if (e instanceof QuizDeleteBlockedError) {
+      return err(
+        e.reason === "FIXED_EXAM_PIN" ? tApi("api.246") : tApi("api.249"),
+        409
+      );
+    }
+    throw e;
   }
 
-  await db.quiz.delete({ where: { id } });
-  return ok({ deleted: true, id, questions: questions.length });
+  return ok({ deleted: true, id, questions: questionCount });
+}
+
+/** Carries the refusal reason out of the delete transaction. */
+class QuizDeleteBlockedError extends Error {
+  readonly reason: "HAS_ATTEMPTS" | "FIXED_EXAM_PIN";
+  constructor(reason: "HAS_ATTEMPTS" | "FIXED_EXAM_PIN") {
+    super(`quiz deletion blocked: ${reason}`);
+    this.name = "QuizDeleteBlockedError";
+    this.reason = reason;
+  }
 }

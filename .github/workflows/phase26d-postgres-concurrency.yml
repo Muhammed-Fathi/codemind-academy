@@ -1,0 +1,108 @@
+name: Phase 26D PostgreSQL concurrency gate
+
+# Proves the Phase 26D history-preserving-delete invariant against a REAL
+# PostgreSQL, which the SQLite harness structurally cannot do:
+#   - baseSchemaDdl() emits no foreign keys, so ON DELETE CASCADE has no effect;
+#   - PRAGMA foreign_keys is off and SQLite allows one writer at a time.
+#
+# This job is a HARD GATE. A skip is NOT a pass: if the test cannot reach a real
+# PostgreSQL it prints PHASE26D_CONCURRENCY_SKIPPED and this job FAILS.
+#
+# SAFETY: the database is a disposable GitHub Actions service container with
+# throwaway credentials. No repository secret is used, and the test itself
+# refuses production/Neon URLs and non-local hosts.
+
+on:
+  push:
+    branches: ["arena/01a0a540-codemind-academy"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  concurrency-proof:
+    name: Phase 26D PostgreSQL concurrency test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        # Matches the current production target (PostgreSQL 17).
+        image: postgres:17
+        env:
+          # Disposable CI-only credentials. These are NOT secrets.
+          POSTGRES_DB: codemind_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          # package.json declares engines.node ">=22".
+          node-version: 22
+          cache: npm
+
+      # Reproducible install from the committed lockfile. Prisma generation is
+      # deliberately NOT run: this test talks to PostgreSQL through `pg` and
+      # applies scripts/db/postgres-baseline.sql directly, so it needs no
+      # Prisma engine download.
+      - name: Install dependencies
+        run: npm ci
+
+      # No psql needed: the test itself prints `SHOW server_version` and
+      # `SHOW default_transaction_isolation` before asserting on them, so the
+      # version is recorded in the job log without installing a client package
+      # (which would add an unrelated network failure point to this gate).
+
+      # DATABASE_URL is set ONLY here, pointing at the disposable service.
+      # Never a repository secret, never Neon, never an external host.
+      - name: Run the PostgreSQL concurrency proof
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/codemind_test
+        run: |
+          set -o pipefail
+          node tests/phase26d-concurrency-postgres.test.js 2>&1 | tee concurrency.log
+
+      # The gate. Passing the script's exit code is not enough on its own: a
+      # skipped run exits 0, so the sentinel must be checked explicitly.
+      - name: Enforce that the test actually ran (a skip is a failure)
+        if: always()
+        run: |
+          if [ ! -f concurrency.log ]; then
+            echo "::error::concurrency.log missing — the test never ran."
+            exit 1
+          fi
+          if grep -q "PHASE26D_CONCURRENCY_SKIPPED" concurrency.log; then
+            echo "::error::The test SKIPPED. A skip is NOT a pass for this gate."
+            echo "--- output ---"; cat concurrency.log
+            exit 1
+          fi
+          if grep -q "REFUSING TO RUN" concurrency.log; then
+            echo "::error::The test refused to run against this DATABASE_URL."
+            exit 1
+          fi
+          if ! grep -q "PHASE26D_CONCURRENCY_POSTGRES_OK" concurrency.log; then
+            echo "::error::The test did not complete successfully."
+            echo "--- output ---"; cat concurrency.log
+            exit 1
+          fi
+          echo "Confirmed: the concurrency proof really executed against PostgreSQL."
+
+      - name: Upload output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase26d-concurrency-output
+          path: concurrency.log
+          if-no-files-found: warn

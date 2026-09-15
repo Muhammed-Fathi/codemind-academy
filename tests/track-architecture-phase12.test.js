@@ -994,12 +994,32 @@ async function main() {
   ok(/isParentAllowedTrackScope/.test(quizRoute), "quizzes/[id] gates parent preview by the child's track");
 
   const startRoute = read("src/app/api/quizzes/[id]/start/route.ts");
-  ok(/seedAttemptQuestions\(attempt\.id, id, schoolType\)/.test(startRoute), "start freezes only eligible questions");
+  // Phase 26D: start now passes a 4th argument (the blueprint + the preselected
+  // frozen set), so the pin matches the call prefix. The invariant it protects
+  // is unchanged and in fact stronger — selection applies the track predicate
+  // BEFORE anything is written, and the frozen rows carry the frozen track tag.
+  //
+  // Phase 26D concurrency closeout: the freeze moved INSIDE the attempt-create
+  // transaction (it now writes through `tx` as `created.id`, not after COMMIT as
+  // `attempt.id`) so that it happens while the per-quiz advisory lock is still
+  // held. Still the same student's `schoolType` on every path.
+  ok(/seedAttemptQuestions\(created\.id, id, schoolType/.test(startRoute),
+    "start freezes only eligible questions (create path)");
+  ok(/seedAttemptQuestions\(existing\.id, id, schoolType/.test(startRoute),
+    "start freezes only eligible questions (resume path)");
+  ok(!/seedAttemptQuestions\([^)]*student[^)]*\)/.test(startRoute),
+    "the freeze never takes the track from the client — only the resolved schoolType");
   ok(/getStudentSchoolType\(student\.id\)/.test(startRoute), "start derives the track server-side");
+  ok(/selectAttemptQuestionsForQuiz\(id, schoolType, blueprint, seen\)/.test(startRoute), "start selects through the track-aware selection service");
 
   const submitRoute = read("src/app/api/quizzes/[id]/submit/route.ts");
   ok(/loadAttemptQuestionSet\(open\.id, schoolType\)/.test(submitRoute), "submit loads the frozen set with the student's track");
-  ok(/loadQuizQuestionSet\(id, schoolType\)/.test(submitRoute), "submit's retake path is track-filtered too");
+  // Phase 26D: the "submit with no open attempt creates a fresh one" retake path
+  // was REMOVED (it was an unlimited-retake hole), so `loadQuizQuestionSet` is no
+  // longer on any submit path. The replacement invariant is that submit grades
+  // ONLY the frozen attempt set and never fabricates a set from the live bank.
+  ok(!/loadQuizQuestionSet/.test(submitRoute), "submit never derives a set from the live bank (retake path removed)");
+  ok(!/quizAttempt\.create/.test(submitRoute), "submit never creates an attempt (start is the only creator)");
   ok(/gradeAttemptQuestionSet\(set, answersRaw, quiz\.passMark, schoolType\)/.test(submitRoute), "grading enforces the same track rule");
 
   const homeworkRoute = read("src/app/api/students/me/homework/route.ts");

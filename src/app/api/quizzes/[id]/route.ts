@@ -3,13 +3,14 @@ import { db } from "@/lib/db";
 import { ok, err, requireUser, getStudentProfile, denyProgression } from "@/lib/api";
 import { canAccessQuiz } from "@/lib/session-progress";
 import { getStudentSchoolType } from "@/lib/enrollment";
-import { canAccessTrackScope } from "@/lib/track-scope";
+import { canAccessTrackScope, isQuestionEligible } from "@/lib/track-scope";
 import {
   loadAttemptQuestionSet,
   safeParseOptions,
   timeLimitState,
 } from "@/lib/session-quiz";
-import { isQuestionEligible } from "@/lib/track-scope";
+import { resolveQuizBlueprint } from "@/lib/quiz-blueprint";
+import { countPendingRetryGrants } from "@/lib/quiz-retry";
 import {
   isParentAllowedTrackScope,
   isParentLessonPreviewAllowed,
@@ -25,13 +26,19 @@ import type { SchoolType } from "@/lib/school-type";
 // have unlocked. Without this the questions, options and (after any attempt)
 // the answers of every future session are readable straight off the API.
 //
-// Phase 5 — deterministic question set: when the student has an OPEN attempt,
-// the questions returned are that attempt's PERSISTED set (frozen when the
-// attempt was created), not the live quiz questions. A refresh, a navigation
-// away and back, or a logout/login therefore always returns the exact same
-// set, even if the quiz was edited in between. Without an open attempt the
-// live quiz questions are served (they will be frozen when the next attempt
-// starts).
+// Phase 5 / Phase 26D — WHICH questions are served:
+//   * OPEN attempt → that attempt's FROZEN set, read from the Phase 26D
+//     snapshot on its QuizAnswer rows. A refresh, a navigation away and back, or
+//     a logout/login therefore always returns the exact same paper — same
+//     questions, same wording, same option order — even if the Question Bank was
+//     edited in between.
+//   * No attempt, BLUEPRINT quiz → NO questions. The paper does not exist until
+//     /start selects and freezes it, so serving the pool here would show the
+//     student a different (larger) set than the one they will be graded on, and
+//     would hand them the whole bank to rehearse from. The response carries
+//     `attemptRequired: true` and the runner starts the attempt first.
+//   * No attempt, FIXED quiz → the live eligible questions, exactly as before
+//     this phase. Legacy behaviour for legacy quizzes.
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -61,11 +68,7 @@ export async function GET(
   // Phase 7 + 12 + 13, in ONE predicate (see `isParentLessonPreviewAllowed`):
   // a parent may open a quiz only when a linked, ENROLLED child is in the
   // quiz's course, the quiz and its lesson are on that child's TRACK, and the
-  // OWNING LESSON IS PUBLISHED. The lifecycle clause is the gap Phase 12
-  // recorded and left to this phase: the answers of a session an admin has
-  // staged but never opened were readable by a parent — and a quiz GET reveals
-  // `revealAnswers` to a parent, so that was an answer-key leak for content no
-  // student is meant to have. Quiz ids are unguessable, so every refusal is a
+  // OWNING LESSON IS PUBLISHED. Quiz ids are unguessable, so every refusal is a
   // plain 404, identical to a nonexistent id.
   if (user.role === "PARENT") {
     const quizCourseId =
@@ -92,6 +95,8 @@ export async function GET(
     }
   }
 
+  const blueprint = resolveQuizBlueprint(quiz);
+
   // Pull the student's previous attempts (if student)
   let bestAttempt: {
     id: string;
@@ -102,7 +107,8 @@ export async function GET(
     finishedAt: Date | null;
   } | null = null;
   let studentHasAttempted = false;
-  let attemptQuestionIds: string[] | null = null;
+  /** The frozen question set of the student's OPEN attempt, when there is one. */
+  let attemptSet: Awaited<ReturnType<typeof loadAttemptQuestionSet>> | null = null;
   let studentSchoolType: SchoolType | null = null;
   // Phase 18 — the server-computed window of the OPEN attempt (if any), so a
   // reloaded page renders the SAME countdown instead of restarting one. Never
@@ -113,6 +119,16 @@ export async function GET(
     remainingSeconds: number | null;
     expired: boolean;
   } | null = null;
+  /** Phase 26D — the student's attempt entitlement, so the UI can tell the truth. */
+  let attemptState: {
+    attemptsUsed: number;
+    maxAttempts: number;
+    hasOpenAttempt: boolean;
+    pendingRetryGrants: number;
+    /** True when POST /start would be allowed right now. */
+    canStart: boolean;
+  } | null = null;
+
   if (user.role === "STUDENT") {
     const s = await getStudentProfile(user.id);
     if (!s) return err("Student profile not found", 404);
@@ -142,12 +158,9 @@ export async function GET(
       studentHasAttempted = attempts.some((x) => x.finishedAt !== null);
     }
 
-    // Deterministic set: an open attempt pins the exact question list, and
-    // the track filter narrows it to what this student may see.
     const open = attempts.find((x) => x.finishedAt === null);
     if (open) {
-      const set = await loadAttemptQuestionSet(open.id, schoolType);
-      attemptQuestionIds = set.map((q) => q.questionId);
+      attemptSet = await loadAttemptQuestionSet(open.id, schoolType);
       const limit = timeLimitState(open.startedAt, quiz.timeLimit);
       attemptWindow = {
         startedAt: open.startedAt,
@@ -156,6 +169,22 @@ export async function GET(
         expired: limit.expired,
       };
     }
+
+    // Entitlement, computed with the SAME rule /start enforces, so the UI can
+    // never offer a start that the server would refuse.
+    const pendingRetryGrants = await countPendingRetryGrants(s.id, id);
+    const attemptsUsed = attempts.length;
+    attemptState = {
+      attemptsUsed,
+      maxAttempts: blueprint.maxAttempts,
+      hasOpenAttempt: !!open,
+      pendingRetryGrants,
+      canStart:
+        !!open ||
+        attemptsUsed === 0 ||
+        (attemptsUsed < blueprint.maxAttempts && pendingRetryGrants > 0) ||
+        (attemptsUsed >= blueprint.maxAttempts && pendingRetryGrants > 0),
+    };
   }
 
   // Teachers and admins always see answers (needed for review/creation).
@@ -170,18 +199,27 @@ export async function GET(
     quiz.lesson?.topic?.unit.part.course.slug ??
     null;
 
-  // Phase 12 — the served questions are the attempt's frozen set when there is
-  // one, and in BOTH cases only the questions eligible for the student's
-  // school type. Without an open attempt (student previewing before starting)
-  // the live bank is filtered directly.
+  // Phase 12 — only questions eligible for the student's school type are ever
+  // served. Phase 26D — when the student has an OPEN attempt the served list is
+  // that attempt's frozen snapshot (already track-filtered and already in the
+  // order the student saw), never the live bank.
   const eligibleQuestions = quiz.questions.filter((q) =>
     user.role === "STUDENT"
       ? isQuestionEligible(studentSchoolType, q.schoolType)
       : true
   );
-  const questions = attemptQuestionIds
-    ? eligibleQuestions.filter((q) => attemptQuestionIds!.includes(q.id))
-    : eligibleQuestions;
+
+  // A BLUEPRINT quiz with no open attempt has no paper yet: the set is chosen at
+  // /start. Serving the pool here would show a different, larger set than the
+  // one the student will be graded on. Staff keep the full list for authoring.
+  const suppressUntilStart =
+    user.role === "STUDENT" && blueprint.mode === "BLUEPRINT" && !attemptSet;
+
+  const servedQuestions = attemptSet
+    ? attemptSet.map((entry) => entry.question)
+    : suppressUntilStart
+      ? []
+      : eligibleQuestions;
 
   return ok({
     quiz: {
@@ -193,6 +231,12 @@ export async function GET(
       timeLimit: quiz.timeLimit,
       /** Phase 18 — the running attempt's server-authoritative window. */
       attemptWindow,
+      /** Phase 26D — selection mode, so the client knows whether to start first. */
+      quizMode: blueprint.mode,
+      /** True when the client must POST /start before any question is served. */
+      attemptRequired: suppressUntilStart,
+      /** Phase 26D — the student's remaining entitlement (students only). */
+      attemptState,
     },
     lesson: quiz.lesson
       ? {
@@ -202,7 +246,7 @@ export async function GET(
           courseSlug,
         }
       : null,
-    questions: questions.map((q) => ({
+    questions: servedQuestions.map((q) => ({
       id: q.id,
       type: q.type,
       prompt: q.prompt,

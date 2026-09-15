@@ -704,7 +704,10 @@ async function main() {
     const pg = read("prisma/schema.postgresql.prisma");
     ok(/senderPhone\s+String\?/.test(pg) && /rejectionReason\s+String\?/.test(pg), "and in the derived PostgreSQL schema");
     const migrations = fs.readdirSync(path.join(REPO, "prisma/migrations"));
-    ok(migrations.length === 11, `migration history: exactly 11 migrations (found ${migrations.length}) — the 10 PR2a-era migrations plus the Phase 26B owner-approved group-audience migration`);
+    // Phase 26D added the Lesson Quiz attempt-architecture migration, so the
+    // history is now 12. The invariant this gate protects is "no migration was
+    // silently removed or reordered", not the literal number 11.
+    ok(migrations.length === 12, `migration history: exactly 12 migrations (found ${migrations.length}) — the 10 PR2a-era migrations, the Phase 26B group-audience migration, and the Phase 26D quiz attempt-architecture migration`);
     ok(migrations.includes("20260914120000_payment_lifecycle_redesign"), "PR1's ledger migration remains in history");
     ok(migrations.includes("20260915120000_phase26b_group_track_scope"), "the Phase 26B group-audience migration is in history");
   }

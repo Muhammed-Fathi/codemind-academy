@@ -7,7 +7,6 @@ import {
   gradeAttemptQuestionSet,
   gradeExpiredAttempt,
   loadAttemptQuestionSet,
-  loadQuizQuestionSet,
   timeLimitState,
   type SubmittedAnswer,
 } from "@/lib/session-quiz";
@@ -16,8 +15,7 @@ import { getStudentSchoolType } from "@/lib/enrollment";
 // POST /api/quizzes/[id]/submit
 // Body: { answers: { questionId, selected }[] }
 //
-// Grades the student's OPEN attempt (or creates one when none is open — the
-// documented retake path) and returns the result.
+// Grades the student's OPEN attempt and returns the result.
 //
 // AUTHORIZATION: the quiz must belong to a session the student has unlocked.
 // Otherwise a single POST would satisfy the quiz requirement of a session the
@@ -25,27 +23,35 @@ import { getStudentSchoolType } from "@/lib/enrollment";
 //
 // Phase 5 — grading is server-side over the ATTEMPT'S OWN QUESTION SET:
 //   * The set was frozen into QuizAnswer rows when the attempt was created
-//     (/start). Submit grades exactly those rows — questions added to the
-//     quiz after the attempt started cannot be graded into it, and answers
-//     for questions outside the attempt are ignored.
-//   * Score, percentage, correctness and marks are computed from the
-//     authoritative answer stored on each question row. Client-provided
-//     score/percentage/isCorrect/marks values are never read.
-//   * A FINISHED attempt is immutable: submit only ever writes to the open
-//     attempt (or a brand-new one). Repeated submission therefore creates a
-//     fresh retake attempt, never modifies a submitted one.
+//     (/start). Submit grades exactly those rows — questions added to the quiz
+//     after the attempt started cannot be graded into it, and answers for
+//     questions outside the attempt are IGNORED, never added.
+//   * Score, percentage, correctness and marks are computed from the frozen
+//     answer basis. Client-provided score/percentage/isCorrect/marks values are
+//     never read.
+//
+// Phase 26D — SUBMIT IS A TERMINAL TRANSITION:
+//   * An attempt must be OPEN to be submitted. This route NEVER creates an
+//     attempt. The old "submit with no open attempt creates a fresh one" path
+//     was an unlimited-retake hole — a student could loop POST /submit and
+//     accumulate attempts without ever calling /start — and it is gone.
+//   * The attempt moves OPEN → SUBMITTED exactly once. A replay of the same
+//     submit (double click, retried request, flaky network) finds no open
+//     attempt and returns the ALREADY-GRADED result instead of grading again,
+//     so a resubmission can neither improve a score nor create a second attempt.
+//   * `finishedAt` is written by the server and is never cleared by any code
+//     path. Reopening an attempt is not representable.
 //
 // Phase 18 — server-side TIME LIMIT (see src/lib/session-quiz.ts):
 //   When the quiz carries a `timeLimit`, the open attempt's deadline is
 //   `startedAt + timeLimit + TIME_LIMIT_GRACE_SECONDS`, evaluated against the
 //   SERVER's clock — the client never supplies an expiry, and a frozen browser
-//   timer cannot extend it. A submit that arrives after the deadline is
-//   REFUSED with 409 + `code: "TIME_LIMIT_EXCEEDED"`, and the expired attempt
-//   is finalised at its deadline from the answers the server already holds
-//   (the frozen set is seeded unanswered, so a timed-out attempt grades to
-//   zero). Late answers are never graded into it: accepting them would make
-//   the limit decorative, which is exactly the state Phase 18 was told to
-//   resolve. `timeLimit = null` keeps the previous behaviour unchanged.
+//   timer cannot extend it. A submit that arrives after the deadline is REFUSED
+//   with 409 + `code: "TIME_LIMIT_EXCEEDED"`, and the expired attempt is
+//   finalised at its deadline from the answers the server already holds (the
+//   frozen set is seeded unanswered, so a timed-out attempt grades to zero).
+//   Late answers are never graded into it. `timeLimit = null` keeps the previous
+//   behaviour unchanged.
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -77,71 +83,119 @@ export async function POST(
     ? body.answers
     : [];
 
-  // If /start already opened an attempt (it does whenever the quiz UI runs the
-  // camera monitor), finalise THAT row so any evidence captured during the
-  // attempt stays attached to the graded result. Otherwise create a fresh one
-  // (direct submit / retake).
+  // The attempt being submitted is ALWAYS the student's own open one. Its id is
+  // never taken from the body, so a forged `attemptId` cannot target someone
+  // else's attempt or resurrect a finished one.
   const open = await db.quizAttempt.findFirst({
     where: { quizId: id, studentId: s.id, finishedAt: null },
     orderBy: { startedAt: "desc" },
-    select: { id: true, startedAt: true },
+    select: { id: true, startedAt: true, attemptNumber: true },
   });
 
-  // Phase 18 — the time limit is checked BEFORE any grading, and it is the
-  // server's clock that decides. Only the OPEN attempt is subject to it: a
-  // direct submit with no open attempt (the documented retake path) starts and
-  // finishes in the same request, so there is no window to exceed.
-  if (open) {
-    const limit = timeLimitState(open.startedAt, quiz.timeLimit);
-    if (limit.expired && limit.deadline) {
-      const expiredSet = await loadAttemptQuestionSet(open.id, schoolType);
-      const expired = gradeExpiredAttempt(expiredSet, quiz.passMark, schoolType);
-      const finalized = await db.quizAttempt.update({
-        where: { id: open.id },
-        data: {
-          score: expired.score,
-          totalMarks: expired.totalMarks,
-          percentage: expired.percentage,
-          passed: expired.passed,
-          finishedAt: limit.deadline,
-        },
-        select: { id: true },
-      });
+  // ---- Phase 26D: no open attempt → nothing to grade ---------------------
+  // Replay-safe: return the already-recorded result of the student's latest
+  // terminal attempt rather than grading again or creating anything. This is
+  // what makes a double submit harmless.
+  if (!open) {
+    const latest = await db.quizAttempt.findFirst({
+      where: { quizId: id, studentId: s.id },
+      orderBy: { startedAt: "desc" },
+      select: {
+        id: true,
+        score: true,
+        totalMarks: true,
+        percentage: true,
+        passed: true,
+        startedAt: true,
+        finishedAt: true,
+        attemptNumber: true,
+        status: true,
+      },
+    });
+
+    if (!latest) {
+      // Never started. Telling the student to start is truthful and leaks
+      // nothing: they are already authorised for this quiz.
       return NextResponse.json(
-        {
-          error: tApi("api.256"),
-          code: "TIME_LIMIT_EXCEEDED",
-          attemptId: finalized.id,
-          score: expired.score,
-          totalMarks: expired.totalMarks,
-          percentage: expired.percentage,
-          passed: expired.passed,
-          passMark: quiz.passMark,
-          finishedAt: limit.deadline,
-          timeLimitMinutes: Number(quiz.timeLimit),
-          answers: expired.graded.map((a) => ({
-            questionId: a.questionId,
-            prompt: a.prompt,
-            promptAr: a.promptAr,
-            selected: a.selected,
-            correctAnswer: a.correctAnswer,
-            isCorrect: a.isCorrect,
-            marks: a.marks,
-            options: a.options,
-            explanation: a.explanation,
-          })),
-        },
+        { error: "No attempt in progress", code: "ATTEMPT_NOT_STARTED" },
         { status: 409 }
       );
     }
+
+    const submittedLimit = timeLimitState(latest.startedAt, quiz.timeLimit);
+    return NextResponse.json(
+      {
+        error: "Attempt already submitted",
+        code: "ATTEMPT_ALREADY_SUBMITTED",
+        alreadySubmitted: true,
+        attemptId: latest.id,
+        attemptNumber: latest.attemptNumber,
+        status: latest.status,
+        score: latest.score,
+        totalMarks: latest.totalMarks,
+        percentage: latest.percentage,
+        passed: latest.passed,
+        passMark: quiz.passMark,
+        timeLimitMinutes: submittedLimit.limited ? Number(quiz.timeLimit) : null,
+        startedAt: latest.startedAt,
+        finishedAt: latest.finishedAt,
+      },
+      { status: 409 }
+    );
   }
 
-  // The attempt's own frozen question set (persisted rows), never the live
-  // quiz questions. A pre-Phase-5 in-flight attempt with no rows adopts the
-  // current quiz questions here (one-time upgrade path).
-  const set = open
-    ? await loadAttemptQuestionSet(open.id, schoolType)
-    : await loadQuizQuestionSet(id, schoolType);
+  // Phase 18 — the time limit is checked BEFORE any grading, and it is the
+  // server's clock that decides.
+  const limit = timeLimitState(open.startedAt, quiz.timeLimit);
+  if (limit.expired && limit.deadline) {
+    const expiredSet = await loadAttemptQuestionSet(open.id, schoolType);
+    const expired = gradeExpiredAttempt(expiredSet, quiz.passMark, schoolType);
+    const finalized = await db.quizAttempt.update({
+      where: { id: open.id },
+      data: {
+        score: expired.score,
+        totalMarks: expired.totalMarks,
+        percentage: expired.percentage,
+        passed: expired.passed,
+        finishedAt: limit.deadline,
+        status: "EXPIRED",
+      },
+      select: { id: true },
+    });
+    return NextResponse.json(
+      {
+        error: tApi("api.256"),
+        code: "TIME_LIMIT_EXCEEDED",
+        attemptId: finalized.id,
+        attemptNumber: open.attemptNumber,
+        score: expired.score,
+        totalMarks: expired.totalMarks,
+        percentage: expired.percentage,
+        passed: expired.passed,
+        passMark: quiz.passMark,
+        finishedAt: limit.deadline,
+        timeLimitMinutes: Number(quiz.timeLimit),
+        answers: expired.graded.map((a) => ({
+          questionId: a.questionId,
+          prompt: a.prompt,
+          promptAr: a.promptAr,
+          selected: a.selected,
+          correctAnswer: a.correctAnswer,
+          isCorrect: a.isCorrect,
+          marks: a.marks,
+          options: a.options,
+          explanation: a.explanation,
+        })),
+      },
+      { status: 409 }
+    );
+  }
+
+  // The attempt's own frozen question set — served and graded from the Phase 26D
+  // snapshot, so a Question Bank edit made while the student was working cannot
+  // change what they are graded against. A pre-Phase-5 in-flight attempt with no
+  // rows adopts the current quiz questions here (one-time upgrade path).
+  const set = await loadAttemptQuestionSet(open.id, schoolType);
 
   // Server-side grading — no client value can influence the result. The
   // student's school type is passed so grading independently refuses any
@@ -150,66 +204,54 @@ export async function POST(
     gradeAttemptQuestionSet(set, answersRaw, quiz.passMark, schoolType);
 
   const finishedAt = new Date();
-  const attemptData = {
-    score,
-    totalMarks,
-    percentage,
-    passed,
-    finishedAt,
-  };
 
-  const attempt = open
-    ? await db.$transaction(async (tx) => {
-        // Persist the graded answers onto their existing rows (creating them
-        // only for the pre-Phase-5 adopted set). One row per question is
-        // guaranteed by @@unique([attemptId, questionId]).
-        for (const g of graded) {
-          const entry = set.find((q) => q.questionId === g.questionId)!;
-          if (entry.answerId) {
-            await tx.quizAnswer.update({
-              where: { id: entry.answerId },
-              data: { selected: g.selected, isCorrect: g.isCorrect },
-            });
-          } else {
-            await tx.quizAnswer.create({
-              data: {
-                attemptId: open.id,
-                questionId: g.questionId,
-                selected: g.selected,
-                isCorrect: g.isCorrect,
-              },
-            });
-          }
-        }
-        return tx.quizAttempt.update({
-          where: { id: open.id },
-          data: attemptData,
-          include: { answers: true },
+  const attempt = await db.$transaction(async (tx) => {
+    // Persist the graded answers onto their existing frozen rows (creating them
+    // only for the pre-Phase-5 adopted set). One row per question is guaranteed
+    // by @@unique([attemptId, questionId]), and only questions IN the frozen set
+    // are ever touched — a submitted questionId outside the set is dropped by
+    // the grader and can never insert a row.
+    for (const g of graded) {
+      const entry = set.find((q) => q.questionId === g.questionId)!;
+      if (entry.answerId) {
+        await tx.quizAnswer.update({
+          where: { id: entry.answerId },
+          data: { selected: g.selected, isCorrect: g.isCorrect },
         });
-      })
-    : await db.quizAttempt.create({
-        data: {
-          quizId: id,
-          studentId: s.id,
-          ...attemptData,
-          answers: {
-            create: graded.map((a) => ({
-              questionId: a.questionId,
-              selected: a.selected,
-              isCorrect: a.isCorrect,
-            })),
+      } else {
+        await tx.quizAnswer.create({
+          data: {
+            attemptId: open.id,
+            questionId: g.questionId,
+            selected: g.selected,
+            isCorrect: g.isCorrect,
+            // No snapshot for the legacy adopted set: those rows keep reading
+            // the live question, exactly as they did before this phase.
           },
-        },
-        include: { answers: true },
-      });
+        });
+      }
+    }
+    // One terminal transition. `finishedAt` is written here and never cleared.
+    return tx.quizAttempt.update({
+      where: { id: open.id },
+      data: {
+        score,
+        totalMarks,
+        percentage,
+        passed,
+        finishedAt,
+        status: "SUBMITTED",
+      },
+      include: { answers: true },
+    });
+  });
 
-  const submittedLimit = timeLimitState(
-    open?.startedAt ?? finishedAt,
-    quiz.timeLimit
-  );
+  const submittedLimit = timeLimitState(open.startedAt, quiz.timeLimit);
 
   return ok({
     attemptId: attempt.id,
+    attemptNumber: open.attemptNumber,
+    status: "SUBMITTED",
     score,
     totalMarks,
     percentage,
@@ -217,8 +259,10 @@ export async function POST(
     passMark: quiz.passMark,
     /** Server-computed window of the attempt that was just graded. */
     timeLimitMinutes: submittedLimit.limited ? Number(quiz.timeLimit) : null,
-    startedAt: open?.startedAt ?? null,
+    startedAt: open.startedAt,
     finishedAt,
+    /** Whether this student may start again without an Admin retry grant. */
+    canRetry: false,
     answers: graded.map((a) => ({
       questionId: a.questionId,
       prompt: a.prompt,

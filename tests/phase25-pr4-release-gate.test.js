@@ -20,9 +20,10 @@ async function main() {
   ok(mig.includes("senderPhone") && mig.includes("requestedGroupId") && mig.includes("requestedPlanId") && mig.includes("rejectionReason") && mig.includes("reviewedAt") && mig.includes("reviewedByUserId"), "migration has all 6 ledger columns");
   ok(mig.includes("Payment_status_createdAt_idx") && mig.includes("Payment_subscriptionId_status_idx"), "migration has 2 indexes");
   const migs = fs.readdirSync(path.join(REPO,"prisma/migrations")).filter(d=> fs.existsSync(path.join(REPO,"prisma/migrations",d,"migration.sql"))).sort();
-  ok(migs.length === 11, `11 migrations total (found ${migs.length}) — Phase 26B added the group-audience migration`);
+  ok(migs.length === 12, `12 migrations total (found ${migs.length}) — Phase 26B added the group-audience migration, Phase 26D the quiz attempt-architecture migration`);
   ok(migs[9]==="20260914120000_payment_lifecycle_redesign", "ledger migration still applies after its predecessors");
-  ok(migs[migs.length-1]==="20260915120000_phase26b_group_track_scope", "Phase 26B group-audience migration sorts last");
+  ok(migs[migs.length-1]==="20260915180000_phase26d_quiz_attempt_architecture", "Phase 26D quiz attempt-architecture migration sorts last (forward-only)");
+  ok(migs.includes("20260915120000_phase26b_group_track_scope"), "the Phase 26B group-audience migration is still present and in order");
   // no new migration beyond PR1 for PR4
   ok(!exists("prisma/migrations/20260915000000_phase25_pr4") && !exists("prisma/migrations/20260914130000_phase25_pr4"), "no PR4 migration file (PR4 is operational, not schema)");
 
@@ -119,7 +120,7 @@ async function main() {
   ok(eCashCount >=1, "eCash in brand");
 
   section("9. Migration count pin");
-  ok(migs.length === 11, "migration count still 11 (nothing added since the Phase 26B audience migration)");
+  ok(migs.length === 12, "migration count still 12 (nothing added since the Phase 26D quiz attempt-architecture migration)");
 
   section("10. Operational safety — secret handling and migration drift");
   {

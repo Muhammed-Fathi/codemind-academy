@@ -51,7 +51,8 @@ async function main() {
   console.log("\n[1/4] building SQLite source clone (migration head + fixtures) …");
   const { file: srcFile, counts: srcCounts } = buildFixtureSqlite(path.join(tmp, "source.db"));
   const srcTotal = Object.values(srcCounts).reduce((a, b) => a + b, 0);
-  ok(srcTotal > 0 && Object.keys(srcCounts).length === 55, `source has 55 tables / ${srcTotal} rows`);
+  // Phase 26D added the QuizRetryGrant table, so the rehearsal now copies 56.
+  ok(srcTotal > 0 && Object.keys(srcCounts).length === 56, `source has 56 tables / ${srcTotal} rows`);
   const srcEmpty = Object.entries(srcCounts).filter(([, n]) => n === 0).map(([t]) => t);
   ok(srcEmpty.length === 0, "every source table has ≥1 row", srcEmpty.join(","));
 
@@ -68,7 +69,7 @@ async function main() {
   ok(/PostgreSQL/.test(v), "target is a real PostgreSQL engine");
 
   // ---- 3. copy (same primitives as the operator CLI) ----
-  console.log("\n[3/4] copying 55 tables in migration order …");
+  console.log("\n[3/4] copying 56 tables in migration order …");
   const src = new DatabaseSync(srcFile, { open: true, readOnly: true });
   const srcHashes = {};
   try {
@@ -112,7 +113,7 @@ async function main() {
         console.error(`HASH MISMATCH ${t}: sqlite=${srcHashes[t]} pg=${got}`);
       }
     }
-    ok(countBad === 0, `row counts preserved on all 55 tables (${srcTotal} rows)`);
+    ok(countBad === 0, `row counts preserved on all 56 tables (${srcTotal} rows)`);
     ok(hashBad === 0, "canonical row hashes identical (IDs/relations/timestamps/blobs)");
 
     // Spot-proof the tolerant encodings survived as the right INSTANTS.

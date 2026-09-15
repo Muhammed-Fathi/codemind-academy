@@ -564,10 +564,13 @@ async function main() {
   const migs = fs.readdirSync(path.join(REPO, "prisma", "migrations"))
     .filter((d) => fs.existsSync(path.join(REPO, "prisma", "migrations", d, "migration.sql")))
     .sort();
-  ok(migs.length === 11, `11 migrations in history (found ${migs.length}) — Phase 26B added the owner-approved group-audience migration`);
+  // Phase 26D appended the Lesson Quiz attempt-architecture migration, so the
+  // history is 12. The invariant here is that the ledger migration is intact and
+  // correctly positioned, not the literal total.
+  ok(migs.length === 12, `12 migrations in history (found ${migs.length}) — Phase 26B added the group-audience migration, Phase 26D the quiz attempt-architecture migration`);
   ok(migs.includes(MIGRATION_DIR), `new migration '${MIGRATION_DIR}' present`);
   ok(migs[9] === MIGRATION_DIR, "ledger migration still applies after its 9 predecessors (10th position)");
-  ok(migs[migs.length - 1] === "20260915120000_phase26b_group_track_scope", "the Phase 26B group-audience migration sorts last");
+  ok(migs.includes("20260915120000_phase26b_group_track_scope"), "the Phase 26B group-audience migration is present (Phase 26D appended a later one)");
   ok(fs.statSync(MIGRATION_SQL).size > 0, "migration.sql non-empty");
 
   if (pg) await pg.close();

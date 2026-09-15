@@ -153,6 +153,14 @@ function insertFixtures(db) {
        VALUES ('p21-ans2','p21-att1','p21-qn2','SSD',1)`);
   run(`INSERT INTO "QuizAnswer" ("id","attemptId","questionId","selected","isCorrect")
        VALUES ('p21-ans3','p21-att2','p21-qn1','0',0)`);
+
+  // ---- Phase 26D — Admin-issued Lesson Quiz retry grants ----
+  // One CONSUMED (the attempt it permitted already exists) and one still
+  // PENDING, so the rehearsal copies both states of the new table.
+  run(`INSERT INTO "QuizRetryGrant" ("id","studentId","quizId","grantedByUserId","grantedAt","consumedAt","reason")
+       VALUES ('p21-rg-spent','p21-s1','p21-q1','p21-u-admin',?,?,'technical issue during the first attempt')`, T2, T3);
+  run(`INSERT INTO "QuizRetryGrant" ("id","studentId","quizId","grantedByUserId","grantedAt","reason")
+       VALUES ('p21-rg-pending','p21-s2','p21-q1','p21-u-admin',?,'pending fixture')`, T3);
   run(`INSERT INTO "Homework" ("id","lessonId","trackScope","title","titleAr","deadline","maxMarks","createdAt")
        VALUES ('p21-hw1','p21-l1','SHARED','Worksheet 1','ورقة عمل 1',?,10,?)`, FUTURE, T1);
   run(`INSERT INTO "HomeworkSubmission" ("id","homeworkId","studentId","content","submittedAt","status")

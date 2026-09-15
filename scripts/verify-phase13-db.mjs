@@ -214,10 +214,37 @@ const BASE_SKIP_COLUMNS = {
     "lastHeartbeatAt",
   ],
   Question: ["schoolType"],
-  QuizAttempt: ["cameraStatus"],
+  QuizAttempt: [
+    "cameraStatus",
+    // Phase 26D — attempt sequence, state and retry lineage.
+    "attemptNumber",
+    "status",
+    "retryGrantId",
+  ],
+  // Phase 26D — added by 20260915180000_phase26d_quiz_attempt_architecture.
+  QuizAnswer: [
+    "orderIndex",
+    "questionType",
+    "promptSnapshot",
+    "promptArSnapshot",
+    "optionsSnapshot",
+    "answerSnapshot",
+    "explanationSnapshot",
+    "difficultySnapshot",
+    "marksSnapshot",
+    "schoolTypeSnapshot",
+  ],
   ExamAttempt: ["schoolType", "mockExamId"],
   ExamQuestion: ["schoolType"],
-  Quiz: ["trackScope"],
+  Quiz: [
+    "trackScope",
+    // Phase 26D — blueprint columns.
+    "quizMode",
+    "questionCount",
+    "maxAttempts",
+    "shuffleOptions",
+    "difficultyPlan",
+  ],
   Homework: ["trackScope"],
   // Phase 26B — the audience column arrives with its own migration.
   Group: ["trackScope"],
@@ -250,6 +277,8 @@ const BASE_SKIP_TABLES = new Set([
   PHASE13_MIGRATION_TABLE,
   "TeacherApplication",
   "TeacherActivationToken",
+  // Phase 26D — created by its own migration.
+  "QuizRetryGrant",
 ]);
 
 const PRISMA_TO_SQLITE = {
