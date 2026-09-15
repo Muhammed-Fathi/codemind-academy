@@ -544,6 +544,14 @@ SECURITY_HASH_SECRET="<32+ random chars>" bun run start
 # SKIP_PRODUCTION_ENV_CHECK=1 — the runtime server still enforces them.
 ```
 
+> **Deploying to PostgreSQL (production)?** Use `bun run build:postgres`
+> instead of `bun run build` — it generates the Prisma Client from
+> `prisma/postgres/schema.prisma` (provider `postgresql`). The plain build
+> generates the SQLite client, which cannot open a `postgresql://` URL.
+> Database schema changes go through
+> `bunx prisma migrate deploy --schema prisma/postgres/schema.prisma`
+> (see `docs/POSTGRES_CUTOVER_RUNBOOK.md` §5 and `docs/DEPLOYMENT_GUIDE.md`).
+
 `next.config.ts` sets `output: "standalone"`, producing a self-contained
 `.next/standalone/server.js` that can be deployed to any Node-compatible
 host without the full `node_modules` tree.

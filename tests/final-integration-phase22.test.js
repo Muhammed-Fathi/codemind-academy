@@ -382,7 +382,7 @@ section("15. Typecheck / Lint / Build / Migration (structural)");
   ok(migrations.length>=9, `Migrations count >=9 (got ${migrations.length})`);
   ok(fs.readdirSync(path.join(REPO, "prisma/migrations")).some(f=>f.includes("phase20_teacher_applications")), "Teacher migration exists");
   // Check that no drift: postgres artifacts
-  ok(exists("prisma/schema.postgresql.prisma") || exists("scripts/db/make-postgres-schema.mjs"), "Postgres artifacts available");
+  ok(exists("prisma/postgres/schema.prisma") || exists("scripts/db/make-postgres-schema.mjs"), "Postgres artifacts available");
   ok(exists("scripts/db/postgres-baseline.sql") || exists("scripts/db/make-postgres-schema.mjs"), "Postgres baseline available");
 }
 

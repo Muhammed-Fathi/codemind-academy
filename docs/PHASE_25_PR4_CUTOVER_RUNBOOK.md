@@ -185,7 +185,7 @@ node -e "const u=process.env.DATABASE_URL; const {URL}=require('url'); try{const
 
 # 3. Prisma migration status — must be "Database schema is up to date"
 #    If ANY migration is pending or history differs → STOP / NO-GO — do not deploy.
-npx.cmd prisma migrate status --schema prisma/schema.postgresql.prisma
+npx.cmd prisma migrate status --schema prisma/postgres/schema.prisma
 
 # 4. PR4 read-only inventory — human + JSON (reads DATABASE_URL from env)
 node scripts/phase25-pr4-inventory.mjs --json-out inventory.json
@@ -214,7 +214,7 @@ If you must use CMD for subsequent read-only checks after `DATABASE_URL` was alr
 
 ```cmd
 REM DATABASE_URL was already set securely via PowerShell §6.1 — do not re-enter it here
-npx.cmd prisma migrate status --schema prisma/schema.postgresql.prisma
+npx.cmd prisma migrate status --schema prisma/postgres/schema.prisma
 REM Production reads DATABASE_URL from env — do NOT use --target with real credentials
 node scripts\phase25-pr4-inventory.mjs --json-out inventory.json
 node scripts\db\verify-postgres.mjs
@@ -230,7 +230,7 @@ Alternatively, set `DATABASE_URL` via **Windows Environment Variables UI** (Syst
 read -s -p "Paste production DATABASE_URL: " DATABASE_URL
 echo
 export DATABASE_URL
-npx prisma migrate status --schema prisma/schema.postgresql.prisma
+npx prisma migrate status --schema prisma/postgres/schema.prisma
 # Production reads DATABASE_URL from env — do NOT use --target with real credentials
 node scripts/phase25-pr4-inventory.mjs --json-out inventory.json
 node scripts/db/verify-postgres.mjs
@@ -272,7 +272,7 @@ Run these **locally** against Neon (do not run in the sandbox). All are read-onl
 ```powershell
 # Pre-check: migration status (READ-ONLY) — must be "Database schema is up to date"
 # ANY pending migration or history mismatch → STOP / NO-GO — do not run migrate deploy.
-npx.cmd prisma migrate status --schema prisma/schema.postgresql.prisma
+npx.cmd prisma migrate status --schema prisma/postgres/schema.prisma
 # Expected: "Database schema is up to date."
 # If it reports pending (e.g. "1 migration pending: 20260914120000_payment_lifecycle_redesign")
 # or drift: STOP — investigate history mismatch, do NOT run prisma migrate deploy as part of normal PR4 cutover.
@@ -315,7 +315,7 @@ Do not create a migration, do not `prisma db push --accept-data-loss`, do not ed
 |------|-----------------|--------------|
 | **1** | Freeze risky admin payment decisions if necessary (announce payment review pause). No student submission freeze — submissions are request-only and never corrupt entitlement. | Team notified; admin drawer shows pending queue but operators instructed not to approve until GO |
 | **2** | Record Git SHA to be deployed: `git rev-parse HEAD` and the Vercel deployment id. | SHA written to `cutover.log` |
-| **3** | Verify Neon migration status: `npx prisma migrate status --schema prisma/schema.postgresql.prisma` | Must be `up to date` (10/10, ledger last) |
+| **3** | Verify Neon migration status: `npx prisma migrate status --schema prisma/postgres/schema.prisma` | Must be `up to date` (10/10, ledger last) |
 | **4** | Run read-only Phase 25 inventory: `node scripts/phase25-pr4-inventory.mjs --json-out inventory.json` + `node scripts/db/verify-postgres.mjs` (both read `DATABASE_URL` from env) | Capture `inventory.json` + battery output |
 | **5** | Evaluate blockers: open `inventory.json`, check `verdict` | **NO-GO** → STOP, go to §12 rollback plan. **GO WITH REVIEW** → resolve or formally accept each Review with a written reason, then **re-run** step 4. Only **GO** proceeds |
 | **6** | Take / confirm production DB recovery point: Neon restore capability (see §11) **and** logical backup: `scripts/db/backup-postgres.sh --out-dir /var/backups/codemind --label pre-phase25` | Backup `.dump` + `.sha256` + `.manifest.json` verified (`sha256sum -c`) |
@@ -585,7 +585,7 @@ Remove-Variable secureDatabaseUrl
 
 # 2. Migration status — must be "Database schema is up to date"
 #    ANY pending or history mismatch → STOP / NO-GO — do NOT run migrate deploy.
-npx.cmd prisma migrate status --schema prisma/schema.postgresql.prisma
+npx.cmd prisma migrate status --schema prisma/postgres/schema.prisma
 
 # 3. Read-only inventory (reads DATABASE_URL from env)
 node scripts/phase25-pr4-inventory.mjs --json-out inventory.json

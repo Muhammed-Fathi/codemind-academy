@@ -1,5 +1,15 @@
 # Phase 21 — Production Database & Storage
 
+> **PATH SUPERSEDED (2026-09-15, Phase 26D hotfix):** the derived PostgreSQL
+> schema no longer lives at `prisma/schema.postgresql.prisma`. It moved to
+> `prisma/postgres/schema.prisma` and owns its own migrations directory
+> (`prisma/postgres/migrations/`). Replace every `--schema
+> prisma/schema.postgresql.prisma` in the commands below with `--schema
+> prisma/postgres/schema.prisma`, and prefer the current authority:
+> `docs/POSTGRES_CUTOVER_RUNBOOK.md` (§5 architecture, §11 incident recovery).
+> This report is kept as the historical record of the phase it describes.
+
+
 **Status:** implemented, verified, awaiting pre-merge audit (STOP BEFORE MERGE).
 **Scope:** PostgreSQL cutover, durable media, backups, restore, retention,
 quotas, production setup. No application-semantics change; no Phase 20 rework;

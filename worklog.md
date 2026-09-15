@@ -1677,3 +1677,136 @@ Added 8 new CSS utilities to `src/app/globals.css`:
   (`PRISMA_*_ENGINE_*` overrides for `prisma generate`); `SECURITY_HASH_SECRET` required
   by the production build; no browser host, so the RTL/mobile pass of the new dialogs is
   a checklist in the phase doc (§12).
+
+---
+Task ID: 17
+Agent: Arena Agent Mode
+Task: Phase 26D hotfix — PostgreSQL migration provider split, incident recovery
+runbook, and a permanent real-PostgreSQL + real-engine regression gate.
+
+## Incident
+`bunx prisma migrate deploy --schema prisma/schema.postgresql.prisma` against
+production Neon failed with `type "datetime" does not exist` (SQLSTATE 42704):
+Prisma reads the migrations directory NEXT TO the schema file, so the
+PostgreSQL schema (living in `prisma/`) shared `prisma/migrations` with
+SQLite and replayed the SQLite-flavoured Phase 26D migration on PostgreSQL.
+The deploy failed on its FIRST DDL statement (transactional DDL ⇒ zero
+partial objects — verified), but left a FAILED `_prisma_migrations` row that
+blocks every later deploy (P3009).
+
+## Changes
+- `prisma/schema.postgresql.prisma` → `prisma/postgres/schema.prisma`
+  (byte-identical body; new header documents the directory contract). The PG
+  schema now owns `prisma/postgres/migrations/`:
+  `migration_lock.toml` (provider=postgresql), `0_init` (frozen pre-26D
+  production schema — 56 tables / 520 columns, named constraints, no
+  semicolons inside `--` comments), and
+  `20260915180000_phase26d_quiz_attempt_architecture` (PostgreSQL-native
+  edition of Phase 26D: same name, same 18 columns, `TIMESTAMPTZ(3)`,
+  canonical constraint names). SQLite `prisma/migrations` is byte-frozen.
+- Path references updated: `scripts/db/pg-lib.mjs`, `make-postgres-schema.mjs`
+  (HEADER/--check), `migrate-sqlite-to-postgres.mjs`,
+  `src/lib/db-serialization.ts`, 6 test files.
+- NEW `scripts/db/check-pg-migration-state.mjs` — READ-ONLY production
+  diagnostic (SELECT-only; proven to succeed under a SELECT-only role).
+  Exit 0 iff the DB is exactly the expected pre-recovery state (no 26D
+  objects, 11 applied rows, one FAILED 26D row); exit 1 prints the full diff;
+  exit 2 on connect/env failure. Never prints the connection URL.
+- NEW `tests/migration-providers.test.js` (82 assertions): layout contract,
+  pinned sha256 for every applied migration (12 SQLite + 2 PG), provider-keyword
+  denylist, structural convergence `0_init`+26D == `postgres-baseline.sql`
+  (520 columns / 168 constraints / 164 indexes), fresh-SQLite harness proof,
+  checker contract; real-PG part (incident simulation, convergence, checker
+  exit 0/1, read-only-role proof); real-engine part (fresh deploy, P3009
+  refusal, resolve --rolled-back → resolve --applied 0_init → deploy →
+  idempotent; SQLite applied-ledger recognition). Safety gates refuse
+  Neon/prod/hosted URLs and non-local hosts.
+- NEW CI `.github/workflows/migration-providers-postgres.yml` — postgres:17
+  service; a SKIPPED part FAILS the gate (sentinel enforcement), no repo
+  secrets used.
+- `tests/production-storage-phase21.test.js`: ".prisma file count" contract
+  upgraded from a flat `prisma/` readdir to a full-repo walk expecting exactly
+  `prisma/schema.prisma` + `prisma/postgres/schema.prisma` (stronger than
+  before).
+- Docs: POSTGRES_CUTOVER_RUNBOOK §0/§1.2/§5 rewritten + NEW §11 (incident
+  recovery: read-only verification → resolve → deploy → post-checks +
+  restore-from-backup variant) + 2 troubleshooting rows; DATABASE_GUIDE,
+  DEPLOYMENT_GUIDE, GO_LIVE_RUNBOOK, PHASE_25_PR4 runbook, VERCEL plan path
+  updates; PROJECT_STATE Phase 26D-hotfix entry; PHASE_26D report carries a
+  post-merge correction note (its "PostgreSQL never replays SQLite
+  migrations" assumption was the root cause).
+
+## Verification (this sandbox)
+- `tests/migration-providers.test.js`: **82 passed, 0 failed** (54 offline +
+  12 real-PostgreSQL 17 + 16 real-Prisma-engine via driver adapters).
+- Engine proofs on real PG: fresh deploy from empty converges EXACTLY to the
+  baseline catalog; incident replica reproduces P3009; recovery sequence
+  (resolve --rolled-back → resolve --applied 0_init → deploy) → "up to date" +
+  idempotent re-deploy; SQLite harness-built DB recognized as up to date.
+- Regression battery: verify-phase26d-teacher 306/0 · phase26d-teacher-full-flow
+  136/0 · phase26d-concurrency-postgres (REAL PG) 25/0 · teacher-workflow-18
+  371/0 · phase26c-admin PASS · phase26b-student 39/0 · phase26b-group-track
+  83/0 · production-storage-phase21 180/0 · phase21 rehearsal 28/28
+  PHASE21_MIGRATION_OK · migration-sql 15/0 · security-audit-gate 116/0 ·
+  phase20-security 192/0 · track-architecture 308/0 · payment-pr2a 169/0.
+- `make-postgres-schema.mjs --check`: both artifacts in sync.
+- `tsc --noEmit`: 13 errors = 13 at base (stale generated client —
+  `prisma generate` is sandbox-blocked; parity verified via git stash).
+- Known-unrelated, byte-identical at base: payment-lifecycle-phase25-ledger
+  112/1 (pre-existing PR3-allowlist drift, full-output diff vs base is EMPTY);
+  final-integration-phase22 crashes on a missing `backups/` fixture at base
+  too. `next build` still blocked at binaries.prisma.sh (network) — re-run
+  where engines are reachable.
+
+### Post-reset re-verification addendum (same day)
+The sandbox was reset between sessions (node_modules and the scratch rig are
+not persisted). After restoring a minimal rig (embedded PostgreSQL 17.10 via
+npm, prisma 6.19.3 + driver adapters with the two known local patches:
+adapter-pg `case 19` for pg_catalog `name` columns, and a PGTEST_SKIP_ZW
+guard on the CLI's classic-engine precheck that `migrate resolve
+--rolled-back` runs before the JS-engine path):
+- `tests/migration-providers.test.js` re-run end-to-end: **82 passed, 0
+  failed** (offline 54 + real PG 11 + real engine 17) on the FINAL versions
+  of every file.
+- Hardened along the way (all in-tree): `check-pg-migration-state.mjs` now
+  imports `pg` lazily so a missing driver yields the documented exit 2 with
+  a friendly message instead of a module-load crash; the test's read-only
+  role proof now gives the role a password (works under trust AND
+  md5/scram-auth test rigs); the PG_OK/ENGINE_OK success sentinels only
+  print when their part had zero failures (defense-in-depth for CI's skip
+  enforcement — exit code remains the primary gate).
+
+### Deployment-path audit addendum (pre-delivery, same day)
+Repo-wide audit of every `schema.postgresql.prisma` reference and every
+production Prisma command, prompted by the schema-path move. Findings and
+fixes:
+- **CRITICAL (fixed):** every documented production build ran BARE
+  `prisma generate` (no `--schema`), which generates the SQLITE Prisma
+  Client — a production app on PostgreSQL would fail to connect at runtime.
+  Fix: `package.json` gained `build:postgres` =
+  `prisma generate --schema prisma/postgres/schema.prisma && next build &&
+  node scripts/copy-standalone-assets.mjs`; DEPLOYMENT_GUIDE (Vercel Option A
+  build command, VPS install, update/rollback flows, go-live checklist,
+  appendix F.6/F.8), GO_LIVE_RUNBOOK §7 + §13.3, README Production Build,
+  and all six Vercel-plan build-command references now mandate
+  `build:postgres` / the PG-schema generate. `build` stays the local SQLite
+  build (phase26a pin intact).
+- `.env.example` + `make-postgres-schema.mjs` header comments repointed to
+  the new path.
+- Historical phase reports (PHASE_21, PHASE_25_PR1) that contain
+  operator-followable old-path commands now carry a PATH SUPERSEDED banner.
+- Proven empirically (rig): `prisma generate --schema
+  prisma/postgres/schema.prisma` bakes `provider = "postgresql"` into the
+  client; `--schema prisma/schema.prisma` bakes `sqlite`; the two overwite
+  each other in node_modules/.prisma/client (why build:postgres must be one
+  chain). Full §11 recovery drill re-run verbatim on a fresh incident
+  replica: checker exit 0 → resolve --rolled-back → resolve --applied
+  0_init → deploy → "up to date" → idempotent re-deploy; ledger keeps the
+  rolled-back audit row.
+- Re-verified: migration-providers gate **82/0** (both sentinels),
+  `tsc --noEmit` **0 errors** (real generated client), phase26a 121/0,
+  production-storage 180/0, migration-sql 15/0, security-hardening 293/0,
+  concurrency (real PG) 25/0. payment-ledger 138/1 = the byte-identical
+  pre-existing PR3-allowlist drift (PGlite leg runs again now that
+  node_modules is restored); final-integration still trips the pre-existing
+  missing `backups/` fixture.

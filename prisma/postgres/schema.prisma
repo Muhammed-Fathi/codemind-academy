@@ -1,4 +1,4 @@
-// CodeMind Academy — Phase 21 PostgreSQL schema (DERIVED ARTIFACT).
+// CodeMind Academy — PostgreSQL schema (DERIVED ARTIFACT).
 //
 // DO NOT EDIT. Generated from prisma/schema.prisma by
 // scripts/db/make-postgres-schema.mjs — the ONLY difference from the source
@@ -8,10 +8,19 @@
 // Regenerate: node scripts/db/make-postgres-schema.mjs
 // Verify:     node scripts/db/make-postgres-schema.mjs --check
 //
-// Cutover use: point Prisma at THIS file on the production host
-// (see docs/POSTGRES_CUTOVER_RUNBOOK.md), then baseline the migration history
-// with `prisma migrate resolve --applied`. Old SQLite migrations are never
-// rewritten or replayed on PostgreSQL.
+// WHY THIS FILE LIVES IN prisma/postgres/ (2026-09-15 Phase 26D hotfix)
+//   Prisma reads the migrations directory NEXT TO the schema file. When this
+//   schema lived directly in prisma/ it shared prisma/migrations with SQLite,
+//   and `migrate deploy --schema <this file>` replayed SQLite-flavoured SQL
+//   (DATETIME, …) on PostgreSQL — the Phase 26D production deploy failed with
+//   `type "datetime" does not exist`. The schema now lives in prisma/postgres/
+//   and owns prisma/postgres/migrations (provider = postgresql, baselined at
+//   0_init = the pre-26D production schema); the SQLite schema keeps
+//   prisma/migrations. NEVER move this file back next to schema.prisma and
+//   NEVER point the PostgreSQL provider at prisma/migrations.
+//
+// Deploy use (see docs/POSTGRES_CUTOVER_RUNBOOK.md):
+//   bunx prisma migrate deploy --schema prisma/postgres/schema.prisma
 
 generator client {
   provider        = "prisma-client-js"

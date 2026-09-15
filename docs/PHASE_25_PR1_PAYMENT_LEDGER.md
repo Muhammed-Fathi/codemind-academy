@@ -1,5 +1,15 @@
 # Phase 25 PR1 — Payment-lifecycle ledger (database only, behavior-neutral)
 
+> **PATH SUPERSEDED (2026-09-15, Phase 26D hotfix):** the derived PostgreSQL
+> schema no longer lives at `prisma/schema.postgresql.prisma`. It moved to
+> `prisma/postgres/schema.prisma` and owns its own migrations directory
+> (`prisma/postgres/migrations/`). Replace every `--schema
+> prisma/schema.postgresql.prisma` in the commands below with `--schema
+> prisma/postgres/schema.prisma`, and prefer the current authority:
+> `docs/POSTGRES_CUTOVER_RUNBOOK.md` (§5 architecture, §11 incident recovery).
+> This report is kept as the historical record of the phase it describes.
+
+
 **Status:** implemented, verified, ready to merge. No production apply performed
 (scratch-only proof; see §6).
 

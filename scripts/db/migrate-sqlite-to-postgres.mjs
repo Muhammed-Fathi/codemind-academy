@@ -7,7 +7,7 @@
 //   Copies EVERY table (migration order, parents before children) from a SQLite
 //   file at migration head into an EMPTY PostgreSQL database that already has
 //   the Phase 21 baseline (scripts/db/postgres-baseline.sql, or `prisma db push`
-//   from prisma/schema.postgresql.prisma). IDs, relationships, timestamps and
+//   from prisma/postgres/schema.prisma). IDs, relationships, timestamps and
 //   opaque String blobs are preserved verbatim; the ONLY excluded table is the
 //   engine ledger `_prisma_migrations` (see pg-lib MIGRATION_EXCLUDED_TABLES).
 //

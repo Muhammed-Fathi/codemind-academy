@@ -35,8 +35,11 @@ Next.js is a first-class citizen on Vercel. Zero-config deployment:
 1. Push the repo to GitHub / GitLab / Bitbucket.
 2. In Vercel dashboard, **New Project → Import** the repo.
 3. Framework preset: **Next.js** (auto-detected).
-4. Build command: `bun run build` (or leave default — Vercel detects
-   `next build`).
+4. Build command: `bun run build:postgres` (**required for the PostgreSQL
+   production database** — it generates the Prisma Client from
+   `prisma/postgres/schema.prisma`; plain `bun run build` / the default
+   `next build` would generate the SQLite client from `prisma/schema.prisma`
+   and the app would fail to connect to PostgreSQL at runtime).
 5. Install command: `bun install`.
 6. Set environment variables (Project → Settings → Environment
    Variables):
@@ -63,7 +66,9 @@ For self-hosting on a VPS (e.g. DigitalOcean, Hetzner, AWS Lightsail):
    - **Git**
    - **Caddy** or **nginx** (for TLS termination)
 3. Clone the repo, `bun install`, configure `.env`.
-4. Build the standalone bundle (`bun run build`).
+4. Build the standalone bundle (`bun run build:postgres` — generates the
+   Prisma Client from `prisma/postgres/schema.prisma`; plain
+   `bun run build` would generate the SQLite client).
 5. Run the production server behind Caddy/nginx.
 
 Sample Caddyfile (TLS auto-managed by Caddy):
@@ -132,10 +137,13 @@ Short form:
 1. Provision managed PostgreSQL (Neon, Supabase, Railway, RDS) + app/owner
    roles; create the empty database.
 2. Derive (never hand-edit) the artifacts:
-   `node scripts/db/make-postgres-schema.mjs` → `prisma/schema.postgresql.prisma`
+   `node scripts/db/make-postgres-schema.mjs` → `prisma/postgres/schema.prisma`
    + `scripts/db/postgres-baseline.sql`.
-3. Apply the baseline (`psql -f scripts/db/postgres-baseline.sql`, or
-   `prisma db push` from the derived schema where engines are reachable).
+3. Provision the schema: `bunx prisma migrate deploy --schema
+   prisma/postgres/schema.prisma` (applies `0_init` and everything after it).
+   Engines-unreachable fallback: `psql -f scripts/db/postgres-baseline.sql`
+   — then baseline the ledger as `docs/POSTGRES_CUTOVER_RUNBOOK.md` §5
+   describes before the next deploy.
 4. Load: `node scripts/db/migrate-sqlite-to-postgres.mjs --source db/custom.db
    --target "$DATABASE_URL" --manifest …` (one transaction, count+hash verified).
 5. Verify: `node scripts/db/verify-postgres.mjs --target "$DATABASE_URL"`
@@ -242,6 +250,21 @@ prisma generate && next build && node scripts/copy-standalone-assets.mjs
 - `prisma generate` regenerates the Prisma Client from
   `prisma/schema.prisma` so the build always type-checks against the
   current schema.
+
+> **PRODUCTION (PostgreSQL) — use `bun run build:postgres` instead.** It is
+> the same chain but generates the Prisma Client from
+> `prisma/postgres/schema.prisma` (provider `postgresql`):
+>
+> ```bash
+> prisma generate --schema prisma/postgres/schema.prisma && next build && node scripts/copy-standalone-assets.mjs
+> ```
+>
+> The provider is baked into the generated client at generate time, so a
+> client generated from the SQLite schema cannot open a `postgresql://`
+> URL — the production build (Vercel Build Command, deploy host, CI) MUST
+> use the PostgreSQL schema. Plain `bun run build` stays the LOCAL
+> development build (SQLite client for the local file database).
+
 - `next build` produces `.next/` (compiled) + `.next/standalone/`
   (self-contained server, because `output: "standalone"` is set in
   `next.config.ts`) and performs full TypeScript validation — any TS
@@ -294,7 +317,8 @@ Windows CMD/PowerShell:
   when systemd/PM2 already captures output).
 - Forwards SIGINT/SIGTERM to the server so `Ctrl+C` / `systemctl stop` work.
 
-> **Production requires `SECURITY_HASH_SECRET`.** Both `bun run build` and the
+> **Production requires `SECURITY_HASH_SECRET`.** Both `bun run build` /
+> `bun run build:postgres` and the
 > server startup refuse to proceed when `NODE_ENV=production` and the variable
 > is missing, shorter than 32 characters, or a placeholder. Generate it with
 > `openssl rand -hex 32` and add it to the server environment (systemd
@@ -389,13 +413,22 @@ table (Prisma handles this internally).
 ### Prisma migrations (recommended for PostgreSQL production)
 
 ```bash
-# Create a migration from schema changes
+# Create a SQLite migration from schema changes (development provider)
 bun run db:migrate
 # (internally: prisma migrate dev — prompts for a migration name)
 
-# Apply migrations in production
-bunx prisma migrate deploy --schema prisma/schema.postgresql.prisma
+# Apply migrations in production (PostgreSQL)
+bunx prisma migrate deploy --schema prisma/postgres/schema.prisma
 ```
+
+The two providers keep SEPARATE migration histories (Phase 26D hotfix):
+SQLite changes land in `prisma/migrations/`, and every SQLite migration must
+be MIRRORED as a PostgreSQL-native migration in `prisma/postgres/migrations/`
+(same logical change, PostgreSQL types, canonical constraint names — see
+`prisma/postgres/migrations/20260915180000_phase26d_quiz_attempt_architecture/`
+for the pattern). `tests/migration-providers.test.js` fails if the PostgreSQL
+history drifts from `scripts/db/postgres-baseline.sql`, so a change that
+forgets the PostgreSQL edition cannot ship.
 
 This creates timestamped migration files in `prisma/migrations/` that
 should be committed to Git for reproducible production deploys.
@@ -553,10 +586,10 @@ bun install
 
 # 5. Push any schema changes (idempotent)
 bun run db:push
-# (or for PostgreSQL: bunx prisma migrate deploy --schema prisma/schema.postgresql.prisma)
+# (or for PostgreSQL: bunx prisma migrate deploy --schema prisma/postgres/schema.prisma)
 
 # 6. Rebuild the standalone bundle
-bun run build
+bun run build:postgres   # PostgreSQL production (PG Prisma Client)
 
 # 7. Restart the production server
 sudo systemctl restart codemind
@@ -692,7 +725,8 @@ See `examples/` for a reference implementation.
 - [ ] `NEXT_PUBLIC_URL` set to the production domain.
 - [ ] `bun run db:push` ran successfully.
 - [ ] `bun run scripts/seed.ts` ran (first deploy only).
-- [ ] `bun run build` completed without errors.
+- [ ] `bun run build:postgres` completed without errors (generates the
+      PostgreSQL Prisma Client from `prisma/postgres/schema.prisma`).
 - [ ] `bun run lint` is clean.
 - [ ] Server started (`bun run start` or systemd service).
 - [ ] HTTPS reverse proxy (Caddy / nginx / Vercel) configured.
@@ -811,7 +845,7 @@ node --test tests/                                                            # 
 
 ```bash
 npm ci
-npm run build
+npm run build:postgres   # PostgreSQL production (PG Prisma Client; plain npm run build = SQLite client)
 pm2 restart codemind --update-env   # or: systemctl restart codemind
 pm2 logs codemind --lines 100
 ```
@@ -896,6 +930,11 @@ recovery: there is no SMS path, no OTP code, and no phone-based reset UI.
    and STARTTLS first, then sends a real test email.
 4. End-to-end test after deploy: request a reset for a real account, open the
    link from the email, set a new password, and confirm every existing session
+   is logged out.
+
+`hasDeliveryProvider()` (`src/lib/delivery.ts`) reports whether Gmail SMTP is
+usable and can be surfaced on an admin health screen (server-side only).
+ord, and confirm every existing session
    is logged out.
 
 `hasDeliveryProvider()` (`src/lib/delivery.ts`) reports whether Gmail SMTP is
