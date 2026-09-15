@@ -1,0 +1,119 @@
+name: Migration provider architecture gate
+
+# Phase 26D hotfix (2026-09-15): the production `migrate deploy` against
+# Neon failed with `type "datetime" does not exist` because the PostgreSQL
+# schema shared prisma/migrations with SQLite. This gate proves — on a REAL
+# PostgreSQL and with the REAL Prisma engine — that:
+#   * the PostgreSQL migrations directory (prisma/postgres/migrations) applies
+#     cleanly from empty AND from the failed-production (pre-26D + failed
+#     ledger row) state, converging exactly to the generated baseline schema;
+#   * fresh SQLite still applies all 12 SQLite migrations;
+#   * applied migration files stay byte-frozen (checksum contract);
+#   * the read-only production checker behaves (including under a SELECT-only
+#     role).
+#
+# This job is a HARD GATE: a skip is NOT a pass. If either the PG part or the
+# engine part skips, this job FAILS.
+#
+# SAFETY: the database is a disposable GitHub Actions service container with
+# throwaway credentials. No repository secret is used; the test itself refuses
+# production/Neon-looking URLs and non-local hosts.
+
+on:
+  push:
+    branches: ["arena/**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  migration-providers:
+    name: Migration provider architecture test
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      postgres:
+        # Matches the current production target (PostgreSQL 17).
+        image: postgres:17
+        env:
+          # Disposable CI-only credentials. These are NOT secrets.
+          POSTGRES_DB: codemind_migrations
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          # package.json declares engines.node ">=22".
+          node-version: 22
+          cache: npm
+
+      # Full install (the engine part needs the prisma CLI; its engine
+      # binaries download from binaries.prisma.sh, which is reachable from
+      # GitHub Actions runners).
+      - name: Install dependencies
+        run: npm ci
+
+      # DATABASE_URL points ONLY at the disposable service container.
+      # MIGRATION_PROVIDERS_PRISMA_BIN turns on the real-engine proofs.
+      - name: Run the migration provider architecture test
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/codemind_migrations
+          MIGRATION_PROVIDERS_PRISMA_BIN: node_modules/.bin/prisma
+        run: |
+          set -o pipefail
+          node tests/migration-providers.test.js 2>&1 | tee providers.log
+
+      # The gates. A skip is a failure: every part must really execute.
+      - name: Enforce that every part really ran
+        if: always()
+        run: |
+          if [ ! -f providers.log ]; then
+            echo "::error::providers.log missing — the test never ran."
+            exit 1
+          fi
+          if grep -q "MIGRATION_PROVIDERS_PG_SKIPPED" providers.log; then
+            echo "::error::The PostgreSQL part SKIPPED. A skip is NOT a pass for this gate."
+            echo "--- output ---"; cat providers.log
+            exit 1
+          fi
+          if grep -q "MIGRATION_PROVIDERS_ENGINE_SKIPPED" providers.log; then
+            echo "::error::The Prisma-engine part SKIPPED. A skip is NOT a pass for this gate."
+            echo "--- output ---"; cat providers.log
+            exit 1
+          fi
+          if grep -q "REFUSING TO RUN" providers.log; then
+            echo "::error::The test refused to run against this DATABASE_URL."
+            exit 1
+          fi
+          if ! grep -q "MIGRATION_PROVIDERS_PG_OK" providers.log; then
+            echo "::error::The PostgreSQL part did not complete successfully."
+            echo "--- output ---"; cat providers.log
+            exit 1
+          fi
+          if ! grep -q "MIGRATION_PROVIDERS_ENGINE_OK" providers.log; then
+            echo "::error::The Prisma-engine part did not complete successfully."
+            echo "--- output ---"; cat providers.log
+            exit 1
+          fi
+          echo "Confirmed: provider architecture proofs executed against real PostgreSQL + the real Prisma engine."
+
+      - name: Upload output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: migration-providers-output
+          path: providers.log
+          if-no-files-found: warn
