@@ -65,24 +65,54 @@ export async function PATCH(
   }
 
   // The audience the assignment rules below must respect: the group's value
-  // AFTER the (validated) update above. NULL (unclassified legacy group)
-  // imposes no constraint on assignment — classification is the operator's
-  // explicit step, and today's admin workflow may still seat legacy students
-  // there; the student-facing surfaces stay fail-closed regardless.
+  // AFTER the (validated) update above.
+  // Phase 26C — UNCLASSIFIED groups are now fail-closed for admin assignment
+  // too: an unclassified group must be classified before it can receive
+  // students (except its existing members remain until classified). This
+  // prevents silently seating students into invisible groups.
   const effectiveTrackScope =
     nextTrackScope ?? normalizeSchoolType(group.trackScope);
+
+  // Phase 26C — if trying to add students to an unclassified group, reject.
+  if (Array.isArray(body.addStudentIds) && body.addStudentIds.length > 0) {
+    if (!effectiveTrackScope) {
+      return err(tApi("api.285"), 409);
+    }
+    // Also enforce active + capacity for group assignments
+    const freshGroup = await db.group.findUnique({
+      where: { id },
+      select: { isActive: true, capacity: true, _count: { select: { students: true } } },
+    });
+    if (freshGroup && !freshGroup.isActive) {
+      return err(tApi("api.085"), 409);
+    }
+    if (freshGroup) {
+      const needed = body.addStudentIds.length;
+      const current = freshGroup._count.students;
+      // Simple capacity check: if adding would exceed, reject (advisory, but safe)
+      if (current + needed > freshGroup.capacity) {
+        return err(tApi("api.274"), 409);
+      }
+    }
+  }
 
   // Manage students (optional arrays)
   if (Array.isArray(body.addStudentIds)) {
     for (const sid of body.addStudentIds) {
-      if (effectiveTrackScope) {
-        const s = await db.student.findUnique({
-          where: { id: sid },
-          select: { schoolType: true },
-        });
-        if (!s || normalizeSchoolType(s.schoolType) !== effectiveTrackScope) {
-          // Phase 26B — assignment is only ever compatible (api.286).
-          return err(tApi("api.286"), 409);
+      const s = await db.student.findUnique({
+        where: { id: sid },
+        select: { schoolType: true, groupId: true },
+      });
+      if (!s || normalizeSchoolType(s.schoolType) !== effectiveTrackScope) {
+        // Phase 26B — assignment is only ever compatible (api.286).
+        return err(tApi("api.286"), 409);
+      }
+      // Capacity re-check per student when student is moving from different group
+      if (s.groupId !== id) {
+        const count = await db.student.count({ where: { groupId: id } });
+        const cap = (await db.group.findUnique({ where: { id }, select: { capacity: true } }))?.capacity ?? 20;
+        if (count >= cap) {
+          return err(tApi("api.274"), 409);
         }
       }
       await db.student.update({ where: { id: sid }, data: { groupId: id } });

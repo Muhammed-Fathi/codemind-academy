@@ -1141,6 +1141,21 @@ function TeachersView() {
   const [openAdd, setOpenAdd] = React.useState(false);
   const { data, loading, error, reload } = useApi<{ teachers: TeacherRow[] }>("/api/admin/teachers");
 
+  const toggleTeacherActive = async (t: TeacherRow) => {
+    try {
+      const res = await fetch(`/api/admin/teachers/${t.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: !t.isActive }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      toast.success(t.isActive ? "Teacher deactivated" : "Teacher reactivated");
+      reload();
+    } catch {
+      toast.error(tr("admin.001"));
+    }
+  };
+
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
       <div className="flex items-center justify-between">
@@ -1171,6 +1186,7 @@ function TeachersView() {
                   <TableHead>Specialty</TableHead>
                   <TableHead>{tr("admin.072")}</TableHead>
                   <TableHead>{tr("admin.025")}</TableHead>
+                  <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1199,6 +1215,11 @@ function TeachersView() {
                       ) : (
                         <Badge variant="secondary">Inactive</Badge>
                       )}
+                    </TableCell>
+                    <TableCell>
+                      <Button size="sm" variant={t.isActive ? "outline" : "default"} onClick={() => toggleTeacherActive(t)}>
+                        {t.isActive ? "Deactivate" : "Reactivate"}
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -3104,9 +3125,71 @@ function SubscriptionsView() {
     return `/api/admin/subscriptions?${params.toString()}`;
   }, [status]);
   const { data, loading, error, reload } = useApi<{ subscriptions: SubscriptionRow[]; plans: any[] }>(query, [status]);
+  const { data: plansData, loading: plansLoading, reload: reloadPlans } = useApi<{ plans: any[] }>("/api/admin/plans");
+
+  const togglePlanActive = async (plan: any) => {
+    try {
+      const res = await fetch(`/api/admin/plans/${plan.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: !plan.isActive }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error || "Failed");
+      }
+      toast.success(plan.isActive ? "Plan disabled" : "Plan enabled");
+      reloadPlans();
+      reload();
+    } catch (e: any) {
+      toast.error(e.message || tr("admin.001"));
+    }
+  };
 
   return (
-    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+      {/* Plans management — Phase 26C owner requirement: admin can open/close ANY package */}
+      <Card className="p-4">
+        <CardHeader className="px-0 pt-0">
+          <CardTitle className="text-base flex items-center gap-2">
+            <CreditCard className="w-4 h-4 text-emerald-500" />
+            Subscription Plans — Sale Control
+          </CardTitle>
+          <CardDescription>
+            Toggle availability — inactive plans are hidden from students and cannot be purchased, but existing subscribers keep access.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="px-0">
+          {plansLoading ? (
+            <LoadingBlock rows={3} />
+          ) : !plansData || plansData.plans.length === 0 ? (
+            <EmptyBlock message="No plans" />
+          ) : (
+            <div className="space-y-2">
+              {plansData.plans.map((p: any) => (
+                <div key={p.id} className={`flex items-center justify-between rounded-lg border p-3 ${!p.isActive ? "opacity-60 bg-muted/30" : ""}`}>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold">{pickAuto(p.nameAr, p.name)}</span>
+                      {p.isPromo && <Badge className="bg-amber-500/15 text-amber-700 border-amber-500/30 text-[10px]">Early Bird</Badge>}
+                      <Badge variant={p.isActive ? "default" : "secondary"} className="text-[10px]">
+                        {p.isActive ? "Active" : "Closed"}
+                      </Badge>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {p.durationMonths} months · {p.price} EGP · {p.description || "—"}
+                    </div>
+                  </div>
+                  <Button size="sm" variant={p.isActive ? "outline" : "default"} onClick={() => togglePlanActive(p)}>
+                    {p.isActive ? "Disable sale" : "Enable sale"}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-bold">{tr("shell.012")}</h2>
@@ -3175,6 +3258,7 @@ function SubscriptionsView() {
 
 // ============================================================
 // 9. Notifications
+
 // ============================================================
 type NotifRow = {
   id: string;

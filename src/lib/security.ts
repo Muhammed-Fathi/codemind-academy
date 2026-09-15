@@ -242,6 +242,7 @@ export type SecurityEventType =
   | "SESSION_CONFLICT_DETECTED"
   | "ACCOUNT_SUSPENDED_MULTI_DEVICE"
   | "ACCOUNT_REACTIVATED"
+  | "ACCOUNT_DEACTIVATED"
   | "SESSION_REVOKED"
   | "QUIZ_EVIDENCE_ACCESSED"
   /** Phase 14 — staff review of a private session PDF. */
