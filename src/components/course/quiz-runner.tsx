@@ -133,9 +133,31 @@ export function QuizRunner() {
           body: JSON.stringify({ cameraStatus: allow ? "NOT_REQUESTED" : "DECLINED" }),
         });
         const d = await r.json().catch(() => ({}));
-        if (r.ok && d.attemptId) setAttemptId(d.attemptId);
-        // A failed attempt-open must not block the student from taking the
-        // quiz; it only means no evidence can be linked.
+
+        // Phase 26D — /start is now the moment the paper is chosen and frozen,
+        // so the questions rendered must be re-read from the server afterwards.
+        // Rendering the pre-start payload would show a different (and, for a
+        // blueprint quiz, larger) set than the one the student is graded on.
+        if (r.ok && d.attemptId) {
+          setAttemptId(d.attemptId);
+          const fresh = await fetch(`/api/quizzes/${encodeURIComponent(navParam)}`);
+          if (fresh.ok) {
+            const fd = await fresh.json();
+            setQuiz(fd);
+            setCurrent(0);
+            setAnswers({});
+          }
+        } else if (r.status === 409 && d?.code === "ATTEMPT_LIMIT_REACHED") {
+          // Truthful terminal state: the attempt was used, and only an Admin
+          // can grant another. Not a network error, so it must not be swallowed.
+          setError(t("api.289"));
+          return;
+        } else if (r.status === 422 && d?.code === "BLUEPRINT_UNSATISFIABLE") {
+          setError(t("api.292"));
+          return;
+        }
+        // Any other failed attempt-open must not block the student from taking
+        // the quiz; it only means no evidence can be linked.
       } catch {
         /* ignore — quiz still runs */
       } finally {
@@ -143,7 +165,7 @@ export function QuizRunner() {
         setStartingAttempt(false);
       }
     },
-    [navParam]
+    [navParam, t]
   );
 
   const load = React.useCallback(() => {
@@ -198,13 +220,6 @@ export function QuizRunner() {
       <ResultScreen
         result={result}
         quiz={quiz}
-        onRetry={() => {
-          // Retry = a FRESH attempt: reload the quiz (which re-runs the
-          // consent gate and /start, creating a new attempt with a new,
-          // frozen question set) instead of reusing the finished attempt's
-          // client state.
-          load();
-        }}
         onBackToCourse={() => {
           setView("student-course");
           if (quiz.lesson?.courseSlug) setNavParam(quiz.lesson.courseSlug);
@@ -470,12 +485,10 @@ export function QuizRunner() {
 function ResultScreen({
   result,
   quiz,
-  onRetry,
   onBackToCourse,
 }: {
   result: SubmitResult;
   quiz: QuizData;
-  onRetry: () => void;
   onBackToCourse: () => void;
 }) {
   const t = useT();
@@ -531,16 +544,22 @@ function ResultScreen({
                 : t("course.026", { p1: quiz.quiz.passMark })}
             </Badge>
 
-            <div className="flex flex-col sm:flex-row gap-2 mt-5 justify-center">
+            {/*
+              Phase 26D — the "Retry" button is gone ON PURPOSE. It used to
+              reload the quiz, which re-ran /start and created a brand-new
+              attempt with a fresh question set: an unlimited retake loop that
+              also let a student re-draw until they got an easier paper. A
+              submitted attempt is now terminal, and an extra attempt exists
+              only as an Admin-issued grant. The UI says so instead of offering
+              a button the server would refuse.
+            */}
+            <p className="text-xs text-muted-foreground mt-4 text-center">
+              {t("course.031")}
+            </p>
+            <div className="flex flex-col sm:flex-row gap-2 mt-3 justify-center">
               <Button variant="outline" onClick={onBackToCourse}>
                 <ArrowRight className="w-4 h-4 ms-1.5 flip-rtl" />
                 {t("course.009")}</Button>
-              <Button
-                onClick={onRetry}
-                className="bg-gradient-to-l from-primary to-amber-500 text-white"
-              >
-                <RotateCw className="w-4 h-4 ms-1.5" />
-                {t("course.028")}</Button>
             </div>
           </CardContent>
         </Card>

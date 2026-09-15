@@ -1002,9 +1002,28 @@ async function main() {
   }, { id: timedQuizId });
   eq(submitOnTime.status, 200, "M: an in-window submit is graded normally");
 
-  // A second attempt, aged past its deadline: late answers must NOT be graded.
+  // Phase 26D — ONE ATTEMPT BY DEFAULT. This assertion used to read "a retake
+  // after the first submit starts a fresh attempt"; that behaviour was the
+  // unlimited-retake hole Phase 26D was chartered to remove, so a second start
+  // with no Admin grant is now REFUSED, and the time-limit path below is reached
+  // through an explicitly granted retry instead of a free retake.
+  const startDenied = await POST_JSON(R.quizStart, url(`/api/quizzes/${timedQuizId}/start`), {}, { id: timedQuizId });
+  eq(startDenied.status, 409, "M: a second start after submit is refused (one-attempt default)");
+  eq(startDenied.json.code, "ATTEMPT_LIMIT_REACHED", "M: the refusal is machine-readable");
+
+  // The only door to another attempt: an Admin-issued grant. Inserted directly
+  // here because this verifier's subject is the TIME LIMIT; the grant route
+  // itself is exercised over real HTTP by scripts/verify-phase26d-teacher.mjs.
+  await client.quizRetryGrant.create({
+    data: { studentId: studentAr.id, quizId: timedQuizId, grantedByUserId: adminUser.id, reason: "26D time-limit fixture" },
+  });
+
   const start2 = await POST_JSON(R.quizStart, url(`/api/quizzes/${timedQuizId}/start`), {}, { id: timedQuizId });
-  eq(start2.status, 200, "M: a retake after the first submit starts a fresh attempt");
+  eq(start2.status, 200, "M: an Admin-granted retry starts a second attempt");
+  eq(start2.json.attemptNumber, 2, "M: the granted attempt is sequence #2");
+  const grantAfter = await client.quizRetryGrant.findFirst({ where: { studentId: studentAr.id, quizId: timedQuizId } });
+  ok(!!grantAfter.consumedAt, "M: the grant is consumed by the attempt it permitted");
+
   const agedStart = new Date(Date.now() - 40 * 60_000);
   await client.quizAttempt.update({
     where: { id: start2.json.attemptId },
@@ -1023,8 +1042,20 @@ async function main() {
     "M: finishedAt is the DEADLINE, not the late request's time"
   );
 
+  // Phase 26D — an EXPIRED attempt is TERMINAL, exactly like a submitted one.
+  // Phase 18 used to open a fresh attempt here, which meant an abandoned timed
+  // quiz could be restarted indefinitely: an unlimited-retake path wearing a
+  // timeout costume. The "no banked time" guarantee is preserved, but reaching a
+  // new clock now costs an Admin grant like any other extra attempt.
+  const startAfterExpiryDenied = await POST_JSON(R.quizStart, url(`/api/quizzes/${timedQuizId}/start`), {}, { id: timedQuizId });
+  eq(startAfterExpiryDenied.status, 409, "M: /start after an expiry is refused (expiry is terminal)");
+  eq(startAfterExpiryDenied.json.code, "ATTEMPT_LIMIT_REACHED", "M: and the refusal names the attempt limit");
+
+  await client.quizRetryGrant.create({
+    data: { studentId: studentAr.id, quizId: timedQuizId, grantedByUserId: adminUser.id, reason: "26D post-expiry fixture" },
+  });
   const resumeAfterExpiry = await POST_JSON(R.quizStart, url(`/api/quizzes/${timedQuizId}/start`), {}, { id: timedQuizId });
-  eq(resumeAfterExpiry.status, 200, "M: /start after an expiry → 200");
+  eq(resumeAfterExpiry.status, 200, "M: /start after an expiry with a grant → 200");
   eq(resumeAfterExpiry.json.resumed, false, "M: an expired attempt is never resumed (no banked time)");
   ok(resumeAfterExpiry.json.attemptId !== start2.json.attemptId, "M: a FRESH attempt with a fresh clock is created");
 

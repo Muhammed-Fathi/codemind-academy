@@ -328,16 +328,30 @@ export type QuestionPin = {
   order: number;
 };
 
-export async function loadQuestionReferences(questionId: string): Promise<{
+export async function loadQuestionReferences(
+  questionId: string,
+  /**
+   * Optional transaction client.
+   *
+   * Phase 26D FIX — the delete path used to read references through the
+   * module-level `db` and then delete through a *separate* call. Those are two
+   * independent round-trips, so an attempt could start (and freeze this
+   * question) in the gap between the check and the delete; the guard would
+   * pass on stale data and the cascade would then erase the row it had just
+   * been asked to protect. Callers that delete MUST pass their transaction
+   * client so the check and the delete are one atomic unit.
+   */
+  client: Pick<typeof db, "quizAnswer" | "mockExamQuestion"> = db
+): Promise<{
   references: QuestionReferences;
   pins: QuestionPin[];
 }> {
   const [answers, pins] = await Promise.all([
-    db.quizAnswer.findMany({
+    client.quizAnswer.findMany({
       where: { questionId },
       select: { attemptId: true, attempt: { select: { finishedAt: true } } },
     }),
-    db.mockExamQuestion.findMany({
+    client.mockExamQuestion.findMany({
       where: { questionId },
       select: {
         order: true,

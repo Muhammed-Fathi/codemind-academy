@@ -20,13 +20,26 @@
 //     source of truth for "is the quiz requirement satisfied" (a finished
 //     QuizAttempt exists). Nothing here re-implements unlocking.
 //
-// Selection policy (existing product architecture, unchanged):
-//   A `Quiz` OWNS its questions (`Question.quizId`) — that ownership IS the
-//   Session Quiz configuration. There is no per-student randomisation for
-//   session quizzes (random sampling is a Mock Exam feature), so the set
-//   selected for an attempt is the quiz's questions, frozen at attempt
-//   creation. Different students therefore see the same set for the same
-//   quiz, but each attempt still freezes its own independent copy.
+// Selection policy (Phase 26D — SUPERSEDED):
+//   The comment above this block used to say that a Session Quiz has no
+//   per-student randomisation and that every student sees the quiz's whole
+//   question list. That was true, and Phase 26D retired it: a Lesson Quiz now
+//   carries a BLUEPRINT (src/lib/quiz-blueprint.ts) and the server selects a
+//   per-attempt set from the Question Bank pool, honouring the blueprint's
+//   count and difficulty rules and preferring questions the student has not
+//   already seen. `quizMode = "FIXED"` (every quiz that predates this phase)
+//   keeps the old behaviour exactly, so nothing about a legacy quiz changes.
+//
+// Snapshot policy (Phase 26D — NEW):
+//   Phase 5 froze WHICH questions an attempt covers but not WHAT they said:
+//   prompt, options, answer key, marks and difficulty were all read from the
+//   LIVE `Question` row at serve time and at grading time. A Question Bank edit
+//   therefore rewrote a submitted result — the stored score could disagree with
+//   the key the student was later shown. `seedAttemptQuestions` now writes those
+//   fields onto the `QuizAnswer` row at freeze time, and
+//   `loadAttemptQuestionSet` reads them back, so a historical attempt is
+//   self-describing. Rows written before this phase have no snapshot and fall
+//   back to the live question — i.e. exactly the behaviour they always had.
 
 import { db } from "@/lib/db";
 import type { Question } from "@prisma/client";
@@ -35,6 +48,14 @@ import {
   isQuestionEligible,
 } from "@/lib/track-scope";
 import type { SchoolType } from "@/lib/school-type";
+import {
+  resolveQuizBlueprint,
+  selectAttemptQuestions,
+  shuffled,
+  type PoolQuestion,
+  type QuizBlueprint,
+  type SelectionDiagnostics,
+} from "@/lib/quiz-blueprint";
 
 // ---------------------------------------------------------------------------
 // Track eligibility (Phase 12)
@@ -76,11 +97,20 @@ import type { SchoolType } from "@/lib/school-type";
  * attempt. `answerId === null` marks a question that is part of the set but
  * not yet persisted — only possible for attempts opened BEFORE Phase 5 (see
  * `loadAttemptQuestionSet`).
+ *
+ * `question` is the ATTEMPT'S OWN view of the question: the Phase 26D snapshot
+ * when the row has one, otherwise the live `Question` row (pre-26D attempts).
+ * Callers therefore cannot tell the two apart and cannot accidentally grade
+ * against the live bank — which is the point.
  */
 export type AttemptQuestion = {
   answerId: string | null;
   questionId: string;
   selected: string;
+  /** The stored verdict for this row (meaningful once the attempt is graded). */
+  isCorrect: boolean;
+  /** True when this row carries a Phase 26D snapshot of the question. */
+  snapshotted: boolean;
   question: Pick<
     Question,
     | "id"
@@ -100,34 +130,223 @@ export type AttemptQuestion = {
 const QUIZ_QUESTION_ORDER = [{ createdAt: "asc" }, { id: "asc" }] as const;
 
 /**
- * Persist the current questions of `quizId` as the frozen question set of
- * attempt `attemptId` (one `QuizAnswer` placeholder per question, unanswered).
- * Called exactly once, at attempt creation.
+ * The question pool a Lesson Quiz selects from: the quiz's own Question Bank
+ * rows, read live, UNFILTERED by track.
  *
- * Phase 12: only the questions ELIGIBLE for `schoolType` are frozen in. The
- * attempt set is immutable afterwards, so this is the one moment a
- * wrong-track question could ever enter an attempt — filtering here is what
- * makes the guarantee structural rather than a read-time convention.
+ * Track filtering happens inside `selectAttemptQuestions`, not here, so that
+ * the diagnostics can report both the raw pool size and the eligible size — a
+ * quiz whose pool is entirely wrong-track must fail as "0 eligible", not as
+ * "0 questions".
+ */
+export async function loadQuizQuestionPool(quizId: string): Promise<PoolQuestion[]> {
+  return db.question.findMany({
+    where: { quizId },
+    orderBy: [...QUIZ_QUESTION_ORDER],
+  });
+}
+
+/**
+ * Run the blueprint selection for a new attempt of `quizId` — the ONLY caller
+ * path that decides an attempt's question set.
+ *
+ * Pure with respect to the database: it reads the pool and returns the
+ * selection, so a start route can compute the set (and its diagnostics) BEFORE
+ * the attempt row exists, and so a preview surface can call it without writing.
+ *
+ * @throws BlueprintUnsatisfiableError when the pool cannot honour the blueprint.
+ */
+export async function selectAttemptQuestionsForQuiz(
+  quizId: string,
+  schoolType: SchoolType | null,
+  blueprint: QuizBlueprint,
+  previouslyUsedIds: readonly string[] = [],
+  random: () => number = Math.random
+): Promise<{ questions: PoolQuestion[]; diagnostics: SelectionDiagnostics }> {
+  const pool = await loadQuizQuestionPool(quizId);
+  const { questions, diagnostics } = selectAttemptQuestions({
+    pool,
+    blueprint,
+    schoolType,
+    previouslyUsedIds,
+    random,
+  });
+  return { questions, diagnostics };
+}
+
+/**
+ * Freeze one question's OPTION ORDER for an attempt.
+ *
+ * When the blueprint asks for shuffled choices the order must be frozen too:
+ * `selected` and `answer` are indexes into the option array, so a display-time
+ * shuffle would silently invalidate every stored answer on refresh. Returns the
+ * shuffled array together with the RE-MAPPED correct index.
+ *
+ * A question whose stored answer is not a valid index is returned untouched —
+ * shuffling something we cannot re-map would corrupt the key.
+ */
+export function freezeOptionOrder(
+  q: Pick<PoolQuestion, "type" | "options" | "answer">,
+  random: () => number
+): { options: string[]; answer: string } {
+  const options = safeParseOptions(q.options);
+  if (q.type !== "MCQ" || options.length < 2) {
+    return { options, answer: q.answer };
+  }
+  const idx = Number(q.answer);
+  if (!Number.isInteger(idx) || idx < 0 || idx >= options.length) {
+    return { options, answer: q.answer };
+  }
+  const correctText = options[idx];
+  const reordered = shuffled(options, random);
+  const newIdx = reordered.indexOf(correctText);
+  if (newIdx < 0) return { options, answer: q.answer };
+  return { options: reordered, answer: String(newIdx) };
+}
+
+export type AttemptSeedOptions = {
+  /**
+   * An already-computed selection (from `selectAttemptQuestionsForQuiz`). When
+   * absent the set is selected here with the quiz's own blueprint — the path a
+   * caller with no diagnostics need takes.
+   */
+  preselected?: readonly PoolQuestion[];
+  blueprint?: QuizBlueprint;
+  previouslyUsedIds?: readonly string[];
+  random?: () => number;
+  /**
+   * Transaction client to write the frozen rows through.
+   *
+   * Phase 26D: a caller holding the per-quiz destructive lock MUST pass its
+   * transaction here. `QuizAnswer.question` is `onDelete: Cascade`, so if these
+   * rows were written after the transaction committed, the lock would already be
+   * released and a concurrent question delete could cascade them away — the
+   * exact history destruction the lock exists to prevent. Writing inside the
+   * transaction keeps the freeze atomic with the lock that authorised it.
+   */
+  tx?: Pick<typeof db, "quizAnswer">;
+};
+
+/**
+ * Persist an attempt's frozen question set: one unanswered `QuizAnswer` row per
+ * selected question, carrying a full snapshot of that question. Called exactly
+ * once, at attempt creation.
+ *
+ * Phase 12: only questions ELIGIBLE for `schoolType` can be frozen in — the
+ * selector applies that filter before anything is written, so a wrong-track
+ * question cannot enter an attempt even momentarily.
+ *
+ * Phase 26D: each row also stores the question's wording, option order, correct
+ * answer, marks, difficulty, track tag and position AT THIS MOMENT. From here on
+ * the attempt is self-describing: serving it, grading it and reviewing it never
+ * consult the live Question Bank again.
  */
 export async function seedAttemptQuestions(
   attemptId: string,
   quizId: string,
-  schoolType: SchoolType | null
+  schoolType: SchoolType | null,
+  opts: AttemptSeedOptions = {}
 ): Promise<void> {
-  const questions = await db.question.findMany({
-    where: { quizId, ...eligibleQuestionFilter(schoolType) },
-    select: { id: true },
-    orderBy: [...QUIZ_QUESTION_ORDER],
-  });
+  // No blueprint supplied → the LEGACY rule (FIXED: every eligible question,
+  // creation order, no shuffle). That is deliberately NOT a quiz lookup: a
+  // caller that has not resolved the quiz's blueprint gets the pre-26D
+  // behaviour deterministically, and the start route — the only path that
+  // creates attempts — always passes the real blueprint.
+  const blueprint = opts.blueprint ?? resolveQuizBlueprint({});
+  const random = opts.random ?? Math.random;
+
+  const questions: readonly PoolQuestion[] = opts.preselected
+    ? opts.preselected
+    : (
+        await selectAttemptQuestionsForQuiz(
+          quizId,
+          schoolType,
+          blueprint,
+          opts.previouslyUsedIds ?? [],
+          random
+        )
+      ).questions;
+
   if (questions.length === 0) return;
-  await db.quizAnswer.createMany({
-    data: questions.map((q) => ({
-      attemptId,
-      questionId: q.id,
-      selected: "",
-      isCorrect: false,
-    })),
+
+  const shuffle = blueprint.shuffleOptions === true;
+
+  // Write through the caller's transaction when one was supplied (see `tx` in
+  // AttemptSeedOptions); otherwise the module client, as before.
+  const writer = opts.tx ?? db;
+
+  await writer.quizAnswer.createMany({
+    data: questions.map((q, index) => {
+      const frozen = shuffle ? freezeOptionOrder(q, random) : null;
+      return {
+        attemptId,
+        questionId: q.id,
+        selected: "",
+        isCorrect: false,
+        // Phase 26D snapshot — see the model comment in prisma/schema.prisma.
+        orderIndex: index,
+        questionType: q.type,
+        promptSnapshot: q.prompt,
+        promptArSnapshot: q.promptAr,
+        optionsSnapshot: JSON.stringify(frozen ? frozen.options : safeParseOptions(q.options)),
+        answerSnapshot: frozen ? frozen.answer : q.answer,
+        explanationSnapshot: q.explanation,
+        difficultySnapshot: q.difficulty,
+        marksSnapshot: q.marks,
+        schoolTypeSnapshot: q.schoolType,
+      };
+    }),
   });
+}
+
+/**
+ * Rebuild a question from its Phase 26D snapshot.
+ *
+ * Returns `null` when the row carries no snapshot (a pre-26D attempt), in which
+ * case the caller uses the live `Question` row instead — preserving, exactly,
+ * the behaviour those attempts always had.
+ *
+ * The returned object has the same shape as a `Question` row precisely so that
+ * serving and grading cannot tell a snapshot from a live row and therefore
+ * cannot accidentally prefer the live one.
+ */
+function questionFromSnapshot(row: {
+  questionId: string;
+  promptSnapshot: string | null;
+  promptArSnapshot: string | null;
+  optionsSnapshot: string | null;
+  answerSnapshot: string | null;
+  explanationSnapshot: string | null;
+  difficultySnapshot: string | null;
+  marksSnapshot: number | null;
+  schoolTypeSnapshot: string | null;
+  questionType: string | null;
+  question: Question | null;
+}) {
+  // `== null` ON PURPOSE: it covers both a stored NULL (a pre-26D row) and an
+  // absent column (a caller or test fixture that does not model the snapshot
+  // fields at all). Either way the row carries no snapshot and the live question
+  // is authoritative — treating "absent" as "snapshot of nulls" would hand a
+  // SHARED tag to a question that was never shared, which is a track leak.
+  if (row.promptSnapshot == null || row.answerSnapshot == null) return null;
+  const live = row.question;
+  return {
+    id: row.questionId,
+    type: (row.questionType ?? live?.type ?? "MCQ") as Question["type"],
+    prompt: row.promptSnapshot,
+    promptAr: row.promptArSnapshot,
+    // A snapshot always stores the option array (possibly "[]"), so a NULL here
+    // can only mean legacy data — fall back rather than serve no options.
+    options: row.optionsSnapshot ?? live?.options ?? "[]",
+    answer: row.answerSnapshot,
+    explanation: row.explanationSnapshot,
+    difficulty: (row.difficultySnapshot ?? live?.difficulty ?? "MEDIUM") as Question["difficulty"],
+    marks: row.marksSnapshot ?? live?.marks ?? 1,
+    // The frozen track tag decides eligibility for a HISTORICAL attempt: if the
+    // live question was later retagged into another track, the attempt that
+    // already served it must not change meaning.
+    schoolType: (row.schoolTypeSnapshot ?? null) as Question["schoolType"],
+    createdAt: live?.createdAt ?? new Date(0),
+  };
 }
 
 /**
@@ -140,10 +359,14 @@ export async function seedAttemptQuestions(
  *    graded rows. This is a one-way upgrade path, never a fallback a NEW
  *    attempt can reach.
  *
- * Questions deleted from the bank after attempt creation disappear from the
- * set together with their (cascade-deleted) answer rows; questions EDITED
- * keep their place in the set and are graded against the current
- * authoritative answer key. New questions never join an existing attempt.
+ * Phase 26D: a row that carries a snapshot is served and graded from that
+ * snapshot, so a later Question Bank edit cannot rewrite history. A row without
+ * one (pre-26D attempt) still reads the live question — unchanged behaviour for
+ * unchanged data.
+ *
+ * Questions deleted from the bank after attempt creation disappear from the set
+ * together with their (cascade-deleted) answer rows; new questions never join an
+ * existing attempt.
  */
 export async function loadAttemptQuestionSet(
   attemptId: string,
@@ -154,25 +377,43 @@ export async function loadAttemptQuestionSet(
     include: { question: true },
   });
   if (rows.length > 0) {
-    // Prisma cannot order a relation by a nested relation field, so apply the
-    // same deterministic order the quiz itself uses in JS.
-    return rows
-      .map((r) => ({
-        answerId: r.id,
+    const mapped = rows.map((r) => {
+      const snapshot = questionFromSnapshot(r);
+      return {
+        answerId: r.id as string | null,
         questionId: r.questionId,
         selected: r.selected,
-        question: r.question,
-      }))
-      // Phase 12 track gate: an attempt opened before this hardening may hold
-      // an answer row for a question this student must not see. Dropping it
-      // here means it is neither served nor graded — the frozen set stays
-      // authoritative, it is only ever narrowed.
-      .filter((e) => isQuestionEligible(schoolType, e.question.schoolType))
-      .sort(
+        isCorrect: r.isCorrect === true,
+        snapshotted: snapshot !== null,
+        question: snapshot ?? r.question,
+        // Frozen presentation order when the attempt has one.
+        orderIndex: typeof r.orderIndex === "number" ? r.orderIndex : null,
+      };
+    });
+
+    // Phase 12 track gate: an attempt opened before this hardening may hold an
+    // answer row for a question this student must not see. Dropping it here
+    // means it is neither served nor graded — the frozen set stays
+    // authoritative, it is only ever narrowed.
+    const eligible = mapped.filter((e) =>
+      isQuestionEligible(schoolType, e.question.schoolType)
+    );
+
+    // Phase 26D: an attempt frozen by the selector has an explicit order
+    // (`orderIndex`); honour it, because that is the order the student saw and
+    // the order a reviewer must see. Legacy attempts have no orderIndex and
+    // keep the historical creation-order sort.
+    if (eligible.every((e) => e.orderIndex !== null)) {
+      eligible.sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
+    } else {
+      eligible.sort(
         (a, b) =>
           a.question.createdAt.getTime() - b.question.createdAt.getTime() ||
           (a.question.id < b.question.id ? -1 : a.question.id > b.question.id ? 1 : 0)
       );
+    }
+
+    return eligible.map(({ orderIndex: _drop, ...entry }) => entry);
   }
 
   // Pre-Phase-5 in-flight attempt: adopt the live quiz questions (read-only).
@@ -188,6 +429,8 @@ export async function loadAttemptQuestionSet(
       answerId: null,
       questionId: q.id,
       selected: "",
+      isCorrect: false,
+      snapshotted: false,
       question: q,
     }));
 }
@@ -195,10 +438,13 @@ export async function loadAttemptQuestionSet(
 /**
  * The track-eligible questions of a quiz, read live from the bank.
  *
- * Used by the direct-submit/retake path, where there is no frozen attempt set
- * to narrow. It applies exactly the same predicate `seedAttemptQuestions`
- * uses, so a retake can never grade a wider set than a started attempt would
- * have frozen.
+ * Phase 26D NOTE — this is no longer on any student write path. It used to back
+ * the "submit with no open attempt creates a fresh one" retake route, and that
+ * route is gone: an attempt now has to be STARTED (which freezes a snapshot and
+ * consumes the entitlement) before it can be submitted. Kept because it is a
+ * useful read for staff/preview surfaces and because the Phase 12 track suite
+ * asserts its filtering directly. It applies exactly the same predicate
+ * `selectAttemptQuestions` uses.
  */
 export async function loadQuizQuestionSet(
   quizId: string,
@@ -212,8 +458,98 @@ export async function loadQuizQuestionSet(
     answerId: null,
     questionId: q.id,
     selected: "",
+    isCorrect: false,
+    snapshotted: false,
     question: q,
   }));
+}
+
+// ---------------------------------------------------------------------------
+// Attempt state machine (Phase 26D)
+// ---------------------------------------------------------------------------
+//
+// THE RULE, in one sentence: a student gets ONE attempt per Lesson Quiz unless
+// an Admin has issued them an unconsumed retry grant.
+//
+// Why it is enforced here and not in the route: the start route, the submit
+// route and any future preview surface must all agree on what "may this student
+// start another attempt" means. Before this phase the answer was implicit —
+// "is there an attempt with finishedAt = null?" — and the submit route simply
+// CREATED a new attempt when there wasn't, which is what made unlimited retakes
+// possible through a single POST with no start at all.
+//
+// STATES
+//   OPEN      finishedAt IS NULL. Resumable. Exactly one per (quiz, student).
+//   SUBMITTED finishedAt set by a normal submit. Terminal.
+//   EXPIRED   finishedAt set by the Phase 18 timeout path. Terminal.
+//
+// `finishedAt` remains the historical source of truth; `status` is the
+// queryable projection the migration backfilled from it.
+
+export type AttemptStatus = "OPEN" | "SUBMITTED" | "EXPIRED";
+
+/**
+ * Decide what a START request may do. Pure given its inputs, so the whole
+ * entitlement rule is testable without a database.
+ *
+ * @param attempts      every attempt this student holds on this quiz
+ * @param maxAttempts   the quiz's ceiling (blueprint), >= 1
+ * @param pendingGrants unconsumed Admin retry grants for this student+quiz
+ */
+export function decideAttemptStart(opts: {
+  attempts: ReadonlyArray<{ id: string; finishedAt: Date | null }>;
+  maxAttempts: number;
+  pendingGrants: number;
+}):
+  | { kind: "resume"; attemptId: string }
+  | { kind: "create"; attemptNumber: number }
+  | { kind: "denied"; code: "ATTEMPT_LIMIT_REACHED"; attemptsUsed: number; maxAttempts: number } {
+  const { attempts, pendingGrants } = opts;
+  const maxAttempts = Math.max(1, Math.trunc(opts.maxAttempts) || 1);
+
+  // 1. An OPEN attempt is always resumed — refresh, remount, reconnect,
+  //    logout/login and browser restart all land here, never on a new row.
+  const open = attempts.find((a) => a.finishedAt === null);
+  if (open) return { kind: "resume", attemptId: open.id };
+
+  const attemptsUsed = attempts.length;
+
+  // 2. No attempt yet → the first one is always allowed.
+  if (attemptsUsed === 0) return { kind: "create", attemptNumber: 1 };
+
+  // 3. Already at the ceiling → only an Admin grant opens another attempt.
+  if (attemptsUsed >= maxAttempts) {
+    if (pendingGrants > 0) {
+      return { kind: "create", attemptNumber: attemptsUsed + 1 };
+    }
+    return { kind: "denied", code: "ATTEMPT_LIMIT_REACHED", attemptsUsed, maxAttempts };
+  }
+
+  // 4. Below the ceiling (a quiz configured with maxAttempts > 1) → allowed.
+  return { kind: "create", attemptNumber: attemptsUsed + 1 };
+}
+
+/**
+ * The question ids this student has already seen on this quiz.
+ *
+ * Fed to the selector so a retry prefers fresh questions. Reads every attempt's
+ * frozen rows — including OPEN ones, so an abandoned attempt still counts as
+ * "seen" and cannot be farmed for an easier draw.
+ */
+export async function loadStudentSeenQuestionIds(
+  quizId: string,
+  studentId: string
+): Promise<string[]> {
+  const attempts = await db.quizAttempt.findMany({
+    where: { quizId, studentId },
+    select: { id: true },
+  });
+  if (attempts.length === 0) return [];
+  const rows = await db.quizAnswer.findMany({
+    where: { attemptId: { in: attempts.map((a) => a.id) } },
+    select: { questionId: true },
+  });
+  return [...new Set(rows.map((r) => r.questionId))];
 }
 
 // ---------------------------------------------------------------------------
@@ -455,4 +791,147 @@ export function safeParseOptions(raw: string): string[] {
   } catch {
     return [];
   }
+}
+
+// ---------------------------------------------------------------------------
+// Attempt inspection (Phase 26D)
+// ---------------------------------------------------------------------------
+//
+// One payload builder for every inspection surface — Admin, Teacher and the
+// student's own history — so the three cannot drift apart on what an attempt
+// record means, and so the answer-key rule is decided in exactly one place.
+//
+// ANSWER-KEY RULE
+//   `correctAnswer` is included ONLY for a TERMINAL attempt. An OPEN attempt is
+//   a running assessment: exposing its key to any surface would let a student
+//   who can reach an inspection endpoint finish the paper from the answer side.
+//   Staff surfaces therefore see the key for finished attempts (which is what
+//   review is for) and never for a live one.
+
+export type AttemptInspection = {
+  id: string;
+  quizId: string;
+  studentId: string;
+  attemptNumber: number;
+  status: string;
+  startedAt: Date;
+  finishedAt: Date | null;
+  score: number;
+  totalMarks: number;
+  percentage: number;
+  passed: boolean;
+  /** Admin grant that permitted this attempt, with its lineage. */
+  retryGrant: {
+    id: string;
+    grantedAt: Date;
+    grantedByUserId: string;
+    grantedByName: string | null;
+    consumedAt: Date | null;
+    reason: string | null;
+  } | null;
+  /** True when the answer key is present. False for an OPEN attempt. */
+  answerKeyRevealed: boolean;
+  questions: Array<{
+    questionId: string;
+    prompt: string;
+    promptAr: string | null;
+    options: string[];
+    selected: string;
+    isCorrect: boolean;
+    marks: number;
+    difficulty: string;
+    /** Present only for a terminal attempt. */
+    correctAnswer: string | undefined;
+    explanation: string | null;
+    /** True when this row carries the Phase 26D frozen snapshot. */
+    snapshotted: boolean;
+  }>;
+};
+
+/**
+ * Build the full inspection record of one attempt.
+ *
+ * Reads the attempt's FROZEN set, so what an inspector sees is what the student
+ * was actually asked — including for attempts whose questions were later edited
+ * in the bank.
+ *
+ * @param revealAnswerKey caller's decision, but forced OFF for an OPEN attempt.
+ */
+export async function buildAttemptInspection(
+  attempt: {
+    id: string;
+    quizId: string;
+    studentId: string;
+    attemptNumber: number;
+    status: string;
+    startedAt: Date;
+    finishedAt: Date | null;
+    score: number;
+    totalMarks: number;
+    percentage: number;
+    passed: boolean;
+    retryGrantId: string | null;
+  },
+  opts: { schoolType?: SchoolType | null; revealAnswerKey?: boolean } = {}
+): Promise<AttemptInspection> {
+  const schoolType = opts.schoolType ?? null;
+  const set = await loadAttemptQuestionSet(attempt.id, schoolType);
+
+  // An OPEN attempt never carries its key, whatever the caller asked for.
+  const terminal = attempt.finishedAt !== null;
+  const reveal = terminal && opts.revealAnswerKey !== false;
+
+  let retryGrant: AttemptInspection["retryGrant"] = null;
+  if (attempt.retryGrantId) {
+    const grant = await db.quizRetryGrant.findUnique({
+      where: { id: attempt.retryGrantId },
+      select: {
+        id: true,
+        grantedAt: true,
+        grantedByUserId: true,
+        consumedAt: true,
+        reason: true,
+        grantedBy: { select: { name: true } },
+      },
+    });
+    if (grant) {
+      retryGrant = {
+        id: grant.id,
+        grantedAt: grant.grantedAt,
+        grantedByUserId: grant.grantedByUserId,
+        grantedByName: grant.grantedBy?.name ?? null,
+        consumedAt: grant.consumedAt,
+        reason: grant.reason,
+      };
+    }
+  }
+
+  return {
+    id: attempt.id,
+    quizId: attempt.quizId,
+    studentId: attempt.studentId,
+    attemptNumber: attempt.attemptNumber,
+    status: attempt.status,
+    startedAt: attempt.startedAt,
+    finishedAt: attempt.finishedAt,
+    score: attempt.score,
+    totalMarks: attempt.totalMarks,
+    percentage: attempt.percentage,
+    passed: attempt.passed,
+    retryGrant,
+    answerKeyRevealed: reveal,
+    questions: set.map((entry) => ({
+      questionId: entry.questionId,
+      prompt: entry.question.prompt,
+      promptAr: entry.question.promptAr,
+      options: safeParseOptions(entry.question.options),
+      selected: entry.selected,
+      isCorrect: entry.isCorrect ?? false,
+      marks: entry.question.marks,
+      difficulty: entry.question.difficulty,
+      correctAnswer: reveal ? entry.question.answer : undefined,
+      explanation: reveal ? entry.question.explanation : null,
+      snapshotted: entry.snapshotted,
+    })),
+  };
 }

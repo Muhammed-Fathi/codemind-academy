@@ -46,6 +46,7 @@ import {
   validateQuestionDraft,
   type ChainLesson,
 } from "@/lib/teacher-content";
+import { acquireQuizDestructiveLock } from "@/lib/db-serialization";
 
 type QuizOwnership = {
   quiz: { id: string; title: string; titleAr: string; trackScope: string };
@@ -272,22 +273,70 @@ export async function DELETE(
     return err(owned.status === 404 ? tApi("api.244") : tApi("api.180"), owned.status);
   }
 
-  const { references } = await loadQuestionReferences(id);
-  const guard = canDeleteQuestion(references);
-  if (!guard.allowed) {
-    // Two distinct messages: a FIXED-exam pin is an admin decision (the exam
-    // definition must not shrink), while frozen attempts are assessment
-    // history. The response carries the counters so the caller can explain
-    // both, deterministically.
-    const fixPin = guard.blockers.includes("FIXED_EXAM_PIN");
-    return err(
-      fixPin ? tApi("api.246") : tApi("api.247"),
-      409
-    );
+  // Phase 26D FIX (two parts) — the reference check and the delete are ONE
+  // transaction, AND that transaction takes a database-level lock first.
+  //
+  // Part 1 alone is NOT sufficient. Under PostgreSQL READ COMMITTED a bare
+  // SELECT takes no lock that conflicts with an INSERT into the REFERENCING
+  // table, so this interleaving was still live inside a single transaction:
+  //
+  //   Tx A (this route)              Tx B (POST /api/quizzes/[id]/start)
+  //   BEGIN
+  //   SELECT refs -> 0
+  //                                  INSERT QuizAttempt
+  //                                  INSERT QuizAnswer(questionId = this one)
+  //                                  COMMIT
+  //   DELETE Question  -> CASCADE removes Tx B's just-committed frozen row
+  //   COMMIT
+  //
+  // Net effect: the attempt EXISTS but its frozen question row is GONE — the
+  // exact history destruction the guard exists to prevent.
+  //
+  // Part 2 closes it: `acquireQuizDestructiveLock` is the FIRST statement here,
+  // and `POST /start` takes the SAME lock (keyed by quiz id) before it freezes
+  // an attempt. The two are therefore totally ordered, and exactly one safe
+  // outcome is possible — this delete wins and the attempt's FK insert fails, or
+  // the attempt wins and the reference check below sees it and returns 409.
+  // See src/lib/db-serialization.ts for the full protocol and the SQLite
+  // behaviour (no-op; SQLite's single-writer lock already serializes writers).
+  let references;
+  try {
+    references = await db.$transaction(async (tx) => {
+      // MUST be first: acquiring it after the read reopens the window.
+      await acquireQuizDestructiveLock(tx, owned.owner.quiz.id);
+      const refs = await loadQuestionReferences(id, tx);
+      const guard = canDeleteQuestion(refs.references);
+      if (!guard.allowed) {
+        // Thrown, not returned, so the transaction rolls back and the caller
+        // can turn the blockers into the right localized 409.
+        throw new QuestionDeleteBlockedError(guard.blockers);
+      }
+      await tx.question.delete({ where: { id } });
+      return refs.references;
+    });
+  } catch (e) {
+    if (e instanceof QuestionDeleteBlockedError) {
+      // Two distinct messages: a FIXED-exam pin is an admin decision (the exam
+      // definition must not shrink), while frozen attempts are assessment
+      // history. The response carries the counters so the caller can explain
+      // both, deterministically.
+      const fixPin = e.blockers.includes("FIXED_EXAM_PIN");
+      return err(fixPin ? tApi("api.246") : tApi("api.247"), 409);
+    }
+    throw e;
   }
 
-  await db.question.delete({ where: { id } });
   return ok({ deleted: true, id, references });
+}
+
+/** Carries the guard's blockers out of the delete transaction. */
+class QuestionDeleteBlockedError extends Error {
+  readonly blockers: string[];
+  constructor(blockers: string[]) {
+    super(`question deletion blocked: ${blockers.join(", ")}`);
+    this.name = "QuestionDeleteBlockedError";
+    this.blockers = blockers;
+  }
 }
 
 /** Parse a stored options blob defensively (legacy rows may be malformed). */

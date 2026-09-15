@@ -206,10 +206,37 @@ const BASE_SKIP_COLUMNS = {
     "lastHeartbeatAt",
   ],
   Question: ["schoolType"],
-  QuizAttempt: ["cameraStatus"],
+  QuizAttempt: [
+    "cameraStatus",
+    // Phase 26D — added by 20260915180000_phase26d_quiz_attempt_architecture.
+    "attemptNumber",
+    "status",
+    "retryGrantId",
+  ],
+  // Phase 26D — Quiz blueprint columns.
+  Quiz: [
+    "trackScope",
+    "quizMode",
+    "questionCount",
+    "maxAttempts",
+    "shuffleOptions",
+    "difficultyPlan",
+  ],
+  // Phase 26D — frozen question snapshot on the attempt's answer rows.
+  QuizAnswer: [
+    "orderIndex",
+    "questionType",
+    "promptSnapshot",
+    "promptArSnapshot",
+    "optionsSnapshot",
+    "answerSnapshot",
+    "explanationSnapshot",
+    "difficultySnapshot",
+    "marksSnapshot",
+    "schoolTypeSnapshot",
+  ],
   ExamAttempt: ["schoolType", "mockExamId"],
   ExamQuestion: ["schoolType"],
-  Quiz: ["trackScope"],
   Homework: ["trackScope"],
   Payment: [
     "senderPhone",
@@ -240,6 +267,8 @@ const BASE_SKIP_TABLES = new Set([
   "SessionPublication",
   "TeacherApplication",
   "TeacherActivationToken",
+  // Phase 26D — created by 20260915180000_phase26d_quiz_attempt_architecture.
+  "QuizRetryGrant",
 ]);
 
 const PRISMA_TO_SQLITE = {

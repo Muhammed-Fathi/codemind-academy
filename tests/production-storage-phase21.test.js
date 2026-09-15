@@ -89,7 +89,8 @@ async function main() {
     // group-audience migration; see tests/payment-lifecycle-phase25-ledger.test.js).
     const migs = fs.readdirSync(path.join(REPO, "prisma", "migrations")).filter((d) =>
       fs.existsSync(path.join(REPO, "prisma", "migrations", d, "migration.sql")));
-    ok(migs.length === 11, `11 migrations preserved (found ${migs.length})`);
+    // Phase 26D appended the Lesson Quiz attempt-architecture migration.
+    ok(migs.length === 12, `12 migrations preserved (found ${migs.length})`);
     ok(migs.includes("20260915120000_phase26b_group_track_scope"), "Phase 26B group-audience migration present");
   }
 
@@ -98,7 +99,8 @@ async function main() {
   // ---------------------------------------------------------------------------
   {
     const parsed = pgLib.parseSchema();
-    ok(parsed.models.size === 55, `55 models parsed (found ${parsed.models.size})`);
+    // Phase 26D added the QuizRetryGrant model.
+    ok(parsed.models.size === 56, `56 models parsed (found ${parsed.models.size})`);
     ok(parsed.enums.size === 21, `21 enums parsed (found ${parsed.enums.size})`);
     // No provider-specific column types or attributes anywhere. (Type check is
     // done on PARSED field types — a substring sweep would false-positive on
@@ -139,12 +141,14 @@ async function main() {
         }
       }
     }
-    ok(fks === 73, `73 FK relations found (found ${fks})`);
+    // Phase 26D added 4 FKs: QuizRetryGrant → Student/Quiz/User, and
+    // QuizAttempt.retryGrantId → QuizRetryGrant.
+    ok(fks === 77, `77 FK relations found (found ${fks})`);
     ok(unbalanced === 0, "every FK is balanced with a known referential action");
     // Migration order: total, deterministic, parents before children.
     const order1 = pgLib.migrationOrder(parsed);
     const order2 = pgLib.migrationOrder(pgLib.parseSchema());
-    ok(order1.length === 55, "migration order covers all 55 tables");
+    ok(order1.length === 56, "migration order covers all 56 tables");
     ok(JSON.stringify(order1) === JSON.stringify(order2), "migration order is deterministic");
     const pos = new Map(order1.map((m, i) => [m, i]));
     let violations = 0;
@@ -159,7 +163,8 @@ async function main() {
     const stmts = pgLib.splitSqlStatements(ddl);
     // 21 enums + 55 tables + 70 indexes: Phase 26B added Group_trackScope_idx
     // (owner-approved Group.trackScope), so the index count grew 69 → 70.
-    ok(stmts.length === 21 + 55 + 70, `baseline has 146 statements (found ${stmts.length})`);
+    // Phase 26D: +1 table (QuizRetryGrant) and +3 indexes on it.
+    ok(stmts.length === 21 + 56 + 73, `baseline has 150 statements (found ${stmts.length})`);
     ok(/CREATE INDEX "Group_trackScope_idx"/.test(ddl), "baseline carries the Phase 26B group-audience index");
     const longIdents = [...ddl.matchAll(/"([A-Za-z0-9_]{64,})"/g)];
     ok(longIdents.length === 0, "no identifier exceeds the 63-byte PostgreSQL limit");
@@ -593,7 +598,7 @@ console.log("HARNESS_JSON " + JSON.stringify(results));
     try {
       const mig = run("node scripts/verify-phase21-migration.mjs");
       ok(/PHASE21_MIGRATION_OK/.test(mig), "migration rehearsal passed (PHASE21_MIGRATION_OK)");
-      ok(/row counts preserved on all 55 tables/.test(mig), "rehearsal preserved all row counts");
+      ok(/row counts preserved on all 56 tables/.test(mig), "rehearsal preserved all row counts");
       ok(/canonical row hashes identical/.test(mig), "rehearsal proved byte-identity via hashes");
     } catch (e) {
       ok(false, "migration rehearsal passed");

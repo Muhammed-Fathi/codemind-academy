@@ -92,8 +92,15 @@ async function main() {
     const migs = fs.readdirSync(path.join(REPO, "prisma", "migrations")).filter((d) =>
       fs.existsSync(path.join(REPO, "prisma", "migrations", d, "migration.sql"))
     );
-    eq(migs.length, 11, "B1: history grows 10 → 11 (exactly one new migration)");
-    ok(migs[migs.length - 1] === GROUP_TRACK_MIGRATION, "B1: the audience migration sorts last (forward-only)");
+    // Phase 26D later appended its own migration, so the audience migration is
+    // no longer the LAST entry — but it must still be present, still sort after
+    // the 10 PR-era migrations, and still be the only migration 26B added.
+    eq(migs.length, 12, "B1: history is 12 (10 PR-era + Phase 26B audience + Phase 26D quiz architecture)");
+    ok(migs.includes(GROUP_TRACK_MIGRATION), "B1: the audience migration is in the history");
+    ok(
+      migs.indexOf(GROUP_TRACK_MIGRATION) === 10,
+      "B1: the audience migration sorts directly after the 10 PR-era migrations (forward-only)"
+    );
   }
 
   // ---------------------------------------------------------------------------

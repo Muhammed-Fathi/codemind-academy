@@ -112,6 +112,12 @@ export const DICT_2026: Record<string, DictEntry> = {
   "course.223": { ar: "خلّص اللي ناقص عشان الجلسة الجاية تتفتح", en: "Finish what is left so the next session unlocks" },
   "course.224": { ar: "مش مطلوب", en: "Not required" },
   "course.225": { ar: "ارجع للرئيسية", en: "Back to dashboard" },
+  // Phase 26D — replaces the removed "Retry" button on the quiz result screen.
+  // A submitted attempt is terminal; another attempt needs an Admin grant.
+  "course.031": {
+    ar: "المحاولة دي نهائية. لو محتاج محاولة تانية، الإدارة بس هي اللي تقدر تسمح بيها.",
+    en: "This attempt is final. If you need another attempt, only the administration can grant one.",
+  },
 
   // ---------------- Quiz camera ----------------
   "quiz.200": { ar: "الكاميرا مطلوبة قبل بداية الاختبار", en: "Camera access is requested before the quiz" },
@@ -867,6 +873,32 @@ export const DICT_2026: Record<string, DictEntry> = {
   "api.287": {
     ar: "في طلاب معيّنين في المجموعة دي من نوع مدارس مختلف — انقلهم الأول أو صنّف المجموعة وهي فاضية.",
     en: "This group has assigned students of a different school type — move them out first, or classify the group while it is empty.",
+  },
+
+  // ------------- Phase 26D — Lesson Quiz attempt architecture -------------
+  "api.288": {
+    ar: "إعدادات اختيار الأسئلة غير صالحة — راجع العدد وتوزيع الصعوبة.",
+    en: "Invalid question selection settings — check the count and the difficulty plan.",
+  },
+  "api.289": {
+    ar: "خلصت عدد المحاولات المسموح بيها على الاختبار ده. لو محتاج محاولة تانية كلّم الإدارة.",
+    en: "You have used every attempt allowed on this quiz. Contact the administration if you need another one.",
+  },
+  "api.290": {
+    ar: "مفيش محاولة شغّالة دلوقتي — ابدأ الاختبار الأول.",
+    en: "No attempt is in progress — start the quiz first.",
+  },
+  "api.291": {
+    ar: "المحاولة دي اتسلّمت قبل كده.",
+    en: "This attempt has already been submitted.",
+  },
+  "api.292": {
+    ar: "بنك الأسئلة مش كفاية لتكوين الاختبار ده — زوّد الأسئلة أو قلّل العدد المطلوب.",
+    en: "The question pool cannot assemble this quiz — add more questions or lower the requested count.",
+  },
+  "api.293": {
+    ar: "القالب ده مش موجود أو مش بتاعك.",
+    en: "That template does not exist, or it is not yours.",
   },
 
   // =======================================================================
