@@ -252,8 +252,11 @@ function seedStudent(id, userId, groupId) {
   ).run(id, userId, "2nd Secondary", "LANGUAGE", groupId ?? null, now, now);
 }
 function seedGroup(id, name, courseId, capacity) {
+  // Phase 26B — fixture groups carry the LANGUAGE audience: every seeded
+  // student's schoolType is LANGUAGE, so the exact-match eligibility rule
+  // behaves exactly as before for this suite.
   db.prepare(
-    `INSERT INTO "Group" ("id","name","courseId","capacity","isActive","createdAt","updatedAt") VALUES (?,?,?,?,1,?,?)`
+    `INSERT INTO "Group" ("id","name","courseId","capacity","isActive","trackScope","createdAt","updatedAt") VALUES (?,?,?,?,1,'LANGUAGE',?,?)`
   ).run(id, name, courseId, capacity, now, now);
 }
 

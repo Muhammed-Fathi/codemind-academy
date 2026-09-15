@@ -195,6 +195,7 @@ const BASE_SKIP_COLUMNS = {
   User: ["status"],
   Student: ["nationalId", "parentPhone", "schoolType", "studentCode", "batchId"],
   Course: ["trackId"],
+  Group: ["trackScope"],
   Lesson: ["unitId", "officialCode", "curriculumStatus", "trackScope", "status"],
   LessonProgress: [
     "videoDurationSec",

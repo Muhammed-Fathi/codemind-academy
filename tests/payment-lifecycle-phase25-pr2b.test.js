@@ -163,11 +163,14 @@ function freshStore() {
   return {
     students: [], // {id, userId, groupId}
     groups: [
-      { id: "g1", name: "Group 1", courseId: "c1", isActive: true, capacity: 20 },
-      { id: "g2", name: "Group 2", courseId: "c1", isActive: true, capacity: 20 },
-      { id: "g3", name: "Group 3 (course 2)", courseId: "c2", isActive: true, capacity: 20 },
-      { id: "g4", name: "Inactive Group", courseId: "c1", isActive: false, capacity: 20 },
-      { id: "g5", name: "Tiny Group", courseId: "c1", isActive: true, capacity: 2 },
+      // Phase 26B — groups carry an explicit audience (trackScope). These
+      // fixtures are ARABIC groups; every student fixture below is ARABIC, so
+      // the exact-match eligibility rule behaves exactly as before for them.
+      { id: "g1", name: "Group 1", courseId: "c1", isActive: true, capacity: 20, trackScope: "ARABIC" },
+      { id: "g2", name: "Group 2", courseId: "c1", isActive: true, capacity: 20, trackScope: "ARABIC" },
+      { id: "g3", name: "Group 3 (course 2)", courseId: "c2", isActive: true, capacity: 20, trackScope: "ARABIC" },
+      { id: "g4", name: "Inactive Group", courseId: "c1", isActive: false, capacity: 20, trackScope: "ARABIC" },
+      { id: "g5", name: "Tiny Group", courseId: "c1", isActive: true, capacity: 2, trackScope: "ARABIC" },
     ],
     plans: [
       { id: "p1", name: "Monthly", durationMonths: 1, price: 300, isActive: true },
@@ -193,8 +196,8 @@ function maybeFault(store, key) {
   if (store.faults[key]) throw store.faults[key];
 }
 
-function addStudent(store, id, userId, groupId) {
-  store.students.push({ id, userId, groupId: groupId ?? null });
+function addStudent(store, id, userId, groupId, schoolType = "ARABIC") {
+  store.students.push({ id, userId, groupId: groupId ?? null, schoolType });
 }
 function addSub(store, studentId, planId, status, startDate, endDate) {
   const row = {
@@ -259,6 +262,8 @@ function studentView(store, student) {
     id: student.id,
     userId: student.userId,
     groupId: student.groupId ?? null,
+    // Phase 26B — the audience-eligibility inputs (exact-match rule).
+    schoolType: student.schoolType ?? null,
     group: group
       ? { id: group.id, isActive: group.isActive, courseId: group.courseId }
       : null,
@@ -270,7 +275,7 @@ function studentView(store, student) {
 
 function groupView(store, id) {
   const g = store.groups.find((x) => x.id === id);
-  return g ? { id: g.id, name: g.name, isActive: g.isActive, courseId: g.courseId, capacity: g.capacity } : null;
+  return g ? { id: g.id, name: g.name, isActive: g.isActive, courseId: g.courseId, capacity: g.capacity, trackScope: g.trackScope ?? null } : null;
 }
 function planView(store, id) {
   const p = store.plans.find((x) => x.id === id);
@@ -438,11 +443,12 @@ async function main() {
   eq(
     [...TR.PAYMENT_TRANSITION_ERROR_CODES].sort(),
     [
-      "GROUP_FULL", "GROUP_NOT_FOUND", "GROUP_REQUIRED", "INVALID_GROUP_CONTEXT",
-      "INVALID_REJECTION_REASON", "INVALID_TRANSITION", "NO_STUDENT",
-      "PAYMENT_NOT_FOUND", "PLAN_NOT_FOUND", "PLAN_REQUIRED", "STALE_PAYMENT",
+      "GROUP_FULL", "GROUP_NOT_FOUND", "GROUP_REQUIRED", "GROUP_TRACK_MISMATCH",
+      "INVALID_GROUP_CONTEXT", "INVALID_REJECTION_REASON", "INVALID_TRANSITION",
+      "NO_STUDENT", "PAYMENT_NOT_FOUND", "PLAN_NOT_FOUND", "PLAN_REQUIRED",
+      "STALE_PAYMENT",
     ].sort(),
-    "the closed domain-error set is exactly the 11 required codes"
+    "the closed domain-error set is exactly the 12 required codes (Phase 26B adds GROUP_TRACK_MISMATCH)"
   );
   eq(TR.TRANSITION_ERROR_STATUS.PAYMENT_NOT_FOUND, 404, "PAYMENT_NOT_FOUND maps to 404 (a real not-found)");
   eq(TR.TRANSITION_ERROR_STATUS.INVALID_REJECTION_REASON, 400, "INVALID_REJECTION_REASON maps to 400 (body validation)");

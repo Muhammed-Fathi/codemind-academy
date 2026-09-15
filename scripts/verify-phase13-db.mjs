@@ -219,6 +219,8 @@ const BASE_SKIP_COLUMNS = {
   ExamQuestion: ["schoolType"],
   Quiz: ["trackScope"],
   Homework: ["trackScope"],
+  // Phase 26B — the audience column arrives with its own migration.
+  Group: ["trackScope"],
   Payment: [
     "senderPhone",
     "requestedGroupId",

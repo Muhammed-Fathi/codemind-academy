@@ -1,0 +1,46 @@
+-- CodeMind Academy — Migration: Phase 26B Group school-type / track audience
+-- Date: 2026-09-15
+-- Tables touched: Group (one additive nullable column)
+--
+-- WHAT THIS DOES
+--   Adds `Group.trackScope` (TrackScope, NULLABLE, no default) — the explicit
+--   student AUDIENCE of a teaching group (ARABIC | LANGUAGE).
+--
+-- WHY NULLABLE (the transitional value) — THE SAFETY CHOICE
+--   * Production Neon inventory previously showed groups: active=0 inactive=0,
+--     but the migration must NOT rely on that observation. Classifying an
+--     existing group as ARABIC or LANGUAGE without evidence would silently
+--     change who is allowed into it — exactly what this phase forbids.
+--   * NULL means UNCLASSIFIED and is FAIL-CLOSED everywhere:
+--       - /api/groups never lists it to any student;
+--       - /api/enroll refuses it (same "group not available" refusal as any
+--         other ineligible group — no enumeration leak);
+--       - the payment-approval decision authority refuses it
+--         (GROUP_TRACK_MISMATCH) even via a direct admin API call;
+--       - the admin UI labels it "Unclassified" so the operator classifies it
+--         explicitly (ARABIC or LANGUAGE) before it can be sold again.
+--   * The column reuses the EXISTING `TrackScope` enum (no duplicate enum).
+--     SHARED stays valid for CONTENT architecture but is NOT accepted for
+--     groups: student eligibility is EXACT schoolType equality, so a SHARED
+--     group could never be selected anyway — and the write paths reject it up
+--     front rather than storing a value the business model does not use.
+--
+-- SAFETY
+--   * ADDITIVE ONLY: a plain nullable ADD COLUMN. No table rebuild, no
+--     default, no backfill, no data rewrite, no DELETE, no DROP, no reset.
+--     Every existing row is preserved byte-for-byte with trackScope = NULL.
+--   * SQLite allows adding a nullable column without a table rebuild; the
+--     statement below is also plain ANSI and would replay verbatim on
+--     PostgreSQL, but per the cutover runbook PostgreSQL is baselined from
+--     `scripts/db/postgres-baseline.sql` (generated from the CURRENT schema,
+--     which already carries the column) and old SQLite migrations are never
+--     replayed there — so this file only ever runs on SQLite.
+--   * New groups CANNOT default into a track: the admin create API REQUIRES
+--     an explicit ARABIC | LANGUAGE value (the database-level NULL default
+--     exists only so this migration needs no backfill invention).
+
+ALTER TABLE "Group" ADD COLUMN "trackScope" TEXT;
+
+-- Phase 26B eligibility index: the student group picker filters
+-- `isActive AND trackScope = <student's schoolType> AND (optionally) courseId`.
+CREATE INDEX "Group_trackScope_idx" ON "Group"("trackScope");

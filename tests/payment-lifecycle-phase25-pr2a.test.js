@@ -704,8 +704,9 @@ async function main() {
     const pg = read("prisma/schema.postgresql.prisma");
     ok(/senderPhone\s+String\?/.test(pg) && /rejectionReason\s+String\?/.test(pg), "and in the derived PostgreSQL schema");
     const migrations = fs.readdirSync(path.join(REPO, "prisma/migrations"));
-    ok(migrations.length === 10, `migration history unchanged: exactly 10 migrations (found ${migrations.length}) — NO new migration in PR2a`);
-    ok(migrations.includes("20260914120000_payment_lifecycle_redesign"), "PR1's migration remains the last applied file");
+    ok(migrations.length === 11, `migration history: exactly 11 migrations (found ${migrations.length}) — the 10 PR2a-era migrations plus the Phase 26B owner-approved group-audience migration`);
+    ok(migrations.includes("20260914120000_payment_lifecycle_redesign"), "PR1's ledger migration remains in history");
+    ok(migrations.includes("20260915120000_phase26b_group_track_scope"), "the Phase 26B group-audience migration is in history");
   }
 
   section("\n" + "=".repeat(60));

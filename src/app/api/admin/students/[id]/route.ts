@@ -3,7 +3,7 @@ import { getServerT } from "@/lib/i18n-server";
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireRole } from "@/lib/api";
-import { requireSchoolType } from "@/lib/school-type";
+import { requireSchoolType, normalizeSchoolType } from "@/lib/school-type";
 import { reconcileStudentBatch } from "@/lib/enrollment";
 import { logSecurityEvent } from "@/lib/security";
 import { revokeAllSessions } from "@/lib/auth";
@@ -45,6 +45,25 @@ export async function PATCH(
   }
   let groupChanged = false;
   if (typeof body.groupId === "string" || body.groupId === null) {
+    // Phase 26B — GROUP AUDIENCE SAFETY: a direct group assignment must be
+    // audience-compatible. A classified group (ARABIC | LANGUAGE) only ever
+    // accepts a student whose own persisted schoolType matches EXACTLY
+    // (api.286 otherwise) — the same rule the group-edit assignment path
+    // enforces, so no admin surface can bypass it. An UNCLASSIFIED (null)
+    // group imposes no constraint here, mirroring the group-edit path:
+    // classification is the operator's explicit step, and unclassified
+    // groups stay invisible/unenrollable to students regardless.
+    if (body.groupId) {
+      const group = await db.group.findUnique({
+        where: { id: body.groupId },
+        select: { trackScope: true },
+      });
+      if (!group) return err(tApi("api.020"), 404);
+      const audience = normalizeSchoolType(group.trackScope);
+      if (audience && normalizeSchoolType(student.schoolType) !== audience) {
+        return err(tApi("api.286"), 409);
+      }
+    }
     await db.student.update({
       where: { id },
       data: { groupId: body.groupId || null },

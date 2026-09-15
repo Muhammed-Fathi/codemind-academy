@@ -377,6 +377,33 @@ model Group {
   capacity  Int           @default(20)
   schedule  String        @default("Sat & Tue, 6:00 PM")
   isActive  Boolean       @default(true)
+  /// Phase 26B (owner-approved): the group's explicit student AUDIENCE —
+  /// which school type this teaching group is sold/assigned to.
+  ///
+  ///   ARABIC / LANGUAGE → the group's audience; the ONLY values a
+  ///     student-facing group may carry. Enforced on every write path
+  ///     (admin create/edit, enroll submission, payment approval, direct
+  ///     admin student assignment) and on every student read (the picker
+  ///     serves exact-match groups only).
+  ///
+  ///   NULL → UNCLASSIFIED. The transitional value for rows that predate
+  ///     this field (the migration is additive and invents NO
+  ///     classification for existing groups). An unclassified group is
+  ///     FAIL-CLOSED everywhere: never listed to students, never
+  ///     enrollable, never approvable into, and a populated one cannot be
+  ///     classified until its students are compatible. An admin must
+  ///     classify it explicitly before it can be sold again.
+  ///
+  ///   SHARED → valid for CONTENT architecture (Lesson/Quiz/Homework) but
+  ///     deliberately NOT part of the group business model at launch: no
+  ///     proven SHARED-group requirement exists, so write paths reject
+  ///     SHARED for groups and student surfaces never match it (eligibility
+  ///     is EXACT schoolType equality, not the wider content predicate).
+  ///
+  /// This is `TrackScope?` (no duplicate enum) but group eligibility NEVER
+  /// uses the content-side "SHARED is eligible for everyone" rule — see
+  /// `groupTrackScopeEligible` in src/lib/track-scope.ts.
+  trackScope TrackScope?
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
   teacher   Teacher?      @relation(fields: [teacherId], references: [id])
@@ -385,6 +412,7 @@ model Group {
   students  Student[]
 
   @@index([courseId])
+  @@index([trackScope])
 }
 
 model Material {

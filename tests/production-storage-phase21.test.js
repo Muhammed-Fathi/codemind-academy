@@ -84,12 +84,13 @@ async function main() {
     // No other .prisma file may define models (no competing schema).
     const prismaFiles = fs.readdirSync(path.join(REPO, "prisma")).filter((f) => f.endsWith(".prisma"));
     ok(prismaFiles.length === 2, `exactly 2 .prisma files (source + derived), found ${prismaFiles.join(",")}`);
-    // Migration history: 10 migrations, all present (9 baselined SQLite +
-    // Phase 25 PR1 dual-dialect ledger — the first migration that also replays
-    // on PostgreSQL; see tests/payment-lifecycle-phase25-ledger.test.js).
+    // Migration history: 11 migrations, all present (9 baselined SQLite,
+    // Phase 25 PR1 dual-dialect ledger, and the Phase 26B owner-approved
+    // group-audience migration; see tests/payment-lifecycle-phase25-ledger.test.js).
     const migs = fs.readdirSync(path.join(REPO, "prisma", "migrations")).filter((d) =>
       fs.existsSync(path.join(REPO, "prisma", "migrations", d, "migration.sql")));
-    ok(migs.length === 10, `10 migrations preserved (found ${migs.length})`);
+    ok(migs.length === 11, `11 migrations preserved (found ${migs.length})`);
+    ok(migs.includes("20260915120000_phase26b_group_track_scope"), "Phase 26B group-audience migration present");
   }
 
   // ---------------------------------------------------------------------------
@@ -156,7 +157,10 @@ async function main() {
     // Baseline DDL: statement count + identifier length + enum coverage.
     const ddl = read("scripts/db/postgres-baseline.sql");
     const stmts = pgLib.splitSqlStatements(ddl);
-    ok(stmts.length === 21 + 55 + 69, `baseline has 145 statements (found ${stmts.length})`);
+    // 21 enums + 55 tables + 70 indexes: Phase 26B added Group_trackScope_idx
+    // (owner-approved Group.trackScope), so the index count grew 69 → 70.
+    ok(stmts.length === 21 + 55 + 70, `baseline has 146 statements (found ${stmts.length})`);
+    ok(/CREATE INDEX "Group_trackScope_idx"/.test(ddl), "baseline carries the Phase 26B group-audience index");
     const longIdents = [...ddl.matchAll(/"([A-Za-z0-9_]{64,})"/g)];
     ok(longIdents.length === 0, "no identifier exceeds the 63-byte PostgreSQL limit");
     // String JSON blobs stay TEXT (explicit non-conversion).

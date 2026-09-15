@@ -1,18 +1,56 @@
 import { NextRequest } from "next/server";
-import { ok } from "@/lib/api";
+import { ok, err, requireUser } from "@/lib/api";
 import { db } from "@/lib/db";
+import { getStudentSchoolType } from "@/lib/enrollment";
 
-// Public group picker used by the enrolment flow (src/components/auth/enroll-view.tsx).
+// Student group picker used by the enrolment flow (src/components/auth/enroll-view.tsx).
 //
-// SECURITY: this endpoint is intentionally unauthenticated, so it must expose
-// ONLY the fields the picker renders. It previously included the teacher's
-// full User relation, which serialised the teacher's whole User row (scrypt
-// password hash, phone, e-mail, status) to anonymous callers. Keep this an
-// explicit field selection — never a bare relation include.
+// Phase 26B (owner-approved): GROUP AUDIENCE ELIGIBILITY.
+//   Groups carry an explicit audience (`Group.trackScope` = ARABIC |
+//   LANGUAGE; NULL = UNCLASSIFIED legacy row). The picker derives the
+//   viewer's eligibility from the AUTHENTICATED student's OWN persisted
+//   `schoolType` row — never from a client-supplied parameter, the locale or
+//   the UI language — and serves EXACT-match groups only:
+//
+//     ARABIC student   → ARABIC groups only
+//     LANGUAGE student → LANGUAGE groups only
+//     NULL/unknown     → NOTHING (fail-closed: a student whose school type
+//                        is unknown has no audience to be eligible for)
+//
+//   Unclassified (null) groups are NEVER listed — an admin must classify
+//   them (api.285 contract) before they can be sold again. Eligibility is
+//   the exact-match predicate (`groupTrackScopeEligible`), deliberately NOT
+//   the wider content predicate — SHARED is a content-only concept.
+//
+// SECURITY: this endpoint now requires an authenticated STUDENT session
+// (eligibility is a per-student fact). It previously served anonymous
+// callers and must keep exposing ONLY the fields the picker renders — no
+// teacher User relation, no internal fields (the Phase 25 field-selection
+// rule below stands; `trackScope` itself is deliberately not added to the
+// payload because the picker never renders it).
 export async function GET(req: NextRequest) {
+  const user = await requireUser();
+  if (!user) return err("Unauthorized", 401);
+  if (user.role !== "STUDENT") return err("Forbidden", 403);
+
+  const student = await db.student.findUnique({
+    where: { userId: user.id },
+    select: { id: true },
+  });
+  if (!student) return err("Student profile not found", 404);
+
+  // The single eligibility input: the student's OWN row, normalised +
+  // fail-closed (null when missing/unrecognised → empty listing).
+  const schoolType = await getStudentSchoolType(student.id);
+  if (!schoolType) return ok({ groups: [] });
+
   const url = new URL(req.url);
   const courseId = url.searchParams.get("courseId");
-  const where: { isActive: boolean; courseId?: string } = { isActive: true };
+  const where: {
+    isActive: boolean;
+    trackScope: string;
+    courseId?: string;
+  } = { isActive: true, trackScope: schoolType };
   if (courseId) where.courseId = courseId;
   const groups = await db.group.findMany({
     where,

@@ -118,7 +118,23 @@ export async function GET() {
   return new NextResponse("\uFEFF" + csv, {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="my-progress-${user.name.replace(/\s/g, "-")}-${new Date().toISOString().slice(0, 10)}.csv"`,
+      // Phase 26B fix: `user.name` is an Arabic three-part name for every
+      // real student (registration enforces it), and Node's HTTP layer
+      // rejects non-latin1 header VALUES — the raw name in `filename` made
+      // this endpoint throw for the entire product. The ASCII-legal fallback
+      // keeps the plain `filename` usable everywhere, and the RFC 5987
+      // `filename*` parameter preserves the student's real (UTF-8) name.
+      "Content-Disposition": (() => {
+        const date = new Date().toISOString().slice(0, 10);
+        const asciiName =
+          user.name
+            .replace(/[^\x20-\x7E]/g, "")
+            .replace(/\s/g, "-")
+            .replace(/-+/g, "-")
+            .replace(/^-|-$/g, "") || "progress";
+        const utf8Name = `my-progress-${user.name.replace(/\s/g, "-")}-${date}.csv`;
+        return `attachment; filename="my-progress-${asciiName}-${date}.csv"; filename*=UTF-8''${encodeURIComponent(utf8Name)}`;
+      })(),
     },
   });
 }

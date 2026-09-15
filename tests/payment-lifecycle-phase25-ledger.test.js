@@ -564,9 +564,10 @@ async function main() {
   const migs = fs.readdirSync(path.join(REPO, "prisma", "migrations"))
     .filter((d) => fs.existsSync(path.join(REPO, "prisma", "migrations", d, "migration.sql")))
     .sort();
-  ok(migs.length === 10, `10 migrations in history (found ${migs.length})`);
+  ok(migs.length === 11, `11 migrations in history (found ${migs.length}) — Phase 26B added the owner-approved group-audience migration`);
   ok(migs.includes(MIGRATION_DIR), `new migration '${MIGRATION_DIR}' present`);
-  ok(migs[migs.length - 1] === MIGRATION_DIR, "new migration sorts last (applies after all 9 predecessors)");
+  ok(migs[9] === MIGRATION_DIR, "ledger migration still applies after its 9 predecessors (10th position)");
+  ok(migs[migs.length - 1] === "20260915120000_phase26b_group_track_scope", "the Phase 26B group-audience migration sorts last");
   ok(fs.statSync(MIGRATION_SQL).size > 0, "migration.sql non-empty");
 
   if (pg) await pg.close();
