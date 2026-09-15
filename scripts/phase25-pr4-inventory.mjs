@@ -431,13 +431,17 @@ function renderHuman(report) {
 async function main() {
   const argv = process.argv.slice(2);
   if (hasFlag(argv, "--help") || hasFlag(argv, "-h")) {
-    console.log(`Usage: node scripts/phase25-pr4-inventory.mjs [--target <DATABASE_URL>] [--pglite <dir>] [--now <iso>] [--json] [--json-out <path>]`);
-    console.log(`  --target   PostgreSQL URL or SQLite file: URL (default: DATABASE_URL env)`);
+    console.log(`Usage: node scripts/phase25-pr4-inventory.mjs [--target <url>] [--pglite <dir>] [--now <iso>] [--json] [--json-out <path>]`);
+    console.log(`  Production: set DATABASE_URL in the environment and run without --target.`);
+    console.log(`              Do NOT pass real production credentials via --target or argv.`);
+    console.log(`  --target   SQLite file or disposable PostgreSQL URL for local testing only`);
+    console.log(`             (default: DATABASE_URL env — production authority)`);
     console.log(`  --pglite   PGlite directory for offline PG verification`);
     console.log(`  --now      ISO cutoff for time checks (default: now)`);
     console.log(`  --json     emit JSON to stdout after human summary`);
     console.log(`  --json-out <path>  write JSON report to file`);
     console.log(`Read-only: all queries are SELECT. No write operation is performed.`);
+    console.log(`Secret handling: DATABASE_URL is read from process.env; never echo it or put it in argv.`);
     process.exit(0);
   }
   const target = argOf(argv, "--target");

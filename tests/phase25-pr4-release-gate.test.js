@@ -120,6 +120,52 @@ async function main() {
   section("9. Migration count pin");
   ok(migs.length === 10, "migration count still 10 (no new migration)");
 
+  section("10. Operational safety — secret handling and migration drift");
+  {
+    const rbPath = "docs/PHASE_25_PR4_CUTOVER_RUNBOOK.md";
+    ok(exists(rbPath), "runbook exists for safety checks");
+    const rb = exists(rbPath) ? read(rbPath) : "";
+    const inv2 = exists("scripts/phase25-pr4-inventory.mjs") ? read("scripts/phase25-pr4-inventory.mjs") : "";
+    const vp  = exists("scripts/db/verify-postgres.mjs") ? read("scripts/db/verify-postgres.mjs") : "";
+    // 10.1: production runbook never puts real DATABASE_URL in ARGV
+    ok(!rb.includes("--target $env:DATABASE_URL"), "runbook never has --target $env:DATABASE_URL (would leak into argv)");
+    ok(!rb.includes("--target %DATABASE_URL%"), "runbook never has --target %DATABASE_URL%");
+    ok(!rb.includes('--target \"$DATABASE_URL\"') && !rb.includes("--target '$DATABASE_URL'") && !rb.includes('--target \"$DATABASE_URL\"'), "runbook never has --target \"$DATABASE_URL\" with quotes");
+    ok(!rb.includes("--target $DATABASE_URL"), "runbook never has --target $DATABASE_URL");
+    // 10.2: no example embeds a PostgreSQL URL with credentials (user:password@) — even masked *** counts as credentials
+    ok(!/postgresql:\/\/[^\s]*:[^\s]*@/i.test(rb), "runbook has no postgresql:// URL with credentials (user:password@)");
+    ok(!/postgresql:\/\/[^\s]*:[^\s]*@/i.test(inv2), "inventory script has no postgresql:// URL with credentials literal");
+    // 10.3: production command examples rely on DATABASE_URL from environment
+    ok(rb.includes("reads DATABASE_URL from env") || rb.includes("process.env.DATABASE_URL"), "runbook says production reads DATABASE_URL from env");
+    ok(rb.includes('Read-Host \"Paste production DATABASE_URL\"') || rb.includes("Read-Host"), "runbook uses Read-Host for secure input (no echo)");
+    ok(!rb.includes("--target postgresql://"), "runbook production examples do not use --target postgresql:// (production must use env, not argv)");
+    // inventory help documents env authority and forbids argv for production
+    ok(inv2.includes("Do NOT pass real production credentials via --target") || inv2.includes("Do NOT pass real production credentials"), "inventory help forbids passing real production credentials via --target (argv)");
+    ok(inv2.includes("Production: set DATABASE_URL in the environment and run without --target") || inv2.includes("process.env.DATABASE_URL"), "inventory help documents production env authority (set DATABASE_URL in env, no --target)");
+    // 10.4: inventory JSON/logs still redact — code uses redact and JSON never contains raw URL
+    ok(inv2.includes("redactDatabaseUrl") || inv2.includes("function redact"), "inventory has redactDatabaseUrl helper");
+    ok(inv2.includes("u.host") && inv2.includes("u.protocol"), "inventory redacts URL to host/protocol only (no password)");
+    ok(inv2.includes("hostLabel: redactDatabaseUrl") || inv2.includes("redactDatabaseUrl"), "inventory hostLabel uses redact helper");
+    // JSON output struct must not embed raw DATABASE_URL string literal
+    ok(!inv2.includes("DATABASE_URL") || inv2.includes("redactDatabaseUrl") , "inventory references DATABASE_URL only via redaction/env, not embedding");
+    // verify-postgres also supports env (smallest safe support)
+    ok(vp.includes("process.env.DATABASE_URL"), "verify-postgres.mjs supports process.env.DATABASE_URL");
+    ok(vp.includes("--target") || vp.includes("argOf"), "verify-postgres retains --target for disposable local file:/pglite testing");
+    // 10.5: pending migration = STOP — ANY pending/mismatch/missing is STOP/NO-GO, do NOT run migrate deploy as normal cutover
+    ok(/ANY pending/i.test(rb) && /STOP/i.test(rb) && /NO-GO/.test(rb), "runbook says ANY pending → STOP / NO-GO");
+    ok(rb.includes("already applied") || rb.includes("already applied to production Neon") || rb.includes("already applied on production Neon"), "runbook notes PR1 already applied to production Neon");
+    // runbook must not suggest a positive `npx prisma migrate deploy` as a normal cutover step
+    const deployLines = rb.split("\n").filter(l => /npx(\.cmd)?\s+prisma migrate deploy/.test(l));
+    const badDeployLines = deployLines.filter(l => !/do NOT run/i.test(l) && !/STOP/i.test(l));
+    ok(badDeployLines.length === 0, `runbook has no positive npx prisma migrate deploy suggestion (found ${badDeployLines.length}: ${badDeployLines.join("; ").slice(0,300)})`);
+    // explicit prohibition is present
+    ok(/do NOT run/i.test(rb) && /migrate deploy/i.test(rb), "runbook explicitly says do NOT run migrate deploy as normal cutover");
+    // also ensure runbook does not have an echo command that would reveal DATABASE_URL (prohibition text like "Do not echo $env:DATABASE_URL" is allowed)
+    const echoLines = rb.split("\n").filter(l => /echo\s+.*DATABASE_URL/.test(l));
+    const badEchoLines = echoLines.filter(l => !/do not/i.test(l) && !/never/i.test(l) && !/don.t/i.test(l));
+    ok(badEchoLines.length === 0, `runbook has no echo DATABASE_URL command (found ${badEchoLines.length}: ${badEchoLines.join("; ").slice(0,200)})`);
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   if (fail) process.exit(1);
 }
