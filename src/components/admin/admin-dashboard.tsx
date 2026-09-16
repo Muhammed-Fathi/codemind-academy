@@ -62,6 +62,7 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Switch } from "@/components/ui/switch";
 import { Progress } from "@/components/ui/progress";
 import {
   Tooltip,
@@ -117,6 +118,7 @@ import {
   Line,
 } from "recharts";
 import { SessionVideosView } from "@/components/admin/session-videos-view";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { MockExamsView } from "@/components/admin/mock-exams-view";
 import { QuizReviewView } from "@/components/admin/quiz-review-view";
 import { SessionWorkflowView } from "@/components/admin/session-workflow-view";
@@ -1139,6 +1141,10 @@ type TeacherRow = {
 function TeachersView() {
   const tr = useT();
   const [openAdd, setOpenAdd] = React.useState(false);
+  // Post-launch lifecycle: edit profile + guarded hard delete (server refuses
+  // a teacher with groups/sessions/notes — deactivation is the safe path).
+  const [editing, setEditing] = React.useState<TeacherRow | null>(null);
+  const [deleting, setDeleting] = React.useState<TeacherRow | null>(null);
   const { data, loading, error, reload } = useApi<{ teachers: TeacherRow[] }>("/api/admin/teachers");
 
   const toggleTeacherActive = async (t: TeacherRow) => {
@@ -1150,6 +1156,24 @@ function TeachersView() {
       });
       if (!res.ok) throw new Error("Failed");
       toast.success(t.isActive ? "Teacher deactivated" : "Teacher reactivated");
+      reload();
+    } catch {
+      toast.error(tr("admin.001"));
+    }
+  };
+
+  const deleteTeacher = async (t: TeacherRow) => {
+    try {
+      const res = await fetch(`/api/admin/teachers/${t.id}`, { method: "DELETE" });
+      const j = await res.json().catch(() => ({} as any));
+      if (!res.ok) {
+        // The server explains WHY (assigned groups / sessions / notes) and
+        // points at deactivation — surface that message verbatim.
+        toast.error(j.error || tr("admin.001"));
+        return;
+      }
+      toast.success(tr("admin.516"));
+      setDeleting(null);
       reload();
     } catch {
       toast.error(tr("admin.001"));
@@ -1217,9 +1241,24 @@ function TeachersView() {
                       )}
                     </TableCell>
                     <TableCell>
-                      <Button size="sm" variant={t.isActive ? "outline" : "default"} onClick={() => toggleTeacherActive(t)}>
-                        {t.isActive ? "Deactivate" : "Reactivate"}
-                      </Button>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <Button size="sm" variant="ghost" onClick={() => setEditing(t)} title={tr("admin.521")}>
+                          <PencilLine className="w-3.5 h-3.5" />
+                          <span className="ms-1">{tr("admin.521")}</span>
+                        </Button>
+                        <Button size="sm" variant={t.isActive ? "outline" : "default"} onClick={() => toggleTeacherActive(t)}>
+                          {t.isActive ? tr("admin.298") : tr("admin.299")}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => setDeleting(t)}
+                          title={tr("admin.514")}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -1230,6 +1269,34 @@ function TeachersView() {
       </Card>
 
       <AddTeacherDialog open={openAdd} onOpenChange={setOpenAdd} onCreated={reload} />
+
+      {/* Post-launch lifecycle: profile edit */}
+      <EditTeacherDialog
+        teacher={editing}
+        onClose={() => setEditing(null)}
+        onUpdated={reload}
+      />
+
+      {/* Post-launch lifecycle: guarded hard delete (server refuses a teacher
+          with groups/sessions/notes; deactivation is the safe alternative). */}
+      <ConfirmDialog
+        open={!!deleting}
+        onOpenChange={(v) => !v && setDeleting(null)}
+        title={tr("admin.514")}
+        description={
+          <span>
+            <span className="block font-semibold text-foreground mb-1">
+              {deleting?.name} · <span dir="ltr">{deleting?.email}</span>
+            </span>
+            {tr("admin.515")}
+          </span>
+        }
+        confirmLabel={tr("admin.517")}
+        cancelLabel={tr("admin.038")}
+        onConfirm={async () => {
+          if (deleting) await deleteTeacher(deleting);
+        }}
+      />
 
       <TeacherApplicationsPanel />
     </motion.div>
@@ -1434,6 +1501,113 @@ function AddTeacherDialog({
   );
 }
 
+// Post-launch lifecycle — edit an existing teacher's profile. The PATCH is
+// server-authorized (ADMIN) and audited; an email change revokes the
+// teacher's sessions server-side so they re-authenticate with the new identity.
+function EditTeacherDialog({
+  teacher,
+  onClose,
+  onUpdated,
+}: {
+  teacher: TeacherRow | null;
+  onClose: () => void;
+  onUpdated: () => void;
+}) {
+  const tr = useT();
+  const [form, setForm] = React.useState({
+    name: "",
+    email: "",
+    phone: "",
+    specialty: "",
+    bio: "",
+  });
+  const [saving, setSaving] = React.useState(false);
+
+  React.useEffect(() => {
+    if (teacher) {
+      setForm({
+        name: teacher.name || "",
+        email: teacher.email || "",
+        phone: teacher.phone || "",
+        specialty: teacher.specialty || "",
+        bio: teacher.bio || "",
+      });
+    }
+  }, [teacher]);
+
+  const submit = async () => {
+    if (!teacher) return;
+    if (!form.name.trim() || !form.email.trim()) {
+      toast.error(tr("admin.026"));
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/admin/teachers/${teacher.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: form.name.trim(),
+          email: form.email.trim(),
+          phone: form.phone.trim() || null,
+          specialty: form.specialty.trim() || null,
+          bio: form.bio.trim() || null,
+        }),
+      });
+      const j = await res.json().catch(() => ({} as any));
+      if (!res.ok) throw new Error(j.error || "err");
+      toast.success(tr("admin.513"));
+      onUpdated();
+      onClose();
+    } catch (e: any) {
+      toast.error(e.message || tr("admin.001"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={!!teacher} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{tr("admin.512")}</DialogTitle>
+          <DialogDescription>{teacher?.name}</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <Label>{tr("admin.019")}</Label>
+            <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          </div>
+          <div>
+            <Label>{tr("admin.021")}</Label>
+            <Input type="email" dir="ltr" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>{tr("admin.035")}</Label>
+              <Input dir="ltr" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+            </div>
+            <div>
+              <Label>Specialty</Label>
+              <Input value={form.specialty} onChange={(e) => setForm({ ...form, specialty: e.target.value })} />
+            </div>
+          </div>
+          <div>
+            <Label>Bio</Label>
+            <Textarea value={form.bio} onChange={(e) => setForm({ ...form, bio: e.target.value })} rows={3} />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>{tr("admin.038")}</Button>
+          <Button onClick={submit} disabled={saving}>
+            {saving ? tr("admin.039") : tr("admin.044")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ============================================================
 // 4. Groups
 // ============================================================
@@ -1503,10 +1677,20 @@ function GroupsView() {
                       {g.courseName || "—"}
                     </div>
                   </div>
-                  <div
-                    className="w-2.5 h-2.5 rounded-full shrink-0"
-                    style={{ background: g.courseColor || "#10b981" }}
-                  />
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {/* Lifecycle state must be visible at a glance: a
+                        deactivated group is hidden from students and closed
+                        for new assignments. */}
+                    {!g.isActive && (
+                      <Badge variant="secondary" className="text-[10px]">
+                        {tr("admin.298")}
+                      </Badge>
+                    )}
+                    <div
+                      className="w-2.5 h-2.5 rounded-full"
+                      style={{ background: g.courseColor || "#10b981" }}
+                    />
+                  </div>
                 </div>
                 <div className="mt-3 space-y-1.5">
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -1705,20 +1889,28 @@ function ManageGroupDialog({
   const tr = useT();
   const [teachers, setTeachers] = React.useState<{ id: string; name: string }[]>([]);
   const [teacherId, setTeacherId] = React.useState<string | undefined>();
+  const [name, setName] = React.useState("");
   const [capacity, setCapacity] = React.useState(20);
   const [schedule, setSchedule] = React.useState("");
   // Phase 26B — the group's audience; "" means still UNCLASSIFIED (the server
   // keeps it unclassified until an explicit ARABIC/LANGUAGE choice is saved).
   const [trackScope, setTrackScope] = React.useState("");
+  // Post-launch lifecycle — deactivation keeps all history but hides the
+  // group from students and blocks new assignments (server-enforced).
+  const [isActive, setIsActive] = React.useState(true);
+  const [confirmDelete, setConfirmDelete] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [students, setStudents] = React.useState<StudentRow[]>([]);
 
   React.useEffect(() => {
     if (group) {
       setTeacherId(group.teacherId || undefined);
+      setName(group.name || "");
       setCapacity(group.capacity);
       setSchedule(group.schedule);
       setTrackScope(group.trackScope || "");
+      setIsActive(group.isActive);
+      setConfirmDelete(false);
       fetch("/api/admin/teachers").then((r) => r.json()).then((d) => setTeachers(d.teachers || [])).catch(() => {});
       fetch("/api/admin/students").then((r) => r.json()).then((d) => {
         const all: StudentRow[] = d.students || [];
@@ -1729,15 +1921,21 @@ function ManageGroupDialog({
 
   const save = async () => {
     if (!group) return;
+    if (!name.trim()) {
+      toast.error(tr("admin.092"));
+      return;
+    }
     setSaving(true);
     try {
       const res = await fetch(`/api/admin/groups/${group.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          name: name.trim(),
           teacherId: teacherId || null,
           capacity,
           schedule,
+          isActive,
           // Phase 26B — send the audience only once explicitly chosen; an
           // unclassified group stays unclassified otherwise. The server
           // refuses (409) an audience change that would strand members.
@@ -1758,6 +1956,27 @@ function ManageGroupDialog({
     }
   };
 
+  // Hard delete — ONLY for an unused group. The server is the authority: it
+  // refuses (409) when students or sessions reference the group and tells the
+  // admin to deactivate instead. The confirmation dialog explains both.
+  const doDelete = async () => {
+    if (!group) return;
+    try {
+      const res = await fetch(`/api/admin/groups/${group.id}`, { method: "DELETE" });
+      const j = await res.json().catch(() => ({} as any));
+      if (!res.ok) {
+        toast.error(j.error || tr("admin.001"));
+        return;
+      }
+      toast.success(tr("admin.511"));
+      setConfirmDelete(false);
+      onUpdated();
+      onClose();
+    } catch {
+      toast.error(tr("admin.001"));
+    }
+  };
+
   return (
     <Dialog open={!!group} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="sm:max-w-lg">
@@ -1767,6 +1986,10 @@ function ManageGroupDialog({
         </DialogHeader>
         {group && (
           <div className="space-y-3">
+            <div>
+              <Label>{tr("admin.522")}</Label>
+              <Input value={name} onChange={(e) => setName(e.target.value)} />
+            </div>
             <div>
               <Label>{tr("admin.318")}</Label>
               <Select value={trackScope} onValueChange={setTrackScope}>
@@ -1818,6 +2041,33 @@ function ManageGroupDialog({
                 )}
               </div>
             </div>
+
+            {/* Lifecycle: deactivate keeps history, delete removes an unused
+                group. Distinct controls with distinct semantics. */}
+            <div className="rounded-lg border border-border/60 p-3 space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-xs font-bold">{isActive ? tr("admin.299") : tr("admin.298")}</div>
+                  <div className="text-[11px] text-muted-foreground">{tr("admin.518")}</div>
+                </div>
+                <Switch checked={isActive} onCheckedChange={setIsActive} />
+              </div>
+              <div className="border-t border-border/40 pt-2 flex items-center justify-between gap-2">
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  {tr("admin.510")}
+                </p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="text-destructive hover:text-destructive shrink-0"
+                  onClick={() => setConfirmDelete(true)}
+                >
+                  <Trash2 className="w-3.5 h-3.5 ms-1" />
+                  {tr("admin.509")}
+                </Button>
+              </div>
+            </div>
           </div>
         )}
         <DialogFooter>
@@ -1827,6 +2077,23 @@ function ManageGroupDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      {/* Confirmation for the destructive action — separate from the edit
+          dialog so a slip on "Save" can never delete anything. */}
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title={tr("admin.509")}
+        description={
+          <span>
+            <span className="block font-semibold text-foreground mb-1">{group?.name}</span>
+            {tr("admin.510")}
+          </span>
+        }
+        confirmLabel={tr("admin.517")}
+        cancelLabel={tr("admin.038")}
+        onConfirm={doDelete}
+      />
     </Dialog>
   );
 }
@@ -1885,6 +2152,26 @@ function CoursesView() {
   const [treeLoading, setTreeLoading] = React.useState(false);
   const [reconciling, setReconciling] = React.useState(false);
   const [openAdd, setOpenAdd] = React.useState(false);
+  // Post-launch lifecycle: metadata edit + guarded delete of an EMPTY course
+  // (the server refuses while groups/parts/enrollments/exams reference it).
+  const [editingCourse, setEditingCourse] = React.useState<CourseRow | null>(null);
+  const [deletingCourse, setDeletingCourse] = React.useState<CourseRow | null>(null);
+
+  const deleteCourse = async (c: CourseRow) => {
+    try {
+      const res = await fetch(`/api/admin/courses/${c.id}`, { method: "DELETE" });
+      const j = await res.json().catch(() => ({} as any));
+      if (!res.ok) {
+        toast.error(j.error || tr("admin.001"));
+        return;
+      }
+      toast.success(tr("admin.527"));
+      setDeletingCourse(null);
+      reload();
+    } catch {
+      toast.error(tr("admin.001"));
+    }
+  };
 
   const openTree = async (id: string) => {
     setTreeLoading(true);
@@ -2016,18 +2303,66 @@ function CoursesView() {
                   <div className="text-[10px] text-muted-foreground">Groups</div>
                 </div>
               </div>
-              <Button
-                variant="outline"
-                className="w-full mt-4"
-                onClick={() => openTree(c.id)}
-              >
-                <BookOpen className="w-4 h-4 ms-2" />
-                {tr("admin.132")}<ChevronLeft className="w-3.5 h-3.5 me-1 flip-rtl" />
-              </Button>
+              <div className="flex items-center gap-2 mt-4">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => openTree(c.id)}
+                >
+                  <BookOpen className="w-4 h-4 ms-2" />
+                  {tr("admin.132")}<ChevronLeft className="w-3.5 h-3.5 me-1 flip-rtl" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setEditingCourse(c)}
+                  title={tr("admin.523")}
+                  aria-label={tr("admin.523")}
+                >
+                  <PencilLine className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => setDeletingCourse(c)}
+                  title={tr("admin.525")}
+                  aria-label={tr("admin.525")}
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              </div>
             </Card>
           ))}
         </div>
       )}
+
+      {/* Course metadata edit */}
+      <EditCourseDialog
+        course={editingCourse}
+        onClose={() => setEditingCourse(null)}
+        onUpdated={reload}
+      />
+
+      {/* Guarded course delete (empty courses only — server is authority) */}
+      <ConfirmDialog
+        open={!!deletingCourse}
+        onOpenChange={(v) => !v && setDeletingCourse(null)}
+        title={tr("admin.525")}
+        description={
+          <span>
+            <span className="block font-semibold text-foreground mb-1">
+              {deletingCourse ? pickAuto(deletingCourse.nameAr, deletingCourse.name) : ""}
+            </span>
+            {tr("admin.526")}
+          </span>
+        }
+        confirmLabel={tr("admin.517")}
+        cancelLabel={tr("admin.038")}
+        onConfirm={async () => {
+          if (deletingCourse) await deleteCourse(deletingCourse);
+        }}
+      />
 
       <Dialog open={!!tree} onOpenChange={(v) => !v && setTree(null)}>
         <DialogContent className="sm:max-w-2xl">
@@ -2185,6 +2520,102 @@ function AddCourseDialog({
   );
 }
 
+// Post-launch lifecycle — edit course metadata (name/nameAr/description/color).
+// Structure (parts/lessons) stays reconciler-owned; the slug is not editable.
+function EditCourseDialog({
+  course,
+  onClose,
+  onUpdated,
+}: {
+  course: CourseRow | null;
+  onClose: () => void;
+  onUpdated: () => void;
+}) {
+  const tr = useT();
+  const [form, setForm] = React.useState({ name: "", nameAr: "", description: "", color: "#10b981" });
+  const [saving, setSaving] = React.useState(false);
+
+  React.useEffect(() => {
+    if (course) {
+      setForm({
+        name: course.name || "",
+        nameAr: course.nameAr || "",
+        description: course.description || "",
+        color: course.color || "#10b981",
+      });
+    }
+  }, [course]);
+
+  const submit = async () => {
+    if (!course) return;
+    if (!form.name.trim() || !form.nameAr.trim()) {
+      toast.error(tr("admin.136"));
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/admin/courses/${course.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      const j = await res.json().catch(() => ({} as any));
+      if (!res.ok) throw new Error(j.error || "err");
+      toast.success(tr("admin.524"));
+      onUpdated();
+      onClose();
+    } catch (e: any) {
+      toast.error(e.message || tr("admin.001"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={!!course} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{tr("admin.523")}</DialogTitle>
+          <DialogDescription>{course ? pickAuto(course.nameAr, course.name) : ""}</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <Label>{tr("admin.142")}</Label>
+            <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          </div>
+          <div>
+            <Label>{tr("admin.143")}</Label>
+            <Input value={form.nameAr} onChange={(e) => setForm({ ...form, nameAr: e.target.value })} />
+          </div>
+          <div>
+            <Label>{tr("admin.145")}</Label>
+            <Textarea
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              rows={3}
+            />
+          </div>
+          <div>
+            <Label>{tr("admin.147")}</Label>
+            <Input
+              type="color"
+              value={form.color}
+              onChange={(e) => setForm({ ...form, color: e.target.value })}
+              className="h-10 w-20 p-1"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>{tr("admin.038")}</Button>
+          <Button onClick={submit} disabled={saving}>
+            {saving ? tr("admin.039") : tr("admin.044")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ============================================================
 // 6. Question Bank
 // ============================================================
@@ -2308,6 +2739,28 @@ function QuestionBankView() {
     questions: QuestionRow[];
     counts: { ARABIC: number; LANGUAGE: number; SHARED: number };
   }>(query, [search, difficulty, type, bank]);
+
+  // Post-launch lifecycle: a question the admin created must also be
+  // editable/removable — with the SAME frozen-history guards the teacher
+  // route enforces (server-side; refusals are surfaced verbatim).
+  const [editingQ, setEditingQ] = React.useState<QuestionRow | null>(null);
+  const [deletingQ, setDeletingQ] = React.useState<QuestionRow | null>(null);
+
+  const deleteQuestion = async (q: QuestionRow) => {
+    try {
+      const res = await fetch(`/api/admin/question-bank/${q.id}`, { method: "DELETE" });
+      const j = await res.json().catch(() => ({} as any));
+      if (!res.ok) {
+        toast.error(j.error || tr("admin.001"));
+        return;
+      }
+      toast.success(tr("admin.532"));
+      setDeletingQ(null);
+      reload();
+    } catch {
+      toast.error(tr("admin.001"));
+    }
+  };
 
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
@@ -2538,6 +2991,26 @@ function QuestionBankView() {
                               ? tr("admin.201")
                               : tr("admin.231")}
                         </Badge>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7"
+                          onClick={() => setEditingQ(q)}
+                          title={tr("admin.528")}
+                          aria-label={tr("admin.528")}
+                        >
+                          <PencilLine className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7 text-destructive hover:text-destructive"
+                          onClick={() => setDeletingQ(q)}
+                          title={tr("admin.530")}
+                          aria-label={tr("admin.530")}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
                       </div>
                     </div>
                     {options.length > 0 && (
@@ -2572,6 +3045,31 @@ function QuestionBankView() {
       </Card>
 
       <AddQuestionDialog open={openAdd} onOpenChange={setOpenAdd} onCreated={reload} />
+
+      {/* Post-launch lifecycle: edit + guarded delete of a bank question. */}
+      <EditQuestionDialog
+        question={editingQ}
+        onClose={() => setEditingQ(null)}
+        onUpdated={reload}
+      />
+      <ConfirmDialog
+        open={!!deletingQ}
+        onOpenChange={(v) => !v && setDeletingQ(null)}
+        title={tr("admin.530")}
+        description={
+          <span>
+            <span className="block font-semibold text-foreground mb-1">
+              {deletingQ ? pickAuto(deletingQ.promptAr, deletingQ.prompt) : ""}
+            </span>
+            {tr("admin.531")}
+          </span>
+        }
+        confirmLabel={tr("admin.517")}
+        cancelLabel={tr("admin.038")}
+        onConfirm={async () => {
+          if (deletingQ) await deleteQuestion(deletingQ);
+        }}
+      />
     </motion.div>
   );
 }
@@ -2769,6 +3267,212 @@ function AddQuestionDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>{tr("admin.038")}</Button>
           <Button onClick={submit} disabled={saving}>
             {saving ? tr("admin.039") : tr("admin.040")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Post-launch lifecycle — edit an existing question. PATCH is server-authorized
+// (ADMIN) and honours the SAME frozen-attempt locks as the teacher route:
+// grading-relevant fields are refused (409) while any attempt references the
+// question; prompt/explanation/difficulty stay editable.
+function EditQuestionDialog({
+  question,
+  onClose,
+  onUpdated,
+}: {
+  question: QuestionRow | null;
+  onClose: () => void;
+  onUpdated: () => void;
+}) {
+  const tr = useT();
+  const [form, setForm] = React.useState({
+    prompt: "",
+    promptAr: "",
+    type: "MCQ",
+    difficulty: "MEDIUM",
+    answer: "0",
+    options: ["", "", "", ""],
+    explanation: "",
+    marks: 1,
+    schoolType: "",
+  });
+  const [saving, setSaving] = React.useState(false);
+
+  React.useEffect(() => {
+    if (question) {
+      let opts: string[] = [];
+      try {
+        const parsed = JSON.parse(question.options);
+        if (Array.isArray(parsed)) opts = parsed.map((o) => String(o));
+      } catch {
+        opts = [];
+      }
+      setForm({
+        prompt: question.prompt || "",
+        promptAr: question.promptAr || "",
+        type: question.type || "MCQ",
+        difficulty: question.difficulty || "MEDIUM",
+        answer: String(question.answer ?? "0"),
+        options: opts.length ? [...opts, "", "", ""].slice(0, 4) : ["", "", "", ""],
+        explanation: question.explanation || "",
+        marks: question.marks ?? 1,
+        schoolType: question.schoolType || "",
+      });
+    }
+  }, [question]);
+
+  const updateOption = (i: number, v: string) => {
+    const next = [...form.options];
+    next[i] = v;
+    setForm({ ...form, options: next });
+  };
+
+  const submit = async () => {
+    if (!question) return;
+    if (!form.prompt.trim()) {
+      toast.error(tr("admin.179"));
+      return;
+    }
+    if (form.type === "MCQ" && form.options.filter((o) => o.trim()).length < 2) {
+      toast.error(tr("admin.180"));
+      return;
+    }
+    setSaving(true);
+    try {
+      const body: any = {
+        prompt: form.prompt,
+        promptAr: form.promptAr || null,
+        type: form.type,
+        difficulty: form.difficulty,
+        explanation: form.explanation || null,
+        marks: Number(form.marks),
+        // Explicit decision — "" means shared (null); the server never infers.
+        schoolType: form.schoolType || null,
+      };
+      if (form.type === "TRUE_FALSE") {
+        body.answer = form.answer;
+      } else {
+        body.options = form.options.filter((o) => o.trim());
+        body.answer = form.answer;
+      }
+      const res = await fetch(`/api/admin/question-bank/${question.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const j = await res.json().catch(() => ({} as any));
+      if (!res.ok) throw new Error(j.error || "err");
+      toast.success(tr("admin.529"));
+      onUpdated();
+      onClose();
+    } catch (e: any) {
+      toast.error(e.message || tr("admin.001"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={!!question} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{tr("admin.528")}</DialogTitle>
+          <DialogDescription>{tr("admin.531")}</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <Label>{tr("admin.185")}</Label>
+            <Textarea value={form.prompt} onChange={(e) => setForm({ ...form, prompt: e.target.value })} rows={2} />
+          </div>
+          <div>
+            <Label>{tr("admin.186")}</Label>
+            <Textarea value={form.promptAr} onChange={(e) => setForm({ ...form, promptAr: e.target.value })} rows={2} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>{tr("admin.187")}</Label>
+              <Select value={form.type} onValueChange={(v) => setForm({ ...form, type: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="MCQ">MCQ</SelectItem>
+                  <SelectItem value="TRUE_FALSE">True / False</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>{tr("admin.164")}</Label>
+              <Select value={form.difficulty} onValueChange={(v) => setForm({ ...form, difficulty: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="EASY">Easy</SelectItem>
+                  <SelectItem value="MEDIUM">Medium</SelectItem>
+                  <SelectItem value="HARD">Hard</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          {form.type === "MCQ" && (
+            <div className="space-y-2">
+              <Label>{tr("admin.189")}</Label>
+              {form.options.map((opt, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="edit-answer"
+                    checked={form.answer === String(i)}
+                    onChange={() => setForm({ ...form, answer: String(i) })}
+                  />
+                  <Input value={opt} onChange={(e) => updateOption(i, e.target.value)} />
+                </div>
+              ))}
+            </div>
+          )}
+          {form.type === "TRUE_FALSE" && (
+            <div>
+              <Label>{tr("admin.190")}</Label>
+              <Select value={form.answer} onValueChange={(v) => setForm({ ...form, answer: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="0">True</SelectItem>
+                  <SelectItem value="1">False</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>{tr("admin.533")}</Label>
+              <Input
+                type="number"
+                min={1}
+                value={form.marks}
+                onChange={(e) => setForm({ ...form, marks: Number(e.target.value) })}
+              />
+            </div>
+            <div>
+              <Label>{tr("admin.231")}</Label>
+              <Select value={form.schoolType || "shared"} onValueChange={(v) => setForm({ ...form, schoolType: v === "shared" ? "" : v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="shared">{tr("admin.231")}</SelectItem>
+                  <SelectItem value="ARABIC">{tr("admin.200")}</SelectItem>
+                  <SelectItem value="LANGUAGE">{tr("admin.201")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div>
+            <Label>{tr("admin.191")}</Label>
+            <Textarea value={form.explanation} onChange={(e) => setForm({ ...form, explanation: e.target.value })} rows={2} />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>{tr("admin.038")}</Button>
+          <Button onClick={submit} disabled={saving}>
+            {saving ? tr("admin.039") : tr("admin.044")}
           </Button>
         </DialogFooter>
       </DialogContent>

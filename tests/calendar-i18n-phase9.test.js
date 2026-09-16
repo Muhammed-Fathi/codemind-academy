@@ -325,7 +325,21 @@ for (const lab of shellLabels) {
 // Specific calendar-related nav item.
 ok(shellLabels.includes("shell.030"), "Study Plan nav uses shell.030");
 ok(shellLabels.includes("shell.034"), "Attendance nav uses shell.034");
-ok(/tr\("shell\.038"\)/.test(shellSrc), "Support button uses shell.038");
+// Post-launch audit (Section 4): the single "الدعم" button became a shared
+// two-contact SupportCard rendered by shell.tsx. Its labels must STILL be
+// dict keys (no bare English), with shell.038 kept as the fallback label.
+const supportCardSrc = read("src/components/shared/support-card.tsx");
+ok(
+  /import \{ SupportCard \} from "@\/components\/shared\/support-card"/.test(shellSrc) &&
+    /<SupportCard\b/.test(shellSrc),
+  "shell renders the shared SupportCard"
+);
+ok(/"shell\.038"/.test(supportCardSrc), "Support card keeps the shell.038 dict-key fallback");
+for (const k of ["shell.039", "shell.040", "shell.042"]) {
+  ok(supportCardSrc.includes(`"${k}"`), `Support card label uses ${k}`);
+  ok(hasDictKey(k), `${k} resolves in dict`);
+}
+ok(!/>\s*Support\s*</.test(supportCardSrc), "no hardcoded Support text in SupportCard");
 ok(!/>\s*Support\s*</.test(shellSrc), "no hardcoded Support text");
 
 // ---------------------------------------------------------------------------

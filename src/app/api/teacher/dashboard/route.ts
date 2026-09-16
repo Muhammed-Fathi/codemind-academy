@@ -18,24 +18,72 @@ export async function GET(_req: NextRequest) {
   const teacher = await getTeacherProfile(user.id);
   if (!teacher) return err("Teacher profile not found", 404);
 
+  // ---- Concurrent read plan --------------------------------------------
+  // Every read below depends only on `teacher` (already loaded), so all
+  // chains run concurrently. On remote Postgres (Neon) each query is a
+  // network round-trip: total latency becomes the slowest chain instead of
+  // the sum of ~25 sequential queries. Query semantics are unchanged.
+
   // ---- Per-group enrichment -------------------------------------------
-  const groups = await Promise.all(
+  const groupsPromise = Promise.all(
     teacher.groups.map(async (g) => {
       const studentIds = g.students.map((s) => s.id);
-      // One batched query for the whole group — no per-student N+1 lookups.
-      const groupVideoProgress = await getVideoProgressForStudents(studentIds);
+
+      // Wave 1: independent per-group reads. Video progress is one batched
+      // service call for the whole group — no per-student N+1 lookups.
+      const [groupVideoProgress, sessions, quizAttempts, courseLessons] =
+        await Promise.all([
+          getVideoProgressForStudents(studentIds),
+          db.liveSession.findMany({
+            where: { groupId: g.id },
+            select: {
+              id: true,
+              startAt: true,
+              status: true,
+              title: true,
+              titleAr: true,
+            },
+          }),
+          studentIds.length
+            ? db.quizAttempt.findMany({
+                where: { studentId: { in: studentIds } },
+                select: { percentage: true },
+              })
+            : Promise.resolve([] as { percentage: number }[]),
+          db.lesson.findMany({
+            where: { OR: lessonCourseChainOr(g.courseId) },
+            select: { id: true },
+          }),
+        ]);
+
+      // Next session date for this group — derived in JS from `sessions`
+      // (same filter/order the previous findFirst used; saves one query
+      // per group).
+      const nowMs = Date.now();
+      const nextSession =
+        sessions
+          .filter((s) => s.startAt.getTime() >= nowMs)
+          .sort((a, b) => a.startAt.getTime() - b.startAt.getTime())[0] ||
+        null;
+
+      // Wave 2: reads that depend on wave-1 ids.
+      const sessionIds = sessions.map((s) => s.id);
+      const lessonIds = courseLessons.map((l) => l.id);
+      const [attendanceRows, homeworks] = await Promise.all([
+        studentIds.length
+          ? db.attendance.findMany({
+              where: { sessionId: { in: sessionIds } },
+            })
+          : Promise.resolve([]),
+        lessonIds.length
+          ? db.homework.findMany({
+              where: { lessonId: { in: lessonIds } },
+              select: { id: true },
+            })
+          : Promise.resolve([] as { id: string }[]),
+      ]);
 
       // Attendance % across the group's students in this group's sessions
-      const sessions = await db.liveSession.findMany({
-        where: { groupId: g.id },
-        select: { id: true, startAt: true, status: true },
-      });
-      const sessionIds = sessions.map((s) => s.id);
-      const attendanceRows = studentIds.length
-        ? await db.attendance.findMany({
-            where: { sessionId: { in: sessionIds } },
-          })
-        : [];
       const presentCount = attendanceRows.filter(
         (a) => a.status === "PRESENT" || a.status === "LATE"
       ).length;
@@ -45,12 +93,6 @@ export async function GET(_req: NextRequest) {
           : 0;
 
       // Avg quiz score across this group's students
-      const quizAttempts = studentIds.length
-        ? await db.quizAttempt.findMany({
-            where: { studentId: { in: studentIds } },
-            select: { percentage: true },
-          })
-        : [];
       const avgQuizScore =
         quizAttempts.length > 0
           ? Math.round(
@@ -63,17 +105,6 @@ export async function GET(_req: NextRequest) {
       // have submissions still in PENDING or SUBMITTED status. Both chains
       // (official lessons are unit-linked); no archived exclusion — a pending
       // legacy submission still needs grading.
-      const courseLessons = await db.lesson.findMany({
-        where: { OR: lessonCourseChainOr(g.courseId) },
-        select: { id: true },
-      });
-      const lessonIds = courseLessons.map((l) => l.id);
-      const homeworks = lessonIds.length
-        ? await db.homework.findMany({
-            where: { lessonId: { in: lessonIds } },
-            select: { id: true },
-          })
-        : [];
       const homeworkIds = homeworks.map((h) => h.id);
       const pendingSubmissions = homeworkIds.length
         ? await db.homeworkSubmission.count({
@@ -83,13 +114,6 @@ export async function GET(_req: NextRequest) {
             },
           })
         : 0;
-
-      // Next session date for this group
-      const nextSession = await db.liveSession.findFirst({
-        where: { groupId: g.id, startAt: { gte: new Date() } },
-        orderBy: { startAt: "asc" },
-        select: { id: true, startAt: true, titleAr: true, title: true },
-      });
 
       return {
         id: g.id,
@@ -139,8 +163,8 @@ export async function GET(_req: NextRequest) {
   const teacherGroupIds = teacher.groups.map((g) => g.id);
   const weekAhead = new Date();
   weekAhead.setDate(weekAhead.getDate() + 7);
-  const upcomingSessions = teacherGroupIds.length
-    ? await db.liveSession.findMany({
+  const upcomingPromise = teacherGroupIds.length
+    ? db.liveSession.findMany({
         where: {
           groupId: { in: teacherGroupIds },
           startAt: { gte: new Date(), lte: weekAhead },
@@ -153,7 +177,75 @@ export async function GET(_req: NextRequest) {
         },
         take: 20,
       })
-    : [];
+    : Promise.resolve([]);
+
+  // ---- Recent activity: last 5 graded homework + last 5 quiz attempts ----
+  const allStudentIds = teacher.groups.flatMap((g) =>
+    g.students.map((s) => s.id)
+  );
+  const recentSubsPromise = allStudentIds.length
+    ? db.homeworkSubmission.findMany({
+        where: {
+          studentId: { in: allStudentIds },
+          status: "GRADED",
+        },
+        orderBy: { id: "desc" },
+        take: 5,
+        include: {
+          student: { include: { user: { select: { name: true } } } },
+          homework: { select: { id: true, title: true, titleAr: true } },
+        },
+      })
+    : Promise.resolve([]);
+
+  const recentAttemptsPromise = allStudentIds.length
+    ? db.quizAttempt.findMany({
+        where: { studentId: { in: allStudentIds } },
+        orderBy: { startedAt: "desc" },
+        take: 5,
+        include: {
+          student: { include: { user: { select: { name: true } } } },
+          quiz: { select: { id: true, title: true, titleAr: true } },
+        },
+      })
+    : Promise.resolve([]);
+
+  // ---- Pending homework count across all groups ----
+  const allCourseIds = teacher.groups.map((g) => g.courseId);
+  const totalPendingPromise = (async () => {
+    const allLessonsForTeacher = allCourseIds.length
+      ? await db.lesson.findMany({
+          where: { OR: lessonCoursesChainOr(allCourseIds) },
+          select: { id: true },
+        })
+      : [];
+    const allLessonIds = allLessonsForTeacher.map((l) => l.id);
+    const allHomeworksForTeacher = allLessonIds.length
+      ? await db.homework.findMany({
+          where: { lessonId: { in: allLessonIds } },
+          select: { id: true },
+        })
+      : [];
+    const allHwIds = allHomeworksForTeacher.map((h) => h.id);
+    return allHwIds.length
+      ? db.homeworkSubmission.count({
+          where: {
+            homeworkId: { in: allHwIds },
+            status: { in: ["PENDING", "SUBMITTED"] },
+          },
+        })
+      : 0;
+  })();
+
+  const [groups, upcomingSessions, recentSubs, recentAttempts, totalPendingHomework] =
+    await Promise.all([
+      groupsPromise,
+      upcomingPromise,
+      recentSubsPromise,
+      recentAttemptsPromise,
+      totalPendingPromise,
+    ]);
+
   const upcomingSessionsPayload = upcomingSessions.map((s) => ({
     id: s.id,
     title: s.titleAr || s.title,
@@ -166,37 +258,6 @@ export async function GET(_req: NextRequest) {
       ? { id: s.lesson.id, title: s.lesson.titleAr || s.lesson.title }
       : null,
   }));
-
-  // ---- Recent activity: last 5 graded homework + last 5 quiz attempts ----
-  const allStudentIds = teacher.groups.flatMap((g) =>
-    g.students.map((s) => s.id)
-  );
-  const recentSubs = allStudentIds.length
-    ? await db.homeworkSubmission.findMany({
-        where: {
-          studentId: { in: allStudentIds },
-          status: "GRADED",
-        },
-        orderBy: { id: "desc" },
-        take: 5,
-        include: {
-          student: { include: { user: { select: { name: true } } } },
-          homework: { select: { id: true, title: true, titleAr: true } },
-        },
-      })
-    : [];
-
-  const recentAttempts = allStudentIds.length
-    ? await db.quizAttempt.findMany({
-        where: { studentId: { in: allStudentIds } },
-        orderBy: { startedAt: "desc" },
-        take: 5,
-        include: {
-          student: { include: { user: { select: { name: true } } } },
-          quiz: { select: { id: true, title: true, titleAr: true } },
-        },
-      })
-    : [];
 
   type Activity = {
     type: "homework-graded" | "quiz-attempt";
@@ -232,31 +293,6 @@ export async function GET(_req: NextRequest) {
     ...a,
     time: a.time,
   }));
-
-  // ---- Pending homework count across all groups ----
-  const allCourseIds = teacher.groups.map((g) => g.courseId);
-  const allLessonsForTeacher = allCourseIds.length
-    ? await db.lesson.findMany({
-        where: { OR: lessonCoursesChainOr(allCourseIds) },
-        select: { id: true },
-      })
-    : [];
-  const allLessonIds = allLessonsForTeacher.map((l) => l.id);
-  const allHomeworksForTeacher = allLessonIds.length
-    ? await db.homework.findMany({
-        where: { lessonId: { in: allLessonIds } },
-        select: { id: true },
-      })
-    : [];
-  const allHwIds = allHomeworksForTeacher.map((h) => h.id);
-  const totalPendingHomework = allHwIds.length
-    ? await db.homeworkSubmission.count({
-        where: {
-          homeworkId: { in: allHwIds },
-          status: { in: ["PENDING", "SUBMITTED"] },
-        },
-      })
-    : 0;
 
   return ok({
     teacher: {

@@ -243,6 +243,9 @@ export type SecurityEventType =
   | "ACCOUNT_SUSPENDED_MULTI_DEVICE"
   | "ACCOUNT_REACTIVATED"
   | "ACCOUNT_DEACTIVATED"
+  /** Post-launch lifecycle — admin hard-delete of an UNUSED (zero-history)
+   *  account (e.g. a mistaken teacher provision). Guarded routes only. */
+  | "ACCOUNT_DELETED"
   | "SESSION_REVOKED"
   | "QUIZ_EVIDENCE_ACCESSED"
   /** Phase 14 — staff review of a private session PDF. */

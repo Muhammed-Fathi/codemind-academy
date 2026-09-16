@@ -140,13 +140,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ act
     }
     // Successful login clears this identity's failure budget, so the limiter
     // punishes attackers and not people who mistyped their own password.
-    await resetRateLimit("login:id", loginIdKey);
-
-    await logSecurityEvent({
-      userId: user.id,
-      type: "LOGIN_SUCCESS",
-      headers: hdrs,
-    });
+    // These two post-success side effects are independent, so they run
+    // concurrently (one DB round-trip saved on the success path). The
+    // rate-limit CHECKS above intentionally stay sequential — the IP check
+    // runs first so an IP-blocked attacker cannot burn a victim's
+    // per-identity budget — and the scrypt password-hash parameters are
+    // never relaxed for speed.
+    await Promise.all([
+      resetRateLimit("login:id", loginIdKey),
+      logSecurityEvent({
+        userId: user.id,
+        type: "LOGIN_SUCCESS",
+        headers: hdrs,
+      }),
+    ]);
     return ok({ user: safeUser(user) });
   }
 
