@@ -38,7 +38,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { useApp } from "@/lib/store";
-import { brand, whatsappLink } from "@/lib/brand";
+import { brand, whatsappLink, SUPPORT_CONTACTS, telLink } from "@/lib/brand";
 import { CodeMindLogo } from "@/components/logo";
 
 /* ----------------------------------- WHY ---------------------------------- */
@@ -720,6 +720,38 @@ export function FinalCtaSection() {
 export function Footer() {
   const tr = useT();
   const setView = useApp((s) => s.setView);
+
+  // The footer renders on BOTH the landing page and the auth views. A section
+  // link ("الأسعار" / "المنهج") must therefore work from anywhere: on the
+  // landing it scrolls directly; on any other view it first navigates home
+  // (the canonical SPA mechanism, useApp().setView) and scrolls once the
+  // landing sections have mounted. Previously the raw scrollTo() silently
+  // did nothing outside the landing — the links looked clickable but were
+  // dead on the login/register pages.
+  const goToLandingSection = React.useCallback(
+    (sectionId: string) => {
+      const state = useApp.getState();
+      if (state.view === "landing") {
+        state.scrollTo(sectionId);
+        return;
+      }
+      state.setView("landing");
+      // Wait for the landing view to mount, then scroll to the section.
+      requestAnimationFrame(() => {
+        setTimeout(() => useApp.getState().scrollTo(sectionId), 50);
+      });
+    },
+    []
+  );
+
+  // Support roster — single source of truth in src/lib/brand.ts.
+  const technical = SUPPORT_CONTACTS.technical;
+  const teacher = SUPPORT_CONTACTS.teacher;
+  const subscription = SUPPORT_CONTACTS.subscription;
+
+  const navLinkClass =
+    "hover:text-foreground focus-visible:text-foreground underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 rounded-sm transition-colors";
+
   return (
     <footer className="border-t bg-card mt-auto">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -737,54 +769,100 @@ export function Footer() {
           <div>
             <h4 className="font-bold mb-3 text-sm">{tr("landing.113")}</h4>
             <ul className="space-y-2 text-sm text-muted-foreground">
-              <li><button className="hover:text-foreground" onClick={() => setView("login")}>{tr("landing.114")}</button></li>
-              <li><button className="hover:text-foreground" onClick={() => setView("register")}>{tr("landing.115")}</button></li>
-              <li><button className="hover:text-foreground" onClick={() => useApp.getState().scrollTo("pricing")}>{tr("landing.078")}</button></li>
-              <li><button className="hover:text-foreground" onClick={() => useApp.getState().scrollTo("curriculum")}>{tr("landing.040")}</button></li>
+              <li>
+                <button
+                  type="button"
+                  className={navLinkClass}
+                  onClick={() => setView("login")}
+                >
+                  {tr("landing.114")}
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  className={navLinkClass}
+                  onClick={() => setView("register")}
+                >
+                  {tr("landing.115")}
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  className={navLinkClass}
+                  onClick={() => goToLandingSection("pricing")}
+                >
+                  {tr("landing.078")}
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  className={navLinkClass}
+                  onClick={() => goToLandingSection("curriculum")}
+                >
+                  {tr("landing.040")}
+                </button>
+              </li>
             </ul>
           </div>
 
           <div>
             <h4 className="font-bold mb-3 text-sm">{tr("landing.118")}</h4>
-            <ul className="space-y-2 text-sm text-muted-foreground">
+            <ul className="space-y-3 text-sm text-muted-foreground">
               <li>
                 <a
-                  href={whatsappLink(brand.whatsapp.technical)}
+                  href={whatsappLink(technical.phoneIntl)}
                   target="_blank"
                   rel="noreferrer"
                   className="hover:text-foreground inline-flex items-center gap-1.5"
                 >
-                  <Bell className="w-3.5 h-3.5" />
+                  <Bell className="w-3.5 h-3.5 shrink-0" />
                   Technical Support
                 </a>
-              </li>
-              <li>
                 <a
-                  href={whatsappLink(brand.whatsapp.teacher)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="hover:text-foreground inline-flex items-center gap-1.5"
+                  href={telLink(technical.phoneDisplay)}
+                  dir="ltr"
+                  className="block text-xs font-bold text-foreground/80 hover:text-primary transition-colors mt-0.5 ps-5"
                 >
-                  <GraduationCap className="w-3.5 h-3.5" />
-                  {tr("landing.119")}</a>
-              </li>
-              <li>
-                <a
-                  href={whatsappLink(brand.whatsapp.subscription)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="hover:text-foreground inline-flex items-center gap-1.5"
-                >
-                  <CreditCard className="w-3.5 h-3.5" />
-                  Subscription Support
+                  {technical.phoneDisplay}
                 </a>
               </li>
-              <li dir="ltr" className="text-start">
+              <li>
                 <a
-                  href={`tel:${brand.contact.phone.replace(/[^+0-9]/g, "")}`}
-                  className="hover:text-foreground font-bold"
+                  href={whatsappLink(teacher.phoneIntl)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="hover:text-foreground inline-flex items-center gap-1.5"
                 >
-                  {brand.contact.phone}
+                  <GraduationCap className="w-3.5 h-3.5 shrink-0" />
+                  {tr("landing.119")}
+                </a>
+                <a
+                  href={telLink(teacher.phoneDisplay)}
+                  dir="ltr"
+                  className="block text-xs font-bold text-foreground/80 hover:text-primary transition-colors mt-0.5 ps-5"
+                >
+                  {teacher.phoneDisplay}
+                </a>
+              </li>
+              <li>
+                <a
+                  href={whatsappLink(subscription.phoneIntl)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="hover:text-foreground inline-flex items-center gap-1.5"
+                >
+                  <CreditCard className="w-3.5 h-3.5 shrink-0" />
+                  Subscription Support
+                </a>
+                <a
+                  href={telLink(subscription.phoneDisplay)}
+                  dir="ltr"
+                  className="block text-xs font-bold text-foreground/80 hover:text-primary transition-colors mt-0.5 ps-5"
+                >
+                  {subscription.phoneDisplay}
                 </a>
               </li>
             </ul>

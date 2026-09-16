@@ -23,7 +23,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { brand, whatsappLink } from "@/lib/brand";
+import { brand } from "@/lib/brand";
+import { SupportCard } from "@/components/shared/support-card";
 import { GlobalControls } from "@/components/global-controls";
 import {
   LayoutDashboard,
@@ -36,8 +37,6 @@ import {
   LogOut,
   Menu,
   ChevronLeft,
-  HelpCircle,
-  HeartHandshake,
   Briefcase,
   ShieldCheck,
   Trophy,
@@ -168,32 +167,11 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           })}
         </nav>
 
-        {/* WhatsApp help */}
+        {/* Support contacts — shared two-person card (see
+            src/components/shared/support-card.tsx; people/numbers come from
+            the SUPPORT_CONTACTS config in src/lib/brand.ts). */}
         <div className="mt-6 px-3">
-          <div className="rounded-xl bg-gradient-to-br from-primary/10 to-amber-400/10 p-4 border border-primary/10 overflow-hidden">
-            <div className="flex items-center gap-2 mb-2 min-w-0">
-              <HeartHandshake className="w-4 h-4 text-primary shrink-0" />
-              <div className="text-xs font-bold truncate">{tr("shell.016")}</div>
-            </div>
-            <p className="text-[11px] text-muted-foreground mb-1 leading-relaxed break-words">
-              {tr("shell.017")}</p>
-            <a
-              href={`tel:${brand.contact.phone.replace(/[^+0-9]/g, "")}`}
-              className="block text-center text-xs font-black mb-3 hover:text-primary transition-colors truncate"
-              dir="ltr"
-            >
-              {brand.contact.phone}
-            </a>
-            <a
-              href={whatsappLink(brand.whatsapp.technical, tr("shell.018"))}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center justify-center w-full px-3 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-bold hover:opacity-90 transition-opacity"
-            >
-              <HelpCircle className="w-3.5 h-3.5 ms-1.5 shrink-0" />
-              <span className="truncate">{tr("shell.038")}</span>
-            </a>
-          </div>
+          <SupportCard />
         </div>
       </ScrollArea>
 

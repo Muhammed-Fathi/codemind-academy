@@ -309,6 +309,24 @@ export const DICT_2026: Record<string, DictEntry> = {
   "shell.036": { ar: "نظرة عامة", en: "Overview" },
   "shell.037": { ar: "بنك الأسئلة", en: "Question Bank" },
   "shell.038": { ar: "الدعم", en: "Support" },
+  // ---------------- Post-launch: two-person support card ----------------
+  // Overrides the old single-line "Reach us on WhatsApp." description —
+  // DICT_2026 wins over the generated dict (see i18n-core.ts merge order).
+  "shell.017": {
+    ar: "اختار الشخص المناسب وكلّمه على طول — اتصال أو WhatsApp.",
+    en: "Pick the right person and reach out instantly — call or WhatsApp.",
+  },
+  // Post-launch: clearer teacher empty-state — explains that session
+  // visibility follows the scheduling lifecycle, not group assignment alone.
+  // Overrides the generated "teacher.021" (DICT_2026 wins the merge).
+  "teacher.021": {
+    ar: "مفيش Sessions مجدولة أو مفتوحة لمجموعاتك خلال الأسبوع الجاي. الـSession بتظهر هنا بعد ما الإدارة تحددها وتفتحها لمجموعتك — التعيين على المجموعة وحده مش كفاية.",
+    en: "No scheduled or open Sessions for your groups in the coming week. A Session appears here once the administration schedules and opens it for your group — group assignment alone is not enough.",
+  },
+  "shell.039": { ar: "الدعم الفني والاشتراكات", en: "Technical & subscription support" },
+  "shell.040": { ar: "دعم المدرسين والدراسة", en: "Teacher & study support" },
+  "shell.041": { ar: "اتصال", en: "Call" },
+  "shell.042": { ar: "واتساب", en: "WhatsApp" },
 
   // ---------------- Phase 10: Kodgy AI Assistant ----------------
   // Chrome strings only. Kodgy's scripted answer CONTENT lives in
@@ -619,6 +637,45 @@ export const DICT_2026: Record<string, DictEntry> = {
     en: "Could not finalize the upload — the file was not saved.",
   },
 
+  // ------------- Post-launch admin lifecycle UI (edit/deactivate/delete) ----
+  "admin.509": { ar: "حذف المجموعة", en: "Delete group" },
+  "admin.510": {
+    ar: "الحذف نهائي وممكن فقط لو المجموعة مفيهاش طلاب ولا Sessions. لو ليها سجل، عطّلها بدل الحذف.",
+    en: "Permanent — only possible when the group has no students and no sessions. If it has history, deactivate it instead.",
+  },
+  "admin.511": { ar: "تم حذف المجموعة", en: "Group deleted" },
+  "admin.512": { ar: "تعديل المدرس", en: "Edit teacher" },
+  "admin.513": { ar: "تم تحديث بيانات المدرس", en: "Teacher updated" },
+  "admin.514": { ar: "حذف المدرس", en: "Delete teacher" },
+  "admin.515": {
+    ar: "الحذف نهائي وممكن فقط لو المدرس ملوش مجموعات أو حصص أو ملاحظات مسجلة. لو ليه سجل، عطّل حسابه بدل الحذف.",
+    en: "Permanent — only possible when the teacher has no assigned groups, sessions, or notes. A teacher with history is deactivated, never deleted.",
+  },
+  "admin.516": { ar: "تم حذف المدرس", en: "Teacher deleted" },
+  "admin.517": { ar: "حذف", en: "Delete" },
+  "admin.518": { ar: "المجموعة معطّلة — مش متاحة للطلاب أو الإضافة الجديدة", en: "Group deactivated — hidden from students and new assignments" },
+  "admin.519": { ar: "تم تعطيل المجموعة", en: "Group deactivated" },
+  "admin.520": { ar: "تم تفعيل المجموعة", en: "Group activated" },
+  "admin.521": { ar: "تعديل", en: "Edit" },
+  "admin.522": { ar: "اسم المجموعة", en: "Group name" },
+  "admin.523": { ar: "تعديل الكورس", en: "Edit course" },
+  "admin.524": { ar: "تم تحديث الكورس", en: "Course updated" },
+  "admin.525": { ar: "حذف الكورس", en: "Delete course" },
+  "admin.526": {
+    ar: "الحذف نهائي وممكن فقط لو الكورس فاضي تمامًا — من غير Parts أو دروس أو مجموعات أو امتحانات. المحتوى المستخدم بيتم أرشفته مش حذفه.",
+    en: "Permanent — only possible when the course is completely empty (no parts, lessons, groups, or exams). Content in use is archived, never deleted.",
+  },
+  "admin.527": { ar: "تم حذف الكورس", en: "Course deleted" },
+  "admin.528": { ar: "تعديل السؤال", en: "Edit question" },
+  "admin.529": { ar: "تم تحديث السؤال", en: "Question updated" },
+  "admin.530": { ar: "حذف السؤال", en: "Delete question" },
+  "admin.531": {
+    ar: "الحذف نهائي. السؤال المرتبط بمحاولات اختبار محفوظة أو بامتحان موك ثابت (FIXED) مش ممكن يتحذف — السيرفر بيرفض ويوضح السبب.",
+    en: "Permanent. A question referenced by frozen attempt history or a FIXED mock exam cannot be deleted — the server refuses and explains why.",
+  },
+  "admin.532": { ar: "تم حذف السؤال", en: "Question deleted" },
+  "admin.533": { ar: "الدرجات", en: "Marks" },
+
   // ---------------- Phase 18: teacher workflow completion ----------------
   // Server messages for homework authoring, question management, track-scope
   // containment and the server-side quiz time limit.
@@ -899,6 +956,28 @@ export const DICT_2026: Record<string, DictEntry> = {
   "api.293": {
     ar: "القالب ده مش موجود أو مش بتاعك.",
     en: "That template does not exist, or it is not yours.",
+  },
+
+  // ------------- Post-launch admin lifecycle (safe delete guards) ----------
+  "api.294": {
+    ar: "مش ممكن تحذف المجموعة: لسه فيها {p1} طالب. انقل الطلاب أو شيلهم من المجموعة الأول، أو عطّلها بدل الحذف.",
+    en: "Cannot delete the group: it still has {p1} student(s). Move or remove them first, or deactivate the group instead of deleting it.",
+  },
+  "api.295": {
+    ar: "مش ممكن تحذف المجموعة: عندها {p1} حصة (Session) بسجل حضور. الحذف هيضيّع السجل — عطّل المجموعة بدل الحذف.",
+    en: "Cannot delete the group: it has {p1} session(s) with attendance history. Deleting would destroy that history — deactivate the group instead.",
+  },
+  "api.296": {
+    ar: "مش ممكن تحذف المدرس: عنده {p1} مجموعة و{p2} حصة و{p3} ملاحظة مسجلة. المدرس اللي ليه سجل بيتم تعطيله مش حذفه — عطّل الحساب بدل الحذف.",
+    en: "Cannot delete the teacher: {p1} assigned group(s), {p2} session(s) and {p3} note(s) on record. A teacher with history is deactivated, never deleted — deactivate the account instead.",
+  },
+  "api.297": {
+    ar: "اسم المدرس مطلوب (من حرف لحد 120 حرف).",
+    en: "A teacher name is required (1–120 characters).",
+  },
+  "api.298": {
+    ar: "مش ممكن تحذف الكورس: مرتبط بـ{p1} مجموعة و{p2} جزء من المنهج و{p3} امتحان. الكورس المستخدم مش بيتم حذفه — أرشف دروسه أو عطّل مجموعاته.",
+    en: "Cannot delete the course: it is referenced by {p1} group(s), {p2} curriculum part(s) and {p3} mock exam(s). A course in use is never deleted — archive its lessons or deactivate its groups instead.",
   },
 
   // =======================================================================

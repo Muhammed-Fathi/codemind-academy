@@ -129,3 +129,69 @@ export async function PATCH(
 
   return ok({ ok: true });
 }
+
+// DELETE /api/admin/groups/[id] — remove an UNUSED group (post-launch audit).
+//
+// SAFE-LIFECYCLE RULE (docs/POST_LAUNCH_AUDIT report §6):
+//   A group may be hard-deleted ONLY while nothing references it:
+//     * zero assigned students  — Student.groupId has NO cascade/set-null in
+//       the delete direction we can rely on silently; stranding a student
+//       would hide their enrollment, so a populated group is REFUSED (409)
+//       and the admin must move/remove the students first, or deactivate;
+//     * zero scheduled sessions — LiveSession.groupId is onDelete: Cascade,
+//       so deleting a group with sessions would silently destroy session +
+//       attendance history. REFUSED (409) whenever any session exists.
+//   A group that fails either guard should be DEACTIVATED instead
+//   (PATCH { isActive: false }) — that keeps history and blocks new
+//   enrollment/assignment (every write path already refuses inactive groups,
+//   api.085). Admin-only, audited, and never cascades into unrelated data.
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const tApi = await getServerT();
+  const { user, error } = await requireRole("ADMIN");
+  if (error) return error;
+  if (!user) return err("Unauthorized", 401);
+
+  const { id } = await params;
+  const group = await db.group.findUnique({
+    where: { id },
+    include: { _count: { select: { students: true, sessions: true } } },
+  });
+  if (!group) return err(tApi("api.020"), 404);
+
+  if (group._count.students > 0) {
+    return err(
+      tApi("api.294", { p1: group._count.students }),
+      409
+    );
+  }
+  if (group._count.sessions > 0) {
+    return err(
+      tApi("api.295", { p1: group._count.sessions }),
+      409
+    );
+  }
+
+  await db.group.delete({ where: { id } });
+
+  await db.auditLog
+    .create({
+      data: {
+        userId: user.id,
+        action: "GROUP_DELETED",
+        entity: "Group",
+        entityId: id,
+        details: JSON.stringify({
+          groupId: id,
+          name: group.name,
+          students: group._count.students,
+          sessions: group._count.sessions,
+        }).slice(0, 1000),
+      },
+    })
+    .catch(() => undefined);
+
+  return ok({ ok: true, deleted: true, id });
+}

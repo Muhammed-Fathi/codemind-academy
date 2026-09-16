@@ -32,8 +32,10 @@ import {
   School,
   Hash,
   Copy,
+  Headset,
+  MessageCircle,
 } from "lucide-react";
-import { brand } from "@/lib/brand";
+import { SUPPORT_CONTACTS, telLink, whatsappLink } from "@/lib/brand";
 import {
   isValidArabicThreePartName,
   isValidEgyptianPhone,
@@ -169,16 +171,47 @@ export function AuthView() {
               )}
             </div>
 
-            {/* Support / contact line (public) */}
-            <div className="mt-6 rounded-xl bg-muted/40 border border-border/40 p-3 text-xs text-center text-muted-foreground">
-              {t.auth.contactSupport}:{" "}
-              <a
-                href={`tel:${brand.contact.phone.replace(/[^+0-9]/g, "")}`}
-                className="font-bold text-foreground hover:text-primary transition-colors"
-                dir="ltr"
-              >
-                {brand.contact.phone}
-              </a>
+            {/* Support contact (public) — post-launch roster: a named support
+                engineer with a clickable line, sourced from the shared
+                SUPPORT_CONTACTS config (src/lib/brand.ts). */}
+            <div className="mt-6 rounded-xl bg-muted/40 border border-border/40 px-4 py-3">
+              <div className="text-[11px] font-semibold text-muted-foreground text-center mb-2">
+                {t.auth.contactSupport}
+              </div>
+              <div className="flex items-center justify-center gap-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                    <Headset className="w-4 h-4" />
+                  </span>
+                  <span className="flex flex-col items-start min-w-0">
+                    <span
+                      className="text-xs font-bold text-foreground truncate"
+                      dir="ltr"
+                    >
+                      {SUPPORT_CONTACTS.technical.name}
+                    </span>
+                    <a
+                      href={telLink(SUPPORT_CONTACTS.technical.phoneDisplay)}
+                      dir="ltr"
+                      className="text-xs font-black text-primary hover:underline transition-colors"
+                    >
+                      {SUPPORT_CONTACTS.technical.phoneDisplay}
+                    </a>
+                  </span>
+                </div>
+                <a
+                  href={whatsappLink(
+                    SUPPORT_CONTACTS.technical.phoneIntl,
+                    tr("shell.018")
+                  )}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label="WhatsApp"
+                  className="shrink-0 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:opacity-90 transition-opacity"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                </a>
+              </div>
             </div>
           </div>
         </div>
