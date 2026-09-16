@@ -141,6 +141,80 @@ jobs:
           npx tsc --noEmit
           DATABASE_URL=postgresql://postgres:postgres@localhost:5432/codemind_migrations npm run build:postgres
 
+      # Run only after all recovery proofs and the application build succeed.
+      - name: Generate and validate trusted PostgreSQL 17 pre-26D reference
+        env:
+          # Fixed disposable service target, never a repository secret or Neon URL.
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/codemind_recovery_reference_test
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import fs from 'node:fs';
+          import crypto from 'node:crypto';
+          import pg from 'pg';
+          assert.equal(process.env.GITHUB_ACTIONS, 'true');
+          assert.equal(process.env.DATABASE_URL, 'postgresql://postgres:postgres@localhost:5432/codemind_recovery_reference_test');
+          const sql = fs.readFileSync('prisma/postgres/migrations/0_init/migration.sql', 'utf8');
+          assert.equal(crypto.createHash('sha256').update(sql).digest('hex'),
+            'c7f5d3fa76931d02e48c5cd2c4bfdb972c0f25e528e3c0c116736d3729cefa80');
+          const admin = new pg.Client({connectionString: 'postgresql://postgres:postgres@localhost:5432/postgres', connectionTimeoutMillis: 10000});
+          try {
+            await admin.connect();
+            const version = (await admin.query('SHOW server_version_num')).rows[0].server_version_num;
+            assert.equal(Math.floor(Number(version) / 10000), 17);
+            // The recovery proof uses this name and later applies 26D there.
+            // Recreate it so the exported reference contains ONLY pristine 0_init.
+            await admin.query('DROP DATABASE IF EXISTS codemind_recovery_reference_test');
+            await admin.query('CREATE DATABASE codemind_recovery_reference_test TEMPLATE template0');
+          } finally { await admin.end(); }
+          const reference = new pg.Client({connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 10000});
+          try {
+            await reference.connect();
+            await reference.query('BEGIN');
+            try {
+              await reference.query(sql);
+              await reference.query('COMMIT');
+            } catch (error) {
+              await reference.query('ROLLBACK');
+              throw error;
+            }
+          } finally { await reference.end(); }
+          NODE
+          node scripts/db/inspect-pg-baseline.mjs > pg17-0-init.json
+          node scripts/db/inspect-pg-baseline.mjs --reference pg17-0-init.json > pg17-0-init-verification.json
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import fs from 'node:fs';
+          import {validateReference} from './scripts/db/reconcile-group-track-scope.mjs';
+          const reference = JSON.parse(fs.readFileSync('pg17-0-init.json', 'utf8'));
+          validateReference(reference);
+          assert.match(reference.server, /^17\./);
+          assert.equal(reference.repositoryInitSha256,
+            'c7f5d3fa76931d02e48c5cd2c4bfdb972c0f25e528e3c0c116736d3729cefa80');
+          const column = reference.catalog.columns.find(c => c.table_name === 'Group' && c.column_name === 'trackScope');
+          assert.equal(column.type, '"TrackScope"');
+          assert.equal(column.not_null, false);
+          assert.equal(column.default_expression, null);
+          assert.deepEqual(reference.catalog.enums.find(e => e.name === 'TrackScope').values, ['SHARED', 'ARABIC', 'LANGUAGE']);
+          assert.equal(reference.groupRows, '0');
+          assert.deepEqual(reference.audience, []);
+          assert.deepEqual(reference.ledger, []);
+          const verification = JSON.parse(fs.readFileSync('pg17-0-init-verification.json', 'utf8'));
+          assert.deepEqual(verification.differences, []);
+          console.log('PG17_0_INIT_REFERENCE_VALID: pristine enum baseline, empty Group/ledger, zero catalog differences');
+          NODE
+          git rev-parse HEAD
+          sha256sum prisma/postgres/migrations/0_init/migration.sql
+          sha256sum pg17-0-init.json
+
+      - name: Upload trusted pre-26D reference
+        uses: actions/upload-artifact@v4
+        with:
+          name: pg17-0-init-reference
+          path: pg17-0-init.json
+          if-no-files-found: error
+
       - name: Upload output
         if: always()
         uses: actions/upload-artifact@v4
