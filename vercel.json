@@ -1,4 +1,5 @@
 {
+  "buildCommand": "npm run build:postgres",
   "crons": [
     {
       "path": "/api/cron/purge-evidence",

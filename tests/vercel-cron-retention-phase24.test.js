@@ -75,8 +75,26 @@ section("1. vercel.json — exactly the intended daily cron");
   if (vj) {
     eq(
       vj,
-      { crons: [{ path: "/api/cron/purge-evidence", schedule: "0 3 * * *" }] },
-      "vercel.json contains EXACTLY one cron: /api/cron/purge-evidence @ 0 3 * * *"
+      {
+        // Phase 26H: the project's build command is pinned in-repo so the
+        // deployment can never fall back to the framework default
+        // (`npm run build`), which generates the SQLITE Prisma Client and
+        // cannot talk to a `postgresql://` production URL.
+        buildCommand: "npm run build:postgres",
+        crons: [{ path: "/api/cron/purge-evidence", schedule: "0 3 * * *" }],
+      },
+      "vercel.json contains EXACTLY the PostgreSQL build command + one cron: /api/cron/purge-evidence @ 0 3 * * *"
+    );
+    // Phase 26H pin: the production build MUST generate the PostgreSQL client.
+    eq(
+      vj.buildCommand,
+      "npm run build:postgres",
+      "buildCommand is the PostgreSQL production build (never the SQLite `npm run build`)"
+    );
+    // Phase 26H pin: the build command must not smuggle in a migration.
+    ok(
+      !/migrate/i.test(String(vj.buildCommand)),
+      "buildCommand contains no migration step (migrations are an operator action)"
     );
     ok(
       Array.isArray(vj.crons) && vj.crons.length === 1,

@@ -572,6 +572,15 @@ For SQLite dev → PostgreSQL production migration, full step-by-step
 instructions, env var checklist, log file locations, update / rollback
 procedures, see **[`docs/DEPLOYMENT_GUIDE.md`](docs/DEPLOYMENT_GUIDE.md)**.
 
+> **Deploying the production target (Vercel + Neon + R2 + Gmail + Vercel
+> Cron)?** Use
+> **[`docs/VERCEL_PRODUCTION_RUNBOOK.md`](docs/VERCEL_PRODUCTION_RUNBOOK.md)**.
+> It is the operator checklist for that architecture: migration sequence,
+> pinned build command (`vercel.json` → `npm run build:postgres`), the
+> environment manifest, the R2 exact-origin CORS step, SMTP/Cron smoke tests
+> and rollback. The VPS-shaped `docs/GO_LIVE_RUNBOOK.md` is retained for its
+> data-safety rules only.
+
 ---
 
 ## Troubleshooting

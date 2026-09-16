@@ -1,5 +1,24 @@
 # CodeMind Academy — Go-Live Runbook (Phase 22)
 
+> ## ⚠ PHASE 26H NOTICE (2026-09-16) — the VPS target is NOT the launch target
+>
+> This runbook describes the **VPS** deployment (systemd/PM2, a persistent media
+> volume, host cron, Caddy/Nginx TLS, `pg_dump` on the box). The current launch
+> target is **Vercel Hobby + Neon + Cloudflare R2 + Gmail SMTP + Vercel Cron**,
+> and several steps below (media volume, local cron, backup scripts, `bun run
+> start`, Caddy) do not exist there.
+>
+> **For the production deployment use
+> [`docs/VERCEL_PRODUCTION_RUNBOOK.md`](VERCEL_PRODUCTION_RUNBOOK.md)**, which
+> supersedes this file for the Vercel target and includes the exact migration
+> sequence, build command, environment manifest, R2 exact-origin CORS step,
+> SMTP/Cron smoke tests and the rollback/emergency-disable procedure.
+>
+> This file is retained because its **data-safety rules** (never `migrate
+> reset`, never delete curriculum/security records, allowlist-based account
+> cleanup, preservation of the official curriculum) and its PostgreSQL cutover
+> references are still authoritative wherever they apply.
+
 > **Version:** 1.0.0 — Phase 22 Final Integration & Deployment
 > **Date:** 2026-09-11
 > **Environment:** Production (PostgreSQL + durable media volume + Caddy/Nginx TLS)
