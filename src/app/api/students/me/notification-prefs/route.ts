@@ -1,8 +1,20 @@
 // CodeMind Academy — Notification Preferences API
 // Works for any logged-in user (student/parent/teacher/admin).
+//
+// Phase 26E — this is the SINGLE implementation behind both
+// `/api/students/me/notification-prefs` and its parent counterpart
+// `/api/parents/me/notification-prefs` (a re-export), so the parent surface
+// inherits every rule here verbatim:
+//   * the row key is ALWAYS the authenticated session user (`user.id`) — no
+//     request body can name a user, a row id or a role;
+//   * only the declared preference keys are written (an unknown key, or a
+//     value of the wrong type, is ignored rather than persisted);
+//   * quiet hours are `HH:MM` or explicit null, validated by
+//     `normalizeQuietHour` (a free-form or oversized string is discarded).
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
+import { normalizeQuietHour } from "@/lib/notify";
 
 const PREF_FIELDS = [
   "newLesson",
@@ -47,12 +59,11 @@ export async function PUT(req: NextRequest) {
       data[field] = body[field];
     }
   }
-  if (typeof body.quietHoursStart === "string" || body.quietHoursStart === null) {
-    data.quietHoursStart = body.quietHoursStart;
-  }
-  if (typeof body.quietHoursEnd === "string" || body.quietHoursEnd === null) {
-    data.quietHoursEnd = body.quietHoursEnd;
-  }
+  // `undefined` means "not written"; `null` is the explicit clear.
+  const quietStart = normalizeQuietHour(body.quietHoursStart);
+  if (quietStart !== undefined) data.quietHoursStart = quietStart;
+  const quietEnd = normalizeQuietHour(body.quietHoursEnd);
+  if (quietEnd !== undefined) data.quietHoursEnd = quietEnd;
 
   const prefs = await db.notificationPreference.upsert({
     where: { userId: user.id },

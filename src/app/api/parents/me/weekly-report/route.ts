@@ -6,14 +6,20 @@ import { getServerT, serverLocale } from "@/lib/i18n-server";
 // Phase 7 rules: quiz stats count finished attempts only, attendance counts
 // PRESENT + LATE as attended (the student definition), lesson completion is
 // measured against the child's course, and the handler is read-only.
-import { NextResponse } from "next/server";
 import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
 import { getVideoProgressForStudents, getVideoProgressInRange } from "@/lib/progress";
-import { EXCLUDE_ARCHIVED_LESSON, lessonCourseChainOr } from "@/lib/session-progress";
-import { trackScopeWhere } from "@/lib/track-scope";
-import { LESSON_STUDENT_STATUS_FILTER } from "@/lib/session-lifecycle";
+import {
+  attemptsInCurriculumUniverse,
+  getStudentCurriculumHomeworkIds,
+  getStudentCurriculumLessonIds,
+} from "@/lib/parent-access";
 import { fmtDate } from "@/lib/i18n-core";
+
+/** When an attendance record happened: its session, else its creation. */
+function attendanceAt(a: { createdAt: Date; session?: { startAt: Date | null } | null }): Date {
+  return a.session?.startAt || a.createdAt;
+}
 
 export async function GET() {
   const tApi = await getServerT();
@@ -36,7 +42,11 @@ export async function GET() {
                 orderBy: { createdAt: "desc" },
               },
               quizAttempts: {
-                include: { quiz: { select: { titleAr: true, title: true } } },
+                // `lessonId` rides along so the attempt set can be cut to the
+                // child's own curriculum universe (Phase 26E).
+                include: {
+                  quiz: { select: { lessonId: true, titleAr: true, title: true } },
+                },
                 orderBy: { finishedAt: "desc" },
               },
               homeworkSubmits: {
@@ -68,28 +78,22 @@ export async function GET() {
   // predicate pair the child-scoped dashboards use (`trackScopeWhere` on the
   // child's own schoolType + the dual curriculum chain), completing the
   // "independently scoped by child id → course → track" contract.
+  // Phase 26E: the predicate now lives in ONE place
+  // (`getStudentCurriculumLessonIds`, shared with the dashboard and the
+  // analytics route). Phase 13's PUBLISHED clause and Phase 11's archived
+  // exclusion are inside the helper — a staged session must neither be
+  // counted nor named.
   const weeklyUniverseByStudent = new Map<string, Set<string>>();
+  const weeklyHomeworkUniverseByStudent = new Map<string, Set<string>>();
   for (const link of parent.children) {
-    const s = link.student;
-    const courseId = s.group?.courseId;
-    if (!courseId) {
-      weeklyUniverseByStudent.set(s.id, new Set());
-      continue;
-    }
-    // Phase 13: the report denominator is the child's curriculum, so it
-    // requires PUBLISHED exactly like the student universe does — a staged
-    // session must neither be counted nor named. Replaces the legacy
-    // `isPublished` flag, which no longer gates anything.
-    const rows = await db.lesson.findMany({
-      where: {
-        ...LESSON_STUDENT_STATUS_FILTER,
-        ...EXCLUDE_ARCHIVED_LESSON,
-        ...trackScopeWhere(s.schoolType),
-        OR: lessonCourseChainOr(courseId),
-      },
-      select: { id: true },
-    });
-    weeklyUniverseByStudent.set(s.id, new Set(rows.map((r) => r.id)));
+    weeklyUniverseByStudent.set(
+      link.student.id,
+      await getStudentCurriculumLessonIds(link.student.id)
+    );
+    weeklyHomeworkUniverseByStudent.set(
+      link.student.id,
+      await getStudentCurriculumHomeworkIds(link.student.id)
+    );
   }
 
   const now = new Date();
@@ -110,18 +114,50 @@ export async function GET() {
   const weeklyReports = parent.children.map((link) => {
     const s = link.student;
 
+    // Phase 26E: quiz activity is reported only for the child's own active
+    // curriculum (PUBLISHED, non-archived, child's course, child's track) —
+    // the same universe the completion denominator uses, so "best quiz this
+    // week" can never be an attempt on an archived, staged or out-of-track
+    // lesson. Retry history is preserved: every finished in-universe attempt
+    // in the window is one data point (Phase 26D).
+    const childUniverse = weeklyUniverseByStudent.get(s.id) || new Set<string>();
+    const inUniverseQuizAttempts = attemptsInCurriculumUniverse(
+      s.quizAttempts,
+      childUniverse
+    );
+
     // Filter activity from last 7 days
-    const weeklyQuizAttempts = s.quizAttempts.filter(
+    const weeklyQuizAttempts = inUniverseQuizAttempts.filter(
       (qa) => qa.finishedAt && qa.finishedAt >= weekAgo
     );
+    // Phase 26E: the WEEK's activity is cut to the child's own universe on the
+    // same terms as the week's denominator. `completionPct` below was already
+    // universe-restricted, but the activity counters and the daily breakdown
+    // were not — a progress row left on an archived, staged or other-track
+    // lesson (or a submission on such an assignment) was reported as "this
+    // week's" work and named curriculum the child cannot open, while the
+    // percentage silently excluded it. One universe, every number.
+    const childHomeworkUniverse =
+      weeklyHomeworkUniverseByStudent.get(s.id) || new Set<string>();
     const weeklyHomework = s.homeworkSubmits.filter(
-      (hw) => hw.submittedAt && hw.submittedAt >= weekAgo
+      (hw) =>
+        hw.submittedAt &&
+        hw.submittedAt >= weekAgo &&
+        childHomeworkUniverse.has(hw.homeworkId)
     );
     const weeklyLessons = s.lessonProgress.filter(
-      (lp) => lp.lastViewedAt && lp.lastViewedAt >= weekAgo
+      (lp) =>
+        lp.lastViewedAt &&
+        lp.lastViewedAt >= weekAgo &&
+        childUniverse.has(lp.lessonId)
     );
+    // The window is judged on WHEN THE CLASS HAPPENED (`session.startAt`, the
+    // same basis the dashboard's monthly buckets, the analytics route and the
+    // daily breakdown below use) — never on the row's insertion time, which
+    // can predate or postdate the session and would make the weekly total
+    // disagree with the daily activity it summarises.
     const weeklyAttendance = s.attendances.filter(
-      (a) => a.createdAt >= weekAgo
+      (a) => attendanceAt(a) >= weekAgo
     );
 
     // Daily activity breakdown (last 7 days)
@@ -142,7 +178,7 @@ export async function GET() {
       ).length;
       const dayAttendance = s.attendances.find(
         (a) => {
-          const attDate = a.session?.startAt || a.createdAt;
+          const attDate = attendanceAt(a);
           return attDate >= dayStart && attDate <= dayEnd;
         }
       );
@@ -181,8 +217,7 @@ export async function GET() {
     // child, not the count of progress rows that exist). Both sides are
     // restricted to that active universe so archived history or a sibling's
     // track cannot inflate the fraction.
-    const weeklyUniverseIds =
-      weeklyUniverseByStudent.get(s.id) || new Set<string>();
+    const weeklyUniverseIds = childUniverse;
     const completedLessons = s.lessonProgress.filter(
       (lp) => lp.isCompleted && weeklyUniverseIds.has(lp.lessonId)
     ).length;

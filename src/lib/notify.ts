@@ -69,6 +69,33 @@ export async function isNotificationEnabled(
   return (prefs as any)[prefField] as boolean;
 }
 
+/**
+ * Normalise a client-supplied quiet-hour boundary.
+ *
+ * The ONLY shapes quiet hours may be stored in are `"HH:MM"` (24-hour) and
+ * `null` (cleared) — anything else is discarded (`undefined` = "write
+ * nothing"), never coerced. Two reasons this belongs next to the consumer:
+ *
+ *   * `isInQuietHoursAt` parses the stored value with `split(":")` + `Number`
+ *     and compares minute totals, so a free-form string ("not-a-time",
+ *     "99:99") silently produces `NaN` comparisons and a window that can never
+ *     open — a preference toggle that lies;
+ *   * the column is `String?` with no length bound, so without this check an
+ *     authenticated client could persist an arbitrarily large blob in a row
+ *     every notification fan-out reads.
+ *
+ * `""` is treated as an explicit clear, because "empty time input" is how a
+ * browser reports a removed value.
+ */
+export function normalizeQuietHour(value: unknown): string | null | undefined {
+  if (value === null) return null;
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") return undefined;
+  const v = value.trim();
+  if (v === "") return null;
+  return /^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(v) ? v : undefined;
+}
+
 // Check if we're in quiet hours for a user
 export function isInQuietHours(
   quietStart: string | null,

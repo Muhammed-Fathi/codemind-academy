@@ -1106,13 +1106,35 @@ async function main() {
       // sessions of a track that kid can never open. The reports now
       // resolve the universe PER CHILD from that child's own schoolType,
       // exactly like parents/me/dashboard already did.
+      //
+      // Phase 26E moved that resolution into ONE shared helper
+      // (`getStudentCurriculumLessonIds`) so the three parent reporting
+      // surfaces cannot drift. The route is therefore pinned EITHER to the
+      // inline clause OR to the helper called with the CHILD's id — and the
+      // helper itself is pinned below, so a shared helper that widened to the
+      // parent's union would fail this section for all its callers at once.
       ok(
-        /trackScopeWhere\(s\.schoolType\)/.test(src),
+        /trackScopeWhere\(s\.schoolType\)/.test(src) ||
+          /await getStudentCurriculumLessonIds\(\s*(s\.id|link\.student\.id)\s*\)/.test(src),
         `${rel} slices the universe per CHILD (the child's own track — Phase 19)`
       );
       ok(
         !/trackScopeInWhere\(await getParentTrackScopes/.test(src),
         `${rel} no longer collapses siblings into a union track scope`
+      );
+    }
+    {
+      const access = read("src/lib/parent-access.ts");
+      const lessonUniverse = (
+        access.match(/export async function getStudentCurriculumLessonIds[\s\S]*?\n\}/) || [""]
+      )[0];
+      ok(
+        /trackScopeWhere\(student\.schoolType\)/.test(lessonUniverse),
+        "the shared parent universe helper slices per CHILD's own track"
+      );
+      ok(
+        !/getParentTrackScopes/.test(lessonUniverse),
+        "the shared parent universe helper never widens to the parent's union"
       );
     }
   }

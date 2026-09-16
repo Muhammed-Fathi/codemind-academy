@@ -191,7 +191,14 @@ function renderView(view: string, role?: string | null) {
     case "student-homework":
     case "student-notifications":
     case "student-progress":
-      return <StudentDashboard />;
+      // Phase 26E: the shared NotificationsBell sends EVERY non-admin role to
+      // `student-notifications`. A PARENT or TEACHER reaching that key used to
+      // be handed <StudentDashboard/>, whose `/api/students/me/*` calls all
+      // answer 403 for them — a dead screen reached by clicking the bell the
+      // parent can see. Student-only views now fall back to the role's own
+      // dashboard (the promise the comment above already made); a STUDENT, or
+      // an unresolved session, still gets the real component.
+      return role === "STUDENT" || !role ? <StudentDashboard /> : fallback;
     case "student-course":
       return <StudentCourseView />;
     case "student-lesson":

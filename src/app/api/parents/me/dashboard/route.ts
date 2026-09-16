@@ -5,6 +5,7 @@ import { LESSON_STUDENT_STATUS_FILTER } from "@/lib/session-lifecycle";
 import { ok, err, requireUser, getParentProfile } from "@/lib/api";
 import type { ParentSubscriptionPayload } from "@/lib/parent-subscription";
 import { getVideoProgressForStudents } from "@/lib/progress";
+import { attemptsInCurriculumUniverse } from "@/lib/parent-access";
 import { trackScopeWhere } from "@/lib/track-scope";
 import {
   EXCLUDE_ARCHIVED_LESSON,
@@ -20,6 +21,12 @@ import {
 // parent can only ever receive data of explicitly linked children):
 //   * Session Quiz numbers aggregate FINISHED QuizAttempts only (the Phase 6
 //     rule: an open attempt is ungraded and must never deflate an average).
+//   * Phase 26E: a finished attempt is reported only when the quiz's LESSON is
+//     inside the child's own active curriculum universe (PUBLISHED,
+//     non-archived, child's course, child's track) — the same universe
+//     `courseProgress` and the homework block already use. An attempt left on
+//     an archived session, a staged session, an out-of-track lesson or a
+//     course the child has left is history the parent screen must not name.
 //   * Mock Exam numbers come from finished ExamAttempts and are kept in a
 //     separate `mockExams` block — never mixed into the session-quiz stats.
 //   * Session unlock state (`sessionProgress`) is read from the Phase 4
@@ -131,11 +138,23 @@ export async function GET(_req: NextRequest) {
       // is still the pre-submit default and including it would deflate the
       // average and fabricate a failure. Counts/averages run over the whole
       // finished set; only the displayed lists are sliced.)
-      const quizAttempts = await db.quizAttempt.findMany({
+      //
+      // Phase 26E: `quiz.lessonId` rides along so the set can be cut to the
+      // child's own curriculum universe (see `universeLessonIds` above). The
+      // Phase 26D retry architecture is untouched by this filter: every
+      // FINISHED attempt of an in-universe quiz is still one data point
+      // (`attemptNumber` 1..n), so retry history is preserved, never collapsed.
+      const finishedQuizAttempts = await db.quizAttempt.findMany({
         where: { studentId: student.id, finishedAt: { not: null } },
         orderBy: { finishedAt: "desc" },
-        include: { quiz: { select: { id: true, title: true, titleAr: true } } },
+        include: {
+          quiz: { select: { id: true, lessonId: true, title: true, titleAr: true } },
+        },
       });
+      const quizAttempts = attemptsInCurriculumUniverse(
+        finishedQuizAttempts,
+        universeLessonIds
+      );
       const quizAveragePct =
         quizAttempts.length > 0
           ? Math.round(
@@ -329,9 +348,20 @@ export async function GET(_req: NextRequest) {
         orderBy: { startAt: "asc" },
         include: {
           teacher: { include: { user: { select: { name: true } } } },
-          lesson: { select: { title: true, titleAr: true } },
+          lesson: { select: { id: true, title: true, titleAr: true } },
         },
       });
+      // Phase 26E: the session itself is group-bound (the child's group), so its
+      // own title is in scope. The LESSON it is attached to is curriculum, and
+      // an admin may schedule a live session for a session that is still staged
+      // (DRAFT) or was archived — naming it here would disclose curriculum the
+      // child cannot open. The title is therefore only carried when the lesson
+      // is inside the child's own universe; otherwise the field stays null and
+      // the parent still sees the session, its time and its teacher.
+      const nextSessionLessonTitle =
+        nextSession?.lesson && universeLessonIds.has(nextSession.lesson.id)
+          ? sp(nextSession.lesson.titleAr, nextSession.lesson.title) || null
+          : null;
       const nextSessionPayload = nextSession
         ? {
             id: nextSession.id,
@@ -340,7 +370,7 @@ export async function GET(_req: NextRequest) {
             duration: nextSession.duration,
             meetingUrl: nextSession.meetingUrl,
             teacherName: nextSession.teacher?.user?.name || "Teacher",
-            lessonTitle: nextSession.lesson?.titleAr || nextSession.lesson?.title || null,
+            lessonTitle: nextSessionLessonTitle,
           }
         : null;
 
@@ -377,23 +407,35 @@ export async function GET(_req: NextRequest) {
       // canonical sibling layer topics used to subdivide. The payload keys
       // stay `strongTopics` / `weakTopics`; only the resolution chain moved
       // from legacy-only to the real curriculum.
-      const attemptsWithTopic = await db.quizAttempt.findMany({
-        where: { studentId: student.id, finishedAt: { not: null } },
-        include: {
-          quiz: {
-            select: {
-              lesson: {
-                select: {
-                  topic: { select: { id: true, title: true, titleAr: true } },
-                  unit: { select: { id: true, title: true, titleAr: true } },
+      //
+      // Phase 26E: the universe restriction is pushed into SQL as well as
+      // applied in memory, because this query is capped (`take: 50`) — without
+      // the relation filter, fifty recent attempts on out-of-universe quizzes
+      // could hide the child's real in-universe topics entirely.
+      const attemptsWithTopic =
+        universeLessonIds.size === 0
+          ? []
+          : await db.quizAttempt.findMany({
+              where: {
+                studentId: student.id,
+                finishedAt: { not: null },
+                quiz: { lessonId: { in: [...universeLessonIds] } },
+              },
+              include: {
+                quiz: {
+                  select: {
+                    lesson: {
+                      select: {
+                        topic: { select: { id: true, title: true, titleAr: true } },
+                        unit: { select: { id: true, title: true, titleAr: true } },
+                      },
+                    },
+                  },
                 },
               },
-            },
-          },
-        },
-        take: 50,
-        orderBy: { startedAt: "desc" },
-      });
+              take: 50,
+              orderBy: { startedAt: "desc" },
+            });
       const topicMap = new Map<
         string,
         { title: string; titleAr: string; sumPct: number; count: number }
@@ -512,8 +554,11 @@ export async function GET(_req: NextRequest) {
         grade: student.grade,
         schoolName: (student as any).schoolName ?? null,
         schoolType: (student as any).schoolType ?? null,
-        nationalId: (student as any).nationalId ?? null,
-        parentPhone: (student as any).parentPhone ?? null,
+        // Phase 26E: `nationalId` and `parentPhone` are NOT serialised. They
+        // are needed server-side by the register/link flow, but no parent view
+        // renders them — a dashboard response is copied into browser memory,
+        // logs and bug reports, so identity-grade fields that nothing consumes
+        // do not travel. `studentCode` stays: the child card shows it.
         studentCode: (student as any).studentCode ?? null,
         enrolledAt: student.enrolledAt,
         group: student.group

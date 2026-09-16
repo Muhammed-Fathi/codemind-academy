@@ -308,8 +308,25 @@ function makeMockDb() {
         return { count: hit.length };
       },
       async upsert({ where, create, update }) {
-        const keys = Object.keys(where || {});
-        const row = t[table].find((r) => keys.every((k) => r[k] === where[k]));
+        // Prisma accepts a COMPOUND unique key in `where`
+        // (`{ parentId_studentId: { parentId, studentId } }`) — the shape
+        // `findUnique` above already understands. Expand it here too, or an
+        // upsert on the pair never matches an existing row and writes a
+        // duplicate, which is NOT what the engine does.
+        let w = where || {};
+        const compound = Object.entries(w).find(
+          ([k, v]) =>
+            k.includes("_") &&
+            v &&
+            typeof v === "object" &&
+            Object.keys(v).length > 0 &&
+            !(k in (t[table][0] || {}))
+        );
+        if (compound) {
+          w = { ...compound[1], ...Object.fromEntries(Object.entries(w).filter(([k]) => k !== compound[0])) };
+        }
+        const keys = Object.keys(w);
+        const row = t[table].find((r) => keys.every((k) => r[k] === w[k]));
         if (row) {
           trackWrite(table, "update");
           Object.assign(row, clone(update));
@@ -317,6 +334,17 @@ function makeMockDb() {
         }
         trackWrite(table, "create");
         const fresh = { id: `${table}-${seq++}`, ...clone(create) };
+        // The database enforces @@unique([parentId, studentId]) (and every
+        // other compound unique in the schema); the emulator must too, or a
+        // broken idempotency path would pass here and fail in production.
+        if (
+          table === "parentStudentLink" &&
+          t[table].some((r) => r.parentId === fresh.parentId && r.studentId === fresh.studentId)
+        ) {
+          const err = new Error("Unique constraint failed on the fields: (`parentId`,`studentId`)");
+          err.code = "P2002";
+          throw err;
+        }
         t[table].push(fresh);
         return clone(fresh);
       },

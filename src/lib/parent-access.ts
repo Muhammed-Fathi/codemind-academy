@@ -14,8 +14,19 @@
 
 import { db } from "@/lib/db";
 import { getEnrollment } from "@/lib/enrollment";
-import { isStudentVisibleStatus } from "@/lib/session-lifecycle";
-import { normalizeTrackScope, type TrackScope } from "@/lib/track-scope";
+import {
+  LESSON_STUDENT_STATUS_FILTER,
+  isStudentVisibleStatus,
+} from "@/lib/session-lifecycle";
+import {
+  EXCLUDE_ARCHIVED_LESSON,
+  lessonCourseChainOr,
+} from "@/lib/session-progress";
+import {
+  normalizeTrackScope,
+  trackScopeWhere,
+  type TrackScope,
+} from "@/lib/track-scope";
 
 /** Student ids explicitly linked to the parent identified by `parentUserId`. */
 export async function getLinkedStudentIds(
@@ -158,4 +169,105 @@ export async function isParentLessonPreviewAllowed(
   }
   // 4. Phase 7: the course must be one a linked, enrolled child is in.
   return isParentAuthorizedForCourse(parentUserId, courseId);
+}
+
+// ---------------------------------------------------------------------------
+// Reporting universe (Phase 26E)
+// ---------------------------------------------------------------------------
+//
+// The parent REPORTING surfaces (dashboard, analytics, weekly report) show a
+// child's activity, and every one of them must measure that activity against
+// ONE universe: the child's own PUBLISHED, non-archived, in-course,
+// in-track curriculum — the exact slice the child's own dashboard and every
+// student reader apply.
+//
+// Phases 12/13/19 landed that rule for LESSONS, VIDEO and HOMEWORK. Phase 26E
+// closes the last two readers that still walked the whole table:
+//
+//   * quiz attempts were aggregated from EVERY finished attempt of the child,
+//     whatever lesson the quiz belonged to — so an attempt left on an ARCHIVED
+//     session, on a session an admin had staged but never opened, on the other
+//     school type, or in a course the child has left, all moved the parent's
+//     "quiz average", appeared in the "strong/weak topics" lists and named the
+//     container in the payload;
+//   * analytics counted homework submissions the dashboard had already
+//     excluded, so the two screens disagreed about the same child.
+//
+// Both helpers below are the single definition of that slice. A caller that
+// re-implements the predicate is the drift this module exists to prevent.
+
+/**
+ * Lesson ids of a child's ACTIVE curriculum: PUBLISHED, not ARCHIVED, in the
+ * course the child's group is bound to, and on the child's own track.
+ *
+ * Fails closed everywhere: an unknown school type keeps SHARED only, a child
+ * with no group has an empty universe, and the result is a plain id Set — a
+ * caller can only ever INTERSECT with it, never widen it.
+ */
+export async function getStudentCurriculumLessonIds(
+  studentId: string
+): Promise<Set<string>> {
+  const student = await db.student.findUnique({
+    where: { id: studentId },
+    select: { schoolType: true, group: { select: { courseId: true } } },
+  });
+  const courseId = student?.group?.courseId ?? null;
+  if (!student || !courseId) return new Set();
+  const rows = await db.lesson.findMany({
+    where: {
+      ...LESSON_STUDENT_STATUS_FILTER,
+      ...EXCLUDE_ARCHIVED_LESSON,
+      ...trackScopeWhere(student.schoolType),
+      OR: lessonCourseChainOr(courseId),
+    },
+    select: { id: true },
+  });
+  return new Set(rows.map((r) => r.id));
+}
+
+/**
+ * Homework ids in the SAME universe as `getStudentCurriculumLessonIds`.
+ *
+ * Homework carries its own `trackScope`, so it is filtered on both sides: its
+ * lesson must be in the child's lesson universe AND the homework itself must
+ * be in the child's track. This is the identical conjunction the parent
+ * dashboard issues inline, expressed once so the analytics surface cannot
+ * count a different set (e.g. a LANGUAGE assignment submitted by an ARABIC
+ * child, or history from an archived session).
+ */
+export async function getStudentCurriculumHomeworkIds(
+  studentId: string
+): Promise<Set<string>> {
+  const [student, lessonIds] = await Promise.all([
+    db.student.findUnique({
+      where: { id: studentId },
+      select: { schoolType: true },
+    }),
+    getStudentCurriculumLessonIds(studentId),
+  ]);
+  if (!student || lessonIds.size === 0) return new Set();
+  const rows = await db.homework.findMany({
+    where: {
+      ...trackScopeWhere(student.schoolType),
+      lessonId: { in: [...lessonIds] },
+    },
+    select: { id: true },
+  });
+  return new Set(rows.map((r) => r.id));
+}
+
+/**
+ * Keep only the quiz attempts whose quiz belongs to the child's curriculum
+ * universe. An attempt with no resolvable quiz/lesson is dropped (fail closed),
+ * so a half-deleted relation can never be reported as current progress.
+ *
+ * Pure and side-effect free: the caller has already loaded the rows WITH
+ * `quiz.lessonId`, and passes the Set from `getStudentCurriculumLessonIds`.
+ */
+export function attemptsInCurriculumUniverse<
+  T extends { quiz?: { lessonId?: string | null } | null },
+>(attempts: readonly T[], universeLessonIds: ReadonlySet<string>): T[] {
+  return attempts.filter(
+    (a) => !!a.quiz?.lessonId && universeLessonIds.has(a.quiz.lessonId)
+  );
 }
