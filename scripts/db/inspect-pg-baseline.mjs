@@ -24,7 +24,7 @@ export const queries = {
     WHERE n.nspname='public' AND c.relkind IN ('r','p','v','m','f')
     AND c.relname <> '_prisma_migrations' AND a.attnum>0 AND NOT a.attisdropped
     ORDER BY c.relname,a.attname`,
-  enums: `SELECT t.typname AS name, array_agg(e.enumlabel ORDER BY e.enumsortorder) AS values
+  enums: `SELECT t.typname AS name, array_agg(e.enumlabel::text ORDER BY e.enumsortorder) AS values
     FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace JOIN pg_enum e ON e.enumtypid=t.oid
     WHERE n.nspname='public' GROUP BY t.typname ORDER BY t.typname`,
   constraints: `SELECT c.relname AS table_name, k.conname AS name, k.contype,

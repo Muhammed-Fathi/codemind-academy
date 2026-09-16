@@ -1,3 +1,136 @@
+# 2026-09-16 follow-up — guarded reconciliation implementation
+
+This update supersedes the original investigation's missing-evidence and
+no-real-PostgreSQL findings below. Production remains untouched. No PR opened.
+
+## Operator evidence accepted
+
+The operator reports TEXT, nullable, no default/identity/generated expression,
+default collation, zero Group rows, exact SHARED/ARABIC/LANGUAGE enum labels and
+only the recorded audience-index dependency. The historical Phase26B checksum
+matches, with finished_at set, rolled_back_at NULL and applied_steps_count=1.
+This establishes the executed historical TEXT lineage for this investigation.
+Phase26D remains failed with steps=0 and checked objects absent. Historical empty
+counts are not execution-time guarantees; the script checks again under lock.
+
+## Implementation and exact files
+
+- `scripts/db/reconcile-group-track-scope.mjs`: guarded standalone pre-baseline
+  operation, not a migration; never reads/writes credentials to files and never
+  changes `_prisma_migrations`.
+- `scripts/db/inspect-pg-baseline.mjs`: aggregate enum labels as `text[]`; native
+  pg returned the old `name[]` aggregate as a string, unlike PGlite. This real-PG
+  compatibility fix makes structured evidence/reference checks deterministic.
+- `tests/group-track-recovery-postgres.test.mjs`: real PG17 lineage, refusals,
+  full baseline convergence and real Prisma recovery hard gate.
+- `.github/workflows/migration-providers-postgres.yml`: full historical checkout,
+  PG17 service, required new recovery test, regressions/typecheck/build; no skips.
+- `docs/POSTGRES_CUTOVER_RUNBOOK.md`: §11.3 supersedes the legacy incident order.
+- `docs/GROUP_TRACK_SCOPE_RECOVERY_INVESTIGATION.md`: this status update.
+
+No schema, baseline, historical migration or PG-native Phase26D migration changed.
+
+## Script contract
+
+One explicitly READ COMMITTED transaction (independent of database/session defaults),
+local search_path and RLS safeguards, 2s lock_timeout, 30s
+statement/idle-transaction timeouts, ACCESS EXCLUSIVE Group lock BEFORE inspection.
+Only PostgreSQL17 is accepted. Default execution permits only narrowly named
+local disposable targets; hosted/Neon execution needs interactive non-CI operator
+mode and explicit backup/write-freeze/dependency-review acknowledgement. Connection
+parameter host overrides are refused. Errors omit connection details and values.
+
+A trusted, complete PG17 0_init reference with matching source SHA is mandatory.
+Full live catalog must match it except for the known TEXT type/default-collation
+pair. Column must be nullable, no default, no identity/generated expression.
+TrackScope must have exactly SHARED, ARABIC, LANGUAGE in that order. NULL, ARABIC,
+LANGUAGE are preserved; SHARED and every other literal fail closed. Only the
+expected normal audience-index dependency is permitted; custom Group triggers,
+rules or inheritance are refused. Indexes must be ready/valid and constraints
+validated. Exact already-enum equivalent returns VERIFIED_NOOP after all checks.
+
+The only persistent mutation is the requested TEXT-to-TrackScope ALTER. Catalog,
+dependencies, counts and value counts are rechecked before COMMIT. Any observed
+failure rolls back; no default removal, data normalization, dependency dropping
+or ledger repair exists. Connection loss at COMMIT has the usual uncertain-outcome
+risk: re-inspect, then retry only the guarded operation. Maintenance must prohibit
+concurrent external DDL and review untracked dynamic-SQL dependencies.
+
+## Disposable native PostgreSQL results (local)
+
+Native PostgreSQL **17.9**, not PGlite, was installed from the npm-distributed
+`@embedded-postgres/linux-x64@17.9.0-beta.17` server binary into a workspace scratch
+directory (no repository dependency or lockfile change). A private loopback server
+on port 55432 and disposable databases were used; no production URL was used.
+
+PASS: checksum-pinned pre-26B baseline from history plus exact Phase26B migration;
+matching historical ledger fixture; inspector and legacy checker reproduce TEXT
+drift and absent 26D objects; CLI reconciliation; unchanged migration ledger;
+ZERO differences from a second real PG17 database loaded with only 0_init across
+tables, columns, types, nullability, defaults, enums, PK/UNIQUE/FK/CHECK definitions,
+indexes and views. Post-reconciliation inspector and incident checker exit 0.
+
+PASS negative cases: unexpected, lowercase and whitespace values; SHARED; default;
+NOT NULL; missing/changed/reordered enum; unrelated type; dependent view/check;
+same-name wrong index; incomplete reference/live inspection; partial 26D shape;
+already-enum with wrong default; lock timeout. Failures preserve starting schema
+and values. Injected incomplete post-ALTER inspection proves transactional DDL
+rollback. Populated synthetic NULL/ARABIC/LANGUAGE rows survive unchanged and a
+second reconciliation returns VERIFIED_NOOP. Local/CI/operator target guards pass.
+
+## Regression and engine status before CI
+
+| Command | Local result |
+|---|---|
+| migration-providers | 54 offline pass; 65 pass including real PG; engine not available locally |
+| pg-baseline-inspection | PASS, supplementary PGlite only |
+| verify-phase26d-teacher | 306 PASS |
+| phase26d-teacher-full-flow | 136 PASS |
+| verify-phase26b-group-track | 78 PASS |
+| verify-phase26b-student | 238 PASS |
+| track-architecture-phase12 | 308 PASS |
+| verify-phase21-migration | 28 PASS |
+| migration-sql | 15 PASS |
+| tsc --noEmit | FAIL: generated Prisma exports unavailable, with downstream type errors; CI must establish product result |
+| build:postgres | BLOCKED at binaries.prisma.sh engine download (network/TLS), before Next build |
+| real Prisma recovery locally | BLOCKED at first resolve by engine download; NOT counted as pass |
+
+SQL-only diagnostic mode is explicitly forbidden in CI. The default new test never
+skips the engine. CI must execute actual resolve --rolled-back, resolve --applied
+0_init, deploy, status and idempotent redeploy; assert one rolled-back historical
+26D row, one applied PG-native 26D row, no unresolved failures and ZERO complete
+post-26D catalog differences. The existing service gate additionally covers fresh
+PG installs and SQLite migration-engine history.
+
+## Proposed production sequence — NOT EXECUTED
+
+See runbook §11.3 for exact commands and operator mode restrictions:
+READ-ONLY inspection → backup/PITR and restored-copy rehearsal → maintenance/write
+freeze/dependency review → guarded reconciliation → full comparison against trusted
+0_init → incident checker + ledger review → only then Prisma resolve/resolve/deploy/
+status and post-26D comparison. Old checker exit 0 alone is NOT authorization.
+
+## Final delivery status — NOT READY FOR GIT DELIVERY
+
+**Authoritative CI could not be started.** The implementation was committed locally,
+but GitHub rejected the branch push because the connected GitHub App lacks
+`workflows` permission to update `.github/workflows/migration-providers-postgres.yml`.
+The remote diagnostic-only CI success predates this implementation and is NOT
+recovery proof. Reconnect GitHub in Arena with workflow-update permission, push
+this same branch, and require both real PG17 and real Prisma success markers,
+regressions, typecheck and PostgreSQL build before approving delivery. No PR exists.
+The final READ COMMITTED transaction hardening was rerun successfully on PG17.
+
+**HOLD pending authoritative CI.** Local real PG17 schema proof is green; production
+full live baseline comparison still must be performed (the operator supplied selected
+facts, not a complete zero-diff report). Reference provenance, untracked routines,
+external consumers, concurrency/write freeze and backup/PITR remain operator gates.
+No production command in this report was executed.
+
+---
+
+# Original investigation (historical; superseded where noted above)
+
 # Group.trackScope production recovery investigation
 
 ## Decision: HOLD — NOT READY FOR GIT DELIVERY
