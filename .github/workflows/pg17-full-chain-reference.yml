@@ -1,0 +1,392 @@
+name: PG17 trusted catalog references (pre-26D + POST-26D full chain)
+
+# Phase 26D production recovery is COMPLETE and verified. This workflow does
+# NOT touch production again and performs NO production mutation. It builds
+# the final independent, trusted catalog references on completely disposable
+# PostgreSQL 17 GitHub Actions service containers:
+#
+#   Job 1 — pg17-0-init-reference (PRE-26D, preserved at full strength)
+#     Fresh PG17 + the REAL Prisma engine applies EXACTLY 0_init; the
+#     read-only inspector captures pg17-0-init.json.
+#
+#   Job 2 — pg17-full-chain-phase26d-reference (POST-26D, the mission)
+#     Fresh PG17 + the REAL Prisma engine applies EXACTLY the current
+#     PostgreSQL migration chain from prisma/postgres/migrations
+#     (0_init + 20260915180000_phase26d_quiz_attempt_architecture), proving:
+#       * migrations apply cleanly from empty,
+#       * `prisma migrate status` is clean ("Database schema is up to date!"),
+#       * a second `prisma migrate deploy` is a no-op
+#         ("No pending migrations to apply."),
+#     then the read-only inspector captures pg17-full-chain-phase26d.json,
+#     which is validated (PG major 17, pinned 0_init SHA-256, native
+#     TrackScope, exact labels, all Phase26D objects, no invalid indexes,
+#     no unvalidated constraints, zero self-comparison differences) BEFORE
+#     being uploaded.
+#
+# The maintainer later compares live Neon against the downloaded reference
+# with the READ-ONLY inspector:
+#   DATABASE_URL='<secure read-only URL>' \
+#     node scripts/db/inspect-pg-baseline.mjs \
+#     --reference pg17-full-chain-phase26d.json > live-full-chain-comparison.json
+# Success = exit code 0 and "differences": []. That comparison writes a local
+# evidence file only; it authorizes no mutation.
+#
+# SAFETY: disposable localhost PostgreSQL with throwaway credentials only.
+# No repository secrets, no Neon URL, no production DATABASE_URL, nothing
+# production-looking in any connection string. Application code, the Prisma
+# schema and all migration SQL are untouched by this workflow (the pre-26D
+# job assembles its migrations bundle by COPYING files byte-for-byte).
+#
+# This workflow ADDS verification only: the existing recovery/provider/
+# application regression gates in migration-providers-postgres.yml and
+# phase26d-postgres-concurrency.yml remain intact and authoritative.
+
+on:
+  push:
+    branches: ["arena/**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  # Byte-frozen provenance pins (also enforced by tests/migration-providers.test.js).
+  INIT_SQL_SHA256: c7f5d3fa76931d02e48c5cd2c4bfdb972c0f25e528e3c0c116736d3729cefa80
+  PHASE26D_SQL_SHA256: 2c1bdde167f7dfff9b79a61f116da3dbd93b13c6aa27825404a79312ec7be104
+
+  # Inline verification scripts, carried as env values (block scalars) and piped
+  # into node. This keeps the change strictly workflow-only while avoiding the
+  # bash heredoc limitation (a heredoc terminator cannot be indented inside a
+  # YAML run block). Each script is read-only: it inspects a JSON file only.
+  SAFETY_GUARD_JS: |
+    const assert = require('node:assert/strict');
+    const url = new URL(process.env.DATABASE_URL);
+    assert(['postgres:', 'postgresql:'].includes(url.protocol), 'protocol');
+    assert(url.hostname === 'localhost', 'host must be localhost');
+    assert(!/neon|prod/i.test(process.env.DATABASE_URL), 'no production-looking URL');
+    assert(/^codemind_.*(test|recovery|migrations)$/.test(url.pathname.slice(1)), 'disposable database name');
+    console.log('SAFETY: DATABASE_URL is a disposable localhost PostgreSQL target.');
+
+  # Usage: printf '%s' "$SELF_CHECK_JS" | node - <selfcheck.json> <LABEL>
+  SELF_CHECK_JS: |
+    const fs = require('node:fs');
+    const assert = require('node:assert/strict');
+    const file = process.argv[2];
+    const label = process.argv[3] || 'REFERENCE';
+    const r = JSON.parse(fs.readFileSync(file, 'utf8'));
+    assert(Array.isArray(r.differences), 'differences array present in ' + file);
+    assert.equal(r.differences.length, 0, 'zero differences vs the same generated reference');
+    console.log(label + ' SELF-COMPARISON: differences = []');
+
+  # The trusted PRE-26D reference must be exactly the 0_init schema on PG17.
+  VALIDATE_PRE26D_REFERENCE_JS: |
+    const fs = require('node:fs');
+    const assert = require('node:assert/strict');
+    const ref = JSON.parse(fs.readFileSync('pg17-0-init.json', 'utf8'));
+    assert.equal(ref.format, 1, 'format');
+    assert.equal(ref.schema, 'public', 'schema');
+    assert(/^17\./.test(String(ref.server)), 'PostgreSQL major version must be 17, got ' + ref.server);
+    assert.equal(ref.repositoryInitSha256, process.env.INIT_SQL_SHA256, 'repository 0_init SHA-256 pinned');
+    for (const s of ['tables', 'columns', 'enums', 'constraints', 'indexes']) {
+      assert(Array.isArray(ref.catalog[s]) && ref.catalog[s].length > 0, 'catalog section ' + s);
+    }
+    // views is legitimately empty: the schema defines none. Require only shape.
+    assert(Array.isArray(ref.catalog.views), 'catalog section views');
+    const c = ref.catalog.columns.filter(x => x.table_name === 'Group' && x.column_name === 'trackScope');
+    assert.equal(c.length, 1, 'exactly one Group.trackScope column');
+    assert.equal(c[0].type, '"TrackScope"', 'Group.trackScope must be the native TrackScope enum');
+    assert.equal(c[0].not_null, false, 'Group.trackScope nullable');
+    assert.equal(c[0].default_expression, null, 'Group.trackScope defaultless');
+    assert.equal(c[0].attidentity, '', 'no identity');
+    assert.equal(c[0].attgenerated, '', 'not generated');
+    assert.equal(c[0].collation, null, 'no collation');
+    assert.deepEqual(ref.catalog.enums.find(e => e.name === 'TrackScope').values,
+      ['SHARED', 'ARABIC', 'LANGUAGE'], 'exact TrackScope labels');
+    assert(ref.catalog.indexes.every(i => i.indisvalid && i.indisready), 'no invalid indexes');
+    assert(ref.catalog.constraints.every(k => k.convalidated), 'no unvalidated constraints');
+    assert.deepEqual(ref.ledger.map(r => r.migration_name), ['0_init'], 'ledger is exactly 0_init');
+    assert(ref.ledger[0].finished_at, '0_init finished');
+    assert.equal(ref.ledger[0].rolled_back_at, null, '0_init not rolled back');
+    assert(!ref.catalog.tables.some(t => t.name === 'QuizRetryGrant'), 'pre-26D: no Phase26D tables');
+    assert(!ref.catalog.columns.some(x => x.table_name === 'Quiz' && x.column_name === 'quizMode'),
+      'pre-26D: no Phase26D Quiz blueprint columns');
+    console.log('PG17_0_INIT_REFERENCE_VALID');
+
+  # The trusted POST-26D reference must be the full PG migration chain on PG17.
+  VALIDATE_FULL_CHAIN_REFERENCE_JS: |
+    const fs = require('node:fs');
+    const assert = require('node:assert/strict');
+    const ref = JSON.parse(fs.readFileSync('pg17-full-chain-phase26d.json', 'utf8'));
+    assert.equal(ref.format, 1, 'format');
+    assert.equal(ref.schema, 'public', 'schema');
+    assert(/^17\./.test(String(ref.server)), 'PostgreSQL major version must be 17, got ' + ref.server);
+    assert.equal(ref.repositoryInitSha256, process.env.INIT_SQL_SHA256, 'repository 0_init SHA-256 pinned');
+    assert.equal(
+      ref.repositoryMigrationChecksums['prisma/postgres/migrations/20260915180000_phase26d_quiz_attempt_architecture'],
+      process.env.PHASE26D_SQL_SHA256, 'repository Phase26D SHA-256 pinned');
+    for (const s of ['tables', 'columns', 'enums', 'constraints', 'indexes']) {
+      assert(Array.isArray(ref.catalog[s]) && ref.catalog[s].length > 0, 'catalog section ' + s);
+    }
+    // views is legitimately empty: the schema defines none. Require only shape.
+    assert(Array.isArray(ref.catalog.views), 'catalog section views');
+    const col = (table, column) => ref.catalog.columns.find(x => x.table_name === table && x.column_name === column);
+    // Group.trackScope is the native enum (no text lineage left).
+    const ts = col('Group', 'trackScope');
+    assert(ts, 'Group.trackScope exists');
+    assert.equal(ts.type, '"TrackScope"', 'Group.trackScope must be the native TrackScope enum');
+    assert.equal(ts.not_null, false, 'Group.trackScope nullable');
+    assert.equal(ts.default_expression, null, 'Group.trackScope defaultless');
+    assert.deepEqual(ref.catalog.enums.find(e => e.name === 'TrackScope').values,
+      ['SHARED', 'ARABIC', 'LANGUAGE'], 'exact TrackScope labels');
+    // Phase26D Quiz blueprint columns.
+    for (const c of ['quizMode', 'questionCount', 'maxAttempts', 'shuffleOptions', 'difficultyPlan']) {
+      assert(col('Quiz', c), 'Quiz.' + c + ' exists');
+    }
+    // Phase26D QuizAttempt fields.
+    for (const c of ['attemptNumber', 'status', 'retryGrantId']) {
+      assert(col('QuizAttempt', c), 'QuizAttempt.' + c + ' exists');
+    }
+    // Phase26D QuizAnswer snapshot fields.
+    for (const c of ['orderIndex', 'questionType', 'promptSnapshot', 'promptArSnapshot',
+                     'optionsSnapshot', 'answerSnapshot', 'explanationSnapshot',
+                     'difficultySnapshot', 'marksSnapshot', 'schoolTypeSnapshot']) {
+      assert(col('QuizAnswer', c), 'QuizAnswer.' + c + ' exists');
+    }
+    // QuizRetryGrant table.
+    assert(ref.catalog.tables.some(t => t.name === 'QuizRetryGrant'), 'QuizRetryGrant table exists');
+    // Expected Phase26D constraints.
+    const con = name => ref.catalog.constraints.find(k => k.name === name);
+    for (const name of ['QuizRetryGrant_pkey',
+                        'QuizRetryGrant_studentId_fkey',
+                        'QuizRetryGrant_quizId_fkey',
+                        'QuizRetryGrant_grantedByUserId_fkey',
+                        'QuizAttempt_retryGrantId_fkey',
+                        'QuizAttempt_quizId_studentId_attemptNumber_key']) {
+      assert(con(name), 'constraint ' + name + ' exists');
+    }
+    // Expected Phase26D indexes.
+    const idx = name => ref.catalog.indexes.find(i => i.name === name);
+    for (const name of ['QuizRetryGrant_studentId_quizId_idx',
+                        'QuizRetryGrant_quizId_idx',
+                        'QuizRetryGrant_grantedByUserId_idx']) {
+      assert(idx(name), 'index ' + name + ' exists');
+    }
+    // Catalog health.
+    assert(ref.catalog.indexes.every(i => i.indisvalid && i.indisready), 'no invalid indexes');
+    assert(ref.catalog.constraints.every(k => k.convalidated), 'no unvalidated constraints');
+    // Ledger proof: the real engine applied EXACTLY the PG chain, cleanly.
+    assert.deepEqual(ref.ledger.map(r => r.migration_name),
+      ['0_init', '20260915180000_phase26d_quiz_attempt_architecture'],
+      'ledger is exactly the PostgreSQL chain, in order (never the SQLite names)');
+    for (const r of ref.ledger) {
+      assert(r.finished_at, r.migration_name + ' finished');
+      assert.equal(r.rolled_back_at, null, r.migration_name + ' not rolled back');
+      assert.equal(r.applied_steps_count, 1, r.migration_name + ' applied exactly once');
+    }
+    console.log('PG17_FULL_CHAIN_PHASE26D_REFERENCE_VALID');
+
+jobs:
+  pre26d-0-init-reference:
+    name: Trusted PRE-26D reference (pg17-0-init-reference)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      postgres:
+        # Matches the current production target (PostgreSQL 17).
+        image: postgres:17
+        env:
+          # Disposable CI-only credentials. These are NOT secrets.
+          POSTGRES_DB: codemind_pre26d_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Points ONLY at the disposable service container above.
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/codemind_pre26d_test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          # package.json declares engines.node ">=22".
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Safety guard — disposable localhost target only
+        run: printf '%s' "$SAFETY_GUARD_JS" | node
+
+      # Pin the migration SQL BEFORE anything is applied, and assemble a
+      # pre-26D schema bundle OUTSIDE the repository by copying files
+      # byte-for-byte. Prisma reads the migrations directory NEXT TO the
+      # schema file, so a bundle holding ONLY 0_init makes the real engine
+      # apply exactly the pre-26D state. No repository file is modified.
+      - name: Assemble pre-26D engine bundle (0_init only, byte-identical copies)
+        run: |
+          echo "$INIT_SQL_SHA256  prisma/postgres/migrations/0_init/migration.sql" | sha256sum -c -
+          BUNDLE="$RUNNER_TEMP/pre26d-schema"
+          rm -rf "$BUNDLE"
+          mkdir -p "$BUNDLE"
+          cp prisma/postgres/schema.prisma "$BUNDLE/schema.prisma"
+          cmp prisma/postgres/schema.prisma "$BUNDLE/schema.prisma"
+          cp -r prisma/postgres/migrations "$BUNDLE/migrations"
+          rm -rf "$BUNDLE/migrations/20260915180000_phase26d_quiz_attempt_architecture"
+          echo "$INIT_SQL_SHA256  $BUNDLE/migrations/0_init/migration.sql" | sha256sum -c -
+          grep -q 'provider = "postgresql"' "$BUNDLE/migrations/migration_lock.toml"
+          echo "Bundle migrations directory contains:"
+          ls "$BUNDLE/migrations"
+          # Exactly ONE migration directory (0_init); migration_lock.toml is the lock file.
+          [ "$(find "$BUNDLE/migrations" -mindepth 1 -maxdepth 1 -type d | wc -l)" = "1" ]
+          [ "$(find "$BUNDLE/migrations" -mindepth 1 -maxdepth 1 -type d -exec basename {} \;)" = "0_init" ]
+          echo "PRE26D_BUNDLE=$BUNDLE" >> "$GITHUB_ENV"
+
+      - name: Apply 0_init with the real Prisma engine
+        run: |
+          set -o pipefail
+          npx prisma migrate deploy --schema "$PRE26D_BUNDLE/schema.prisma" 2>&1 | tee pre26d-deploy.log
+          grep -q "0_init" pre26d-deploy.log
+
+      - name: Prove migrate status is clean and a second deploy is a no-op
+        run: |
+          set -o pipefail
+          npx prisma migrate status --schema "$PRE26D_BUNDLE/schema.prisma" 2>&1 | tee pre26d-status.log
+          grep -q "Database schema is up to date" pre26d-status.log
+          npx prisma migrate deploy --schema "$PRE26D_BUNDLE/schema.prisma" 2>&1 | tee pre26d-redeploy.log
+          grep -qi "No pending migrations" pre26d-redeploy.log
+
+      - name: Capture the trusted pre-26D catalog reference (read-only inspector)
+        run: node scripts/db/inspect-pg-baseline.mjs > pg17-0-init.json
+
+      - name: Validate the reference before upload
+        run: printf '%s' "$VALIDATE_PRE26D_REFERENCE_JS" | node
+
+      - name: Prove self-comparison against the same generated reference returns zero differences
+        run: |
+          node scripts/db/inspect-pg-baseline.mjs --reference pg17-0-init.json > pg17-0-init-selfcheck.json
+          printf '%s' "$SELF_CHECK_JS" | node - pg17-0-init-selfcheck.json PRE26D
+
+      - name: Print evidence (commit SHA, PostgreSQL version, checksums)
+        run: |
+          echo "git_commit_sha=$(git rev-parse HEAD)"
+          node -e "const pg=require('pg');(async()=>{const c=new pg.Client({connectionString:process.env.DATABASE_URL});await c.connect();console.log('postgresql_version='+(await c.query('SHOW server_version')).rows[0].server_version);await c.end();})().catch(()=>process.exit(1))"
+          sha256sum prisma/postgres/migrations/0_init/migration.sql
+          sha256sum pg17-0-init.json
+
+      - name: Upload pg17-0-init-reference artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pg17-0-init-reference
+          path: pg17-0-init.json
+          if-no-files-found: error
+
+  full-chain-phase26d-reference:
+    name: Trusted POST-26D full-chain reference (pg17-full-chain-phase26d-reference)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      postgres:
+        # Matches the current production target (PostgreSQL 17).
+        image: postgres:17
+        env:
+          # Disposable CI-only credentials. These are NOT secrets.
+          POSTGRES_DB: codemind_fullchain_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Points ONLY at the disposable service container above.
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/codemind_fullchain_test
+      PG_SCHEMA: prisma/postgres/schema.prisma
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          # package.json declares engines.node ">=22".
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Safety guard — disposable localhost target only
+        run: printf '%s' "$SAFETY_GUARD_JS" | node
+
+      # Pin BOTH migration SQL files before anything is applied.
+      - name: Pin the repository migration checksums
+        run: |
+          echo "$INIT_SQL_SHA256  prisma/postgres/migrations/0_init/migration.sql" | sha256sum -c -
+          echo "$PHASE26D_SQL_SHA256  prisma/postgres/migrations/20260915180000_phase26d_quiz_attempt_architecture/migration.sql" | sha256sum -c -
+          echo "PostgreSQL migration chain to apply (exactly this directory, in order):"
+          ls prisma/postgres/migrations
+
+      - name: Apply the full PostgreSQL migration chain with the real Prisma engine
+        run: |
+          set -o pipefail
+          npx prisma migrate deploy --schema "$PG_SCHEMA" 2>&1 | tee full-chain-deploy.log
+          grep -q "0_init" full-chain-deploy.log
+          grep -q "20260915180000_phase26d_quiz_attempt_architecture" full-chain-deploy.log
+          echo "Full chain applied cleanly from a fresh PostgreSQL 17 database."
+
+      - name: Prove migrate status is clean
+        run: |
+          set -o pipefail
+          npx prisma migrate status --schema "$PG_SCHEMA" 2>&1 | tee full-chain-status.log
+          grep -q "Database schema is up to date" full-chain-status.log
+
+      - name: Prove a second migrate deploy is a no-op
+        run: |
+          set -o pipefail
+          npx prisma migrate deploy --schema "$PG_SCHEMA" 2>&1 | tee full-chain-redeploy.log
+          grep -qi "No pending migrations" full-chain-redeploy.log
+
+      - name: Capture the trusted POST-26D full-chain catalog reference (read-only inspector)
+        run: node scripts/db/inspect-pg-baseline.mjs > pg17-full-chain-phase26d.json
+
+      - name: Validate the reference before upload
+        run: printf '%s' "$VALIDATE_FULL_CHAIN_REFERENCE_JS" | node
+
+      - name: Prove self-comparison against the same generated reference returns zero differences
+        run: |
+          node scripts/db/inspect-pg-baseline.mjs --reference pg17-full-chain-phase26d.json > pg17-full-chain-phase26d-selfcheck.json
+          printf '%s' "$SELF_CHECK_JS" | node - pg17-full-chain-phase26d-selfcheck.json FULL-CHAIN
+
+      - name: Print evidence (commit SHA, PostgreSQL version, checksums)
+        run: |
+          echo "git_commit_sha=$(git rev-parse HEAD)"
+          node -e "const pg=require('pg');(async()=>{const c=new pg.Client({connectionString:process.env.DATABASE_URL});await c.connect();console.log('postgresql_version='+(await c.query('SHOW server_version')).rows[0].server_version);await c.end();})().catch(()=>process.exit(1))"
+          sha256sum prisma/postgres/migrations/0_init/migration.sql
+          sha256sum pg17-full-chain-phase26d.json
+          echo "Maintainer follow-up (manual, READ-ONLY, never run inside this workflow):"
+          echo "  DATABASE_URL='<secure read-only production URL>' node scripts/db/inspect-pg-baseline.mjs --reference pg17-full-chain-phase26d.json > live-full-chain-comparison.json"
+          echo "  success = exit code 0 AND \"differences\": []  (evidence file only; no mutation authorized)"
+
+      - name: Upload pg17-full-chain-phase26d-reference artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pg17-full-chain-phase26d-reference
+          path: pg17-full-chain-phase26d.json
+          if-no-files-found: error
