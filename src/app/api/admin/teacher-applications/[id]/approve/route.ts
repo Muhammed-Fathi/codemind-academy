@@ -14,6 +14,11 @@ import { maskEmail, logSecurityEvent } from "@/lib/security";
 import { approveTeacherApplication } from "@/lib/teacher-applications";
 import { sendEmail } from "@/lib/delivery";
 import { getServerT } from "@/lib/i18n-server";
+// Phase 26G: see src/lib/app-url.ts — the activation link is minted from the
+// validated application origin. A production deployment without a usable
+// NEXT_PUBLIC_URL fails here (loudly) instead of emailing an activation link
+// that points at localhost and can never be opened by the applicant.
+import { appUrl } from "@/lib/app-url";
 
 export async function POST(
   _req: NextRequest,
@@ -40,8 +45,9 @@ export async function POST(
 
   const destination = outcome.application.email;
   const destinationMask = maskEmail(destination);
-  const appUrl = process.env.NEXT_PUBLIC_URL || "http://localhost:3000";
-  const link = `${appUrl}/?teacherActivation=${encodeURIComponent(outcome.activationToken!)}`;
+  const link = appUrl(
+    `/?teacherActivation=${encodeURIComponent(outcome.activationToken!)}`
+  );
 
   const delivery = await sendEmail({
     to: destination,

@@ -51,6 +51,17 @@ const REPO = path.join(HERE, "..");
 
 process.env.SECURITY_HASH_SECRET =
   process.env.SECURITY_HASH_SECRET || "audit-gate-browser-secret-0123456789abcdef";
+// PHASE 26G: the harness deliberately boots the PRODUCTION posture, so it must
+// also satisfy the production environment contract. NEXT_PUBLIC_URL is a
+// deliberately UNROUTABLE placeholder (RFC 2606 `.invalid`) — it is never
+// dialled: the only client in this harness is JSDOM talking to a loopback
+// server. Without it, `assertProductionEnv()` in next.config.ts refuses to
+// load and the header audit cannot run at all.
+// Set UNCONDITIONALLY, not `||`: this harness forces the production posture
+// below, and a caller that happens to have exported a loopback
+// NEXT_PUBLIC_URL (the ordinary dev value) would otherwise be rejected by the
+// production origin contract and the audit would crash before section 1.
+process.env.NEXT_PUBLIC_URL = "https://audit-gate.invalid";
 // The gate audits the PRODUCTION posture (that is what ships), so the header
 // decision and every env-dependent branch below run with NODE_ENV=production.
 process.env.NODE_ENV = "production";

@@ -13,8 +13,14 @@ name: Phase 26D PostgreSQL concurrency gate
 # refuses production/Neon URLs and non-local hosts.
 
 on:
+  # Phase 26G: this trigger used to be pinned to ONE dead phase branch
+  # (`arena/01a0a540-codemind-academy`), so this production-safety gate never
+  # ran on any subsequent branch — only on PRs to main and manual dispatch.
+  # It now matches the sibling gates (`migration-providers-postgres.yml`,
+  # `pg17-full-chain-reference.yml`) so the proof actually runs on every
+  # arena/** push. Nothing about the test or its hard-gate semantics changed.
   push:
-    branches: ["arena/01a0a540-codemind-academy"]
+    branches: ["arena/**"]
   pull_request:
     branches: [main]
   workflow_dispatch:

@@ -128,6 +128,18 @@ jobs:
           DATABASE_URL: file:./ci-diagnostic-only.db
           # Public disposable CI value only; NEVER use for a production deployment.
           SECURITY_HASH_SECRET: codemind-ci-only-not-for-production-security-hash-secret
+          # Phase 26G: `next build` runs with NODE_ENV=production, so
+          # next.config.ts enforces the FULL production env contract — which
+          # now includes the application ORIGIN (src/lib/app-url.ts), and the
+          # production contract is HTTPS-ONLY. This build host intentionally
+          # holds no production configuration, so it supplies an
+          # obviously-disposable public HTTPS origin (RFC 2606 `.invalid` —
+          # never resolvable, never dialled). It is a PUBLIC value
+          # (NEXT_PUBLIC_* is inlined into the client bundle) and only exists
+          # so the artifact can be produced here; the runtime guard in
+          # src/instrumentation.ts still enforces the real values when a
+          # server actually starts.
+          NEXT_PUBLIC_URL: https://ci-only.invalid
         run: |
           node tests/pg-baseline-inspection.test.mjs
           node scripts/verify-phase26d-teacher.mjs
