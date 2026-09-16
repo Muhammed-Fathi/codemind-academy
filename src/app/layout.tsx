@@ -17,9 +17,9 @@ const cairo = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "CodeMind Academy — Learn. Build. Think.",
+  title: "CodeMind Academy",
   description:
-    "منصة تعليمية متخصصة في Programming & AI لطلاب الثانوية العامة. Live Classes، Practice، Quizzes ومتابعة مستواك خطوة بخطوة.",
+    "CodeMind Academy is a modern educational platform for learning programming, artificial intelligence, and digital skills through structured lessons, interactive assessments, and guided learning experiences.",
   keywords: [
     "CodeMind",
     "CodeMind Academy",
@@ -33,14 +33,10 @@ export const metadata: Metadata = {
   ],
   authors: [{ name: "CodeMind Academy" }],
   manifest: "/manifest.json",
-  icons: {
-    icon: "/logo.svg",
-    apple: "/logo.svg",
-  },
   openGraph: {
-    title: "CodeMind Academy — Learn. Build. Think.",
+    title: "CodeMind Academy",
     description:
-      "اتعلم Programming & AI بطريقة مختلفة. Live Classes، Practice، Quizzes، ومتابعة مستواك خطوة بخطوة.",
+      "CodeMind Academy is a modern educational platform for learning programming, artificial intelligence, and digital skills through structured lessons, interactive assessments, and guided learning experiences.",
     siteName: "CodeMind Academy",
     type: "website",
     locale: "ar_EG",
@@ -48,7 +44,8 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "CodeMind Academy",
-    description: "اتعلم Programming & AI بطريقة مختلفة.",
+    description:
+      "CodeMind Academy is a modern educational platform for learning programming, artificial intelligence, and digital skills through structured lessons, interactive assessments, and guided learning experiences.",
   },
 };
 
