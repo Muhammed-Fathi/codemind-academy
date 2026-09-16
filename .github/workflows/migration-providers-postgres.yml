@@ -126,6 +126,8 @@ jobs:
       - name: Application regressions, generated client and PostgreSQL build
         env:
           DATABASE_URL: file:./ci-diagnostic-only.db
+          # Public disposable CI value only; NEVER use for a production deployment.
+          SECURITY_HASH_SECRET: codemind-ci-only-not-for-production-security-hash-secret
         run: |
           node tests/pg-baseline-inspection.test.mjs
           node scripts/verify-phase26d-teacher.mjs
