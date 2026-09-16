@@ -29,6 +29,12 @@ import {
 import { sendEmail } from "@/lib/delivery";
 import { isValidEmail } from "@/lib/registration";
 import { getServerT } from "@/lib/i18n-server";
+// Phase 26G: the reset link is minted from the validated application origin.
+// There is deliberately no `|| "http://localhost:3000"` fallback here any
+// more — in production a missing NEXT_PUBLIC_URL means the whole deployment
+// is misconfigured, and the route must fail loudly instead of emailing a
+// link that resolves to the recipient's own machine.
+import { appUrl } from "@/lib/app-url";
 
 const TOKEN_TTL_MIN = Number(process.env.PASSWORD_RESET_TTL_MINUTES || 15);
 const PER_IDENTIFIER_LIMIT = 3;
@@ -123,8 +129,8 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  const appUrl = process.env.NEXT_PUBLIC_URL || "http://localhost:3000";
-  const link = `${appUrl}/?token=${encodeURIComponent(secret)}`;
+  // Absolute link built by the shared, production-validated origin helper.
+  const link = appUrl(`/?token=${encodeURIComponent(secret)}`);
 
   const delivery = await sendEmail({
     to: destination,

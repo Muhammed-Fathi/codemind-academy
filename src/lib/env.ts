@@ -10,8 +10,16 @@
 //     error messages.
 //   * There is deliberately NO production fallback for secrets. A missing
 //     production secret is a hard failure, not a warning.
+//   * There is deliberately NO production fallback for the application origin
+//     either (see getAppUrlProblem / src/lib/app-url.ts).
 //   * Development/test keep a convenient (but clearly non-secret) fallback so
 //     `bun run dev` and the offline test suites work without configuration.
+
+// Sibling (not `@/lib/...`) import on purpose: `tests/security-hardening.test.js`
+// compiles this file with a bare generated tsconfig that has no `paths`
+// mapping, so a path-alias import would break that suite. `src/lib/media-s3.ts`
+// uses the same sibling-import convention.
+import { getAppUrlProblem } from "./app-url";
 
 /** Minimum accepted length for SECURITY_HASH_SECRET (256 bits as hex). */
 export const MIN_SECURITY_HASH_SECRET_LENGTH = 32;
@@ -91,11 +99,25 @@ export function getSecurityHashSecret(env: NodeJS.ProcessEnv = process.env): str
  * Validate every production-critical variable. Returns the list of problems
  * (empty when the environment is acceptable). Only variable names are
  * mentioned — never values.
+ *
+ * Phase 26G adds the application ORIGIN to the contract. Without a usable
+ * NEXT_PUBLIC_URL in production, every password-reset link and every
+ * teacher-activation link the platform emails resolves to
+ * `http://localhost:3000` — delivered, valid, and unusable. Enforcing it at
+ * build and at startup is the cheapest point at which that misconfiguration
+ * can still be fixed. (NEXT_PUBLIC_* is also inlined into any CLIENT bundle
+ * that reads it, so the build environment needs the value too.)
+ *
+ * The production origin must be an absolute **HTTPS** origin — see the threat
+ * model in src/lib/app-url.ts. Plain http is rejected outright, because those
+ * two links carry a single-use credential in the query string.
  */
 export function validateProductionEnv(env: NodeJS.ProcessEnv = process.env): string[] {
   const problems: string[] = [];
   const secretProblem = getSecurityHashSecretProblem(env);
   if (secretProblem) problems.push(secretProblem);
+  const appUrlProblem = getAppUrlProblem(env);
+  if (appUrlProblem) problems.push(appUrlProblem);
   return problems;
 }
 

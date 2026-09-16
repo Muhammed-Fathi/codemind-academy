@@ -162,9 +162,27 @@ try to re-create the schema and fail (loudly) on duplicate objects.
 
 1. Set the production `DATABASE_URL` to the PostgreSQL URL (secret manager /
    systemd `EnvironmentFile`, mode 0600 — never in Git, never in chat logs).
-   Recommended: `?sslmode=require` (+ `&pgbouncer=true` ONLY if you actually
-   run PgBouncer — Prisma needs the flag to disable prepared-statement
+   Recommended: `?sslmode=verify-full` (+ `&pgbouncer=true` ONLY if you
+   actually run PgBouncer — Prisma needs the flag to disable prepared-statement
    assumptions; without a pooler, omit it).
+
+   **Phase 26G — why `verify-full` and not `require`.** The two PostgreSQL
+   clients in this repository disagree about what `sslmode=require` means:
+     * Prisma's Rust connector follows libpq semantics: `require` = encrypt,
+       **do not** verify the server certificate or its hostname.
+     * node-postgres (`pg`, used by `GET /api/cron/purge-evidence` and by every
+       script under `scripts/db/`) currently treats `require` as
+       `verify-full` — and emits a `SECURITY WARNING` saying that
+       `prefer`/`require`/`verify-ca` will adopt the **weaker** libpq
+       semantics in pg v9.0.0 / pg-connection-string v3.0.0.
+   One URL is therefore strict in one client and silently becomes lax in the
+   other after a dependency bump. `sslmode=verify-full` is unambiguous in
+   both, today and after pg v9, and Neon serves publicly-issued certificates
+   so verification succeeds against the Node trust store. Verify on a
+   disposable connection first; if anything in front of the database
+   terminates TLS in a way `verify-full` rejects, fall back to
+   `sslmode=require&channel_binding=require` (Neon's own hardening) rather
+   than to a bare `require`. Never `disable`/`allow`/`prefer` on production.
 2. Point `MEDIA_STORAGE_PATH` at the durable volume (§1.3) and set
    `MEDIA_QUOTA_BYTES` (e.g. 80% of the volume).
 3. Start the app, tail the logs for Prisma connection errors.

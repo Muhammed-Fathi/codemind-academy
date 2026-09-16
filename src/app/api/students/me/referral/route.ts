@@ -4,6 +4,10 @@ import { getServerT } from "@/lib/i18n-server";
 import { NextResponse } from "next/server";
 import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
+// Phase 26G: the shareable referral link comes from the validated application
+// origin (src/lib/app-url.ts) instead of an inline
+// `process.env.NEXT_PUBLIC_URL || "http://localhost:3000"` fallback.
+import { appUrl } from "@/lib/app-url";
 
 // GET — returns student's referral code + referral stats
 export async function GET() {
@@ -43,7 +47,7 @@ export async function GET() {
 
   return ok({
     referralCode,
-    shareUrl: `${process.env.NEXT_PUBLIC_URL || "http://localhost:3000"}?ref=${referralCode}`,
+    shareUrl: appUrl(`/?ref=${encodeURIComponent(referralCode)}`),
     stats,
     referrals: referrals.map((r) => ({
       id: r.id,

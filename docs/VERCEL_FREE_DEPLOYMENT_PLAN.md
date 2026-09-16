@@ -4,6 +4,35 @@
 > **Mode:** READ-ONLY AUDIT + PLANNING — no code, schema, package, env, or deployment changes made except this file
 > **Primary question:** Can the current architecture realistically be deployed to Vercel Hobby/Free with free-tier external services, and exactly what must change before deployment?
 
+> ## ⚠ PHASE 26G SUPERSEDE NOTICE (2026-09-16) — READ BEFORE USING THIS FILE
+>
+> This document is a **pre-implementation plan**. Most of what it proposed has
+> since been built and shipped, and a number of its details are now
+> **factually stale**. Do NOT copy configuration out of it. The authoritative,
+> verified-as-shipped references are:
+>
+> | Topic | Authoritative source |
+> |---|---|
+> | Production env var names + required/optional + secret/non-secret | `docs/PHASE_26G_PRODUCTION_INTEGRATIONS_QA.md` §8 and `.env.example` |
+> | Neon / PostgreSQL connection + `sslmode` | `docs/PHASE_26G_PRODUCTION_INTEGRATIONS_QA.md` §2, `docs/POSTGRES_CUTOVER_RUNBOOK.md` §6 |
+> | PostgreSQL migration chain + PG17 proof | `docs/PHASE_26G_PRODUCTION_INTEGRATIONS_QA.md` §3, `.github/workflows/pg17-full-chain-reference.yml` |
+> | Cloudflare R2 / private media | `docs/PHASE_23_PRESIGNED_R2_UPLOADS.md`, `docs/PHASE_26G_PRODUCTION_INTEGRATIONS_QA.md` §4 |
+> | Retention cron | `src/app/api/cron/purge-evidence/route.ts`, `tests/vercel-cron-retention-phase24.test.js` |
+>
+> Specifically corrected since this plan was written:
+>   * **Storage env vars are `MEDIA_BACKEND=s3` + `R2_ACCOUNT_ID` /
+>     `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_BUCKET` /
+>     `R2_REGION` / `R2_S3_ENDPOINT`** — the `STORAGE_BACKEND` / `S3_BUCKET` /
+>     `S3_ENDPOINT` / `AWS_*` names in this file were never implemented.
+>   * **The cron route is `GET`** `/api/cron/purge-evidence` (Vercel Cron issues
+>     GET), not `POST`.
+>   * **SMTP vars are `SMTP_PASSWORD`** (not `SMTP_PASS`) and the sender is
+>     **`EMAIL_FROM`** (not `SMTP_FROM`).
+>   * Prefer **`sslmode=verify-full`** over the `sslmode=require` referenced
+>     throughout this file (see the Phase 26G §2 rationale).
+>   * The two "BLOCKER" rows (SQLite, local media) are **closed**: PostgreSQL
+>     via `build:postgres` and the S3/R2 backend both ship.
+
 ---
 
 ## 1. Executive Summary

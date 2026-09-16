@@ -48,12 +48,17 @@ fs.writeFileSync(
     files: [
       path.join(REPO, "src/lib/env.ts"),
       path.join(REPO, "src/lib/route-protection.ts"),
+      // Phase 26G review: the origin contract (src/lib/app-url.ts) is now
+      // exercised DIRECTLY as well as through env.ts, so the accept/reject
+      // table is pinned at the module that owns it.
+      path.join(REPO, "src/lib/app-url.ts"),
     ],
   })
 );
 execSync(`npx tsc -p ${path.join(OUT, "tsconfig.json")}`, { cwd: REPO, stdio: "pipe" });
 const Env = require(path.join(OUT, "env.js"));
 const RP = require(path.join(OUT, "route-protection.js"));
+const AppUrl = require(path.join(OUT, "app-url.js"));
 
 const REAL = "a".repeat(64);
 
@@ -62,6 +67,12 @@ section("1. SECURITY_HASH_SECRET is mandatory in production");
 // ---------------------------------------------------------------------------
 {
   const prod = (extra) => ({ NODE_ENV: "production", ...extra });
+  // Phase 26G: the production contract gained the application ORIGIN
+  // (src/lib/app-url.ts). `PROD_OK` is therefore the smallest environment that
+  // satisfies BOTH halves — every existing secret assertion below keeps its
+  // original subject and strength; only the "otherwise clean" baseline grew.
+  const PROD_URL = "https://codemind.example.academy";
+  const PROD_OK = { SECURITY_HASH_SECRET: REAL, NEXT_PUBLIC_URL: PROD_URL };
 
   ok(
     Env.getSecurityHashSecretProblem(prod({})) !== null,
@@ -121,16 +132,260 @@ section("1. SECURITY_HASH_SECRET is mandatory in production");
   }
   ok(assertThrew, "assertProductionEnv throws for an invalid production secret");
   ok(
-    Env.validateProductionEnv(prod({ SECURITY_HASH_SECRET: REAL })).length === 0,
-    "validateProductionEnv is clean with a proper secret"
+    Env.validateProductionEnv(prod(PROD_OK)).length === 0,
+    "validateProductionEnv is clean with a proper secret and a proper origin"
   );
   let cleanThrew = false;
   try {
-    Env.assertProductionEnv(prod({ SECURITY_HASH_SECRET: REAL }));
+    Env.assertProductionEnv(prod(PROD_OK));
   } catch {
     cleanThrew = true;
   }
-  ok(!cleanThrew, "assertProductionEnv passes with a proper secret");
+  ok(!cleanThrew, "assertProductionEnv passes with a proper secret and origin");
+
+  // ---- Phase 26G: the application origin is part of the production contract.
+  // Without it in production, every emailed reset/activation link resolves to
+  // http://localhost:3000 — delivered, valid, and unusable — while the route
+  // reports success. These pins hold that failure at build/startup instead.
+  ok(
+    Env.validateProductionEnv(prod({ SECURITY_HASH_SECRET: REAL })).some((p) =>
+      /NEXT_PUBLIC_URL/.test(p)
+    ),
+    "production + unset NEXT_PUBLIC_URL is reported as a problem"
+  );
+  ok(
+    Env.validateProductionEnv(
+      prod({ SECURITY_HASH_SECRET: REAL, NEXT_PUBLIC_URL: "   " })
+    ).some((p) => /NEXT_PUBLIC_URL/.test(p)),
+    "production + blank NEXT_PUBLIC_URL is reported as a problem"
+  );
+  ok(
+    Env.validateProductionEnv(
+      prod({ SECURITY_HASH_SECRET: REAL, NEXT_PUBLIC_URL: "http://localhost:3000" })
+    ).some((p) => /NEXT_PUBLIC_URL/.test(p)),
+    "production + a localhost origin is rejected (emailed links would be dead)"
+  );
+  ok(
+    Env.validateProductionEnv(
+      prod({ SECURITY_HASH_SECRET: REAL, NEXT_PUBLIC_URL: "not-a-url" })
+    ).some((p) => /NEXT_PUBLIC_URL/.test(p)),
+    "production + a non-absolute origin is rejected"
+  );
+  ok(
+    Env.validateProductionEnv(
+      prod({ SECURITY_HASH_SECRET: REAL, NEXT_PUBLIC_URL: "javascript:alert(1)" })
+    ).some((p) => /NEXT_PUBLIC_URL/.test(p)),
+    "production + a non-http(s) scheme origin is rejected"
+  );
+  ok(
+    Env.validateProductionEnv(
+      prod({ SECURITY_HASH_SECRET: REAL, NEXT_PUBLIC_URL: PROD_URL })
+    ).length === 0,
+    "production + a real https origin has no origin problem"
+  );
+  // Non-production keeps the localhost fallback the suites rely on.
+  ok(
+    Env.validateProductionEnv({ NODE_ENV: "development" }).length === 0 &&
+      Env.validateProductionEnv({}).length === 0,
+    "non-production never requires NEXT_PUBLIC_URL"
+  );
+  // No problem message may ever echo a configured value back.
+  ok(
+    Env.validateProductionEnv(
+      prod({ SECURITY_HASH_SECRET: REAL, NEXT_PUBLIC_URL: "http://127.0.0.1:3000" })
+    ).every((p) => !/127\.0\.0\.1/.test(p)),
+    "origin problems name the variable, never its value"
+  );
+
+  // =========================================================================
+  // Phase 26G REVIEW — PRODUCTION ORIGIN IS HTTPS-ONLY.
+  //
+  // The first pass of 26G accepted any absolute non-loopback http(s) origin.
+  // That still permits `http://codemind.example.com` in production, and this
+  // origin is the PREFIX of every password-reset and teacher-activation link
+  // — URLs that carry a single-use credential in the query string. Over plain
+  // http that token is readable and rewritable by anyone on the path, and any
+  // https->http hop leaks it in a Referer. Both flows are account-takeover /
+  // account-creation surfaces, so the contract is tightened to `https:` only
+  // and the build/boot check FAILS CLOSED. These pins hold that line.
+  // =========================================================================
+  const originProblem = (value) =>
+    AppUrl.getAppUrlProblem(prod({ NEXT_PUBLIC_URL: value }));
+
+  // ---- ACCEPTED in production (the whole accept table) --------------------
+  for (const good of [
+    "https://codemind.academy",
+    "https://app.codemind.academy",
+    "https://codemind.academy:8443",
+    // A base-path deployment is legitimate: appUrl() appends after it.
+    "https://codemind.academy/app",
+    "https://codemind.academy/app/",
+    "https://codemind.vercel.app",
+  ]) {
+    ok(
+      originProblem(good) === null,
+      `production accepts the https origin ${good}`
+    );
+  }
+
+  // ---- REJECTED in production (the whole reject table) --------------------
+  // The core of the review: a PUBLIC host over plain http is still rejected.
+  for (const bad of [
+    "http://codemind.academy", // <-- the exact misconfiguration under review
+    "http://app.codemind.academy",
+    "http://codemind.example.com",
+    "http://codemind.vercel.app",
+    "http://localhost:3000",
+    "https://localhost:3000", // https does NOT rescue a loopback host
+    "http://127.0.0.1:3000",
+    "https://127.0.0.1:3000",
+    "https://127.0.0.2", // the whole 127/8 block, not just .0.1
+    "https://[::1]",
+    "https://[::ffff:127.0.0.1]",
+    "https://0.0.0.0",
+    "https://internal.local",
+    "https://box.localhost",
+    "ftp://codemind.academy",
+    "file:///etc/passwd",
+    "mailto:admin@codemind.academy",
+    "javascript:alert(1)",
+    "data:text/html,<script>alert(1)</script>",
+    "not-a-url",
+    "//codemind.academy", // protocol-relative: not an absolute origin
+    "/codemind.academy",
+    "codemind.academy", // bare host, no scheme
+    "https://", // no host
+    // Embedded credentials in a "public" origin variable.
+    "https://user:pass@codemind.academy",
+    "https://user@codemind.academy",
+    // A query string or fragment in the base would collide with / swallow the
+    // token that appUrl() appends.
+    "https://codemind.academy/?a=1",
+    "https://codemind.academy/#frag",
+    "https://codemind.academy/app?a=1",
+    "https://codemind.academy/app#frag",
+  ]) {
+    ok(
+      originProblem(bad) !== null,
+      `production rejects the origin ${JSON.stringify(bad)}`
+    );
+  }
+
+  // Missing / blank, and the error never echoes a value.
+  ok(
+    originProblem(undefined) !== null && originProblem("") !== null &&
+      originProblem("   ") !== null,
+    "production rejects a missing, empty or whitespace-only origin"
+  );
+  // The rejection text quotes a GENERIC example ("https://codemind.academy"),
+  // so the real invariant is that the operator's own value is never echoed.
+  // A distinctive host proves it: if the message replayed the input, this
+  // would contain "secret-internal-host".
+  const ECHO_MSG = originProblem("http://secret-internal-host.example") || "";
+  ok(
+    !/secret-internal-host/.test(ECHO_MSG),
+    "the http rejection message names the variable, never the configured value"
+  );
+  ok(
+    /https/i.test(originProblem("http://codemind.academy") || ""),
+    "the http rejection message tells the operator what to use instead"
+  );
+
+  // ---- resolveAppUrl: throws in production, never silently falls back -----
+  for (const bad of ["http://codemind.academy", "https://localhost:3000", undefined]) {
+    let threw = false;
+    try {
+      AppUrl.resolveAppUrl(prod(bad === undefined ? {} : { NEXT_PUBLIC_URL: bad }));
+    } catch {
+      threw = true;
+    }
+    ok(
+      threw,
+      `resolveAppUrl throws in production for ${JSON.stringify(bad)} (no silent localhost fallback)`
+    );
+  }
+  // Trailing slash is normalized away, so appUrl() cannot mint "//x".
+  ok(
+    AppUrl.resolveAppUrl(prod({ NEXT_PUBLIC_URL: "https://codemind.academy///" })) ===
+      "https://codemind.academy",
+    "a trailing slash on the configured origin is removed"
+  );
+  ok(
+    AppUrl.appUrl("/reset-password?token=abc", prod({ NEXT_PUBLIC_URL: PROD_URL })) ===
+      "https://codemind.example.academy/reset-password?token=abc",
+    "appUrl() mints an https link from a server-owned path in production"
+  );
+  ok(
+    AppUrl.appUrl("/reset-password?token=abc", {
+      NODE_ENV: "production",
+      NEXT_PUBLIC_URL: "https://codemind.academy/app/",
+    }) === "https://codemind.academy/app/reset-password?token=abc",
+    "appUrl() honours an https base path without doubling the separator"
+  );
+
+  // ---- DEV / TEST keep the localhost HTTP fallback -------------------------
+  // Nothing above may leak into development: that is the whole point of the
+  // split contract, and the offline verifiers depend on it.
+  for (const env of [
+    { NODE_ENV: "development" },
+    { NODE_ENV: "test" },
+    {}, // unset NODE_ENV (offline verifiers)
+  ]) {
+    ok(
+      AppUrl.getAppUrlProblem(env) === null,
+      `non-production never requires an origin (NODE_ENV=${env.NODE_ENV || "unset"})`
+    );
+    ok(
+      AppUrl.resolveAppUrl(env) === "http://localhost:3000",
+      `non-production keeps the http://localhost:3000 fallback (NODE_ENV=${env.NODE_ENV || "unset"})`
+    );
+  }
+  ok(
+    AppUrl.getAppUrlProblem({ NODE_ENV: "development", NEXT_PUBLIC_URL: "http://localhost:4000" }) === null,
+    "development still accepts a plain http origin"
+  );
+  ok(
+    AppUrl.resolveAppUrl({ NODE_ENV: "development", NEXT_PUBLIC_URL: "http://localhost:4000" }) ===
+      "http://localhost:4000",
+    "development honours an explicitly configured http origin"
+  );
+  ok(
+    AppUrl.appUrl("/reset-password?token=abc", { NODE_ENV: "test" }) ===
+      "http://localhost:3000/reset-password?token=abc",
+    "appUrl() still mints the localhost link in test"
+  );
+
+  // ---- Source-level: no call site may re-introduce the old fallback --------
+  const APP_URL_SRC = read("src/lib/app-url.ts");
+  ok(
+    !/url\.protocol\s*===\s*"http:"/.test(APP_URL_SRC) &&
+      !/url\.protocol\s*!==\s*"http:"/.test(APP_URL_SRC),
+    "the validator contains no `http:` acceptance branch"
+  );
+  ok(
+    (APP_URL_SRC.match(/url\.protocol !== "https:"/g) || []).length === 1,
+    "exactly one scheme gate, and it requires https"
+  );
+  ok(
+    /url\.username \|\| url\.password/.test(APP_URL_SRC),
+    "embedded credentials in the configured origin are rejected"
+  );
+  ok(
+    /url\.search/.test(APP_URL_SRC) && /url\.hash/.test(APP_URL_SRC),
+    "a query string or fragment in the configured origin is rejected"
+  );
+  for (const rel of [
+    "src/app/api/auth/password-reset/request/route.ts",
+    "src/app/api/admin/teacher-applications/[id]/approve/route.ts",
+    "src/app/api/students/me/referral/route.ts",
+  ]) {
+    const src = read(rel);
+    ok(
+      !/localhost:3000/.test(src.replace(/^\s*\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "")),
+      `${rel} no longer hardcodes a localhost origin in code`
+    );
+    ok(/appUrl\(/.test(src), `${rel} builds absolute links through appUrl()`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -279,11 +534,51 @@ section("6. Route-level authorization is still the real gate (not the proxy)");
     }
     return acc;
   };
-  const routes = walk(api).map((p) => path.relative(REPO, p));
+  // PORTABILITY (Phase 26G): normalise to POSIX separators BEFORE stripping
+  // the `src/app/` prefix, and store the NORMALISED form in `routes`.
+  //
+  // On Windows `path.relative` yields `src\app\api\admin\...`. The old code
+  // tried to strip `src/app/` FIRST and only then rewrote `\` -> `/`, so the
+  // prefix never matched and `isProtectedApiPath` was handed
+  // `/src/app/api/...` — a path that is not under any protected namespace.
+  // The suite then reported `found 0 routes in protected namespaces` and
+  // exited 1 on every Windows checkout while passing on Linux/macOS.
+  //
+  // Normalising once, here, fixes the discovery AND every downstream
+  // `startsWith("src/app/api/...")` filter below (they compare against
+  // POSIX-style prefixes too).
+  const routes = walk(api).map((p) =>
+    path.relative(REPO, p).split(path.sep).join("/")
+  );
+  ok(
+    routes.length > 0 && routes.every((r) => !r.includes("\\")),
+    `discovered route paths are separator-normalised (${routes.length} routes)`
+  );
+  // POSIX-only directory name. `path.dirname` cannot be used here: on Windows
+  // `path.win32.dirname("src/app/api/admin/overview")` hands back
+  // "src\\app\\api\\admin", which re-introduces the very backslashes the
+  // normalisation above removed. Splitting the already-normalised string is
+  // identical on every platform.
+  const routeDir = (r) => r.split("/").slice(0, -1).join("/");
   const protectedRoutes = routes.filter((r) =>
-    RP.isProtectedApiPath("/" + path.dirname(r).replace(/^src\/app\//, "").replace(/\\/g, "/"))
+    RP.isProtectedApiPath("/" + routeDir(r).replace(/^src\/app\//, ""))
   );
   ok(protectedRoutes.length >= 60, `found ${protectedRoutes.length} routes in protected namespaces`);
+  ok(
+    protectedRoutes.every((r) => r.startsWith("src/app/api/")),
+    "every discovered protected route keeps its src/app/api prefix (no double-prefixed /src/app/api/… paths)"
+  );
+  // Regression pin for the exact symptom the Windows defect produced: the
+  // discovery collapsed to ZERO routes, so every namespace was empty at once.
+  // Requiring at least one hit per namespace fails loudly on a separator
+  // regression instead of silently disabling §6's per-route authorization
+  // sweep (which would otherwise pass vacuously over an empty list).
+  ok(
+    ["admin", "students", "parents", "teacher"].every((ns) =>
+      protectedRoutes.some((r) => r.startsWith(`src/app/api/${ns}/`))
+    ),
+    "route discovery finds at least one route in every protected namespace (admin, students, parents, teacher)"
+  );
   for (const r of protectedRoutes) {
     const src = read(r);
     const guarded =

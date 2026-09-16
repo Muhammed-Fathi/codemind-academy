@@ -153,6 +153,17 @@ async function main() {
     "src/components/admin/payment-review-drawer.tsx", // admin review drawer
     "src/components/admin/admin-dashboard.tsx", // admin queue columns
     "src/app/api/admin/payments/route.ts", // admin queue READ projection
+    // --- Phase 26G RE-PIN (deliberate, not a relaxation) ---
+    // Phase 26F shipped PATCH/DELETE /api/admin/plans/[id], which guards plan
+    // deletion with `db.payment.count({ where: { requestedPlanId: id } })`.
+    // That is the FIRST reference to a request INTENT field outside the
+    // allowlist, so this suite has been RED on main since that merge. The
+    // file is allowlisted here and PINNED READ-ONLY over Payment immediately
+    // below (same proof shape as the admin queue route), so the invariant gets
+    // a new guarantee rather than losing one: the intent field may be read for
+    // a referential-integrity guard, never written outside the decision
+    // service (src/lib/payment-transitions.ts remains the sole writer).
+    "src/app/api/admin/plans/[id]/route.ts", // plan delete guard: counts referencing payments
   ]);
   const uniqueHits = srcFiles.filter((f) =>
     REQUEST_FIELDS.some((n) => new RegExp(`\\b${n}\\b`).test(fs.readFileSync(f, "utf8"))));
@@ -193,6 +204,20 @@ async function main() {
     !/payment\.(update|create|delete)\(/.test(adminReadRoute) &&
       !/\$transaction\(/.test(adminReadRoute),
     "the admin queue route is a pure read projection (no write, no transaction)"
+  );
+  // Phase 26G: the same read-only proof for the newly allowlisted plans route.
+  // It may READ a request intent field to refuse deleting a plan that payments
+  // still reference; it must never write a Payment or open a Payment
+  // transaction. `db.payment.count(...)` is the only Payment access allowed.
+  const adminPlansRoute = fs.readFileSync(
+    path.join(REPO, "src/app/api/admin/plans/[id]/route.ts"),
+    "utf8"
+  );
+  ok(
+    !/payment\.(update|create|delete|upsert)\(/.test(adminPlansRoute) &&
+      !/\$transaction\(/.test(adminPlansRoute) &&
+      /db\.payment\.count\(/.test(adminPlansRoute),
+    "the admin plans route only counts referencing payments (read-only, no Payment write, no transaction)"
   );
   // reviewedAt/reviewedByUserId pre-exist on TeacherApplication, so scope the
   // check: files that touch the payment delegate must not carry review WRITERS.
