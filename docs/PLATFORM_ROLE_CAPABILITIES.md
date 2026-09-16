@@ -94,18 +94,36 @@ Endpoint: `POST /api/students/me/referral` (`src/app/api/students/me/referral/ro
   the submitted tail. Component: the reward (a one-shot `REF-` discount coupon
   + XP) credited a wrong referrer, and two students could each mint a coupon
   against the same referrer.
-- **After**: resolution is an exact *suffix* predicate on the id
-  (`id: { endsWith: suffix }`) **plus** a hard six-character bound on the
-  suffix (`/^[a-z0-9]{6}$/`), matching how codes are generated
-  (`CM-${student.id.slice(-6).toUpperCase()}`). Non-six-char suffixes 404
-  without a database read; a six-char suffix that is nobody's exact id ending
-  resolves to nobody.
+- **After (uniqueness is PROVEN, not assumed)**: `Student.id` is a cUID string,
+  so the final six characters are NOT guaranteed unique. Resolution is
+  therefore exact **and** fail-closed:
+  1. the code must be `CM-` + exactly six `[A-Za-z0-9]` chars (the format GET
+     returns, preserved for legacy compatibility);
+  2. **every** student whose id ends in the suffix is read
+     (`findMany ... take: 2`), never `findFirst` on a non-unique predicate;
+  3. `0` matches → 404 (the code names nobody);
+  4. `>1` matches → 404 fail-closed: no XP, no referral row, no `REF-` coupon,
+     no notification. An ambiguous code can neither misplace a reward nor be
+     probed to learn that a collision exists;
+  5. exactly `1` match → continue (a uniquely-identified referrer).
+- **Uniqueness-via-`studentCode` was evaluated and rejected as a change**: a
+  one-to-one mapping onto the UNIQUE nullable `studentCode` would remove the
+  last-bit-of-entropy-loss the slice imposes, but the column is `@unique` only
+  when non-null, is nullable across the schema, is optional at intake and
+  admin-editable, and legacy `CM-<last6>` codes already out in the wild would
+  change meaning — an attribution migration that itself risks mis-matching who
+  existing codes belong to. The fail-closed algorithm above achieves
+  correct-or-nothing attribution with NO migration. Raising `studentCode` to
+  "required + assigned automatically at referral-code generation" is a
+  FUTURE ENHANCEMENT, recorded at §3.3.
 - **Proven by** (real DB, compiled handler): `scripts/verify-phase26f-auth.mjs`
-  — REF-01..REF-05, plus `tests/auth-cross-role-phase26f.test.js` source pins.
+  REF-01..REF-06, plus `tests/auth-cross-role-phase26f.test.js` source pins.
   Verifier assertions cover: anonymous→401, TEACHER/PARENT→403, owner→200,
   short-suffix guess rejected with no row written, exact-code resolution to the
-  true referrer, coupon ownership, duplicate-pair refusal, self-referral
-  refusal, and the `endsWith` collision regression lock.
+  true referrer, coupon ownership, duplicate-pair and self-referral refusal,
+  **and** the two-same-suffix COLLISION fixture: an ambiguous code → 404 with
+  zero referrals / zero coupons / zero notifications written, while an
+  exactly-one suffix referral still succeeds alongside the twins.
 - Supporting change: `scripts/lib/sqlite-prisma-lite.mjs` gained the
   `endsWith` filter (additive Prisma parity) so integration specs can exercise
   the production operator offline; production Prisma already supported it.
@@ -113,8 +131,18 @@ Endpoint: `POST /api/students/me/referral` (`src/app/api/students/me/referral/ro
 ### 3.2 Referral reward coupon ownership
 
 - The `REF-<last6>` discount coupon minted for the referrer is keyed and
-  `createdById`-bound to the **resolved referrer's** user. Proven by verifier
-  assertion `REF-03: the coupon is owned by the true referrer`.
+  `createdById`-bound to the **resolved referrer's** user — and is only minted
+  after uniqueness is proven (§3.1), so an ambiguous code can never mint one.
+  Proven by verifier assertion `REF-03: the coupon is owned by the true
+  referrer` and `REF-05: no REF- coupon was minted`.
+
+### 3.3 FUTURE ENHANCEMENT (recorded, NOT a classification conflict)
+
+- Move referral codes to a required, server-assigned `studentCode` (or an
+  explicit full-length code column) so slice-based suffix matching can be
+  retired entirely. Requires a schema change + migration + a backfill that maps
+  in-flight `CM-<last6>` codes to their owner, so it is **not** done this
+  phase. Until then, the fail-closed algorithm in §3.1 is the authority.
 
 ## 4. Verified write-authority inventory (read from source + suites)
 

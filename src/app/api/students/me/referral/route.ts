@@ -74,30 +74,42 @@ export async function POST(req: Request) {
 
   // Parse the referral code to find the referrer.
   //
-  // Phase 26F IDOR FIX — the referrer was resolved with
-  // `id: { contains: suffix }`, a SUBSTRING match. A referral code is exactly
-  //   CM-<the LAST 6 characters of the referrer's Student.id>,
-  // so the only faithful resolution is a SUFFIX match (`endsWith`), plus an
-  // exact length bound on the suffix. With `contains`, a 1–5 character suffix
-  // (e.g. `CM-A`) matched CORRECTLY but could also match arbitrary interior
-  // substrings, turning a 1/4096-per-char guess into a probabilistic branch
-  // prize: same-role reward manipulation (any two students could both claim
-  // the privileged student's referral and mint one discount coupon each),
-  // cross-role enumeration (the length of a participating student's id, then
-  // materialising a coupon the attacker can never redeem). The reward only
-  // ever credited the true referrer, so no value was stolen outright — but
-  // borrowed privilege that rewards the wrong actor is still a cross-role
-  // integrity break, and it is now closed.
+  // Phase 26F IDOR FIX — the referrer was originally resolved with
+  // `id: { contains: suffix }`, a SUBSTRING match, then a suffix match that
+  // was exact in direction but still not UNIQUE: `Student.id` is a cUID
+  // string, and its final six characters are not guaranteed to be unique, so
+  // `findFirst` over a suffix predicate could still pick ONE of several
+  // students whenever the scan was genuinely ambiguous — misattributing the
+  // referral XP and minting the REF- discount coupon for the wrong actor.
+  //
+  // A referral code can therefore only be honoured when it maps to EXACTLY ONE
+  // student, or not at all. Resolution is exact and FAIL-CLOSED:
+  //
+  //   * the code must be `CM-` + exactly six [A-Za-z0-9] characters — the
+  //     format GET returns (`CM-${id.slice(-6).toUpperCase()}`), kept intact
+  //     for legacy compatibility;
+  //   * EVERY student whose id ENDS in the suffix is read
+  //     (`findMany`, never `findFirst` on a non-unique predicate);
+  //   * 0 matches  → 404 (the code names nobody);
+  //   * 1 match    → continue (the uniquely-identified referrer);
+  //   * >1 matches → 404 fail-closed: nothing is awarded, no referral row is
+  //     written, no REF- coupon is minted and no notification is sent. An
+  //     ambiguous code can neither misplace a reward nor be probed to learn
+  //     that a collision exists.
   const code = referralCode.trim().toUpperCase();
   if (!code.startsWith("CM-")) return err(tApi("api.143"), 400);
 
   const suffix = code.slice(3);
   if (!/^[a-z0-9]{6}$/.test(suffix.toLowerCase())) return err(tApi("api.144"), 404);
-  const referrer = await db.student.findFirst({
-    where: { id: { endsWith: suffix.toLowerCase() } },
-  });
 
-  if (!referrer) return err(tApi("api.144"), 404);
+  const candidates = await db.student.findMany({
+    where: { id: { endsWith: suffix.toLowerCase() } },
+    take: 2,
+  });
+  if (candidates.length === 0) return err(tApi("api.144"), 404);
+  if (candidates.length > 1) return err(tApi("api.144"), 404);
+
+  const referrer = candidates[0];
   if (referrer.id === student.id) return err(tApi("api.145"), 400);
 
   // Check if referral already exists

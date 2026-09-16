@@ -62,13 +62,16 @@ function ok(cond, label) {
     .replace(/\/\*[\s\S]*?\*\//g, ""); // block comments
 
   // Code-level facts that decide the endpoint's outcome.
-  ok(/id:\s*\{\s*endsWith:\s*suffix/.test(route), "REF-01: referrer resolution uses an exact *suffix* predicate on id");
-  ok(!/id:\s*\{\s*contains:\s*suffix/.test(route), "REF-02: the substring `contains` referrer lookup is gone (comment-stripped scan)");
-  ok(/slice\(-6\)/.test(route), "REF-03: the code is derived from the last 6 chars of the id");
-  ok(/\{6\}\$?\//.test(route), "REF-04: the suffix is length-bounded to exactly six chars");
+  const candidateBlock = route.slice(route.indexOf("const candidates"));
+  ok(/findMany/.test(candidateBlock), "REF-01: the resolver READS ALL suffix matches (findMany), never picks one");
+  ok(!/findFirst\(\{\s*where:\s*\{\s*id:\s*\{\s*endsWith/.test(route), "REF-02: the suffix resolver never uses findFirst on a non-unique predicate");
+  ok(/take:\s*2/.test(candidateBlock), "REF-03: the resolver probes row 2 to detect ambiguity");
+  ok(/candidates\.length\s*>\s*1/.test(candidateBlock), "REF-04: more than one match fails closed (no award, no mint)");
+  ok(/endsWith/.test(route), "REF-05: the exact-suffix predicate is preserved");
+  ok(/slice\(-6\)/.test(route), "REF-06: the code format is still derived from the last 6 chars of the id");
 
   const adapter = read("scripts/lib/sqlite-prisma-lite.mjs");
-  ok(/case "endsWith"/.test(adapter), "REF-05: the sqlite query adapter supports the `endsWith` filter");
+  ok(/case "endsWith"/.test(adapter), "REF-07: the sqlite query adapter supports the `endsWith` filter");
 }
 
 // ---------------------------------------------------------------------------
@@ -102,7 +105,9 @@ function ok(cond, label) {
   ok(/REF-01: anonymous → 401/.test(out), "the anonymous-denial assertion ran");
   ok(/REF-01: TEACHER → 403/.test(out), "the teacher-denial assertion ran");
   ok(/REF-01: PARENT → 403/.test(out), "the parent-denial assertion ran");
-  ok(/REF-05: a suffix-only \(endsWith\) resolution returns the exact referrer/.test(out), "the endsWith-regression-lock assertion ran");
+  ok(/the collision fixture's two ids end in the SAME six characters/.test(out), "the two-same-suffix collision fixture was created");
+  ok(/REF-05: an AMBIGUOUS code \(two id-suffix matches\) → 404 fail-closed/.test(out), "the ambiguous-code fail-closed assertion ran");
+  ok(/REF-06: an exactly-one suffix still succeeds → 200/.test(out), "the unambiguous-code success assertion ran");
 }
 
 console.log(`\n${pass} passed, ${failures.length} failed`);

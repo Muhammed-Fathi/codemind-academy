@@ -242,11 +242,29 @@ async function main() {
   section("C. fixtures");
   const studentUserA = await client.user.create({ data: { email: "a26f@cm.test", password: "x", name: "Student A", role: "STUDENT" } });
   const studentUserB = await client.user.create({ data: { email: "b26f@cm.test", password: "x", name: "Student B", role: "STUDENT" } });
+  const studentUserC = await client.user.create({ data: { email: "c26f@cm.test", password: "x", name: "Student C", role: "STUDENT" } });
+  const studentUserD = await client.user.create({ data: { email: "d26f@cm.test", password: "x", name: "Student D", role: "STUDENT" } });
   const teacherUser = await client.user.create({ data: { email: "t26f@cm.test", password: "x", name: "Teacher", role: "TEACHER" } });
   const parentUser = await client.user.create({ data: { email: "p26f@cm.test", password: "x", name: "Parent", role: "PARENT" } });
   const studentA = await client.student.create({ data: { userId: studentUserA.id, schoolType: "ARABIC" } });
   const studentB = await client.student.create({ data: { userId: studentUserB.id, schoolType: "ARABIC" } });
-  ok(true, "C: two participating students, one teacher, one parent, one anonymous actor");
+  // Collision fixture: TWO students whose ids end in the SAME six characters.
+  // Their ids differ only in the leading cUID stamp, so the pair shares the
+  // exact suffix that becomes the referral code — the case that must fail
+  // closed instead of picking one of them.
+  const studentC = await client.student.create({ data: { userId: studentUserC.id, schoolType: "ARABIC" } });
+  const studentD = await client.student.create({ data: { userId: studentUserD.id, schoolType: "ARABIC" } });
+  const twinCId = "cm26fcollide-a-zzz-abc123";
+  const twinDId = "cm26fcollide-z-zzz-abc123";
+  {
+    rawDb.prepare(`UPDATE "Student" SET "id" = ? WHERE "id" = ?`).run(twinCId, studentC.id);
+    rawDb.prepare(`UPDATE "Student" SET "id" = ? WHERE "id" = ?`).run(twinDId, studentD.id);
+    ok(
+      twinCId.slice(-6).toLowerCase() === "abc123" && twinDId.slice(-6).toLowerCase() === "abc123",
+      "C: the collision fixture's two ids end in the SAME six characters"
+    );
+  }
+  ok(true, "C: two participating students + one COLLIDING PAIR (twins), one teacher, one parent, one anonymous actor");
 
   const codeA = `CM-${String(studentA.id).slice(-6).toUpperCase()}`;
   const suffixA = String(studentA.id).slice(-6).toLowerCase();
@@ -299,21 +317,35 @@ async function main() {
   asUser(studentUserB);
 
   // =========================================================================
-  section("H. REF-05 THE FIX beats the OLD `contains` collision (the regression lock)");
-  // Today's cUID() id is a COLUMN string ending in six base36 chars — its
-  // exact end equals its last six characters.
-  const endsExactly = String(studentA.id).toLowerCase().endsWith(suffixA);
-  eq(endsExactly, true, "REF-05: the fix's 6-char suffix equals the id's exact end (precondition)");
-  // An id whose LAST-SIX equals the referrer's suffix collided under
-  // `contains` with the same 6-char tail only if it CONTAINED that tail —
-  // which is true for every string, so `contains` chose arbitrarily.
-  // `endsWith` gives one answer: the referrer whose id literally ends in it.
-  const viaAdapter = await client.student.findFirst({ where: { id: { endsWith: suffixA } } });
-  eq(viaAdapter.id, studentA.id, "REF-05: a suffix-only (endsWith) resolution returns the exact referrer");
-  // The attacking string that used to trip `contains` no longer reaches a row:
-  // a 6-char suffix that is NOT the exact end of any id resolves to nobody.
-  const nobody = await client.student.findFirst({ where: { id: { endsWith: "zzzzzz" } } });
-  eq(nobody, null, "REF-05: a suffix matching no id's end resolves to no student");
+  section("H. REF-05 THE COLLISION — an ambiguous code fails closed, nothing happens");
+  // Two students' ids end in the same six characters. A referral code for that
+  // suffix must resolve to NEITHER: no referrer, no reward, no row, no coupon.
+  const twinCode = "CM-ABC123";
+  const ambBefore = {
+    refs: await client.referral.count(),
+    couponCode: `REF-${"abc123".toUpperCase()}`,
+  };
+  const ambCouponsBefore = await client.coupon.count({ where: { code: ambBefore.couponCode } });
+  const amb = await POST(R.referral, url("/api/students/me/referral"), { referralCode: twinCode });
+  eq(amb.status, 404, "REF-05: an AMBIGUOUS code (two id-suffix matches) → 404 fail-closed");
+  eq(await client.referral.count(), ambBefore.refs, "REF-05: no referral relationship was created");
+  eq(await client.coupon.count({ where: { code: ambBefore.couponCode } }), ambCouponsBefore, "REF-05: no REF- coupon was minted");
+  const notifBefore = await client.notification.count();
+  eq(await client.notification.count(), notifBefore, "REF-05: no notification was sent (nothing was awarded)");
+
+  // =========================================================================
+  section("I. REF-06 the exact unambiguous code still succeeds alongside a colliding pair");
+  // The twins share `abc123`; the unambiguous students A and B have distinct
+  // suffixes. Student C (a NEW referred student, referrer=A) proves the path
+  // still works end-to-end while the twin pair sits in the same database.
+  // (Re-using B here would be a DUPLICATE of section F, not a routing proof.)
+  const seenA = await client.student.findMany({ where: { id: { endsWith: suffixA } } });
+  eq(seenA.length, 1, "REF-06: student A's suffix is exactly-one even with the twins seeded");
+  asUser(studentUserC);
+  const uAmb = await POST(R.referral, url("/api/students/me/referral"), { referralCode: codeA });
+  eq(uAmb.status, 200, "REF-06: an exactly-one suffix still succeeds → 200");
+  eq(await client.referral.count({ where: { referrerId: studentA.id, referredId: twinCId } }), 1, "REF-06: the unambiguous referral linked the TRUE referrer (A) to the new referree (C)");
+  asUser(studentUserB);
 
   R.restore();
 
