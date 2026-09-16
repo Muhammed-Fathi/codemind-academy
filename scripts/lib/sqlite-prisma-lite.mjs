@@ -267,6 +267,10 @@ export function createSqlitePrisma({ db, schemaPath }) {
           out.push(`${col} LIKE ? ESCAPE '\\'`);
           params.push(`${String(raw).replace(/[%_\\]/g, (c) => "\\" + c)}%`);
           continue;
+        case "endsWith":
+          out.push(`${col} LIKE ? ESCAPE '\\'`);
+          params.push(`%${String(raw).replace(/[%_\\]/g, (c) => "\\" + c)}`);
+          continue;
         case "mode":
           continue; // SQLite LIKE is case-insensitive for ASCII anyway
         default:
