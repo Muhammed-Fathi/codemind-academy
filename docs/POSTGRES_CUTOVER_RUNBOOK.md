@@ -270,6 +270,15 @@ has, modulo verification) and the PostgreSQL-native Phase 26D migration with
 the same name and the same logical change (`TIMESTAMPTZ(3)` instead of
 `DATETIME`, canonical constraint names). See §5.
 
+> **RECOVERY HOLD — Group.trackScope drift investigation:** the original checker
+> compares column types and object names, not full definitions, defaults or
+> nullability, and does not enforce the exact ledger cardinalities listed below.
+> Its exit 0 is NOT sufficient authorization to baseline or recover. Production
+> has reported `Group.trackScope TEXT` where `0_init` claims `TrackScope`.
+> Do not execute §11.2 until the investigation in
+> `docs/GROUP_TRACK_SCOPE_RECOVERY_INVESTIGATION.md` is reviewed, the full
+> read-only catalog comparison passes, and real PostgreSQL 17 recovery is proven.
+
 ### 11.1 Read-only verification (run FIRST — changes nothing)
 
 ```bash

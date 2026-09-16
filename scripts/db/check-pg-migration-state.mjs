@@ -22,7 +22,7 @@
 //
 // EXIT CODES
 //   0 = database is in the expected PRE-RECOVERY state (26D absent, schema
-//       == 0_init, failed 26D ledger row present) — safe to run the recovery.
+//       == 0_init, failed 26D ledger row present) — additional catalog verification and review still required.
 //   1 = it is not (see the printed diff); STOP and investigate.
 //   2 = could not run (connection/env problem).
 //
@@ -159,6 +159,7 @@ function initColType(t) {
 }
 
 async function main() {
+  console.warn('RECOVERY HOLD: this legacy inventory does not compare nullability, defaults, or constraint/index definitions. Exit 0 is NOT recovery authorization. Run inspect-pg-baseline.mjs and review GROUP_TRACK_SCOPE_RECOVERY_INVESTIGATION.md.');
   const url = targetUrl();
   if (!url || !/^postgres(ql)?:\/\//i.test(url)) {
     console.error("check-pg-migration-state: --target <postgresql-url> (or DATABASE_URL) is required");
@@ -276,8 +277,8 @@ async function main() {
   if (diffs.length) {
     for (const d of diffs) { console.log(`  DIFF ${d}`); problems.push(`0_init mismatch: ${d}`); }
   } else {
-    console.log(`  identical (${inv.tables.size} tables, ${[...inv.tables.values()].reduce((a, m) => a + m.size, 0)} columns, ${inv.enums.size} enums, ${inv.constraints.size} constraints, ${inv.indexes.size} indexes)`);
-    notes.push("live schema == 0_init inventory (resolve --applied 0_init would be truthful)");
+    console.log(`  legacy type/name match (${inv.tables.size} tables, ${[...inv.tables.values()].reduce((a, m) => a + m.size, 0)} columns, ${inv.enums.size} enums, ${inv.constraints.size} constraints, ${inv.indexes.size} indexes)`);
+    notes.push("legacy type/name inventory matches only; full catalog verification remains mandatory");
   }
 
   console.log("\n== Verdict ==");
