@@ -52,6 +52,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Historical pre-26B baseline is checksum-pinned by the recovery test.
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -110,10 +112,41 @@ jobs:
           fi
           echo "Confirmed: provider architecture proofs executed against real PostgreSQL + the real Prisma engine."
 
+      - name: Prove guarded historical Group reconciliation and Prisma recovery
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/codemind_migrations
+          MIGRATION_PROVIDERS_PRISMA_BIN: node_modules/.bin/prisma
+        run: |
+          set -o pipefail
+          node tests/group-track-recovery-postgres.test.mjs 2>&1 | tee group-recovery.log
+          ! grep -q 'ENGINE_SKIPPED' group-recovery.log
+          grep -q 'GROUP_TRACK_RECOVERY_PG17_OK' group-recovery.log
+          grep -q 'GROUP_TRACK_RECOVERY_ENGINE_OK' group-recovery.log
+
+      - name: Application regressions, generated client and PostgreSQL build
+        env:
+          DATABASE_URL: file:./ci-diagnostic-only.db
+          # Public disposable CI value only; NEVER use for a production deployment.
+          SECURITY_HASH_SECRET: codemind-ci-only-not-for-production-security-hash-secret
+        run: |
+          node tests/pg-baseline-inspection.test.mjs
+          node scripts/verify-phase26d-teacher.mjs
+          node tests/phase26d-teacher-full-flow.test.js
+          node scripts/verify-phase26b-group-track.mjs
+          node scripts/verify-phase26b-student.mjs
+          node tests/track-architecture-phase12.test.js
+          node scripts/verify-phase21-migration.mjs
+          node tests/migration-sql.test.js
+          npx prisma generate
+          npx tsc --noEmit
+          DATABASE_URL=postgresql://postgres:postgres@localhost:5432/codemind_migrations npm run build:postgres
+
       - name: Upload output
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: migration-providers-output
-          path: providers.log
+          path: |
+            providers.log
+            group-recovery.log
           if-no-files-found: warn

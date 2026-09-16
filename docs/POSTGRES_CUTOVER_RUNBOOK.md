@@ -270,6 +270,15 @@ has, modulo verification) and the PostgreSQL-native Phase 26D migration with
 the same name and the same logical change (`TIMESTAMPTZ(3)` instead of
 `DATETIME`, canonical constraint names). See §5.
 
+> **RECOVERY HOLD — Group.trackScope drift investigation:** the original checker
+> compares column types and object names, not full definitions, defaults or
+> nullability, and does not enforce the exact ledger cardinalities listed below.
+> Its exit 0 is NOT sufficient authorization to baseline or recover. Production
+> has reported `Group.trackScope TEXT` where `0_init` claims `TrackScope`.
+> Do not execute §11.2 until the investigation in
+> `docs/GROUP_TRACK_SCOPE_RECOVERY_INVESTIGATION.md` is reviewed, the full
+> read-only catalog comparison passes, and real PostgreSQL 17 recovery is proven.
+
 ### 11.1 Read-only verification (run FIRST — changes nothing)
 
 ```bash
@@ -368,3 +377,108 @@ A backup taken BEFORE the failed deploy has the same pre-26D schema and the
 11.2.2–11.2.4 unchanged. A backup taken AFTER the failed deploy is exactly
 the §11.1 state. Both variants are exercised in
 `tests/migration-providers.test.js`.
+
+### 11.3 Guarded Group.trackScope pre-baseline reconciliation (2026-09-16)
+
+**This section supersedes the ordering in §11.2 for the legacy TEXT incident.**
+No production command has been executed by the repository agent. Do not use
+this sequence until the operator approves the report and the PG17 + real Prisma
+CI gate for the exact code revision is green. Exit 0 from the old checker alone
+is **NOT authorization**. The standalone conversion does not resolve or deploy
+migrations and never writes `_prisma_migrations`.
+
+Operator-confirmed evidence: Group is empty; trackScope is TEXT, nullable,
+no default/identity/generated expression, default collation; native TrackScope
+labels are SHARED, ARABIC, LANGUAGE; recorded column dependency is the audience
+index only. Phase26B checksum matches its historical TEXT migration with steps=1;
+Phase26D is failed with steps=0 and checked objects absent. These observations
+must be revalidated at execution time, not assumed from the report.
+
+#### Prepare a trusted reference OFF production
+
+On a disposable **PostgreSQL 17** database, load ONLY the current immutable
+`prisma/postgres/migrations/0_init/migration.sql`, then run the inspector to
+capture `pg17-0-init.json`. For example, with the shell's secure `DATABASE_URL`
+pointing ONLY to that disposable empty database:
+
+```sh
+# DISPOSABLE REFERENCE DATABASE ONLY — not a production command.
+psql -X --set ON_ERROR_STOP=1 --dbname "$DATABASE_URL" --file prisma/postgres/migrations/0_init/migration.sql
+node scripts/db/inspect-pg-baseline.mjs > pg17-0-init.json
+```
+
+The reference contains the source SQL SHA-256 and server version. Review its
+provenance; metadata is NOT a signature and the reference must not be captured
+from the drifted database. Regenerate older inspector snapshots: enum labels
+are now explicitly aggregated as text[] for consistent real `pg` decoding.
+The complete catalog must be present (tables/columns/types/nullability/defaults/
+enums/PK/UNIQUE/FK/CHECK/indexes/views). No local SQL file or reference JSON is
+executed by the reconciliation script.
+
+#### Proposed operator sequence — NOT EXECUTED
+
+For the following steps, inject the production URL through the operator's secure
+environment (never chat or command-line arguments to Node/Prisma).
+
+1. **READ-ONLY inspection:**
+   ```sh
+   node scripts/db/inspect-pg-baseline.mjs --reference pg17-0-init.json > before-reconciliation.json
+   node scripts/db/check-pg-migration-state.mjs
+   ```
+   Expected incident result is exit 1: only the permitted TEXT-versus-enum
+   column difference. Check complete ledger/checksums, values and dependencies;
+   unexpected failures, already-applied 26D or other schema drift mean STOP.
+2. **Backup/PITR:** verify a recoverable backup/PITR point and rehearse restore
+   off production. Record reference hash, script revision and before evidence.
+3. **Maintenance/write freeze:** stop writes and automated deployments/DDL.
+   Privately review untracked routine/dynamic SQL and external dependencies;
+   pg_depend cannot prove those absent. Do not paste definitions containing
+   secrets. No user-defined Group triggers/rules/inheritance are permitted.
+4. **Guarded reconciliation, interactive terminal only:**
+   ```sh
+   node scripts/db/reconcile-group-track-scope.mjs --operator --acknowledge-backup-write-freeze-and-dependency-review --reference pg17-0-init.json
+   ```
+   Operator mode is refused in CI or without TTY stdin/stdout. Do not pipe this
+   command's stdout. Without operator mode only narrowly named disposable local
+   databases are accepted. Exit 0 means RECONCILED or VERIFIED_NOOP, with row
+   count and zero baseline differences; exit 1 means refusal/failure. It is not
+   migration recovery authorization. If connectivity is lost at COMMIT, the
+   outcome can be uncertain: inspect before retrying; exact enum state is a
+   verified no-op, not a blind skip.
+5. **Full baseline comparison, then checker:**
+   ```sh
+   node scripts/db/inspect-pg-baseline.mjs --reference pg17-0-init.json > after-reconciliation.json
+   node scripts/db/check-pg-migration-state.mjs
+   ```
+   Require ZERO full-catalog differences, preserved row/value counts, unchanged
+   ledger, no partial 26D state, and reviewed incident history. Inspector exit 2
+   means incomplete/failed inspection, never a pass. The old checker still does
+   not enforce exact ledger cardinality/checksums or complete schema equivalence.
+6. **Only after all prior gates pass and operator approval:**
+   ```sh
+   npx prisma migrate resolve --rolled-back 20260915180000_phase26d_quiz_attempt_architecture --schema prisma/postgres/schema.prisma
+   npx prisma migrate resolve --applied 0_init --schema prisma/postgres/schema.prisma
+   npx prisma migrate deploy --schema prisma/postgres/schema.prisma
+   npx prisma migrate status --schema prisma/postgres/schema.prisma
+   ```
+   Require clean status, no unresolved ledger failures and PG-native Phase26D
+   objects. Compare against a separately prepared full-chain PG17 reference.
+   A subsequent deploy should report no pending migrations. Do not delete old
+   SQLite-era or rolled-back ledger rows. Never baseline a TEXT state.
+
+The conversion acquires ACCESS EXCLUSIVE on Group (2-second lock timeout;
+30-second statement/idle-transaction timeouts) before inspecting. It allows only
+TEXT/nullable/no default/default collation or the exact already-enum equivalent;
+all other compared schema state must equal the trusted 0_init reference. It
+checks enum order, rejects SHARED and noncanonical literals, verifies only the
+expected audience-index column dependency, and checks index/constraint validity.
+The transaction explicitly uses READ COMMITTED so the database default cannot
+create a stale pre-lock snapshot. One ALTER is followed by full catalog, dependency
+and count checks before COMMIT.
+Any observed failure rolls back. No automatic classification, default dropping,
+NOT NULL removal, dependency dropping or ledger correction exists.
+
+For fresh PG installs, deploy the PG migration chain normally: this operation
+is unnecessary. For restored pre-26B, TEXT-era, enum-era or post-26D backups,
+inspect the restored state first; do not blindly replay incident recovery on an
+already-post-26D database. Full-baseline gating intentionally rejects that state.
