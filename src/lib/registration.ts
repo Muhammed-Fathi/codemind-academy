@@ -86,3 +86,29 @@ export function isValidStudentCode(code: string): boolean {
   // unambiguous subset, but hand-entered / legacy codes may contain 0/1).
   return /^CM-[A-Z0-9]{6}$/i.test((code || "").trim());
 }
+
+// ---------------------------------------------------------------------------
+// Parent → student link label
+// ---------------------------------------------------------------------------
+
+/**
+ * `ParentStudentLink.relation` is a human relationship word, never free-form
+ * client data. It is bounded in length, restricted to letters/marks/spaces/
+ * dashes, lowercased, and ANY unrecognised value (an object, a number, an
+ * oversized blob) falls back to `"parent"` — the default registration writes.
+ *
+ * Without this bound an authenticated client could persist an arbitrarily long
+ * string in a column every parent read then ships to the UI.
+ */
+export const PARENT_RELATION_MAX = 40;
+
+const RELATION_RE = /^[\p{L}\p{M} _-]+$/u;
+
+export function normalizeParentRelation(raw: unknown): string {
+  if (typeof raw !== "string") return "parent";
+  const v = raw.trim().toLowerCase().replace(/\s+/g, " ");
+  if (!v || v.length > PARENT_RELATION_MAX || !RELATION_RE.test(v)) {
+    return "parent";
+  }
+  return v;
+}

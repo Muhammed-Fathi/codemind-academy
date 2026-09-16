@@ -2,7 +2,11 @@ import { getServerT } from "@/lib/i18n-server";
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireUser, getParentProfile } from "@/lib/api";
-import { isValidStudentCode, normalizePhone } from "@/lib/registration";
+import {
+  isValidStudentCode,
+  normalizeParentRelation,
+  normalizePhone,
+} from "@/lib/registration";
 
 // POST /api/parents/me/link-student
 // Supports ONE mode:
@@ -10,6 +14,18 @@ import { isValidStudentCode, normalizePhone } from "@/lib/registration";
 //     matching Parent Phone + Student National ID (+ Student Code), i.e. the
 //     data the student provided at registration.
 // The legacy email-only linking path was removed for security.
+//
+// Phase 26E — duplicate safety under concurrency. The link is written with a
+// single `upsert` on the (parentId, studentId) unique key instead of
+// findUnique-then-create. The old sequence was a real (if narrow) race: two
+// identical submissions — a double-clicked button, a retried request — could
+// both read "no link" and both create, and the loser surfaced as an unhandled
+// UNIQUE violation (HTTP 500) even though the outcome the caller wanted had
+// already happened. `upsert` makes the common case one statement, and the
+// catch re-reads the row so ANY racing writer (Prisma's emulated upsert on
+// SQLite, a concurrent transaction on PostgreSQL) still answers idempotently.
+// An existing link is never rewritten: `update: {}` keeps the original
+// relation label and creation time.
 export async function POST(req: NextRequest) {
   const tApi = await getServerT();
   const user = await requireUser();
@@ -67,20 +83,26 @@ export async function POST(req: NextRequest) {
     return err(tApi("api.117"), 400);
   }
 
-  // Idempotent link
-  const existing = await db.parentStudentLink.findUnique({
-    where: {
-      parentId_studentId: { parentId: parent.id, studentId: student.id },
-    },
-  });
-  if (!existing) {
-    await db.parentStudentLink.create({
-      data: {
-        parentId: parent.id,
-        studentId: student.id,
-        relation: String(body.relation || "parent"),
-      },
+  // Idempotent link — one upsert keyed by the unique pair, plus one re-read
+  // for the (rare) case where a concurrent request created the row first.
+  const relation = normalizeParentRelation(body.relation);
+  const linkKey = {
+    parentId_studentId: { parentId: parent.id, studentId: student.id },
+  };
+  try {
+    await db.parentStudentLink.upsert({
+      where: linkKey,
+      update: {},
+      create: { parentId: parent.id, studentId: student.id, relation },
     });
+  } catch (e) {
+    const raced = await db.parentStudentLink
+      .findUnique({ where: linkKey })
+      .catch(() => null);
+    // The row exists ⇒ another request performed the exact same link; that is
+    // success, not a failure. Anything else (a genuinely broken write) is
+    // re-thrown so it is never reported as a link that was not created.
+    if (!raced) throw e;
   }
 
   // Return updated children list

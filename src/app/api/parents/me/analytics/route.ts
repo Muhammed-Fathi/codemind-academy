@@ -4,9 +4,11 @@ import { getServerT } from "@/lib/i18n-server";
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
-import { EXCLUDE_ARCHIVED_LESSON, lessonCourseChainOr } from "@/lib/session-progress";
-import { trackScopeWhere } from "@/lib/track-scope";
-import { LESSON_STUDENT_STATUS_FILTER } from "@/lib/session-lifecycle";
+import {
+  attemptsInCurriculumUniverse,
+  getStudentCurriculumHomeworkIds,
+  getStudentCurriculumLessonIds,
+} from "@/lib/parent-access";
 
 export async function GET(req: NextRequest) {
   const tApi = await getServerT();
@@ -36,6 +38,10 @@ export async function GET(req: NextRequest) {
                     select: {
                       titleAr: true,
                       title: true,
+                      // Phase 26E: the owning lesson id is what the child's
+                      // curriculum cut is applied to (an attempt whose quiz
+                      // lives outside the universe is not current progress).
+                      lessonId: true,
                       // Phase 19: strong/weak grouping reads the canonical
                       // curriculum container (topic for legacy, unit for
                       // official) instead of the quiz title.
@@ -88,28 +94,24 @@ export async function GET(req: NextRequest) {
   // (`trackScopeWhere` on the child's own schoolType + the dual curriculum
   // chain) — the "independently scoped by child id → course → track"
   // contract, applied to every derived number below.
+  // Phase 26E: the predicate now lives in ONE place
+  // (`getStudentCurriculumLessonIds`), shared with the weekly report and the
+  // dashboard, together with the homework universe the dashboard already
+  // computes inline. Phase 13's PUBLISHED clause and Phase 11's archived
+  // exclusion are inside the helper — a staged session must neither be counted
+  // nor named.
   const analyticsUniverseByStudent = new Map<string, Set<string>>();
+  const analyticsHomeworkUniverseByStudent = new Map<string, Set<string>>();
   for (const link of parent.children) {
     const s = link.student;
-    const courseId = s.group?.courseId;
-    if (!courseId) {
-      analyticsUniverseByStudent.set(s.id, new Set());
-      continue;
-    }
-    // Phase 13: the report denominator is the child's curriculum, so it
-    // requires PUBLISHED exactly like the student universe does — a staged
-    // session must neither be counted nor named. Replaces the legacy
-    // `isPublished` flag, which no longer gates anything.
-    const rows = await db.lesson.findMany({
-      where: {
-        ...LESSON_STUDENT_STATUS_FILTER,
-        ...EXCLUDE_ARCHIVED_LESSON,
-        ...trackScopeWhere(s.schoolType),
-        OR: lessonCourseChainOr(courseId),
-      },
-      select: { id: true },
-    });
-    analyticsUniverseByStudent.set(s.id, new Set(rows.map((r) => r.id)));
+    analyticsUniverseByStudent.set(
+      s.id,
+      await getStudentCurriculumLessonIds(s.id)
+    );
+    analyticsHomeworkUniverseByStudent.set(
+      s.id,
+      await getStudentCurriculumHomeworkIds(s.id)
+    );
   }
 
   const attended = (status: string) =>
@@ -118,8 +120,28 @@ export async function GET(req: NextRequest) {
   const childrenAnalytics = parent.children.map((link) => {
     const s = link.student;
 
+    // Phase 26E: every quiz number below is computed over the child's OWN
+    // universe. `quizTrend`, `totalQuizzes`, `avgQuizPct` and the strong/weak
+    // containers used to walk the whole attempt table, so an attempt on an
+    // archived session, a staged session, the other school type or a course
+    // the child has left moved the parent's numbers and named curriculum the
+    // child cannot open. Phase 26D semantics are preserved: this only removes
+    // out-of-universe ROWS; every finished in-universe attempt (retries
+    // included, each with its own `attemptNumber`) is still one data point.
+    const childUniverse =
+      analyticsUniverseByStudent.get(s.id) || new Set<string>();
+    const quizAttempts = attemptsInCurriculumUniverse(
+      s.quizAttempts,
+      childUniverse
+    );
+    const homeworkSubmits = s.homeworkSubmits.filter((h) =>
+      (analyticsHomeworkUniverseByStudent.get(s.id) || new Set<string>()).has(
+        h.homeworkId
+      )
+    );
+
     // Quiz performance trend (last 10 FINISHED attempts, chronological).
-    const quizTrend = s.quizAttempts
+    const quizTrend = quizAttempts
       .slice(0, 10)
       .reverse()
       .map((qa) => ({
@@ -157,7 +179,7 @@ export async function GET(req: NextRequest) {
     // have two unrelated "topics", and the result could never line up with
     // the curriculum the rest of the report measures.
     const topicMap = new Map<string, { title: string; sumPct: number; count: number }>();
-    s.quizAttempts.forEach((qa) => {
+    quizAttempts.forEach((qa) => {
       const container = qa.quiz?.lesson?.topic ?? qa.quiz?.lesson?.unit;
       const topicTitle =
         container?.titleAr || container?.title || qa.quiz?.titleAr || qa.quiz?.title || "Unknown";
@@ -179,8 +201,7 @@ export async function GET(req: NextRequest) {
     // the denominator is the child's curriculum, exactly as on the parent
     // dashboard). Both sides are restricted to that active universe so
     // archived history or a sibling's track cannot inflate the fraction.
-    const analyticsUniverseIds =
-      analyticsUniverseByStudent.get(s.id) || new Set<string>();
+    const analyticsUniverseIds = childUniverse;
     const completedLessons = s.lessonProgress.filter(
       (lp) => lp.isCompleted && analyticsUniverseIds.has(lp.lessonId)
     ).length;
@@ -190,10 +211,12 @@ export async function GET(req: NextRequest) {
         ? Math.min(100, Math.round((completedLessons / totalLessons) * 100))
         : 0;
 
-    // Homework stats
-    const hwSubmitted = s.homeworkSubmits.filter((h) => h.status !== "PENDING").length;
-    const hwGraded = s.homeworkSubmits.filter((h) => h.status === "GRADED").length;
-    const hwAvgGrade = s.homeworkSubmits
+    // Homework stats — the SAME in-universe set the dashboard's `homework`
+    // block reports, so the two parent screens can never disagree about the
+    // same child (Phase 26E).
+    const hwSubmitted = homeworkSubmits.filter((h) => h.status !== "PENDING").length;
+    const hwGraded = homeworkSubmits.filter((h) => h.status === "GRADED").length;
+    const hwAvgGrade = homeworkSubmits
       .filter((h) => h.grade !== null)
       .reduce((sum, h, _, arr) => sum + (h.grade || 0) / arr.length, 0);
 
@@ -213,9 +236,9 @@ export async function GET(req: NextRequest) {
       homeworkSubmitted: hwSubmitted,
       homeworkGraded: hwGraded,
       homeworkAvgGrade: Math.round(hwAvgGrade * 10) / 10,
-      totalQuizzes: s.quizAttempts.length,
-      avgQuizPct: s.quizAttempts.length > 0
-        ? Math.round(s.quizAttempts.reduce((sum, q) => sum + q.percentage, 0) / s.quizAttempts.length)
+      totalQuizzes: quizAttempts.length,
+      avgQuizPct: quizAttempts.length > 0
+        ? Math.round(quizAttempts.reduce((sum, q) => sum + q.percentage, 0) / quizAttempts.length)
         : 0,
       attendancePct: s.attendances.length > 0
         ? Math.round((s.attendances.filter((a) => attended(a.status)).length / s.attendances.length) * 100)

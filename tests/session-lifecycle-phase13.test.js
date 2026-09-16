@@ -1064,11 +1064,31 @@ section("8. the ceremony — MARK_READY requires readiness");
     ];
     for (const rel of READERS) {
       const src = read(rel);
+      // Phase 26E: the parent reporting routes apply the clause through the
+      // shared curriculum-universe helpers, so using one of those counts as
+      // "applies the lifecycle clause" — and the helper itself is pinned
+      // immediately below, so this stays a real invariant rather than an
+      // allowlist of names.
       ok(
-        /LESSON_STUDENT_STATUS_FILTER|isParentLessonPreviewAllowed|isStudentVisibleStatus|canAccessLesson\(|getCourseSessionProgress\(/.test(
+        /LESSON_STUDENT_STATUS_FILTER|isParentLessonPreviewAllowed|isStudentVisibleStatus|canAccessLesson\(|getCourseSessionProgress\(|getStudentCurriculumLessonIds\(|getStudentCurriculumHomeworkIds\(|attemptsInCurriculumUniverse\(/.test(
           src
         ),
         `${rel} applies the lifecycle clause (itself, the shared helper, or the progression engine)`
+      );
+    }
+    {
+      const access = read("src/lib/parent-access.ts");
+      ok(
+        /LESSON_STUDENT_STATUS_FILTER/.test(access),
+        "the shared parent curriculum helper keeps the PUBLISHED clause"
+      );
+      ok(
+        /EXCLUDE_ARCHIVED_LESSON/.test(access),
+        "the shared parent curriculum helper keeps the archived exclusion"
+      );
+      ok(
+        /isStudentVisibleStatus\(/.test(access) && /lessonCourseChainOr\(courseId\)/.test(access),
+        "and keeps the child's course chain (one predicate, not three)"
       );
     }
     const media = read("src/app/api/media/[id]/route.ts");
