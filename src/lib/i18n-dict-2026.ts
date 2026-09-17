@@ -1099,6 +1099,24 @@ export const DICT_2026: Record<string, DictEntry> = {
   },
   "plan.032": { ar: "شهر", en: "months" },
   "plan.033": { ar: "جنيه", en: "EGP" },
+  "plan.034": {
+    ar: "لا توجد باقات منشورة حاليًا. جولة أخرى قريبًا.",
+    en: "No plans are published yet — check back soon.",
+  },
+  "plan.035": {
+    ar: "تعذّر تحميل الباقات. اتأكد من اتصالك وحاول تاني.",
+    en: "Couldn't load the plans. Check your connection and try again.",
+  },
+  "plan.036": { ar: "إعادة المحاولة", en: "Retry" },
+  "plan.037": { ar: "عرض محدود", en: "Limited offer" },
+  // Shared pricing-card feature list (every plan includes the full platform)
+  "plan.038": { ar: "حصص مباشرة", en: "Live classes" },
+  "plan.039": { ar: "تسجيلات الحصص", en: "Session recordings" },
+  "plan.040": { ar: "اختبارات أونلاين", en: "Online quizzes" },
+  "plan.041": { ar: "ملفات PDF", en: "PDF materials" },
+  "plan.042": { ar: "واجبات وتصحيح", en: "Homework + grading" },
+  "plan.043": { ar: "لوحة متابعة ولي الأمر", en: "Parent dashboard" },
+  "plan.044": { ar: "امتحانات تجريبية", en: "Mock exams" },
 
   // ---------------- Post-launch: footer contact section ----------------
   "foot.001": { ar: "دعم تقني", en: "Technical Support" },

@@ -268,6 +268,56 @@ assert(
 );
 
 // ---------------------------------------------------------------------------
+// 5b. LANDING PRICING — canonical source of truth (post-launch consistency
+//     fix): the PricingSection must render the public plans API, never a
+//     hardcoded plan list
+// ---------------------------------------------------------------------------
+const landing = read("src/components/landing/sections.tsx");
+assert(
+  landing.includes('fetch("/api/subscription-plans")'),
+  "the landing PricingSection must fetch the canonical public plans API"
+);
+assert(
+  !/const plans = \[\s*\{[\s\S]*price:\s*\d+/.test(landing),
+  "the landing PricingSection must NOT keep a hardcoded plan array"
+);
+assert(
+  !landing.includes("Early Bird\""),
+  "no hardcoded plan name may remain in the pricing section"
+);
+assert(
+  landing.includes('tr("plan.023")'),
+  "closed plans must be flagged 'غير متاحة حاليًا' on the landing cards"
+);
+assert(
+  /disabled=\{closed\}/.test(landing) &&
+    /if \(!closed\) setView\("register"\)/.test(landing),
+  "closed landing cards must have a disabled CTA (server still re-refuses)"
+);
+assert(
+  landing.includes("Skeleton"),
+  "the pricing section must have a loading state"
+);
+assert(
+  landing.includes('tr("plan.034")') &&
+    landing.includes('tr("plan.035")') &&
+    landing.includes('tr("plan.036")'),
+  "empty + failure states must be handled honestly (no fake prices)"
+);
+assert(
+  !/catch\s*\(\(\)\s*=>\s*\{[\s\S]{0,80}price/.test(landing),
+  "an API failure must never fall back to hardcoded prices"
+);
+// the public API must stay a plain plan source (no admin dependency info)
+const publicPlansRoute = read("src/app/api/subscription-plans/route.ts");
+assert(
+  !publicPlansRoute.includes("subscription.count") &&
+    !publicPlansRoute.includes("payment.count") &&
+    !publicPlansRoute.includes("dependencies"),
+  "the public plans API must not expose admin-only dependency information"
+);
+
+// ---------------------------------------------------------------------------
 // 6. I18N — every new key must exist in the hand-maintained 2026 dict
 // ---------------------------------------------------------------------------
 const dict = read("src/lib/i18n-dict-2026.ts");
@@ -276,6 +326,8 @@ for (const key of [
   "teacher.205", "teacher.206", "teacher.207", "teacher.208", "teacher.209",
   "teacher.210", "teacher.211", "teacher.212", "teacher.213", "teacher.214",
   "plan.001", "plan.023", "plan.031", "plan.032", "plan.033",
+  "plan.034", "plan.035", "plan.036", "plan.037", "plan.038", "plan.039",
+  "plan.040", "plan.041", "plan.042", "plan.043", "plan.044",
   "foot.001", "foot.002", "foot.003",
   "notif.back", "notif.markAll", "notif.empty", "notif.retry",
   "notif.open", "notif.myTitle", "notif.unread", "notif.read",

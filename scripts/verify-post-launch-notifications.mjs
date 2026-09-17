@@ -721,10 +721,17 @@ async function main() {
   ok(Boolean(pubPlan), "L3: new plan appears in the public catalogue");
   eq(pubPlan?.isActive, true, "L4: created active by default");
 
-  // edit
+  // edit — and the PUBLIC source reflects it (landing pricing contract:
+  // the landing PricingSection renders GET /api/subscription-plans, so an
+  // admin price change must land here without a code change)
   r = await PATCH(R.planById, url(`/api/admin/plans/${planId}`), { price: 300, nameAr: "شهري جديد" }, { id: planId });
   eq(r.status, 200, "L5: plan edited");
   eq(r.json?.plan?.price, 300, "L6: price updated");
+  r = await GET(R.publicPlans, url("/api/subscription-plans"));
+  const pubAfterEdit = (r.json?.plans || []).find((p) => p.id === planId);
+  eq(pubAfterEdit?.price, 300, "L6b: public source reflects the NEW price (landing contract)");
+  eq(pubAfterEdit?.nameAr, "شهري جديد", "L6c: public source reflects the new name");
+  eq(pubAfterEdit?.durationMonths, 1, "L6d: public source carries the duration");
 
   // dependency view (orphan → safe to delete)
   r = await GET(R.planById, url(`/api/admin/plans/${planId}`), { id: planId });
@@ -754,6 +761,8 @@ async function main() {
   asUser(uAdmin);
   r = await PATCH(R.planById, url(`/api/admin/plans/${planId}`), { isActive: true }, { id: planId });
   eq(r.status, 200, "L12: plan reactivated");
+  r = await GET(R.publicPlans, url("/api/subscription-plans"));
+  eq((r.json?.plans || []).find((p) => p.id === planId)?.isActive, true, "L12b: public source shows the plan available again");
   asUser(uStudentA);
   r = await POST(R.enroll, url("/api/enroll"), {
     courseId: course.id,
@@ -802,6 +811,19 @@ async function main() {
   r = await GET(R.planById, url(`/api/admin/plans/${planId}`), { id: planId });
   eq(r.json?.dependencies?.deleteSafe, false, "L22: referenced plan reports NOT delete-safe");
   eq(r.json?.dependencies?.activeSubscriptions, 1, "L23: active-sub count surfaced");
+  // after the refused delete the plan is STILL in the public source, intact
+  r = await GET(R.publicPlans, url("/api/subscription-plans"));
+  const pubAfterRefusedDelete = (r.json?.plans || []).find((p) => p.id === planId);
+  ok(Boolean(pubAfterRefusedDelete), "L23b: referenced plan remains in the public source after refused delete");
+  eq(pubAfterRefusedDelete?.price, 300, "L23c: its data is intact");
+  // and the public source exposes NO admin-only dependency information
+  eq(
+    Object.keys(pubAfterRefusedDelete || {}).every(
+      (k) => ["id", "name", "nameAr", "durationMonths", "price", "isPromo", "isActive", "description", "createdAt"].includes(k)
+    ),
+    true,
+    "L23d: public source carries no admin-only dependency fields"
+  );
 
   // a truly orphan plan CAN be hard-deleted
   r = await POST(R.plans, url("/api/admin/plans"), {
