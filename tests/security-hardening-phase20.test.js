@@ -176,6 +176,15 @@ section("2. CSP (behavioural)");
   ok(/object-src 'none'/.test(prod.value), "object-src is locked to 'none'");
   ok(/frame-ancestors 'self'/.test(prod.value), "clickjacking: frame-ancestors 'self'");
   ok(/connect-src 'self'/.test(prod.value), "no cross-origin connect allowed");
+  // Tightened pin (direct-upload follow-up): with NO object-storage backend
+  // configured, connect-src is EXACTLY 'self'. (MEDIA_BACKEND=s3 may add the
+  // one trusted R2 upload origin — pinned in
+  // tests/csp-direct-upload-connect-src.test.js.)
+  ok(
+    JSON.stringify(Csp.parseCsp(prod.value)["connect-src"]) ===
+      JSON.stringify(["'self'"]),
+    "connect-src is exactly 'self' when no storage backend is configured"
+  );
 
   const parsed = Csp.parseCsp(prod.value);
   ok(parsed["script-src"] && parsed["script-src"].includes("'self'"), "script-src includes 'self'");
