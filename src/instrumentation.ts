@@ -21,6 +21,33 @@ export async function register() {
     console.error(error instanceof Error ? error.message : String(error));
     terminateProcess();
   }
+
+  // Media direct-upload CSP consistency (Phase 23 follow-up).
+  //
+  // ADVISORY ONLY — never fatal. A CSP without the R2 upload origin is not a
+  // security hole; it "merely" blocks the browser PUT, which is exactly the
+  // production incident this check is meant to make self-diagnosing: the boot
+  // log names the variable and the fix instead of leaving an admin staring at
+  // a browser console CSP violation. Any unexpected failure here is swallowed
+  // so it can never affect server startup.
+  try {
+    const { resolveDirectUploadConnectOrigin } = await import(
+      "@/lib/content-security-policy"
+    );
+    const decision = resolveDirectUploadConnectOrigin();
+    // "ok" (the healthy s3 case) is silent — a clean boot must stay clean.
+    // NOTE: the enforced header itself is baked at BUILD time by
+    // next.config.ts `headers()`; a build host without the R2 environment
+    // produces a header without the origin even when the runtime env is
+    // correct. That deployment requirement is documented in .env.example and
+    // docs/SESSION_MEDIA_PUBLISHING_GUIDE_AR.md — keep the R2 env present for
+    // BOTH build and run.
+    if (decision.status === "invalid") {
+      console.error(`[media-csp] ${decision.reason}`);
+    }
+  } catch {
+    /* advisory only */
+  }
 }
 
 /**

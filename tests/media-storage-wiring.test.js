@@ -360,7 +360,14 @@ section("2. No R2 URL, key or credential exposure anywhere");
   }
   eq(r2Refs, [], "no route/page/component references R2_* configuration");
   const libRefs = filesUnder("src/lib").filter((rel) => /R2_(ACCOUNT_ID|BUCKET)/.test(read(rel)));
-  eq(libRefs, ["src/lib/media-s3.ts"], "R2_* referenced only by the server-side s3 backend module");
+  // content-security-policy.ts is the ONE allowed second reference: the
+  // direct-upload CSP derivation reads the non-credential NAME R2_ACCOUNT_ID
+  // (and R2_S3_ENDPOINT) to build the trusted connect-src origin. It is
+  // server-only (imported solely by next.config.ts + instrumentation.ts) and
+  // never emits values — the credential names stay confined to media-s3.ts
+  // (pinned in tests/s3-storage-r2.test.js §12).
+  eq(libRefs.sort(), ["src/lib/content-security-policy.ts", "src/lib/media-s3.ts"],
+    "R2_* referenced only by the server-side s3 backend module + the CSP origin derivation (names only)");
 
   // Signed/public URL construction is now a CONFINED capability (Phase 23):
   // only the s3 storage backend may sign URLs (a short-lived presigned PUT),
@@ -370,10 +377,15 @@ section("2. No R2 URL, key or credential exposure anywhere");
   // is still no presigned GET and no bucket LIST anywhere.
   const signed = [];
   const hosts = [];
+  // The DEFAULT endpoint SUFFIX may also appear in content-security-policy.ts:
+  // it is the non-secret default host used to derive the connect-src upload
+  // origin from R2_ACCOUNT_ID (mirrors resolveR2Config). No third module may
+  // ever carry it.
+  const defaultHostAllowlist = ["src/lib/media-s3.ts", "src/lib/content-security-policy.ts"];
   for (const rel of filesUnder("src")) {
     const text = read(rel);
     if (/getSignedUrl|s3-request-presigner|createPresigned|PresignedPost|X-Amz-Signature/i.test(text)) signed.push(rel);
-    if (/r2\.cloudflarestorage\.com/.test(text) && rel !== "src/lib/media-s3.ts") hosts.push(rel);
+    if (/r2\.cloudflarestorage\.com/.test(text) && !defaultHostAllowlist.includes(rel)) hosts.push(rel);
     if (/NEXT_PUBLIC[A-Z0-9_]*(R2|S3|AWS)[A-Z0-9_]*/.test(text)) hosts.push(rel + " (NEXT_PUBLIC)");
   }
   eq(signed.sort(), ["src/lib/media-s3.ts", "src/lib/media-upload.ts"],
@@ -383,7 +395,7 @@ section("2. No R2 URL, key or credential exposure anywhere");
   const orchestrator = read("src/lib/media-upload.ts");
   ok(!/getSignedUrl|s3-request-presigner|X-Amz-Signature|PresignedPost/i.test(orchestrator),
     "the upload orchestrator never constructs signed URLs itself");
-  eq(hosts, [], "no bucket hostname or NEXT_PUBLIC storage credential outside the backend module");
+  eq(hosts, [], "no bucket hostname or NEXT_PUBLIC storage credential outside the backend module + CSP origin derivation");
 
   // The byte-serving routes stay proxies: they answer with bytes, never a URL.
   for (const rel of ["src/app/api/media/[id]/route.ts", "src/app/api/materials/[id]/route.ts"]) {

@@ -21,8 +21,41 @@
 //     required; production does NOT use `eval` (webpack HMR in `next dev`
 //     does, which is why development alone widens script-src with
 //     'unsafe-eval' and never ships it).
-//   * no client-side cross-origin `fetch`/XHR/worker exists (the AI SDK is
-//     server-only; Kodgy is scripted) → `connect-src 'self'`.
+//   * no OTHER client-side cross-origin `fetch`/XHR/worker exists (the AI SDK
+//     is server-only; Kodgy is scripted) → `connect-src 'self'` plus — ONLY
+//     when `MEDIA_BACKEND=s3` — the ONE exact trusted R2 upload origin the
+//     Phase 23 direct browser upload needs (see below).
+//
+// DIRECT UPLOAD (Phase 23) AND connect-src
+// ========================================
+// With `MEDIA_BACKEND=s3` the admin browser PUTs bytes STRAIGHT to the private
+// R2 bucket using the short-lived presigned URL returned by
+// `/api/admin/media-uploads/init` (src/lib/direct-upload.ts). That PUT is a
+// cross-origin `fetch` from the app origin to the R2 endpoint, so the CSP MUST
+// name that endpoint in `connect-src` — a policy of `'self'` alone makes the
+// BROWSER block the request before it ever leaves the tab (production
+// incident, 2026-09: init answered 200 but no PUT was ever sent; console:
+// "… violates the following Content Security Policy directive: connect-src
+// 'self'").
+//
+// The origin is derived from the SAME server-side configuration the S3 client
+// uses (src/lib/media-s3.ts `resolveR2Config`): `R2_S3_ENDPOINT` when set,
+// otherwise `https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com`. Derivation is
+// PURE and FAIL-CLOSED:
+//   * only the exact https ORIGIN is ever added (no path, no query, no
+//     credentials, no port games — non-https values are rejected);
+//   * NO wildcards, ever (no `*`, `https:`, `https://*`);
+//   * a missing or malformed configuration adds NOTHING — the policy stays
+//     `'self'` (strictly no weaker than the pre-fix policy) and the boot-time
+//     check in src/instrumentation.ts names the deployment fix;
+//   * `MEDIA_BACKEND=local` (the default) never adds an origin — local
+//     development behaviour is byte-identical to the Phase 20 policy.
+//
+// DEPLOYMENT REQUIREMENT: next.config.ts evaluates headers() at BUILD time,
+// so the R2 environment must be present when the production artifact is
+// BUILT (Vercel project env vars cover this automatically; a VPS that builds
+// must load the same env it runs with, e.g. `set -a; . .env.production; set +a`
+// before `npm run build:postgres`).
 //
 // RULES THIS MODULE OWNS
 // ======================
@@ -63,6 +96,141 @@ export const CSP_DIRECTIVE_ORDER = [
 
 export type CspDirective = (typeof CSP_DIRECTIVE_ORDER)[number];
 
+/** The environment shape every CSP decision reads (never values are logged). */
+export type CspEnv = Record<string, string | undefined>;
+
+/**
+ * Default R2 S3-API host suffix, mirroring `resolveR2Config` in
+ * src/lib/media-s3.ts: when `R2_S3_ENDPOINT` is unset the endpoint is derived
+ * from the mandatory `R2_ACCOUNT_ID`.
+ */
+const R2_DEFAULT_ENDPOINT_HOST_SUFFIX = ".r2.cloudflarestorage.com";
+
+/**
+ * Why (and whether) `connect-src` gains a direct-upload origin.
+ *
+ *   not-required — `MEDIA_BACKEND` is not `s3`: the browser never talks to
+ *                  object storage directly, so the Phase 20 policy
+ *                  (`connect-src 'self'`) is emitted unchanged.
+ *   ok           — a trusted https origin was derived from the R2 config and
+ *                  is appended to `connect-src`.
+ *   invalid      — the backend is `s3` but the origin cannot be derived
+ *                  safely (R2 env absent, or the configured endpoint is not a
+ *                  bare https origin). NOTHING is added — the policy stays
+ *                  `'self'`; `reason` names the variable and the fix WITHOUT
+ *                  ever echoing the offending value.
+ */
+export type DirectUploadOriginDecision =
+  | { status: "not-required"; origin: null; reason: string }
+  | { status: "ok"; origin: string; reason: string }
+  | { status: "invalid"; origin: null; reason: string };
+
+/**
+ * Derive the ONE trusted origin the browser may PUT uploads to, from the same
+ * server-side configuration the S3 client itself uses.
+ *
+ * PURE and FAIL-CLOSED. Never throws, never returns a wildcard, never returns
+ * anything but an exact https origin (or null). Reasons name VARIABLES, never
+ * values, so the strings are safe for boot logs.
+ */
+export function resolveDirectUploadConnectOrigin(
+  env: CspEnv = process.env as CspEnv
+): DirectUploadOriginDecision {
+  // Mirror `resolveStorageBackendName` (src/lib/media.ts): the selector is
+  // `MEDIA_BACKEND`, empty/unset means "local", comparison is
+  // case-insensitive. Only "s3" produces direct browser uploads.
+  const backend = String(env.MEDIA_BACKEND ?? "").trim().toLowerCase();
+  if (backend !== "s3") {
+    return {
+      status: "not-required",
+      origin: null,
+      reason:
+        `MEDIA_BACKEND is not "s3" — the browser never connects to object ` +
+        `storage directly, so connect-src stays 'self'.`,
+    };
+  }
+
+  // Same endpoint resolution order as `resolveR2Config` in media-s3.ts:
+  // R2_S3_ENDPOINT when set, else https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com
+  const endpointRaw = String(env.R2_S3_ENDPOINT ?? "").trim();
+  let candidate = endpointRaw;
+  if (!candidate) {
+    const accountId = String(env.R2_ACCOUNT_ID ?? "").trim();
+    if (!accountId) {
+      return {
+        status: "invalid",
+        origin: null,
+        reason:
+          `MEDIA_BACKEND="s3" but neither R2_S3_ENDPOINT nor R2_ACCOUNT_ID ` +
+          `is set, so the trusted upload origin cannot be derived. ` +
+          `connect-src stays 'self' and direct browser uploads will be ` +
+          `blocked by the CSP. Set the R2 environment and REBUILD (the CSP ` +
+          `header is produced at build time) — see .env.example.`,
+      };
+    }
+    candidate = `https://${accountId}${R2_DEFAULT_ENDPOINT_HOST_SUFFIX}`;
+  }
+
+  // Structural validation — an EXACT https origin, nothing else:
+  //   * scheme MUST be https (uploads are signed against the TLS endpoint);
+  //   * no userinfo (credentials must never appear in a policy), no path, no
+  //     query, no fragment — only scheme://host[:port] is accepted;
+  //   * the URL must parse and carry a real hostname at all.
+  // Anything else is rejected WITHOUT echoing it: the policy simply stays
+  // 'self' (never weaker than the pre-direct-upload policy) and the reason
+  // names the variable so the operator can fix the deployment.
+  let url: URL;
+  try {
+    url = new URL(candidate);
+  } catch {
+    return {
+      status: "invalid",
+      origin: null,
+      reason:
+        `MEDIA_BACKEND="s3" requires a usable upload origin, but ` +
+        `${endpointRaw ? "R2_S3_ENDPOINT" : "R2_ACCOUNT_ID"} is set to a ` +
+        `value that does not parse as an https URL. connect-src stays 'self' ` +
+        `and direct browser uploads will be blocked by the CSP. Fix the ` +
+        `variable (bare https origin, no path/query/credentials) and rebuild.`,
+    };
+  }
+  const isBareHttpsOrigin =
+    url.protocol === "https:" &&
+    url.hostname.length > 0 &&
+    // Reject structurally-broken hostnames (leading/trailing dot, empty
+    // label — e.g. an EMPTY R2_ACCOUNT_ID would otherwise produce the
+    // parseable-but-bogus host ".r2.cloudflarestorage.com").
+    !url.hostname.startsWith(".") &&
+    !url.hostname.endsWith(".") &&
+    !url.hostname.includes("..") &&
+    url.username === "" &&
+    url.password === "" &&
+    url.pathname === "/" &&
+    url.search === "" &&
+    url.hash === "" &&
+    url.origin !== "null";
+  if (!isBareHttpsOrigin) {
+    return {
+      status: "invalid",
+      origin: null,
+      reason:
+        `MEDIA_BACKEND="s3" requires the upload origin in ` +
+        `${endpointRaw ? "R2_S3_ENDPOINT" : "R2_ACCOUNT_ID"} to be a BARE ` +
+        `https origin (https://host — no path, no query, no credentials, no ` +
+        `non-https scheme). connect-src stays 'self' and direct browser ` +
+        `uploads will be blocked by the CSP. Fix the variable and rebuild.`,
+    };
+  }
+
+  return {
+    status: "ok",
+    origin: url.origin,
+    reason:
+      `MEDIA_BACKEND="s3": the presigned browser PUT targets this origin, ` +
+      `derived from ${endpointRaw ? "R2_S3_ENDPOINT" : "R2_ACCOUNT_ID"}.`,
+  };
+}
+
 /**
  * The PRODUCTION directive set. `development` widens exactly one directive
  * (script-src) with 'unsafe-eval' for webpack HMR — see `buildCspDirectives`.
@@ -89,14 +257,32 @@ const PRODUCTION_DIRECTIVES: Record<CspDirective, readonly string[]> = {
 };
 
 export function buildCspDirectives(
-  options: { development?: boolean } = {}
+  options: { development?: boolean; env?: CspEnv } = {}
 ): Record<CspDirective, readonly string[]> {
-  if (!options.development) return { ...PRODUCTION_DIRECTIVES };
-  const dev: Record<CspDirective, readonly string[]> = { ...PRODUCTION_DIRECTIVES };
+  const env = options.env ?? (process.env as CspEnv);
+  // Fresh copy — and below a FRESH connect-src array: the directive maps are
+  // shared module state and must never be mutated by a decision.
+  const directives: Record<CspDirective, readonly string[]> = {
+    ...PRODUCTION_DIRECTIVES,
+  };
+
+  // connect-src: 'self' plus — ONLY for MEDIA_BACKEND=s3 — the exact trusted
+  // R2 upload origin (see the DIRECT UPLOAD section in the header comment).
+  // Fail-closed: a missing/malformed config contributes nothing, so the
+  // policy can never become WEAKER than the plain 'self' baseline.
+  const connectSrc = [...PRODUCTION_DIRECTIVES["connect-src"]];
+  const uploadOrigin = resolveDirectUploadConnectOrigin(env);
+  if (uploadOrigin.status === "ok") connectSrc.push(uploadOrigin.origin);
+  directives["connect-src"] = connectSrc;
+
+  if (!options.development) return directives;
   // webpack HMR in `next dev` evaluates module code; this widening exists in
   // development ONLY and is never present in a production build.
-  dev["script-src"] = [...PRODUCTION_DIRECTIVES["script-src"], "'unsafe-eval'"];
-  return dev;
+  directives["script-src"] = [
+    ...PRODUCTION_DIRECTIVES["script-src"],
+    "'unsafe-eval'",
+  ];
+  return directives;
 }
 
 // ---------------------------------------------------------------------------
@@ -123,7 +309,10 @@ export type CspDecision =
  * `CSP_DISABLED=1` is the explicit operator kill-switch (default off).
  */
 export function decideCspHeader(
-  env: Record<string, string | undefined> = process.env as Record<string, string | undefined>
+  env: Record<string, string | undefined> = process.env as Record<
+    string,
+    string | undefined
+  >
 ): CspDecision {
   if (String(env.CSP_DISABLED ?? "").trim() === "1") return null;
 
@@ -133,11 +322,11 @@ export function decideCspHeader(
   // Development/test: enforce with the dev widening. `report-only` is not
   // honoured outside production — a dev report-only header is noise.
   if (!isProduction) {
-    const value = serializeCsp(buildCspDirectives({ development: true }));
+    const value = serializeCsp(buildCspDirectives({ development: true, env }));
     return { header: "Content-Security-Policy", value };
   }
 
-  const value = serializeCsp(buildCspDirectives({ development: false }));
+  const value = serializeCsp(buildCspDirectives({ development: false, env }));
   return {
     header: reportOnly
       ? "Content-Security-Policy-Report-Only"

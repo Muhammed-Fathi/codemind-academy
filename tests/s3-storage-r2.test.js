@@ -721,8 +721,22 @@ async function main() {
     };
     eq(grep(path.join(REPO, "src/app")), [], "no R2_* references in src/app (routes/pages)");
     eq(grep(path.join(REPO, "src/components")), [], "no R2_* references in client components");
-    eq(grep(path.join(REPO, "src/lib")).sort(), ["src/lib/media-s3.ts"],
-      "R2_* referenced ONLY in src/lib/media-s3.ts (server module)");
+    // Direct-upload CSP follow-up: content-security-policy.ts additionally
+    // reads the two NON-credential variable NAMES (R2_S3_ENDPOINT /
+    // R2_ACCOUNT_ID) to derive the ONE trusted connect-src origin for the
+    // browser PUT. It is a server-only pure module (imported solely by
+    // next.config.ts and src/instrumentation.ts, never by a client bundle),
+    // never emits the values, and — pinned below — never touches the
+    // credential variables at all.
+    eq(grep(path.join(REPO, "src/lib")).sort(),
+      ["src/lib/content-security-policy.ts", "src/lib/media-s3.ts"],
+      "R2_* referenced ONLY in src/lib/media-s3.ts (server module) + content-security-policy.ts (connect-src origin derivation)");
+
+    // The CSP derivation may use the ENDPOINT variables only — the credential
+    // variables stay confined to the s3 backend module.
+    const cspSrc = read("src/lib/content-security-policy.ts");
+    ok(!/R2_(ACCESS_KEY_ID|SECRET_ACCESS_KEY|BUCKET|REGION)/.test(cspSrc),
+      "content-security-policy.ts never references R2 credential variables");
 
     // No NEXT_PUBLIC_* storage credential may exist anywhere in src/.
     const nextPublicHits = [];
