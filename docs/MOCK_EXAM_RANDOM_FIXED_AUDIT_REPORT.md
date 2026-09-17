@@ -166,13 +166,16 @@ Pool عربي للكورس = 17 سؤال، والـRANDOM بياخد 5 منهم�
 | `teacher-workflow-phase18` | **371 passed, 0 failed** |
 | `calendar-i18n-phase9` | **460 passed, 0 failed** |
 | `track-architecture-phase12` | **310 passed, 0 failed** |
-| باقي سويتات `tests/` (59 ملف إجمالًا) | **57 سويت passed بـ0 failed** — و2 استثناءات بيئية تحت |
+| باقي سويتات `tests/` (59 ملف إجمالًا) | **58 suite passed** — وسويت واحد استثناء بيئي + سويت واحد بيتخطى نفسه محليًا (تحت) |
 
-استثناءات بيئية (مش ليها علاقة بالامتحانات، وبتفشل/تتخطى قبل الإصلاح كمان):
+استثناءات بيئية (مش ليها علاقة بالامتحانات، واتأكدنا إنها موجودة على `main` كمان):
 
-- `final-integration-phase22`: بيحتاج `db/custom.db` + فولدر `backups/` على الجهاز —
-  بيخرج `ENOENT` لعدم وجودهم هنا.
-- `phase26d-concurrency-postgres`: `SKIPPED` — محتاج PostgreSQL حقيقي (CI بيبنيها).
+- `final-integration-phase22`: بيحتاج `db/custom.db` + فولدر `backups/` على الجهاز.
+  اتشغّل على worktree نظيف من `main` وطلع **نفس الفشل بنفس الرسالة**
+  (`ENOENT .../backups` + `db/custom.db missing`) ⟹ فشل بيئي pre-existing، مش regression.
+- `phase26d-concurrency-postgres`: محليًا بيطبع `PHASE26D_CONCURRENCY_SKIPPED` ويخرج بـ0
+  (محتاج PostgreSQL حقيقي) — والبوابة المخصصة ليه في CI **نجحت** على نفس الـcommit
+  (https://github.com/Muhammed-Fathi/codemind-academy/actions/runs/35260699446).
 
 **TypeScript (المصدر الرسمي = CI):** بوابة CI بتعمل `npx prisma generate && npx tsc --noEmit`
 على الـclient الحقيقي المتولّد — و**3/3 بوابات CI كلها success** على آخر commit:
