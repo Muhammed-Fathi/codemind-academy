@@ -1,8 +1,9 @@
 // GET /api/admin/plans — list ALL plans (active + inactive) for admin
 // POST /api/admin/plans — create plan
 // Phase 26C — owner requirement: Admin must be able to open/close ANY package
-// from sale at any time. isActive controls student visibility (student endpoint
-// filters isActive=true). This route is the admin authority for that.
+// from sale at any time. isActive controls the public availability flag
+// (the student endpoint keeps closed plans visible as inactive). This route is
+// the admin authority for that.
 
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";

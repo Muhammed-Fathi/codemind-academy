@@ -58,7 +58,7 @@ try {
     timeout: 120000,
   });
 } catch (e) {
-  console.error("[26C-TEST] verifier failed");
+  console.error(`[26C-TEST] verifier failed (child status ${e.status ?? "unknown"})`);
   process.exit(1);
 }
 

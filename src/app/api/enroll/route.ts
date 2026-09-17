@@ -92,9 +92,9 @@ export async function POST(req: NextRequest) {
   // Phase 26B — plan availability is enforced at SUBMISSION, not only at
   // approval (`payment-transitions` already refuses an inactive plan with
   // PLAN_NOT_FOUND). A plan the admin closed for sale (e.g. Early Bird) must
-  // never be purchasable by direct API tampering: it is hidden from
-  // /api/subscription-plans AND refused here. The approved decision-layer
-  // copy (api.276) is reused so the student sees the same "plan not
+  // never be purchasable by direct API tampering: it remains visible but
+  // unavailable in /api/subscription-plans AND is refused here. The approved
+  // decision-layer copy (api.276) is reused so the student sees the same "plan not
   // available" truth in both places. Students already holding a live
   // entitlement are unaffected — the entitlement policy never reads
   // plan.isActive.

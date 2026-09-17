@@ -1,9 +1,10 @@
 // PATCH /api/admin/plans/[id] — update plan (enable/disable sales, price, promo flag)
 // DELETE /api/admin/plans/[id] — delete plan (only when no active subscriptions use it)
 // Phase 26C — owner requirement: Admin must be able to open/close ANY package
-// from sale at any time. Toggling isActive controls student listing
-// (/api/subscription-plans filters isActive=true) and purchase rejection
-// (/api/enroll checks plan.isActive). Existing ACTIVE students keep entitlement
+// from sale at any time. Toggling isActive controls the public catalogue
+// availability flag (closed plans remain visible as isActive=false) and
+// purchase rejection (/api/enroll checks plan.isActive). Existing ACTIVE
+// students keep entitlement
 // (the subscription row is independent of the plan's active flag).
 
 import { NextRequest } from "next/server";
