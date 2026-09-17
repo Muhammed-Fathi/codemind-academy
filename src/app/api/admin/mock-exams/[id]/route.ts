@@ -80,6 +80,10 @@ export async function PATCH(
         schoolType: type,
         courseId: course,
         difficulty: exam.difficulty,
+        // This exam's own attachments are part of its pool: without the id the
+        // guard would refuse an exam whose servable questions come from the
+        // manual bank rows it attached.
+        mockExamId: id,
       });
       if (pool.servable < count)
         return err(

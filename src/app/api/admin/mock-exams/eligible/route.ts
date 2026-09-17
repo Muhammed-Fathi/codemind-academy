@@ -4,13 +4,17 @@
 //   ?schoolType=ARABIC|LANGUAGE   required; the exam's bank
 //   &courseId=…                   optional; a course-bound exam's scope
 //   &difficulty=EASY|MEDIUM|HARD  optional; the exam's difficulty setting
+//   &mockExamId=…                 optional; include THAT exam's attachments
 //   &list=1                       include the eligible questions (FIXED picker)
-//   &search=…                     optional prompt filter for that picker
+//   &list=pool                    include the FREE bank rows this exam may
+//                                 attach (RANDOM pool membership)
+//   &search=…                     optional prompt filter for either list
 //
 // The numbers come from src/lib/mock-exam-pool.ts — the SAME rule the student
 // attempt path serves from and the create/publish guards measure. That is the
-// whole point: the Admin sees the pool a student will really get, including
-// questions created by hand in the Question Bank (no lesson, no AI metadata).
+// whole point: the Admin sees the pool a student will really get, and a manual
+// question created in the Question Bank (no lesson, no AI metadata) is part of
+// it for exactly the exams it was attached to.
 //
 // ADMIN only, and deliberately key-free: the picker needs ids, prompts and
 // metadata, never the stored answer or explanation.
@@ -22,9 +26,10 @@ import { ok, err, requireRole } from "@/lib/api";
 import { normalizeSchoolType } from "@/lib/school-type";
 import { getServerT } from "@/lib/i18n-server";
 import {
+  bankOnlyQuestionWhere,
   countMockExamEligiblePool,
   loadMockExamLessonIds,
-  mockExamQuestionPoolWhere,
+  mockExamFixedPinWhere,
 } from "@/lib/mock-exam-pool";
 
 export async function GET(req: NextRequest) {
@@ -51,17 +56,36 @@ export async function GET(req: NextRequest) {
       ? rawDifficulty
       : "MIXED";
 
+  // The exam whose attachments extend the pool. Validated to belong to the
+  // same bank + course as the query, so a crafted id cannot make the counts
+  // describe a different exam's scope.
+  const mockExamId = url.searchParams.get("mockExamId")?.trim() || null;
+  if (mockExamId) {
+    const exam = await db.mockExam.findUnique({
+      where: { id: mockExamId },
+      select: { schoolType: true, courseId: true },
+    });
+    if (!exam || exam.schoolType !== schoolType || (exam.courseId ?? null) !== courseId) {
+      return err(tApi("api.211"), 404);
+    }
+  }
+
   const lessonIds = await loadMockExamLessonIds(courseId);
   const pool = await countMockExamEligiblePool({
     schoolType,
     courseId,
     difficulty,
     lessonIds,
+    mockExamId,
   });
 
-  // The picker list is for FIXED exams: only Question rows can be pinned, so
-  // that is what is listed (never the answer key).
-  const withList = url.searchParams.get("list") === "1";
+  // Two pickers, one shape (never the answer key):
+  //   list=1     FIXED — every question this exam may PIN (bank + course or
+  //              free bank, pinned by hand).
+  //   list=pool  RANDOM — the FREE bank rows (no lesson) this exam may attach
+  //              by id; the only way a manual question enters a RANDOM pool.
+  const listMode = url.searchParams.get("list") || "";
+  const withList = listMode === "1" || listMode === "pool";
   let questions: {
     id: string;
     type: string;
@@ -72,6 +96,8 @@ export async function GET(req: NextRequest) {
     schoolType: string | null;
     bankOnly: boolean;
     lessonTitle: string | null;
+    /** list=pool: already attached to THIS exam. */
+    attached: boolean;
   }[] = [];
   if (withList) {
     const search = url.searchParams.get("search")?.trim() || "";
@@ -85,20 +111,30 @@ export async function GET(req: NextRequest) {
           ],
         }
       : {};
+    const scopeWhere =
+      listMode === "pool"
+        ? // Only a lesson-less row can be an attachment (a lesson-linked row
+          // is already in the exam's pool through its lesson).
+          { AND: [mockExamFixedPinWhere(schoolType, lessonIds), bankOnlyQuestionWhere()] }
+        : mockExamFixedPinWhere(schoolType, lessonIds);
     const rows = await db.question.findMany({
-      where: {
-        AND: [
-          mockExamQuestionPoolWhere(schoolType, lessonIds),
-          difficultyFilter,
-          searchFilter,
-        ],
-      },
+      where: { AND: [scopeWhere, difficultyFilter, searchFilter] },
       include: {
         quiz: { select: { lesson: { select: { titleAr: true, title: true } } } },
       },
       orderBy: { createdAt: "desc" },
       take: 200,
     });
+    const attachedIds = mockExamId
+      ? new Set(
+          (
+            await db.mockExamQuestion.findMany({
+              where: { mockExamId, questionId: { not: null } },
+              select: { questionId: true },
+            })
+          ).map((r) => r.questionId as string)
+        )
+      : new Set<string>();
     questions = rows.map((q) => {
       const lesson = q.quiz?.lesson ?? null;
       return {
@@ -113,9 +149,10 @@ export async function GET(req: NextRequest) {
         // non-nullable, so "quiz without a lesson" cannot exist).
         bankOnly: !q.quizId,
         lessonTitle: lesson ? lesson.titleAr || lesson.title : null,
+        attached: attachedIds.has(q.id),
       };
     });
   }
 
-  return ok({ schoolType, courseId, difficulty, pool, questions });
+  return ok({ schoolType, courseId, difficulty, mockExamId, pool, questions });
 }

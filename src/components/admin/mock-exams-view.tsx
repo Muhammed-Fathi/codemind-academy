@@ -54,6 +54,7 @@ type MockExam = {
   difficulty: string;
   selectionMode: string;
   isPublished: boolean;
+  /** FIXED: pins. RANDOM: free-bank questions attached to the exam. */
   pinnedQuestions: number;
   attempts: number;
 };
@@ -214,6 +215,11 @@ export function MockExamsView() {
                         {e.pinnedQuestions < e.questionCount && ` · ${tr("admin.462")}`}
                       </span>
                     )}
+                    {e.selectionMode !== "FIXED" && e.pinnedQuestions > 0 && (
+                      <span>
+                        {tr("admin.560")}: {e.pinnedQuestions}
+                      </span>
+                    )}
                     <span>
                       {tr("admin.217")}: {e.questionCount}
                     </span>
@@ -331,12 +337,33 @@ function CreateMockExamDialog({
     titleAr: "",
     description: "",
     schoolType: defaultSchoolType as string,
+    /** "" = the exam is not bound to a course (a general exam). */
+    courseId: "",
     questionCount: "10",
     durationMin: "30",
     passMark: "60",
     difficulty: "MIXED",
     selectionMode: "RANDOM",
   });
+  // The courses an exam can be bound to. A course-bound exam is visible only
+  // to that course's students, and its RANDOM pool is that course's questions
+  // (plus any manual question attached to the exam).
+  const [courses, setCourses] = React.useState<
+    { id: string; name: string; nameAr: string }[]
+  >([]);
+  React.useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    fetch("/api/admin/courses")
+      .then((r) => r.json())
+      .then((d) => {
+        if (!cancelled) setCourses(d.courses || []);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
   const [saving, setSaving] = React.useState(false);
   // Data + the request key it belongs to. The key makes "loading" DERIVED
   // (current key not answered yet) instead of a second piece of state, so the
@@ -354,13 +381,14 @@ function CreateMockExamDialog({
 
   const isFixed = form.selectionMode === "FIXED";
   const requestedCount = Math.max(1, Number(form.questionCount) || 1);
-  const poolKey = `${form.schoolType}|${form.difficulty}`;
+  const poolKey = `${form.schoolType}|${form.difficulty}|${form.courseId}`;
   const pool = poolData && poolData.key === poolKey ? poolData.pool : null;
   const poolLoading = poolData?.key !== poolKey;
-  const listKey = `${poolKey}|${search.trim()}|${isFixed}`;
-  const candidates =
-    isFixed && listData && listData.key === listKey ? listData.items : [];
-  const listLoading = isFixed && listData?.key !== listKey;
+  const listKey = `${poolKey}|${search.trim()}|${isFixed ? "fixed" : "pool"}`;
+  const listLoading = listData?.key !== listKey;
+  const candidates = listData && listData.key === listKey ? listData.items : [];
+  // FIXED — the questions to pin. RANDOM — the free-bank rows to attach.
+  const showPicker = isFixed || form.selectionMode === "RANDOM";
 
   React.useEffect(() => {
     setForm((f) => ({ ...f, schoolType: defaultSchoolType }));
@@ -376,6 +404,7 @@ function CreateMockExamDialog({
       schoolType: form.schoolType,
       difficulty: form.difficulty,
     });
+    if (form.courseId) qs.set("courseId", form.courseId);
     fetch(`/api/admin/mock-exams/eligible?${qs.toString()}`)
       .then((r) => r.json())
       .then((d) => {
@@ -387,19 +416,21 @@ function CreateMockExamDialog({
     return () => {
       cancelled = true;
     };
-    // `poolKey` is the (schoolType, difficulty) pair the request was built
-    // from — listing it keeps the dependency list honest.
-  }, [open, form.schoolType, form.difficulty, poolKey]);
+    // `poolKey` is the (schoolType, difficulty, course) triple the request was
+    // built from — listing it keeps the dependency list honest.
+  }, [open, form.schoolType, form.difficulty, form.courseId, poolKey]);
 
-  // FIXED: the candidate questions to pick from (exact ids).
+  // The candidate questions for the chosen mode: FIXED pins (`list=1`) or the
+  // free-bank rows a RANDOM exam may attach (`list=pool`). Both are key-free.
   React.useEffect(() => {
-    if (!open || !isFixed) return;
+    if (!open || !showPicker) return;
     let cancelled = false;
     const qs = new URLSearchParams({
       schoolType: form.schoolType,
       difficulty: form.difficulty,
-      list: "1",
+      list: isFixed ? "1" : "pool",
     });
+    if (form.courseId) qs.set("courseId", form.courseId);
     if (search.trim()) qs.set("search", search.trim());
     fetch(`/api/admin/mock-exams/eligible?${qs.toString()}`)
       .then((r) => r.json())
@@ -412,7 +443,16 @@ function CreateMockExamDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, isFixed, form.schoolType, form.difficulty, search, listKey]);
+  }, [
+    open,
+    isFixed,
+    showPicker,
+    form.schoolType,
+    form.difficulty,
+    form.courseId,
+    search,
+    listKey,
+  ]);
 
   const toggleSelected = (id: string) => {
     setSelectedIds((ids) =>
@@ -424,7 +464,15 @@ function CreateMockExamDialog({
   // number shown here is the pool the student attempt will really sample.
   // FIXED instead needs at least one pickable question.
   const availableForMode = pool ? (isFixed ? pool.question : pool.servable) : 0;
-  const poolTooSmall = pool !== null && availableForMode < (isFixed ? 1 : requestedCount);
+  // RANDOM: the attached free-bank rows are added to the pool the moment the
+  // exam is saved, so the count the dialog shows is the pool it starts with,
+  // plus the rows the admin is attaching right now. The server re-measures the
+  // real pool after the attachments are stored and refuses a short exam.
+  const availableWithAttachments = isFixed
+    ? availableForMode
+    : availableForMode + selectedIds.length;
+  const poolTooSmall =
+    pool !== null && availableWithAttachments < (isFixed ? 1 : requestedCount);
   const selectedTooFew = isFixed && selectedIds.length === 0;
   const blocked = saving || poolTooSmall || selectedTooFew;
 
@@ -437,8 +485,8 @@ function CreateMockExamDialog({
       toast.error(tr("admin.549"));
       return;
     }
-    if (pool && !isFixed && requestedCount > pool.servable) {
-      toast.error(tr("admin.550", { p1: pool.servable }));
+    if (pool && !isFixed && requestedCount > availableWithAttachments) {
+      toast.error(tr("admin.550", { p1: availableWithAttachments }));
       return;
     }
     if (pool && isFixed && selectedIds.length > pool.question) {
@@ -456,9 +504,11 @@ function CreateMockExamDialog({
           questionCount: isFixed ? selectedIds.length : Number(form.questionCount),
           durationMin: Number(form.durationMin),
           passMark: Number(form.passMark),
-          // FIXED: pin exactly the admin's selection (server re-validates that
-          // every id is a real row of the chosen bank).
-          ...(isFixed ? { questionIds: selectedIds } : {}),
+          // FIXED: pin exactly the admin's selection. RANDOM: attach the
+          // chosen free-bank questions to THIS exam's pool. Either way the
+          // server re-validates that every id is a bank row of this exam's
+          // scope.
+          ...(selectedIds.length ? { questionIds: selectedIds } : {}),
         }),
       });
       const d = await r.json();
@@ -520,6 +570,33 @@ function CreateMockExamDialog({
               <SelectContent>
                 <SelectItem value="ARABIC">{tr("admin.200")}</SelectItem>
                 <SelectItem value="LANGUAGE">{tr("admin.201")}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Course scope — a course-bound exam is visible only to that
+              course's students and samples that course's questions; manual
+              free-bank questions still have to be attached to THIS exam. */}
+          <div>
+            <Label>{tr("admin.558")}</Label>
+            <Select
+              value={form.courseId || "__all__"}
+              onValueChange={(v) => {
+                setForm({ ...form, courseId: v === "__all__" ? "" : v });
+                setSelectedIds([]);
+                setListData(null);
+              }}
+            >
+              <SelectTrigger className="mt-1 w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">{tr("admin.559")}</SelectItem>
+                {courses.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {pickAuto(c.nameAr, c.name)}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -617,7 +694,7 @@ function CreateMockExamDialog({
                 {tr(isFixed ? "admin.553" : "admin.555")}:
               </span>
               <span className="tabular-nums">
-                {pool ? availableForMode : "—"}
+                {pool ? (isFixed ? availableForMode : availableWithAttachments) : "—"}
               </span>
             </p>
             {pool && (
@@ -632,23 +709,25 @@ function CreateMockExamDialog({
               </p>
             )}
             <p className="text-muted-foreground">{tr("admin.545")}</p>
+            {!isFixed && <p className="text-muted-foreground">{tr("admin.561")}</p>}
             <p className="text-muted-foreground">{tr("admin.546")}</p>
           </div>
 
           {poolTooSmall && (
             <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs font-semibold text-amber-800 dark:text-amber-200">
-              {tr("admin.550", { p1: availableForMode })}
+              {tr("admin.550", { p1: availableWithAttachments })}
             </div>
           )}
 
-          {/* FIXED: pick the exact questions. */}
-          {isFixed && (
+          {/* FIXED: pin the exact questions. RANDOM: attach free-bank rows to
+              this exam's pool — the only way a manual question enters it. */}
+          {showPicker && (
             <div className="space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <Label>{tr("admin.544")}</Label>
+                <Label>{tr(isFixed ? "admin.544" : "admin.556")}</Label>
                 <span className="text-xs text-muted-foreground">
                   {tr("admin.548", { p1: selectedIds.length })}
-                  {pool ? ` / ${pool.question}` : ""}
+                  {isFixed && pool ? ` / ${pool.question}` : ""}
                 </span>
               </div>
               <Input
@@ -663,7 +742,7 @@ function CreateMockExamDialog({
                   </div>
                 ) : candidates.length === 0 ? (
                   <p className="py-4 text-center text-xs text-muted-foreground">
-                    {tr("admin.240")}
+                    {tr(isFixed ? "admin.240" : "admin.557")}
                   </p>
                 ) : (
                   candidates.map((q) => {

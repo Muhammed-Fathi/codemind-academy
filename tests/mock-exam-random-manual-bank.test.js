@@ -6,19 +6,22 @@
 //   Admin "Add Question"  ->  Question row with quizId = NULL (no lesson)
 //   Admin creates a RANDOM exam  ->  student attempt must be able to receive it
 //
-// Before the fix the RANDOM pool was lesson-scoped only, so a bank consisting
-// of manual questions served `exam: null` (or a short paper) while the same
-// questions worked in FIXED mode. This suite pins the fixed contract:
+// The contract this suite pins (round 2):
 //
-//   * a manual Question Bank row is ELIGIBLE without any AI metadata;
+//   * a manual Question Bank row is ELIGIBLE for a RANDOM exam only through an
+//     explicit per-exam attachment (`MockExamQuestion`) — never globally, so it
+//     can never leak into another course of the same school type;
 //   * RANDOM serves exactly `count` distinct eligible questions;
-//   * FIXED serves exactly the pinned ids in pinned order;
-//   * the sample is FROZEN per attempt (refresh cannot swap a question) and
-//     the next attempt is a new paper;
+//   * FIXED serves exactly the pinned ids in pinned order (an explicit pin is
+//     bound to ONE exam and is not a cross-course leak);
+//   * the paper is FROZEN when the attempt STARTS: the ordered ids live on the
+//     OPEN `ExamAttempt` row (`finishedAt = NULL`) and are replayed on every
+//     later fetch, so a bank change mid-attempt can neither swap nor add a
+//     question — and after a submit the next start draws a NEW paper;
 //   * an undersized pool is reported and refused at creation, never silently
 //     half-served;
-//   * bank isolation, enrollment gates, admin-only authorization and the
-//     no-answer-key-before-submit rule all still hold.
+//   * bank isolation, course isolation, enrollment gates, admin-only
+//     authorization and the no-answer-key-before-submit rule all still hold.
 //
 // Run: node tests/mock-exam-random-manual-bank.test.js
 
@@ -111,6 +114,10 @@ function makeMockDb() {
       case "mockExam.attempts": return t.examAttempt.filter((a) => a.mockExamId === row.id);
       case "mockExamQuestion.question": return row.questionId ? byId(t.question, row.questionId) : null;
       case "mockExamQuestion.examQuestion": return row.examQuestionId ? byId(t.examQuestion, row.examQuestionId) : null;
+      // The attachment back-relations (`mockExamLinks`): the per-exam pool
+      // membership filter reads them, so the shim must resolve them too.
+      case "question.mockExamLinks": return t.mockExamQuestion.filter((l) => l.questionId === row.id);
+      case "examQuestion.mockExamLinks": return t.mockExamQuestion.filter((l) => l.examQuestionId === row.id);
       case "examAttempt.mockExam": return row.mockExamId ? byId(t.mockExam, row.mockExamId) : null;
       default: return undefined;
     }
@@ -124,6 +131,8 @@ function makeMockDb() {
     "mockExam.questions": "mockExamQuestion", "mockExam.attempts": "examAttempt",
     "mockExamQuestion.question": "question",
     "mockExamQuestion.examQuestion": "examQuestion",
+    "question.mockExamLinks": "mockExamQuestion",
+    "examQuestion.mockExamLinks": "mockExamQuestion",
     "examAttempt.mockExam": "mockExam",
   };
   const OP_KEYS = new Set(["in", "not", "gte", "gt", "lte", "lt", "equals"]);
@@ -473,6 +482,7 @@ async function seed() {
     { id: "u-sa", email: "sa@test.local", name: "Student A", role: "STUDENT", isActive: true, status: "ACTIVE", phone: null, avatarUrl: null },
     { id: "u-sb", email: "sb@test.local", name: "Student B", role: "STUDENT", isActive: true, status: "ACTIVE", phone: null, avatarUrl: null },
     { id: "u-sc", email: "sc@test.local", name: "Student C", role: "STUDENT", isActive: true, status: "ACTIVE", phone: null, avatarUrl: null },
+    { id: "u-sd", email: "sd@test.local", name: "Student D", role: "STUDENT", isActive: true, status: "ACTIVE", phone: null, avatarUrl: null },
   );
   T.course.push(
     { id: "c1", slug: "course-1", name: "Course One", nameAr: "\u0643\u0648\u0631\u0633 \u0661" },
@@ -520,15 +530,34 @@ async function seed() {
   );
   T.examQuestion.push(
     { id: "eqLinked", lessonId: "lc1", examType: "MOCK", prompt: "eqLinked", promptAr: null, options: OPTS, answer: "1", explanation: "exp-eq", difficulty: "MEDIUM", marks: 2, schoolType: "ARABIC" },
-    // Legacy row with no lesson: bank-only, must be eligible like a manual one.
+    // Legacy row with no lesson: bank-only, eligible exactly like a manual row
+    // — i.e. only for the exams that attached it.
     { id: "eqManual", lessonId: null, examType: "MOCK", prompt: "eqManual", promptAr: null, options: OPTS, answer: "2", explanation: "exp-eqm", difficulty: "MEDIUM", marks: 2, schoolType: "ARABIC" },
     { id: "eqLang", lessonId: "lc1", examType: "MOCK", prompt: "eqLang", promptAr: null, options: OPTS, answer: "0", explanation: "exp-eql", difficulty: "EASY", marks: 2, schoolType: "LANGUAGE" },
   );
+
+  // Course Two's manual bank (same school type as Course One — the exact
+  // cross-course trap the contract must close) + a manual row that no exam
+  // attached at all.
+  for (const id of ["n01", "n02", "n03", "n04"]) {
+    T.question.push({
+      id, quizId: null, type: "MCQ", prompt: id, promptAr: id, options: OPTS,
+      answer: "1", explanation: `exp-${id}`, difficulty: "MEDIUM", marks: 2,
+      schoolType: "ARABIC", createdAt: D(9),
+    });
+  }
+  T.question.push({
+    id: "mUnattached", quizId: null, type: "MCQ", prompt: "mUnattached", promptAr: "mUnattached",
+    options: OPTS, answer: "1", explanation: "exp-unattached", difficulty: "MEDIUM",
+    marks: 2, schoolType: "ARABIC", createdAt: D(9),
+  });
 
   T.student.push(
     { id: "sa", userId: "u-sa", schoolType: "ARABIC", groupId: "g1", batchId: null },
     { id: "sb", userId: "u-sb", schoolType: "LANGUAGE", groupId: "g2", batchId: null },
     { id: "sc", userId: "u-sc", schoolType: "ARABIC", groupId: null, batchId: null },
+    // Second ARABIC student, enrolled in the OTHER course.
+    { id: "sd", userId: "u-sd", schoolType: "ARABIC", groupId: "g2", batchId: null },
   );
 
   // Exams. `mx-empty-lang` is inserted directly: it stands for a bank that was
@@ -537,12 +566,45 @@ async function seed() {
     { id: "mx-random", title: "Random", titleAr: "\u0639\u0634\u0648\u0627\u0626\u064a", description: null, schoolType: "ARABIC", courseId: null, questionCount: 5, durationMin: 20, passMark: 70, difficulty: "MIXED", selectionMode: "RANDOM", isPublished: true, createdAt: D(5) },
     { id: "mx-hard", title: "Hard", titleAr: "\u0635\u0639\u0628", description: null, schoolType: "ARABIC", courseId: null, questionCount: 5, durationMin: 20, passMark: 50, difficulty: "HARD", selectionMode: "RANDOM", isPublished: true, createdAt: D(4) },
     { id: "mx-empty-lang", title: "Empty", titleAr: "\u0641\u0627\u0636\u064a", description: null, schoolType: "LANGUAGE", courseId: null, questionCount: 3, durationMin: 15, passMark: 60, difficulty: "MIXED", selectionMode: "RANDOM", isPublished: true, createdAt: D(3) },
+    // Course-bound ARABIC exams: each samples its OWN course's lessons + its
+    // OWN attachments, nothing else (the cross-course regression fixtures).
+    { id: "mx-c1", title: "Course One", titleAr: "\u0643\u0648\u0631\u0633 \u0661", description: null, schoolType: "ARABIC", courseId: "c1", questionCount: 4, durationMin: 20, passMark: 60, difficulty: "MIXED", selectionMode: "RANDOM", isPublished: true, createdAt: D(4) },
+    { id: "mx-c2", title: "Course Two", titleAr: "\u0643\u0648\u0631\u0633 \u0662", description: null, schoolType: "ARABIC", courseId: "c2", questionCount: 3, durationMin: 20, passMark: 60, difficulty: "MIXED", selectionMode: "RANDOM", isPublished: true, createdAt: D(4) },
+    // The freeze fixture: a fresh exam so the attempt index starts at 0.
+    { id: "mx-freeze", title: "Freeze", titleAr: "\u062a\u062c\u0645\u064a\u062f", description: null, schoolType: "ARABIC", courseId: "c1", questionCount: 3, durationMin: 20, passMark: 60, difficulty: "MIXED", selectionMode: "RANDOM", isPublished: true, createdAt: D(2) },
   );
+
+  // Attachments: the ONLY way a lesson-less manual row becomes eligible, and
+  // each exam owns exactly the rows the Admin attached to it.
+  const attach = (mockExamId, ids) =>
+    ids.forEach((questionId, order) =>
+      T.mockExamQuestion.push({
+        id: `link-${mockExamId}-${questionId}`,
+        mockExamId,
+        questionId,
+        examQuestionId: null,
+        order,
+      })
+    );
+  attach("mx-random", [...MANUAL_ARABIC.map((m) => m.id), "mShare"]);
+  attach("mx-hard", ["m11", "m12"]);
+  attach("mx-empty-lang", ["mShare"]);
+  attach("mx-c1", ["m01", "m02", "m03", "m04", "m05", "m06"]);
+  attach("mx-c2", ["n01", "n02", "n03", "n04"]);
+  attach("mx-freeze", ["m07", "m08", "m09", "m10", "m11", "m12"]);
+  // A legacy bank-only ExamQuestion row attaches the same way.
+  T.mockExamQuestion.push({
+    id: "link-eqManual",
+    mockExamId: "mx-random",
+    questionId: null,
+    examQuestionId: "eqManual",
+    order: 20,
+  });
 }
 
 // The eligible pool as the contract defines it (independent re-implementation,
 // so the assertion fails if the route's pool drifts from the contract).
-function expectedPool(T, schoolType, courseId) {
+function expectedPool(T, schoolType, courseId, mockExamId) {
   const visibleLessons = T.lesson
     .filter((l) => l.status === "PUBLISHED")
     .filter((l) => {
@@ -557,20 +619,28 @@ function expectedPool(T, schoolType, courseId) {
               : null
             : null
           : null;
-      return course === courseId;
+      return courseId ? course === courseId : course !== null && course !== undefined;
     })
     .map((l) => l.id);
   const inBank = (st) => st === schoolType || st === null;
+  const links = T.mockExamQuestion.filter((l) => mockExamId && l.mockExamId === mockExamId);
+  const attachedQ = new Set(links.filter((l) => l.questionId).map((l) => l.questionId));
+  const attachedEq = new Set(links.filter((l) => l.examQuestionId).map((l) => l.examQuestionId));
   const ids = [];
   for (const q of T.question) {
     if (!inBank(q.schoolType)) continue;
     const lessonId = q.quizId ? (T.quiz.find((z) => z.id === q.quizId) || {}).lessonId ?? null : null;
-    if (!q.quizId || !lessonId) ids.push(q.id); // bank-only
-    else if (visibleLessons.includes(lessonId)) ids.push(q.id);
+    if (!q.quizId || !lessonId) {
+      // A manual (lesson-less) row is eligible for exactly the exams that
+      // attached it — and for NONE when nothing did.
+      if (attachedQ.has(q.id)) ids.push(q.id);
+    } else if (visibleLessons.includes(lessonId)) ids.push(q.id);
   }
   for (const q of T.examQuestion) {
     if (!inBank(q.schoolType)) continue;
-    if (!q.lessonId || visibleLessons.includes(q.lessonId)) ids.push(q.id);
+    if (!q.lessonId) {
+      if (attachedEq.has(q.id)) ids.push(q.id);
+    } else if (visibleLessons.includes(q.lessonId)) ids.push(q.id);
   }
   return ids.sort();
 }
@@ -587,23 +657,43 @@ const seededSample = (ids, count, seed) =>
 async function main() {
   await seed();
   const T = global.__MOCK_DB__.__tables;
-  const pool = expectedPool(T, "ARABIC", "c1");
+  // The exam-less pool (lesson-linked rows only — a manual row has no exam to
+  // attach it to), plus the pool of each exam under test.
+  const basePool = expectedPool(T, "ARABIC", null, null);
+  const randomPool = expectedPool(T, "ARABIC", null, "mx-random");
+  const c1Pool = expectedPool(T, "ARABIC", "c1", "mx-c1");
+  const c2Pool = expectedPool(T, "ARABIC", "c2", "mx-c2");
 
-  section("A. Root cause: manual bank-only questions are in the RANDOM pool");
+  section("A. Manual bank-only questions enter the RANDOM pool ONLY by attachment");
   {
     ok(
       MANUAL_ARABIC.every((m) => !T.question.find((q) => q.id === m.id).quizId),
       "fixture really is manual: every mXX has quizId = null (no lesson, no AI metadata)"
     );
     ok(
-      pool.includes("m01") && pool.includes("m12"),
-      "manual questions are eligible on the canonical contract"
+      randomPool.includes("m01") && randomPool.includes("m12"),
+      "manual questions ATTACHED to the exam are in its RANDOM pool"
     );
-    ok(!pool.includes("qDraft"), "a DRAFT lesson's question stays ineligible");
-    ok(!pool.includes("qLang") && !pool.includes("eqLang"), "other-bank questions stay ineligible");
-    ok(pool.includes("mShare"), "shared (schoolType null) manual questions are eligible");
-    ok(pool.includes("eqManual"), "legacy bank-only ExamQuestion rows are eligible too");
-    ok(!pool.includes("qDraft") && pool.length === 12 + 1 + 1 + 1 + 1 + 1, `pool size is the whole manual bank + linked rows (got ${pool.length})`);
+    ok(
+      !randomPool.includes("mUnattached"),
+      "an unattached manual row of the same bank is NOT in any pool (no global fallback)"
+    );
+    ok(
+      !randomPool.includes("n01") && !c1Pool.includes("n01"),
+      "another course's manual row is NOT in this exam's pool"
+    );
+    ok(!randomPool.includes("qDraft"), "a DRAFT lesson's question stays ineligible");
+    ok(!randomPool.includes("qLang") && !randomPool.includes("eqLang"), "other-bank questions stay ineligible");
+    ok(randomPool.includes("mShare"), "a shared (schoolType null) attached manual row is eligible");
+    ok(randomPool.includes("eqManual"), "an attached legacy bank-only ExamQuestion row is eligible too");
+    ok(
+      randomPool.length === 3 + 13 + 1,
+      `pool = lesson-linked rows + THIS exam's attachments (got ${randomPool.length})`
+    );
+    ok(
+      basePool.length === 3 && !basePool.includes("m01"),
+      `without an exam there are no attachments, so only lesson-linked rows are eligible (got ${basePool.length})`
+    );
   }
 
   section("B. ALL STUDENTS: ADMIN-only surfaces");
@@ -620,20 +710,44 @@ async function main() {
     const missing = await bodyOf(await eligibleRoute.GET(getReq("")));
     ok(missing.status === 400, "eligible endpoint without schoolType -> 400");
     const r = await bodyOf(await eligibleRoute.GET(getReq("schoolType=ARABIC")));
-    ok(r.status === 200 && r.body.pool.total === pool.length, `admin reads pool size (${pool.length})`);
-    ok(r.body.pool.bankOnly === 13, `pool reports the manual/bank-only rows (${r.body.pool.bankOnly})`);
+    ok(
+      r.status === 200 && r.body.pool.total === basePool.length,
+      `admin reads the exam-less pool size (${basePool.length}, got ${r.body.pool.total})`
+    );
+    ok(r.body.pool.bankOnly === 0, "no exam -> no attached free-bank rows are counted");
+    const scoped = await bodyOf(await eligibleRoute.GET(getReq("schoolType=ARABIC&mockExamId=mx-random")));
+    ok(
+      scoped.status === 200 && scoped.body.pool.attached === 13,
+      `the exam-scoped pool reports its 13 attachments (got ${scoped.body.pool.attached})`
+    );
+    ok(
+      scoped.body.pool.bankOnly === 13 && scoped.body.pool.total === randomPool.length,
+      "the exam-scoped total includes the attached rows (and only its own)"
+    );
+    const mismatched = await bodyOf(await eligibleRoute.GET(getReq("schoolType=LANGUAGE&mockExamId=mx-random")));
+    ok(mismatched.status === 404, "an exam id from another bank -> 404 (no crafted cross-scope counts)");
   }
 
-  section("C. Creation guards");
+  section("C. Creation guards (attachment is the only manual route in)");
   {
     const tooBig = await bodyOf(
-      await adminRoute.POST(postReq({ title: "Too big", schoolType: "ARABIC", questionCount: pool.length + 1, selectionMode: "RANDOM" }))
+      await adminRoute.POST(postReq({ title: "Too big", schoolType: "ARABIC", questionCount: basePool.length + 1, selectionMode: "RANDOM" }))
     );
-    ok(tooBig.status === 400, "RANDOM beyond the eligible pool -> 400 (clear Arabic api.213)");
+    ok(tooBig.status === 400, "RANDOM beyond exam-less pool -> 400 (clear Arabic api.213)");
+    // Attaching manual ids EXTENDS the exam's pool: the guard measures the
+    // pool AFTER the links land — exactly what a student will be served from.
+    const attachIds = ["m01", "m02", "m03", "m04"];
     const okOne = await bodyOf(
-      await adminRoute.POST(postReq({ title: "Fits", schoolType: "ARABIC", questionCount: pool.length, selectionMode: "RANDOM" }))
+      await adminRoute.POST(postReq({ title: "Fits", schoolType: "ARABIC", questionCount: basePool.length + attachIds.length, selectionMode: "RANDOM", questionIds: attachIds }))
     );
-    ok(okOne.status === 200, "RANDOM exactly at the pool size -> 200");
+    ok(okOne.status === 200, "RANDOM with 4 manual attachments -> 200 (pool + attachments covers the count)");
+    const okLinks = T.mockExamQuestion.filter((l) => l.mockExamId === okOne.body.exam.id);
+    ok(okLinks.length === attachIds.length, "the RANDOM attachments are stored per exam (pool membership)");
+    const attachForeign = await bodyOf(
+      await adminRoute.POST(postReq({ title: "Foreign attach", schoolType: "ARABIC", questionCount: 1, selectionMode: "RANDOM", questionIds: ["m01", "qLang"] }))
+    );
+    ok(attachForeign.status === 400, "attaching an id outside the bank -> 400 (api.309)");
+
     // Manual ids only: the exact FIXED contract.
     const chosen = ["m01", "m03", "m05", "m07"];
     const fx = await bodyOf(
@@ -643,6 +757,20 @@ async function main() {
     ok(fx.body.exam.questionCount === chosen.length, "FIXED count is derived from the selection");
     const pins = T.mockExamQuestion.filter((l) => l.mockExamId === fx.body.exam.id).map((l) => l.questionId);
     ok(JSON.stringify(pins) === JSON.stringify(chosen), `pins are exactly the chosen ids in order (${pins.join(",")})`);
+
+    // FIXED WITHOUT an explicit selection fills from the QUESTION bank, which
+    // now means the lesson-linked rows: unattached manual rows cannot be
+    // silently filled in any more.
+    const autoShort = await bodyOf(
+      await adminRoute.POST(postReq({ title: "Auto short", schoolType: "ARABIC", questionCount: 4, selectionMode: "FIXED" }))
+    );
+    ok(autoShort.status === 400, "FIXED auto-fill cannot reach unattached manual rows -> 400");
+    const autoOk = await bodyOf(
+      await adminRoute.POST(postReq({ title: "Auto ok", schoolType: "ARABIC", questionCount: 2, selectionMode: "FIXED" }))
+    );
+    ok(autoOk.status === 200, "FIXED auto-fill from the lesson-linked pool -> 200");
+    const autoPins = T.mockExamQuestion.filter((l) => l.mockExamId === autoOk.body.exam.id).map((l) => l.questionId);
+    ok(autoPins.every((id) => basePool.includes(id)), "auto-pins come only from the lesson-linked pool");
 
     const dupe = await bodyOf(
       await adminRoute.POST(postReq({ title: "Dupe", schoolType: "ARABIC", selectionMode: "FIXED", questionIds: ["m01", "m01"] }))
@@ -656,10 +784,6 @@ async function main() {
       await adminRoute.POST(postReq({ title: "Foreign", schoolType: "ARABIC", selectionMode: "FIXED", questionIds: ["m01", "qLang"] }))
     );
     ok(foreign.status === 400, "an id outside the bank -> 400 (api.309)");
-    const notFixed = await bodyOf(
-      await adminRoute.POST(postReq({ title: "Random ids", schoolType: "ARABIC", selectionMode: "RANDOM", questionIds: ["m01"] }))
-    );
-    ok(notFixed.status === 400, "questionIds on a RANDOM exam -> 400 (api.306)");
     // A question of a DRAFT lesson must not be pinnable into a FIXED exam.
     const draft = await bodyOf(
       await adminRoute.POST(postReq({ title: "Draft pin", schoolType: "ARABIC", selectionMode: "FIXED", questionIds: ["m01", "qDraft"] }))
@@ -731,19 +855,41 @@ async function main() {
     ok(r.status === 200 && r.body.exam.questions.length === 5, "RANDOM served exactly the configured 5 questions");
     const ids = r.body.exam.questions.map((q) => q.id);
     ok(new Set(ids).size === ids.length, "no duplicate question in one attempt");
-    ok(ids.every((id) => pool.includes(id)), "every served id is in the eligible pool (manual bank included)");
-    ok(r.body.exam.eligiblePool === pool.length, `response reports the eligible pool (${r.body.exam.eligiblePool})`);
+    ok(ids.every((id) => randomPool.includes(id)), "every served id is in the exam's attached pool");
+    ok(!ids.includes("mUnattached") && !ids.includes("n01"), "no unattached and no other-course row is ever served");
+    ok(r.body.exam.eligiblePool === randomPool.length, `response reports the eligible pool (${r.body.exam.eligiblePool})`);
     ok(r.body.exam.selectionMode === "RANDOM" && r.body.exam.shortfall === null, "no shortfall for a satisfiable RANDOM exam");
 
-    // The bank consists ONLY of manual questions + linked rows; the served set
-    // must be reproducible from the seeded sampler, i.e. frozen for attempt #0.
+    // The served set must be reproducible from the seeded sampler — and, more
+    // importantly, it must be STORED: the attempt row is what makes the paper
+    // final (a later pool change cannot re-sample it).
     const seed0 = poolLib.mockExamSampleSeed({
       studentId: "sa", courseId: "c1", examId: "mx-random", attemptIndex: 0, count: 5, difficulty: "mixed",
     });
-    ok(JSON.stringify(ids) === JSON.stringify(seededSample(pool, 5, seed0)), "served set == the attempt's deterministic sample");
+    ok(JSON.stringify(ids) === JSON.stringify(seededSample(randomPool, 5, seed0)), "served set == the attempt's deterministic sample");
+
+    const attemptId = r.body.exam.attemptId;
+    ok(typeof attemptId === "string" && attemptId.length > 0, "starting the exam opened a persisted attempt");
+    ok(r.body.exam.resumed === false, "the first serve is a fresh draw");
+    const openRow = T.examAttempt.find((a) => a.id === attemptId);
+    ok(!!openRow && !openRow.finishedAt, "the attempt row is OPEN (finishedAt NULL) — an open paper is not an attempt");
+    const storedPaper = poolLib.readFrozenPaper(openRow && openRow.answers);
+    ok(
+      !!storedPaper && JSON.stringify(storedPaper.ids) === JSON.stringify(ids),
+      "the ordered ids are STORED on the row at start (freeze, not just determinism)"
+    );
 
     const again = await bodyOf(await examRoute.GET(getReq("mockExamId=mx-random")));
     ok(JSON.stringify(again.body.exam.questions.map((q) => q.id)) === JSON.stringify(ids), "refresh (same attempt) returns the SAME set and order");
+    ok(
+      again.body.exam.resumed === true && again.body.exam.attemptId === attemptId,
+      "refresh RESUMES the same persisted attempt row (no new row, no re-draw)"
+    );
+    ok(
+      JSON.stringify(again.body.exam.questions.map((q) => q.options)) ===
+        JSON.stringify(r.body.exam.questions.map((q) => q.options)),
+      "refresh replays the same option order too (presentation is frozen with the paper)"
+    );
 
     const manualOnly = await bodyOf(await examRoute.GET(getReq(`mockExamId=${T.mockExam.find((e) => e.id === "mx-hard").id}`)));
     const hardIds = manualOnly.body.exam.questions.map((q) => q.id);
@@ -756,17 +902,34 @@ async function main() {
   {
     const before = await bodyOf(await examRoute.GET(getReq("mockExamId=mx-random")));
     const first = before.body.exam.questions.map((q) => q.id);
+    // A real client submits the ids it was served; the submit then FINALIZES
+    // the open paper's row instead of creating a second, unrelated attempt.
+    const submitted = first.slice(0, 2);
     const sub = await bodyOf(
-      await examRoute.POST(postReq({ examType: "MOCK", mockExamId: "mx-random", answers: [{ questionId: "m01", selected: "beta" }] }))
+      await examRoute.POST(postReq({ examType: "MOCK", mockExamId: "mx-random", answers: submitted.map((id) => ({ questionId: id, selected: "beta" })) }))
     );
     ok(sub.status === 200 && sub.body.attempt.mockExamId === "mx-random", "submit links the attempt to the manual-bank exam");
-    ok(sub.body.attempt.score === 2 && sub.body.attempt.totalMarks === 2, "server re-graded the manual question (2/2)");
+    ok(
+      sub.body.attempt.id === before.body.exam.attemptId && !!sub.body.attempt.finishedAt,
+      "the submit FINALIZED the open paper's row (same attempt identity, now finished)"
+    );
+    ok(
+      sub.body.review.length === submitted.length && sub.body.attempt.totalMarks > 0,
+      `the finished row carries the graded snapshot (${sub.body.review.length} rows)`
+    );
+    ok(
+      T.examAttempt.filter((a) => a.mockExamId === "mx-random" && !a.finishedAt).length === 0,
+      "no open paper survives its submit"
+    );
     const after = await bodyOf(await examRoute.GET(getReq("mockExamId=mx-random")));
     const second = after.body.exam.questions.map((q) => q.id);
     const seed1 = poolLib.mockExamSampleSeed({
       studentId: "sa", courseId: "c1", examId: "mx-random", attemptIndex: 1, count: 5, difficulty: "mixed",
     });
-    ok(JSON.stringify(second) === JSON.stringify(seededSample(pool, 5, seed1)), "attempt #1 draws its own deterministic paper");
+    ok(
+      JSON.stringify(second) === JSON.stringify(seededSample(randomPool, 5, seed1)),
+      "attempt #1 draws its own deterministic paper over the CURRENT pool"
+    );
     ok(JSON.stringify(second) !== JSON.stringify(first), "the retry paper differs from the first attempt");
     const third = await bodyOf(await examRoute.GET(getReq("mockExamId=mx-random")));
     ok(JSON.stringify(third.body.exam.questions.map((q) => q.id)) === JSON.stringify(second), "the new attempt is frozen too");
@@ -812,24 +975,153 @@ async function main() {
     ok(foreignExam.status === 403, "foreign-bank exam -> 403");
   }
 
-  section("H. LANGUAGE student sees only its own bank");
+  section("H. LANGUAGE student: own bank, own course, own attachments");
   {
-    const sbPool = expectedPool(T, "LANGUAGE", "c2");
+    const sbPool = expectedPool(T, "LANGUAGE", "c2", "mx-empty-lang");
     ok(!sbPool.includes("m01"), "LANGUAGE pool excludes ARABIC-only manual questions");
     ok(!sbPool.includes("qLang") && !sbPool.includes("eqLang"), "questions of a lesson outside the student's course are excluded");
-    ok(JSON.stringify(sbPool) === JSON.stringify(["mShare"]), `LANGUAGE/c2 pool is only the shared manual question (${sbPool.join(",")})`);
-    const r = await bodyOf(await examRoute.GET(getReq("count=10")));
-    ok(r.status === 200 && r.body.exam.questions.length === 1, "LANGUAGE practice serves exactly that one question");
-    ok(r.body.exam.questions[0].id === "mShare", `only the shared manual row is served (${r.body.exam.questions.map((q) => q.id).join(",")})`);
+    ok(
+      JSON.stringify(sbPool) === JSON.stringify(["mShare"]),
+      `the LANGUAGE/c2 exam pool is only its attached shared question (${sbPool.join(",")})`
+    );
+    // Free practice has NO exam to attach a manual row to: it serves the
+    // lesson-linked universe of the student's course only.
+    const practice = await bodyOf(await examRoute.GET(getReq("count=10")));
+    ok(
+      practice.status === 200 && practice.body.exam === null,
+      "LANGUAGE practice (no c2 lesson, no exam) -> no questions and no broken paper"
+    );
+    ok(
+      practice.body.eligiblePool === 0 && typeof practice.body.message === "string",
+      "and the empty practice pool is reported clearly"
+    );
     const small = await bodyOf(await examRoute.GET(getReq("mockExamId=mx-empty-lang")));
-    ok(small.status === 200 && small.body.exam.questions.length === 1 && small.body.exam.shortfall, "an undersized pool still serves its questions WITH a reported shortfall");
+    ok(
+      small.status === 200 && small.body.exam.questions.length === 1 && small.body.exam.shortfall,
+      "an undersized exam pool still serves its questions WITH a reported shortfall"
+    );
+  }
+
+  section("J. Cross-course isolation: Course A never receives Course B's questions");
+  {
+    logout();
+    await loginAs("u-sa");
+    const a = await bodyOf(await examRoute.GET(getReq("mockExamId=mx-c1")));
+    ok(a.status === 200, "the c1 student opens the c1 exam");
+    const aIds = a.body.exam.questions.map((q) => q.id);
+    ok(aIds.length === 4, `the c1 exam serves its configured 4 questions (got ${aIds.length})`);
+    ok(aIds.every((id) => c1Pool.includes(id)), "every served id is in the c1 pool");
+    ok(aIds.every((id) => !c2Pool.includes(id)), "NO Course Two question is ever served to Course A");
+    ok(!aIds.includes("mUnattached"), "an unattached manual row of the same bank is never served");
+    ok(a.body.exam.eligiblePool === c1Pool.length, `the c1 exam reports its own pool (${a.body.exam.eligiblePool})`);
+
+    logout();
+    await loginAs("u-sd");
+    const b = await bodyOf(await examRoute.GET(getReq("mockExamId=mx-c2")));
+    ok(b.status === 200, "the c2 student opens the c2 exam");
+    const bIds = b.body.exam.questions.map((q) => q.id);
+    ok(bIds.length === 3, `the c2 exam serves its configured 3 questions (got ${bIds.length})`);
+    ok(bIds.every((id) => c2Pool.includes(id)), "every served id is in the c2 pool");
+    ok(bIds.every((id) => !c1Pool.includes(id)), "NO Course One question is ever served to Course B (and vice versa)");
+    ok(b.body.exam.eligiblePool === c2Pool.length, `the c2 exam reports its own pool (${b.body.exam.eligiblePool})`);
+
+    const cross = await bodyOf(await examRoute.GET(getReq("mockExamId=mx-c1")));
+    ok(cross.status === 404, "a c2 student cannot even open c1's exam (404, not a leak)");
+
+    logout();
+    await loginAs("u-ad");
+    const scoped = await bodyOf(await eligibleRoute.GET(getReq("schoolType=ARABIC&courseId=c1&mockExamId=mx-c1")));
+    ok(scoped.status === 200 && scoped.body.pool.attached === 6, "the c1 exam reports exactly its 6 attachments");
+    ok(scoped.body.pool.total === c1Pool.length, "the c1 pool total excludes every c2 row");
+    logout();
+    await loginAs("u-sa");
+  }
+
+  section("K. Freeze: a bank change mid-attempt cannot alter an active paper");
+  {
+    logout();
+    await loginAs("u-sa");
+    const first = await bodyOf(await examRoute.GET(getReq("mockExamId=mx-freeze")));
+    ok(first.status === 200 && first.body.exam.questions.length === 3, "the freeze exam serves its 3 questions");
+    const frozenIds = first.body.exam.questions.map((q) => q.id);
+    const attemptId = first.body.exam.attemptId;
+    const paper = poolLib.readFrozenPaper(T.examAttempt.find((a) => a.id === attemptId).answers);
+    ok(!!paper && paper.ids.join("|") === frozenIds.join("|"), "the paper's ordered ids are stored at start");
+
+    // Mutate the bank in every way that used to change a paper:
+    //  (1) an eligible question is ADDED to this exam's pool...
+    T.question.push({
+      id: "mFrozenNew", quizId: null, type: "MCQ", prompt: "mFrozenNew", promptAr: "mFrozenNew",
+      options: OPTS, answer: "1", explanation: "exp-frozen-new", difficulty: "MEDIUM",
+      marks: 2, schoolType: "ARABIC", createdAt: D(0),
+    });
+    T.mockExamQuestion.push({
+      id: "link-mx-freeze-mFrozenNew", mockExamId: "mx-freeze",
+      questionId: "mFrozenNew", examQuestionId: null, order: 99,
+    });
+    //  (2) a question of the paper is DETACHED from the exam...
+    const attachedInPaper = frozenIds.filter((id) =>
+      T.mockExamQuestion.some((l) => l.mockExamId === "mx-freeze" && l.questionId === id)
+    );
+    ok(attachedInPaper.length >= 2, "fixture: the paper contains attached manual rows");
+    const detached = attachedInPaper[0];
+    const moved = frozenIds.find((id) => id !== detached && id !== attachedInPaper[1]) ?? frozenIds[1];
+    const third = frozenIds.find((id) => id !== detached && id !== moved) ?? frozenIds[2];
+    const link = T.mockExamQuestion.find((l) => l.mockExamId === "mx-freeze" && l.questionId === detached);
+    ok(!!link, "fixture: the detached question was attached");
+    if (link) T.mockExamQuestion.splice(T.mockExamQuestion.indexOf(link), 1);
+    //  (3) another is moved out of the bank entirely...
+    T.question.find((q) => q.id === moved).schoolType = "LANGUAGE";
+    //  (4) and the third changes difficulty (the exam's slice changes).
+    T.question.find((q) => q.id === third).difficulty = "EASY";
+
+    const again = await bodyOf(await examRoute.GET(getReq("mockExamId=mx-freeze")));
+    const againIds = again.body.exam.questions.map((q) => q.id);
+    ok(again.body.exam.resumed === true && again.body.exam.attemptId === attemptId, "the refetch resumes the SAME attempt");
+    ok(
+      JSON.stringify(againIds) === JSON.stringify(frozenIds),
+      `identical ids AND order after add/detach/eligibility/difficulty changes (${againIds.join(",")})`
+    );
+    ok(!againIds.includes("mFrozenNew"), "a newly eligible question is NOT injected into the running paper");
+    const mutatedPool = expectedPool(T, "ARABIC", "c1", "mx-freeze");
+    ok(
+      !mutatedPool.includes(detached) && !mutatedPool.includes(moved),
+      "the mutations really removed those rows from the live pool"
+    );
+    ok(
+      JSON.stringify(
+        poolLib.selectMockExamQuestions(mutatedPool.map((id) => ({ id })), 3, paper.seed).map((q) => q.id)
+      ) !== JSON.stringify(frozenIds),
+      "a fresh sample over the mutated pool would NOT reproduce the paper — persistence, not determinism"
+    );
+
+    // Submitting finalizes the frozen row; the next start draws a NEW paper.
+    const sub = await bodyOf(
+      await examRoute.POST(postReq({ examType: "MOCK", mockExamId: "mx-freeze", answers: frozenIds.map((id) => ({ questionId: id, selected: "beta" })) }))
+    );
+    ok(sub.status === 200 && sub.body.attempt.id === attemptId, "the submit finalized the SAME row (history keeps its identity)");
+    const after = await bodyOf(await examRoute.GET(getReq("mockExamId=mx-freeze")));
+    const nextIds = after.body.exam.questions.map((q) => q.id);
+    ok(after.body.exam.attemptId !== attemptId && after.body.exam.resumed === false, "a new start opens a NEW attempt (fresh paper)");
+    const postPool = expectedPool(T, "ARABIC", "c1", "mx-freeze");
+    const seed1 = poolLib.mockExamSampleSeed({
+      studentId: "sa", courseId: "c1", examId: "mx-freeze", attemptIndex: 1, count: 3, difficulty: "mixed",
+    });
+    ok(
+      JSON.stringify(nextIds) === JSON.stringify(seededSample(postPool, 3, seed1)),
+      "the retry paper is drawn fresh from the CURRENT (mutated) pool"
+    );
+    ok(nextIds.every((id) => postPool.includes(id)), "and it never contains a row the bank no longer serves");
   }
 
   section("I. An exam whose bank is emptied after publication");
   {
     // The Admin cannot un-publish by accident, but the bank behind a published
     // exam can be emptied by deletion. The student path must degrade to a clear
-    // "no questions" answer rather than an empty paper.
+    // "no questions" answer rather than an empty paper. (`mx-empty-lang` is a
+    // LANGUAGE exam, so this runs as the LANGUAGE student.)
+    logout();
+    await loginAs("u-sb");
     for (const t of ["question", "examQuestion"]) {
       const rows = T[t];
       for (let i = rows.length - 1; i >= 0; i--) {
