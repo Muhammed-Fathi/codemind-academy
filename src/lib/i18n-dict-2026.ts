@@ -1482,4 +1482,54 @@ export const DICT_2026: Record<string, DictEntry> = {
     ar: "مش قادر ننفذ العملية دي دلوقتي.",
     en: "This action could not be completed right now.",
   },
+
+  // ---------- External video URL contract (session media audit) ----------
+  // Distinct reasons so an admin knows EXACTLY why a link was refused, instead
+  // of one generic "invalid URL" for every different mistake.
+  "api.303": {
+    ar: "الرابط لازم يبدأ بـ https:// — الروابط بـ http:// مش بتشتغل للطالب.",
+    en: "The link must start with https:// — http:// links cannot play for students.",
+  },
+  "api.304": {
+    ar: "الرابط ده بيوصل لعنوان داخلي أو غير مسموح. استخدم رابط عام.",
+    en: "That link points at an internal or disallowed address. Use a public link.",
+  },
+  "api.305": {
+    ar: "نوع الرابط ده مش مدعوم. المدعوم: رابط فيديو مباشر (MP4/WebM/OGG/MOV)، أو رابط يوتيوب، أو رابط فيميو.",
+    en: "That kind of link is not supported. Supported: a direct video file link (MP4/WebM/OGG/MOV), a YouTube link, or a Vimeo link.",
+  },
+
+  // ---------- Admin: precise desktop-upload failure reasons ----------
+  // The stage keys (admin.506/507/508) say WHICH leg failed; these say WHY, so
+  // an admin can fix the input instead of retrying blindly.
+  "admin.534": {
+    ar: "نوع الملف مش مدعوم. الفيديو المقبول: MP4، WebM، OGG، MOV. والملف المقبول: PDF.",
+    en: "That file type is not supported. Accepted video: MP4, WebM, OGG, MOV. Accepted document: PDF.",
+  },
+  "admin.535": {
+    ar: "حجم الملف أكبر من المسموح. حاول بملف أصغر.",
+    en: "The file is larger than the allowed maximum. Try a smaller file.",
+  },
+  "admin.536": {
+    ar: "خدمة التخزين مش متاحة دلوقتي. حاول تاني بعد شوية، ولو استمرت كلم الدعم التقني.",
+    en: "The storage service is unavailable right now. Please retry shortly, and contact technical support if it persists.",
+  },
+  "admin.537": {
+    ar: "الجلسة أو المجموعة المطلوبة مش موجودة أو مقفولة — حدّد الجلسة الصحيحة الأول.",
+    en: "The target session or group does not exist or is closed — select the correct session first.",
+  },
+  "admin.538": {
+    ar: "المدعوم: رابط فيديو مباشر (MP4/WebM/OGG/MOV) بـ https، أو رابط يوتيوب، أو رابط فيميو. أي رابط تاني هيترفض.",
+    en: "Supported: a direct video file link (MP4/WebM/OGG/MOV) over https, a YouTube link, or a Vimeo link. Any other link is rejected.",
+  },
+
+  // ---------- Student: external video playback states ----------
+  "course.226": {
+    ar: "الفيديو ده مش متاح للتشغيل حاليًا. من فضلك راسل الدعم.",
+    en: "This video is not available for playback right now. Please contact support.",
+  },
+  "course.227": {
+    ar: "الفيديو ده بيشتغل من مصدر خارجي، فمش بيتسجل منه نسبة مشاهدة.",
+    en: "This video plays from an external source, so watch progress is not tracked for it.",
+  },
 };

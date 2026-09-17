@@ -25,6 +25,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Users, Upload, Link2, Video, Trash2, Loader2, CheckCircle2 } from "lucide-react";
 import { directUpload } from "@/lib/direct-upload";
+import { uploadErrorCodeKey } from "@/lib/upload-error-text";
+import { normalizeExternalVideoUrl } from "@/lib/video-url";
 
 type Batch = {
   id: string;
@@ -320,6 +322,26 @@ function PublishVideoCard({
       toast.error(tr("api.219"));
       return;
     }
+    if (method === "URL") {
+      // Same contract the server enforces (src/lib/video-url.ts), checked here
+      // so the admin is told the exact problem BEFORE a request is made —
+      // rather than discovering later that students see an unplayable video.
+      const external = normalizeExternalVideoUrl(videoUrl);
+      if (!external.ok) {
+        toast.error(
+          tr(
+            external.code === "MALFORMED"
+              ? "api.217"
+              : external.code === "INSECURE_PROTOCOL"
+                ? "api.303"
+                : external.code === "UNSAFE_HOST"
+                  ? "api.304"
+                  : "api.305"
+          )
+        );
+        return;
+      }
+    }
     if (method === "UPLOAD" && !file) {
       toast.error(tr("api.219"));
       return;
@@ -364,6 +386,14 @@ function PublishVideoCard({
           form.set("file", file!);
           res = await fetch("/api/admin/session-videos", { method: "POST", body: form });
         } else {
+          // Prefer the SPECIFIC server reason (wrong type / too large / storage
+          // down / wrong group) over the generic stage text, so the admin knows
+          // what to change instead of retrying the same file.
+          const reasonKey = uploadErrorCodeKey(out.code);
+          if (reasonKey) {
+            toast.error(tr(reasonKey));
+            return;
+          }
           const stageText =
             out.stage === "init"
               ? tr("admin.506")
@@ -469,6 +499,11 @@ function PublishVideoCard({
               dir="ltr"
               className="mt-1"
             />
+            {/* State the contract in the form, so an admin does not have to
+                discover it through a rejection. */}
+            <p className="mt-1 text-[11px] text-muted-foreground" dir="rtl">
+              {tr("admin.538")}
+            </p>
           </div>
         ) : (
           <div key="sv-file-field">

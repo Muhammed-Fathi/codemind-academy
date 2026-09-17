@@ -9,6 +9,12 @@
 //      MEDIA_BACKEND=s3    → storage=S3 (Cloudflare R2 bucket).
 //      Either way it is served only by the authorized /api/media/[id] proxy.
 //   2. Video URL            -> stored as a MediaAsset with storage=EXTERNAL_URL.
+//      The URL must satisfy the external video contract in
+//      `src/lib/video-url.ts`: a DIRECT https media file, a YouTube link, or a
+//      Vimeo link. It is NORMALISED before it is stored, so what the student
+//      player receives is always a form it can actually render. A URL outside
+//      that contract is rejected HERE with a specific reason — it is never
+//      stored and never reaches a student as an unplayable player.
 //
 // The media is stored once and associated with the batch. Publishing makes it
 // available to every eligible student of that batch — no per-student copies.
@@ -21,10 +27,10 @@ import {
   MAX_VIDEO_BYTES,
   extFromMime,
   isAllowedVideoMime,
-  isSafeExternalUrl,
   makeStorageKey,
   writePrivateFile,
 } from "@/lib/media";
+import { normalizeExternalVideoUrl } from "@/lib/video-url";
 import { assertVolumeQuota } from "@/lib/storage-quotas";
 import { getServerT } from "@/lib/i18n-server";
 
@@ -170,12 +176,36 @@ export async function POST(req: NextRequest) {
     });
     mediaAssetId = asset.id;
   } else {
-    if (!isSafeExternalUrl(externalUrl!)) return err(tApi("api.217"), 400);
+    // External video contract (src/lib/video-url.ts). Anything the student
+    // player cannot render is refused HERE, before a MediaAsset exists, so an
+    // admin can never stage a video that silently shows a black player.
+    const external = normalizeExternalVideoUrl(externalUrl);
+    if (!external.ok) {
+      return err(
+        tApi(
+          external.code === "MALFORMED"
+            ? "api.217"
+            : external.code === "INSECURE_PROTOCOL"
+              ? "api.303"
+              : external.code === "UNSAFE_HOST"
+                ? "api.304"
+                : "api.305"
+        ),
+        400
+      );
+    }
     const asset = await db.mediaAsset.create({
       data: {
         kind: "VIDEO",
         storage: "EXTERNAL_URL",
-        externalUrl: externalUrl,
+        // Store the CANONICAL form (YouTube/Vimeo become their embed URL, a
+        // direct file link is kept verbatim) so the student player renders
+        // exactly what was validated — never the raw, possibly unplayable,
+        // link the admin pasted.
+        externalUrl: external.url,
+        // mimeType stays unset for EXTERNAL_URL assets, exactly as before:
+        // nothing downstream reads it for external media, and inventing a
+        // value here would risk a reader mistaking it for a real content type.
         isPrivate: false,
         createdById: user?.id || null,
       },
