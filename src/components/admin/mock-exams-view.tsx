@@ -36,7 +36,8 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Plus, Timer, Trash2, Loader2, Library } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Plus, Timer, Trash2, Loader2, Library, AlertTriangle, CheckCircle2 } from "lucide-react";
 
 type MockExam = {
   id: string;
@@ -45,6 +46,8 @@ type MockExam = {
   description: string | null;
   schoolType: "ARABIC" | "LANGUAGE";
   course: { id: string; name: string; nameAr: string } | null;
+  courseId: string | null;
+  eligiblePool: number;
   questionCount: number;
   durationMin: number;
   passMark: number;
@@ -178,6 +181,23 @@ export function MockExamsView() {
                       {tr("admin.463")}:{" "}
                       {tr(e.selectionMode === "FIXED" ? "admin.464" : "admin.465")}
                     </Badge>
+                    {e.selectionMode !== "FIXED" && (
+                      <span
+                        className={
+                          e.eligiblePool < e.questionCount
+                            ? "text-amber-700 dark:text-amber-300 font-semibold"
+                            : ""
+                        }
+                        title={
+                          e.eligiblePool < e.questionCount
+                            ? tr("admin.543")
+                            : undefined
+                        }
+                      >
+                        {tr("admin.547", { p1: e.eligiblePool })}
+                        {e.eligiblePool < e.questionCount && ` · ${tr("admin.552")}`}
+                      </span>
+                    )}
                     {e.selectionMode === "FIXED" && (
                       <span
                         className={
@@ -264,6 +284,36 @@ export function MockExamsView() {
   );
 }
 
+type PickerQuestion = {
+  id: string;
+  prompt: string;
+  promptAr: string | null;
+  difficulty: string;
+  marks: number;
+  schoolType: string | null;
+  bankOnly: boolean;
+  lessonTitle: string | null;
+};
+
+type EligiblePool = {
+  total: number;
+  question: number;
+  examQuestion: number;
+  bankOnly: number;
+  lessonLinked: number;
+  /** What a RANDOM exam of the chosen difficulty will really serve from. */
+  servable: number;
+  byDifficulty: { EASY: number; MEDIUM: number; HARD: number };
+};
+
+// Create a mock exam. The dialog is mode-aware on purpose:
+//   RANDOM → shows the number of questions AND how many are actually eligible
+//            in the chosen bank, and refuses to create an exam the bank cannot
+//            satisfy (clear Arabic error instead of an unservable exam).
+//   FIXED  → the admin selects the exact questions from the bank; those ids
+//            are pinned server-side and served unchanged to every student.
+// The AI generator is never required: any valid Question Bank row — manual or
+// AI-generated — is eligible.
 function CreateMockExamDialog({
   open,
   onOpenChange,
@@ -288,14 +338,111 @@ function CreateMockExamDialog({
     selectionMode: "RANDOM",
   });
   const [saving, setSaving] = React.useState(false);
+  // Data + the request key it belongs to. The key makes "loading" DERIVED
+  // (current key not answered yet) instead of a second piece of state, so the
+  // effects below never call setState synchronously.
+  const [poolData, setPoolData] = React.useState<{
+    key: string;
+    pool: EligiblePool | null;
+  } | null>(null);
+  const [listData, setListData] = React.useState<{
+    key: string;
+    items: PickerQuestion[];
+  } | null>(null);
+  const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
+  const [search, setSearch] = React.useState("");
+
+  const isFixed = form.selectionMode === "FIXED";
+  const requestedCount = Math.max(1, Number(form.questionCount) || 1);
+  const poolKey = `${form.schoolType}|${form.difficulty}`;
+  const pool = poolData && poolData.key === poolKey ? poolData.pool : null;
+  const poolLoading = poolData?.key !== poolKey;
+  const listKey = `${poolKey}|${search.trim()}|${isFixed}`;
+  const candidates =
+    isFixed && listData && listData.key === listKey ? listData.items : [];
+  const listLoading = isFixed && listData?.key !== listKey;
 
   React.useEffect(() => {
     setForm((f) => ({ ...f, schoolType: defaultSchoolType }));
   }, [defaultSchoolType, open]);
 
+  // The eligible pool for the chosen bank + difficulty: the SAME pool the
+  // student attempt path serves from (bank-only questions + questions of a
+  // student-visible lesson).
+  React.useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    const qs = new URLSearchParams({
+      schoolType: form.schoolType,
+      difficulty: form.difficulty,
+    });
+    fetch(`/api/admin/mock-exams/eligible?${qs.toString()}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (!cancelled) setPoolData({ key: poolKey, pool: d.pool || null });
+      })
+      .catch(() => {
+        if (!cancelled) setPoolData({ key: poolKey, pool: null });
+      });
+    return () => {
+      cancelled = true;
+    };
+    // `poolKey` is the (schoolType, difficulty) pair the request was built
+    // from — listing it keeps the dependency list honest.
+  }, [open, form.schoolType, form.difficulty, poolKey]);
+
+  // FIXED: the candidate questions to pick from (exact ids).
+  React.useEffect(() => {
+    if (!open || !isFixed) return;
+    let cancelled = false;
+    const qs = new URLSearchParams({
+      schoolType: form.schoolType,
+      difficulty: form.difficulty,
+      list: "1",
+    });
+    if (search.trim()) qs.set("search", search.trim());
+    fetch(`/api/admin/mock-exams/eligible?${qs.toString()}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (!cancelled) setListData({ key: listKey, items: d.questions || [] });
+      })
+      .catch(() => {
+        if (!cancelled) setListData({ key: listKey, items: [] });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, isFixed, form.schoolType, form.difficulty, search, listKey]);
+
+  const toggleSelected = (id: string) => {
+    setSelectedIds((ids) =>
+      ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]
+    );
+  };
+
+  // RANDOM is refused when the bank cannot serve the requested count — the
+  // number shown here is the pool the student attempt will really sample.
+  // FIXED instead needs at least one pickable question.
+  const availableForMode = pool ? (isFixed ? pool.question : pool.servable) : 0;
+  const poolTooSmall = pool !== null && availableForMode < (isFixed ? 1 : requestedCount);
+  const selectedTooFew = isFixed && selectedIds.length === 0;
+  const blocked = saving || poolTooSmall || selectedTooFew;
+
   const submit = async () => {
     if (!form.title.trim()) {
       toast.error(tr("api.187"));
+      return;
+    }
+    if (selectedTooFew) {
+      toast.error(tr("admin.549"));
+      return;
+    }
+    if (pool && !isFixed && requestedCount > pool.servable) {
+      toast.error(tr("admin.550", { p1: pool.servable }));
+      return;
+    }
+    if (pool && isFixed && selectedIds.length > pool.question) {
+      toast.error(tr("admin.550", { p1: pool.question }));
       return;
     }
     setSaving(true);
@@ -306,9 +453,12 @@ function CreateMockExamDialog({
         body: JSON.stringify({
           ...form,
           titleAr: form.titleAr || form.title,
-          questionCount: Number(form.questionCount),
+          questionCount: isFixed ? selectedIds.length : Number(form.questionCount),
           durationMin: Number(form.durationMin),
           passMark: Number(form.passMark),
+          // FIXED: pin exactly the admin's selection (server re-validates that
+          // every id is a real row of the chosen bank).
+          ...(isFixed ? { questionIds: selectedIds } : {}),
         }),
       });
       const d = await r.json();
@@ -316,6 +466,8 @@ function CreateMockExamDialog({
       toast.success(tr("admin.241"));
       onCreated();
       onOpenChange(false);
+      setSelectedIds([]);
+      setSearch("");
     } catch (e: any) {
       toast.error(e.message || tr("admin.001"));
     } finally {
@@ -357,7 +509,10 @@ function CreateMockExamDialog({
             <Label>{tr("admin.203")}</Label>
             <Select
               value={form.schoolType}
-              onValueChange={(v) => setForm({ ...form, schoolType: v })}
+              onValueChange={(v) => {
+                setForm({ ...form, schoolType: v });
+                setSelectedIds([]);
+              }}
             >
               <SelectTrigger className="mt-1 w-full">
                 <SelectValue />
@@ -377,7 +532,8 @@ function CreateMockExamDialog({
                 type="number"
                 min={1}
                 max={100}
-                value={form.questionCount}
+                value={isFixed ? String(selectedIds.length || 1) : form.questionCount}
+                disabled={isFixed}
                 onChange={(e) => setForm({ ...form, questionCount: e.target.value })}
                 className="mt-1"
               />
@@ -413,7 +569,10 @@ function CreateMockExamDialog({
               <Label>{tr("admin.164")}</Label>
               <Select
                 value={form.difficulty}
-                onValueChange={(v) => setForm({ ...form, difficulty: v })}
+                onValueChange={(v) => {
+                  setForm({ ...form, difficulty: v });
+                  setSelectedIds([]);
+                }}
               >
                 <SelectTrigger className="mt-1 w-full">
                   <SelectValue />
@@ -427,7 +586,7 @@ function CreateMockExamDialog({
               </Select>
             </div>
             <div>
-              <Label>{tr("admin.216")}</Label>
+              <Label>{tr("admin.539")}</Label>
               <Select
                 value={form.selectionMode}
                 onValueChange={(v) => setForm({ ...form, selectionMode: v })}
@@ -442,6 +601,108 @@ function CreateMockExamDialog({
               </Select>
             </div>
           </div>
+
+          {/* Mode explanation + eligible pool count. */}
+          <div className="rounded-lg border border-border/60 bg-muted/30 p-3 text-xs leading-relaxed space-y-2">
+            <p>{tr(isFixed ? "admin.540" : "admin.541")}</p>
+            <p className="flex items-center gap-1.5">
+              {poolLoading ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : pool && pool.total > 0 ? (
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+              ) : (
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+              )}
+              <span className="font-semibold">
+                {tr(isFixed ? "admin.553" : "admin.555")}:
+              </span>
+              <span className="tabular-nums">
+                {pool ? availableForMode : "—"}
+              </span>
+            </p>
+            {pool && (
+              <p className="text-muted-foreground tabular-nums">
+                {tr("admin.554", {
+                  p1: pool.total,
+                  p2: pool.bankOnly,
+                  p3: pool.byDifficulty.EASY,
+                  p4: pool.byDifficulty.MEDIUM,
+                  p5: pool.byDifficulty.HARD,
+                })}
+              </p>
+            )}
+            <p className="text-muted-foreground">{tr("admin.545")}</p>
+            <p className="text-muted-foreground">{tr("admin.546")}</p>
+          </div>
+
+          {poolTooSmall && (
+            <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs font-semibold text-amber-800 dark:text-amber-200">
+              {tr("admin.550", { p1: availableForMode })}
+            </div>
+          )}
+
+          {/* FIXED: pick the exact questions. */}
+          {isFixed && (
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Label>{tr("admin.544")}</Label>
+                <span className="text-xs text-muted-foreground">
+                  {tr("admin.548", { p1: selectedIds.length })}
+                  {pool ? ` / ${pool.question}` : ""}
+                </span>
+              </div>
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={tr("admin.015")}
+              />
+              <div className="max-h-56 space-y-1 overflow-y-auto rounded-lg border border-border/60 p-2">
+                {listLoading ? (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  </div>
+                ) : candidates.length === 0 ? (
+                  <p className="py-4 text-center text-xs text-muted-foreground">
+                    {tr("admin.240")}
+                  </p>
+                ) : (
+                  candidates.map((q) => {
+                    const checked = selectedIds.includes(q.id);
+                    return (
+                      <label
+                        key={q.id}
+                        className="flex cursor-pointer items-start gap-2 rounded-md p-1.5 hover:bg-muted/50"
+                      >
+                        <Checkbox
+                          checked={checked}
+                          onCheckedChange={() => toggleSelected(q.id)}
+                          className="mt-0.5"
+                        />
+                        <span className="min-w-0 flex-1 text-xs">
+                          <span className="block truncate font-medium">
+                            {pickAuto(q.promptAr, q.prompt)}
+                          </span>
+                          <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
+                            <Badge variant="outline" className="text-[10px]">
+                              {q.difficulty}
+                            </Badge>
+                            <Badge variant="outline" className="text-[10px]">
+                              {q.marks} {tr("admin.219")}
+                            </Badge>
+                            <span>
+                              {q.bankOnly
+                                ? tr("admin.244")
+                                : q.lessonTitle || ""}
+                            </span>
+                          </span>
+                        </span>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
 
           <div>
             <Label htmlFor="me-desc">{tr("admin.249")}</Label>
@@ -458,7 +719,7 @@ function CreateMockExamDialog({
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             {tr("admin.038")}
           </Button>
-          <Button onClick={submit} disabled={saving}>
+          <Button onClick={submit} disabled={blocked}>
             {saving && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
             {tr("admin.215")}
           </Button>

@@ -45,13 +45,23 @@ type ReviewRow = {
   explanation: string | null;
 };
 
+type ExamShortfall = { requested: number; served: number; message: string };
+
 type ExamData = {
   mockExamId: string | null;
   examType: string;
+  selectionMode?: string;
+  requestedCount?: number;
+  eligiblePool?: number;
   questionCount: number;
   durationMin: number;
+  passMark?: number;
   totalMarks: number;
   questions: Question[];
+  // Present only when the bank could not satisfy the exam's configured
+  // count: the exam serves the eligible questions and says so instead of
+  // silently pretending it is complete.
+  shortfall?: ExamShortfall | null;
 };
 
 type AssignedExam = {
@@ -121,6 +131,7 @@ export function MockExamRunner() {
       setTimeLeft(d.exam.durationMin * 60);
       setPhase("exam");
       toast.success(tr("student.051", { p1: d.exam.questions.length, p2: d.exam.durationMin }));
+      if (d.exam.shortfall) toast.info(d.exam.shortfall.message || tr("student.250", { p1: d.exam.questions.length, p2: d.exam.requestedCount ?? d.exam.questions.length }));
     } catch {
       toast.error(tr("student.052"));
     } finally {
@@ -175,7 +186,9 @@ export function MockExamRunner() {
       for (const row of d.review || []) reviewById[row.questionId] = row;
       setResult({ ...d.attempt, questions: exam.questions, answers, review: reviewById });
       setPhase("result");
-      if (d.attempt.percentage >= 60) {
+      // The server grades AND decides pass/fail against the exam's own pass
+      // mark; the toast must not re-decide with a hardcoded threshold.
+      if (d.attempt.passed) {
         toast.success(tr("student.054", { p1: d.attempt.percentage }));
       } else {
         toast.info(tr("student.055", { p1: d.attempt.percentage }));
@@ -323,6 +336,18 @@ export function MockExamRunner() {
 
     return (
       <div className="space-y-4">
+        {/* The bank could not satisfy the exam's configured count: the exam
+            serves what IS eligible and states it, so the student is never
+            silently given a shorter paper without explanation. */}
+        {exam.shortfall && (
+          <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs font-semibold text-amber-800 dark:text-amber-200">
+            {exam.shortfall.message ||
+              tr("student.250", {
+                p1: exam.shortfall.served,
+                p2: exam.shortfall.requested,
+              })}
+          </div>
+        )}
         {/* Top bar: timer + progress */}
         <div className="flex items-center justify-between gap-4">
           <button

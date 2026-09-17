@@ -7,15 +7,14 @@ import { db } from "@/lib/db";
 import { normalizeSchoolType, questionBankFilter } from "@/lib/school-type";
 import { getEnrollment } from "@/lib/enrollment";
 import { LESSON_STUDENT_STATUS_FILTER } from "@/lib/session-lifecycle";
-
-function shuffle<T>(arr: T[]): T[] {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
+import {
+  dedupeById,
+  mockExamAttemptIndex,
+  mockExamExamQuestionPoolWhere,
+  mockExamQuestionPoolWhere,
+  mockExamSampleSeed,
+  selectMockExamQuestions,
+} from "@/lib/mock-exam-pool";
 
 const EXAM_TYPES = ["UNIT", "MONTHLY", "MOCK", "FINAL"] as const;
 const MAX_EXAM_QUESTIONS = 100;
@@ -33,6 +32,33 @@ function normalizeDifficulty(value: unknown): string {
   return value === "EASY" || value === "MEDIUM" || value === "HARD"
     ? value
     : "mixed";
+}
+
+/**
+ * One row per question id, first occurrence wins. A crafted payload that
+ * repeats a question must not turn into two graded rows — an attempt is a
+ * set of questions, never a multiset. Rows without a usable string id are
+ * passed through untouched: they grade as unknown (0), exactly like before.
+ */
+function dedupeSubmittedAnswers<
+  T extends { questionId?: unknown }
+>(answers: readonly T[]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const a of answers) {
+    const id =
+      a && typeof a.questionId === "string" && a.questionId.length > 0
+        ? a.questionId
+        : null;
+    if (!id) {
+      out.push(a);
+      continue;
+    }
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push(a);
+  }
+  return out;
 }
 
 // GET /api/exams/mock?count=10&difficulty=EASY|MEDIUM|HARD|mixed&examType=MOCK|UNIT|MONTHLY|FINAL
@@ -112,6 +138,24 @@ export async function GET(req: NextRequest) {
   });
   const lessonIds = lessons.map((l) => l.id);
 
+  // ---------------------------------------------------------------------
+  // CANONICAL POOL (src/lib/mock-exam-pool.ts)
+  // ---------------------------------------------------------------------
+  // Matching bank AND either a BANK-ONLY record (no owning lesson — what the
+  // Admin's "Add Question" dialog produces) or a record attached to a
+  // student-visible lesson of the student's course. Manual Question Bank
+  // questions used to fall through this query entirely because they carry no
+  // `quizId`, which is exactly why RANDOM mode ignored them while FIXED (pins
+  // are resolved by id) worked.
+  const poolBankFilterWhere = mockExamQuestionPoolWhere(
+    studentSchoolType,
+    lessonIds
+  );
+  const examPoolBankFilterWhere = mockExamExamQuestionPoolWhere(
+    studentSchoolType,
+    lessonIds
+  );
+
   // FIXED exams use their pinned set; RANDOM exams sample the matching bank.
   const isFixedExam = !!mockExam && mockExam.selectionMode === "FIXED";
   const pinned =
@@ -123,30 +167,40 @@ export async function GET(req: NextRequest) {
         })
       : null;
 
+  // FIXED exams resolve exactly their pinned ids (still bank-gated, so a pin
+  // can never pull a question out of another school's bank). RANDOM exams use
+  // the canonical eligible pool.
+  const bankFilterOnPins = pinned
+    ? { AND: [bankFilter, { id: { in: pinned.map((p) => p.questionId).filter(Boolean) as string[] } }] }
+    : null;
   const quizQuestions = await db.question.findMany({
-    where: pinned
-      ? {
-          id: { in: pinned.map((p) => p.questionId).filter(Boolean) as string[] },
-          ...bankFilter,
-        }
-      : { quiz: { lessonId: { in: lessonIds } }, ...bankFilter },
+    where: bankFilterOnPins ?? poolBankFilterWhere,
     include: { quiz: { select: { lesson: { select: { titleAr: true, title: true } } } } },
   });
 
   // Get exam questions (same bank isolation applies)
-  const examQuestions = await db.examQuestion.findMany({
-    where: pinned
-      ? {
-          id: {
-            in: pinned.map((p) => p.examQuestionId).filter(Boolean) as string[],
+  const examBankFilterOnPins = pinned
+    ? {
+        AND: [
+          bankFilter,
+          {
+            id: {
+              in: pinned
+                .map((p) => p.examQuestionId)
+                .filter(Boolean) as string[],
+            },
           },
-          ...bankFilter,
-        }
-      : { lessonId: { in: lessonIds }, ...bankFilter },
+        ],
+      }
+    : null;
+  const examQuestions = await db.examQuestion.findMany({
+    where: examBankFilterOnPins ?? examPoolBankFilterWhere,
     include: { lesson: { select: { titleAr: true, title: true } } },
   });
 
-  // Combine all questions.
+  // Combine all questions. Duplicate ids are impossible across the two tables
+  // (cuid primary keys) but the pool is deduped anyway, so one attempt can
+  // never contain the same question twice whatever the source looks like.
   //
   // NOTE: this draft carries NO answer key. The stored `answer` / explanation
   // stay on the server; the client receives prompts + shuffled options only,
@@ -163,8 +217,9 @@ export async function GET(req: NextRequest) {
     marks: number;
     source: string;
     lessonTitle: string;
+    createdAt: Date | null;
   };
-  const allQs: Q[] = [
+  const allQs: Q[] = dedupeById([
     ...quizQuestions.map((q) => ({
       id: q.id,
       type: q.type,
@@ -175,6 +230,7 @@ export async function GET(req: NextRequest) {
       marks: q.marks,
       source: "quiz",
       lessonTitle: q.quiz?.lesson?.titleAr || q.quiz?.lesson?.title || "",
+      createdAt: q.createdAt ?? null,
     })),
     ...examQuestions.map((q) => ({
       id: q.id,
@@ -186,13 +242,28 @@ export async function GET(req: NextRequest) {
       marks: q.marks,
       source: "exam",
       lessonTitle: q.lesson?.titleAr || q.lesson?.title || "",
+      // ExamQuestion has no createdAt column; null sorts it before quiz rows
+      // and the id tie-break keeps the order stable.
+      createdAt: null,
     })),
-  ];
+  ]);
 
   if (allQs.length === 0) {
+    // A published Admin exam whose pool is empty is a configuration problem the
+    // student cannot fix, so it gets its own explicit message (and the Admin
+    // list flags it). Free practice keeps the original wording.
     return ok({
       exam: null,
-      message: tApi("api.097"),
+      // A published exam with an empty eligible bank is a configuration
+      // problem the student cannot fix: say so, and tell them to contact the
+      // admin instead of the generic "no questions" practice wording.
+      message: mockExam ? tApi("api.310") : tApi("api.097"),
+      // The same pool metadata the served response carries, so a client (and
+      // the Admin list) can tell "empty bank" from "broken request".
+      selectionMode: mockExam ? mockExam.selectionMode : "RANDOM",
+      requestedCount: count,
+      eligiblePool: 0,
+      shortfall: null,
     });
   }
 
@@ -211,19 +282,34 @@ export async function GET(req: NextRequest) {
       .filter((q) => orderOf.has(q.id))
       .sort((a, b) => (orderOf.get(a.id) as number) - (orderOf.get(b.id) as number));
   } else {
-    // RANDOM contract: filter by difficulty if specified, then shuffle the
-    // pool server-side and serve up to `count`. Every request re-samples —
-    // there is no server-side in-progress state; the attempt is created
-    // atomically at submit (POST), so a refresh before submitting simply
-    // drafts a fresh set.
+    // RANDOM contract: filter by difficulty if specified, then take an
+    // ATTEMPT-STABLE sample of the pool and serve up to `count`.
+    //
+    // The sample is derived from (student, exam, attempt index) through a
+    // server-secret HMAC (see src/lib/mock-exam-pool.ts), so re-requesting the
+    // exam for the SAME attempt returns the same questions in the same order —
+    // refreshing the page can never swap a question under the student — while
+    // the next attempt draws a different paper. No in-progress state is
+    // stored: the sample is recomputed, not remembered.
     let pool = allQs;
     if (difficulty !== "mixed") {
       pool = allQs.filter((q) => q.difficulty === difficulty);
       if (pool.length === 0) pool = allQs; // fallback
     }
 
-    // Shuffle + pick N
-    selected = shuffle(pool).slice(0, Math.min(count, pool.length));
+    const attemptIndex = await mockExamAttemptIndex(
+      student.id,
+      mockExam ? mockExam.id : null
+    );
+    const seed = mockExamSampleSeed({
+      studentId: student.id,
+      courseId,
+      examId: mockExam ? mockExam.id : null,
+      attemptIndex,
+      count,
+      difficulty,
+    });
+    selected = selectMockExamQuestions(pool, count, seed);
   }
 
   // Shuffle options within each question (MCQ only). Positional information
@@ -247,6 +333,19 @@ export async function GET(req: NextRequest) {
   const totalMarks = questions.reduce((s, q) => s + q.marks, 0);
   const durationMin =
     mockExam?.durationMin ?? Math.max(10, Math.ceil(questions.length * 1.5));
+  // A published exam whose pool shrank below its configured count serves what
+  // IS eligible and says so, instead of silently pretending it is complete.
+  // FIXED serves its pins (already validated at creation), so the only
+  // shortfall left there is a pin deleted out of the bank — reported the same
+  // way so the student is never silently handed a shorter paper.
+  const shortfall =
+    questions.length < count
+      ? {
+          requested: count,
+          served: questions.length,
+          message: tApi("api.311", { p1: count, p2: questions.length }),
+        }
+      : null;
 
   return ok({
     exam: {
@@ -255,13 +354,30 @@ export async function GET(req: NextRequest) {
       titleAr: mockExam ? mockExam.titleAr : null,
       schoolType: studentSchoolType,
       examType,
+      selectionMode: mockExam ? mockExam.selectionMode : "RANDOM",
+      requestedCount: count,
+      eligiblePool: allQs.length,
       questionCount: questions.length,
       durationMin,
       passMark: mockExam?.passMark ?? 60,
       totalMarks,
       questions,
+      shortfall,
     },
   });
+}
+
+/**
+ * Fisher–Yates shuffle for presentation order (option order only: question
+ * selection is the seeded sampler above, never `Math.random`).
+ */
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
 }
 
 // POST /api/exams/mock — submit exam answers, save attempt
@@ -272,14 +388,16 @@ export async function POST(req: NextRequest) {
   if (user.role !== "STUDENT") return err(tApi("api.094"), 403);
 
   const body = await req.json().catch(() => ({}));
-  const { examType: rawExamType, durationMin: rawDurationMin, answers, mockExamId } = body as {
+  const { examType: rawExamType, durationMin: rawDurationMin, answers: rawAnswers, mockExamId } = body as {
     examType?: string;
     durationMin?: number;
     mockExamId?: string | null;
     answers: { questionId: string; selected: string; isCorrect: boolean; marks: number }[];
   };
-  if (!answers || !Array.isArray(answers)) return err("Answers required", 400);
-  if (answers.length > MAX_SUBMITTED_ANSWERS) return err("Too many answers", 400);
+  if (!rawAnswers || !Array.isArray(rawAnswers)) return err("Answers required", 400);
+  if (rawAnswers.length > MAX_SUBMITTED_ANSWERS) return err("Too many answers", 400);
+  // One row per question id, first occurrence wins (see helper above).
+  const answers = dedupeSubmittedAnswers(rawAnswers);
 
   const student = await db.student.findUnique({ where: { userId: user.id } });
   if (!student) return err(tApi("api.095"), 404);
