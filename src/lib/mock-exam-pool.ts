@@ -179,12 +179,15 @@ export function mockExamLessonWhere(
       ],
     };
   }
+  // "Every course" = the lesson is attached to a curriculum chain at all.
+  // Part.courseId and Unit.partId and Topic.unitId are all NON-nullable, so a
+  // lesson with a unit (canonical) or a topic (legacy) necessarily resolves to
+  // a course — the same set the student query's relation chain matches, and
+  // expressible with top-level nullable scalars (nested relation filters do
+  // not accept `null` comparisons).
   return {
     ...LESSON_STUDENT_STATUS_FILTER,
-    OR: [
-      { unit: { part: { courseId: { not: null } } } },
-      { topic: { unit: { part: { courseId: { not: null } } } } },
-    ],
+    OR: [{ unitId: { not: null } }, { topicId: { not: null } }],
   };
 }
 
