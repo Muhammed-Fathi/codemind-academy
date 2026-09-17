@@ -10,8 +10,8 @@ import { LESSON_STUDENT_STATUS_FILTER } from "@/lib/session-lifecycle";
 import {
   dedupeById,
   mockExamAttemptIndex,
-  mockExamExamQuestionPoolWhere,
-  mockExamQuestionPoolWhere,
+  mockExamExamQuestionScopeWhere,
+  mockExamQuestionScopeWhere,
   mockExamSampleSeed,
   selectMockExamQuestions,
 } from "@/lib/mock-exam-pool";
@@ -147,14 +147,6 @@ export async function GET(req: NextRequest) {
   // questions used to fall through this query entirely because they carry no
   // `quizId`, which is exactly why RANDOM mode ignored them while FIXED (pins
   // are resolved by id) worked.
-  const poolBankFilterWhere = mockExamQuestionPoolWhere(
-    studentSchoolType,
-    lessonIds
-  );
-  const examPoolBankFilterWhere = mockExamExamQuestionPoolWhere(
-    studentSchoolType,
-    lessonIds
-  );
 
   // FIXED exams use their pinned set; RANDOM exams sample the matching bank.
   const isFixedExam = !!mockExam && mockExam.selectionMode === "FIXED";
@@ -170,31 +162,29 @@ export async function GET(req: NextRequest) {
   // FIXED exams resolve exactly their pinned ids (still bank-gated, so a pin
   // can never pull a question out of another school's bank). RANDOM exams use
   // the canonical eligible pool.
-  const bankFilterOnPins = pinned
-    ? { AND: [bankFilter, { id: { in: pinned.map((p) => p.questionId).filter(Boolean) as string[] } }] }
-    : null;
+  //
+  // NOTE: the `where` stays an INLINE ternary of object literals. Prisma
+  // infers the result payload (including `include`) from the argument literal;
+  // a computed union such as `a ?? b` makes it fall back to the bare model and
+  // the `include` silently disappears from the result type.
+  const pinnedQuestionIds = pinned
+    ? (pinned.map((p) => p.questionId).filter(Boolean) as string[])
+    : [];
+  const pinnedExamQuestionIds = pinned
+    ? (pinned.map((p) => p.examQuestionId).filter(Boolean) as string[])
+    : [];
   const quizQuestions = await db.question.findMany({
-    where: bankFilterOnPins ?? poolBankFilterWhere,
+    where: pinned
+      ? { id: { in: pinnedQuestionIds }, ...bankFilter }
+      : { AND: [bankFilter, mockExamQuestionScopeWhere(lessonIds)] },
     include: { quiz: { select: { lesson: { select: { titleAr: true, title: true } } } } },
   });
 
   // Get exam questions (same bank isolation applies)
-  const examBankFilterOnPins = pinned
-    ? {
-        AND: [
-          bankFilter,
-          {
-            id: {
-              in: pinned
-                .map((p) => p.examQuestionId)
-                .filter(Boolean) as string[],
-            },
-          },
-        ],
-      }
-    : null;
   const examQuestions = await db.examQuestion.findMany({
-    where: examBankFilterOnPins ?? examPoolBankFilterWhere,
+    where: pinned
+      ? { id: { in: pinnedExamQuestionIds }, ...bankFilter }
+      : { AND: [bankFilter, mockExamExamQuestionScopeWhere(lessonIds)] },
     include: { lesson: { select: { titleAr: true, title: true } } },
   });
 

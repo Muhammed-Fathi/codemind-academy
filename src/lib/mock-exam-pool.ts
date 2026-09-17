@@ -125,16 +125,24 @@ export function mockExamQuestionScopeWhere(lessonIds: readonly string[]) {
     : bankOnlyQuestionWhere();
 }
 
+/** The scope half of the `ExamQuestion` contract (legacy table). */
+export function mockExamExamQuestionScopeWhere(lessonIds: readonly string[]) {
+  return lessonIds.length > 0
+    ? { OR: [{ lessonId: null }, { lessonId: { in: [...lessonIds] } }] }
+    : { lessonId: null };
+}
+
 /** The eligible legacy `ExamQuestion` pool (same contract, lessonId column). */
 export function mockExamExamQuestionPoolWhere(
   schoolType: SchoolType,
   lessonIds: readonly string[]
 ) {
-  const scope =
-    lessonIds.length > 0
-      ? { OR: [{ lessonId: null }, { lessonId: { in: [...lessonIds] } }] }
-      : { lessonId: null };
-  return { AND: [questionBankFilter(schoolType), scope] };
+  return {
+    AND: [
+      questionBankFilter(schoolType),
+      mockExamExamQuestionScopeWhere(lessonIds),
+    ],
+  };
 }
 
 // ---------------------------------------------------------------------------
