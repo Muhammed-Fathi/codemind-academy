@@ -27,6 +27,8 @@ import {
   HeartHandshake,
   Star,
   Quote,
+  Headset,
+  MessageCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -810,61 +812,59 @@ export function Footer() {
 
           <div>
             <h4 className="font-bold mb-3 text-sm">{tr("landing.118")}</h4>
-            <ul className="space-y-3 text-sm text-muted-foreground">
-              <li>
-                <a
-                  href={whatsappLink(technical.phoneIntl)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="hover:text-foreground inline-flex items-center gap-1.5"
+            {/* Post-launch redesign: person + number travel TOGETHER.
+                The old layout dropped an orphaned number under each label;
+                now each line is "role label" + "Eng. Name · 0XXXXXXXXXX"
+                (number tel-actionable, WhatsApp as a compact secondary
+                icon). Names/numbers come from SUPPORT_CONTACTS (brand.ts) —
+                the single source of truth. The name+number row is pinned
+                dir=ltr because it is Latin text + digits; the surrounding
+                list stays RTL-aware via logical properties. */}
+            <ul className="space-y-2.5 text-sm">
+              {([
+                { person: technical, label: tr("foot.001"), Icon: Headset },
+                { person: teacher, label: tr("foot.002"), Icon: GraduationCap },
+                { person: subscription, label: tr("foot.003"), Icon: CreditCard },
+              ] as const).map(({ person, label, Icon }) => (
+                <li
+                  key={person.id + label}
+                  className="rounded-xl border border-border/50 bg-muted/30 p-2.5"
                 >
-                  <Bell className="w-3.5 h-3.5 shrink-0" />
-                  Technical Support
-                </a>
-                <a
-                  href={telLink(technical.phoneDisplay)}
-                  dir="ltr"
-                  className="block text-xs font-bold text-foreground/80 hover:text-primary transition-colors mt-0.5 ps-5"
-                >
-                  {technical.phoneDisplay}
-                </a>
-              </li>
-              <li>
-                <a
-                  href={whatsappLink(teacher.phoneIntl)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="hover:text-foreground inline-flex items-center gap-1.5"
-                >
-                  <GraduationCap className="w-3.5 h-3.5 shrink-0" />
-                  {tr("landing.119")}
-                </a>
-                <a
-                  href={telLink(teacher.phoneDisplay)}
-                  dir="ltr"
-                  className="block text-xs font-bold text-foreground/80 hover:text-primary transition-colors mt-0.5 ps-5"
-                >
-                  {teacher.phoneDisplay}
-                </a>
-              </li>
-              <li>
-                <a
-                  href={whatsappLink(subscription.phoneIntl)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="hover:text-foreground inline-flex items-center gap-1.5"
-                >
-                  <CreditCard className="w-3.5 h-3.5 shrink-0" />
-                  Subscription Support
-                </a>
-                <a
-                  href={telLink(subscription.phoneDisplay)}
-                  dir="ltr"
-                  className="block text-xs font-bold text-foreground/80 hover:text-primary transition-colors mt-0.5 ps-5"
-                >
-                  {subscription.phoneDisplay}
-                </a>
-              </li>
+                  <div className="flex items-center gap-1.5 text-[10px] font-bold text-primary mb-1">
+                    <Icon className="w-3 h-3 shrink-0" />
+                    <span>{label}</span>
+                  </div>
+                  <div
+                    dir="ltr"
+                    className="flex items-center flex-wrap gap-x-1.5 gap-y-0.5 text-xs"
+                  >
+                    <span className="font-bold text-foreground truncate">
+                      {person.name}
+                    </span>
+                    <span
+                      aria-hidden="true"
+                      className="text-muted-foreground/50"
+                    >
+                      ·
+                    </span>
+                    <a
+                      href={telLink(person.phoneDisplay)}
+                      className="font-black tabular-nums text-foreground hover:text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 rounded-sm"
+                    >
+                      {person.phoneDisplay}
+                    </a>
+                    <a
+                      href={whatsappLink(person.phoneIntl)}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label={`WhatsApp — ${person.name}`}
+                      className="ms-0.5 inline-flex items-center justify-center w-5 h-5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                    >
+                      <MessageCircle className="w-3 h-3" />
+                    </a>
+                  </div>
+                </li>
+              ))}
             </ul>
           </div>
         </div>

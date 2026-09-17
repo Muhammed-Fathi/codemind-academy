@@ -633,9 +633,19 @@ async function main() {
   pinned(dialogSrc, /code === "EMITTED_PARTIAL"[\s\S]{0,400}return;/, "H: EMITTED_PARTIAL keeps the dialog OPEN (early return before onOpenChange(false))");
   pinned(dialogSrc, /toast\.(success|info)\(tr\("admin\.498", \{ p1: n\.delivered \}\)\)/, "H: delivered toast key admin.498 carries the delivered count");
   pinned(dialogSrc, /tr\("admin\.499", \{ p1: n\.skippedPreference, p2: n\.skippedQuietHours \}\)/, "H: skipped-breakdown key admin.499 carries both counts");
+  // Post-launch: the notification centre moved to the SHARED panel
+  // (src/components/shared/notifications-panel.tsx) so all four roles use
+  // one definition. The Phase 16 deep-link contract is pinned there now:
+  //   * clicking an Open button drives navigateDeepLink (setView→setNavParam
+  //     order, so `lesson:<id>` lands on the lesson, not the list);
+  //   * the Open button only renders for a PARSEABLE, role-legal link
+  //     (stale / legacy / ineligible rows fail safe to informational).
+  const panelSrc = read("src/components/shared/notifications-panel.tsx");
+  pinned(panelSrc, /navigateDeepLink\(n\.link, useApp\.getState\(\)\)/, "H: the notification centre drives the Phase 16 deep link on click");
+  pinned(panelSrc, /resolveDeepLink\(n\.link\)/, "H: Open button only renders for a parseable link (stale/ineligible rows fail safe)");
+  pinned(panelSrc, /isViewForRole\(target\.view, user\.role\)/, "H: deep link must ALSO be legal for the current role before it offers navigation");
   const dashSrc = read("src/components/student/student-dashboard.tsx");
-  pinned(dashSrc, /navigateDeepLink\(n\.link, useApp\.getState\(\)\)/, "H: the notification centre drives the Phase 16 deep link on click");
-  pinned(dashSrc, /parseDeepLink\(n\.link\)/, "H: Open button only renders for a parseable link (stale/ineligible rows fail safe)");
+  pinned(dashSrc, /NotificationsPanel/, "H: the student surface consumes the shared notification panel (one definition, not a copy)");
   const storeSrc = read("src/lib/store.ts");
   pinned(storeSrc, /setView:\s*\(view\)\s*=>/, "H: store exposes setView");
   pinned(storeSrc, /navParam:\s*null/, "H: setView clears navParam (no stale deep-link params)");

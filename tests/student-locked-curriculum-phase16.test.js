@@ -511,10 +511,16 @@ async function main() {
   // -------------------------------------------------------------------------
   section("I. Deep links land on views whose fetches re-authorize");
 
+  // Post-launch: the notifications centre is the SHARED panel (all four
+  // roles), so the deep-link contract is pinned there — the intent is
+  // unchanged: Open only for well-formed, role-legal links, navigation
+  // through the shared resolver, localized button.
+  const panel = read("src/components/shared/notifications-panel.tsx");
+  pinned(panel, /resolveDeepLink\(n\.link\)/, "I1: notifications render Open only for well-formed links");
+  pinned(panel, /navigateDeepLink\(n\.link, useApp\.getState\(\)\)/, "I2: Open navigates through the shared resolver");
+  pinned(panel, /notif\.open/, "I3: the Open button is localized");
   const dash = read("src/components/student/student-dashboard.tsx");
-  pinned(dash, /parseDeepLink\(n\.link\)/, "I1: notifications render Open only for well-formed links");
-  pinned(dash, /navigateDeepLink\(n\.link, useApp\.getState\(\)\)/, "I2: Open navigates through the shared resolver");
-  pinned(dash, /student\.247/, "I3: the Open button is localized");
+  pinned(dash, /NotificationsPanel/, "I3b: the student surface consumes the shared notifications panel");
   pinned(dash, /id=\{`homework-\$\{h\.id\}`\}/, "I4: homework rows are addressable for deep-link landing");
   pinned(dash, /getElementById\(`homework-\$\{navParam\}`\)/, "I5: homework:<id> scrolls to its item");
 

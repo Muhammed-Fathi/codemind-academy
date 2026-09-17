@@ -119,6 +119,7 @@ import {
 } from "recharts";
 import { SessionVideosView } from "@/components/admin/session-videos-view";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
+import { NotificationsPanel } from "@/components/shared/notifications-panel";
 import { MockExamsView } from "@/components/admin/mock-exams-view";
 import { QuizReviewView } from "@/components/admin/quiz-review-view";
 import { SessionWorkflowView } from "@/components/admin/session-workflow-view";
@@ -3806,6 +3807,451 @@ function PaymentsView() {
 }
 
 // ============================================================
+// 8. Subscriptions — plan management card (post-launch)
+// ============================================================
+type PlanRow = {
+  id: string;
+  name: string;
+  nameAr: string;
+  durationMonths: number;
+  price: number;
+  isPromo: boolean;
+  isActive: boolean;
+  description: string | null;
+};
+
+type PlanDependencies = {
+  activeSubscriptions: number;
+  totalSubscriptions: number;
+  paymentReferences: number;
+  deleteSafe: boolean;
+};
+
+/**
+ * Admin control surface for SubscriptionPlan rows — the owner requirement
+ * (Phase 26C: open/close ANY package) completed post-launch:
+ *
+ *   create / edit / activate / deactivate / safe-delete
+ *
+ * Rules implemented (the SERVER is the authority, the UI mirrors it):
+ *   * a closed plan stays VISIBLE to students as "غير متاحة حاليًا"
+ *     (disabled, unselectable) — it is not hidden;
+ *   * deactivate stops NEW purchases only — existing ACTIVE subscriptions
+ *     keep their entitlement (the entitlement policy never reads
+ *     plan.isActive);
+ *   * delete is offered with a confirmation that shows the dependency
+ *     counts; the DELETE API refuses (409 + reason) whenever the plan has
+ *     ANY subscription (active or historical) or payment reference, so the
+ *     admin is told to deactivate instead. Payment/subscription history is
+ *     never destroyed.
+ */
+function PlanManagementCard({
+  plans,
+  loading,
+  onMutated,
+}: {
+  plans: PlanRow[];
+  loading: boolean;
+  onMutated: () => void;
+}) {
+  const tr = useT();
+  const [editing, setEditing] = React.useState<PlanRow | "new" | null>(null);
+  const [deleting, setDeleting] = React.useState<PlanRow | null>(null);
+  const [deps, setDeps] = React.useState<PlanDependencies | null>(null);
+  const [depsLoading, setDepsLoading] = React.useState(false);
+  const [deletingBusy, setDeletingBusy] = React.useState(false);
+
+  const patchPlan = async (id: string, body: Record<string, unknown>) => {
+    const res = await fetch(`/api/admin/plans/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(j.error || tr("plan.026"));
+    return j;
+  };
+
+  const togglePlanActive = async (plan: PlanRow) => {
+    try {
+      await patchPlan(plan.id, { isActive: !plan.isActive });
+      toast.success(
+        plan.isActive ? tr("plan.025") : tr("plan.024")
+      );
+      onMutated();
+    } catch (e: any) {
+      toast.error(e.message || tr("plan.026"));
+    }
+  };
+
+  const openDeleteConfirm = async (plan: PlanRow) => {
+    setDeleting(plan);
+    setDeps(null);
+    setDepsLoading(true);
+    try {
+      const res = await fetch(`/api/admin/plans/${plan.id}`);
+      const j = await res.json().catch(() => ({}));
+      if (res.ok) setDeps(j.dependencies);
+    } finally {
+      setDepsLoading(false);
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!deleting) return;
+    setDeletingBusy(true);
+    try {
+      const res = await fetch(`/api/admin/plans/${deleting.id}`, {
+        method: "DELETE",
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        // 409 + the dependency reason — show it, do not destroy anything.
+        toast.error(j.error || tr("plan.014"));
+        return;
+      }
+      toast.success(tr("plan.011"));
+      setDeleting(null);
+      onMutated();
+    } catch {
+      toast.error(tr("plan.027"));
+    } finally {
+      setDeletingBusy(false);
+    }
+  };
+
+  return (
+    <Card className="p-4">
+      <CardHeader className="px-0 pt-0">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div>
+            <CardTitle className="text-base flex items-center gap-2">
+              <CreditCard className="w-4 h-4 text-emerald-500" />
+              Subscription Plans
+            </CardTitle>
+            <CardDescription>
+              {tr("plan.022")}
+            </CardDescription>
+          </div>
+          <Button size="sm" onClick={() => setEditing("new")}>
+            <Plus className="w-3.5 h-3.5 ms-1.5" />
+            {tr("plan.001")}
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="px-0">
+        {loading ? (
+          <LoadingBlock rows={3} />
+        ) : plans.length === 0 ? (
+          <EmptyBlock message={tr("plan.001")} />
+        ) : (
+          <div className="space-y-2">
+            {plans.map((p) => (
+              <div
+                key={p.id}
+                className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border p-3 ${
+                  !p.isActive ? "opacity-70 bg-muted/30 border-dashed" : ""
+                }`}
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-bold">
+                      {pickAuto(p.nameAr, p.name)}
+                    </span>
+                    {p.isPromo && (
+                      <Badge className="bg-amber-500/15 text-amber-700 border-amber-500/30 text-[10px]">
+                        Promo
+                      </Badge>
+                    )}
+                    <Badge
+                      variant={p.isActive ? "default" : "secondary"}
+                      className="text-[10px]"
+                    >
+                      {p.isActive ? tr("plan.024") : tr("plan.025")}
+                    </Badge>
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-0.5">
+                    {p.durationMonths} {tr("plan.032")} · {p.price}{" "}
+                    {tr("plan.033")} · {p.description || "—"}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setEditing(p)}
+                  >
+                    <PencilLine className="w-3.5 h-3.5 ms-1.5" />
+                    {tr("plan.002")}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={p.isActive ? "outline" : "default"}
+                    onClick={() => void togglePlanActive(p)}
+                  >
+                    {p.isActive ? tr("plan.025") : tr("plan.024")}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                    onClick={() => void openDeleteConfirm(p)}
+                  >
+                    <Trash2 className="w-3.5 h-3.5 ms-1.5" />
+                    {tr("plan.019")}
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+
+      {editing && (
+        <PlanFormDialog
+          key={editing === "new" ? "new" : editing.id}
+          plan={editing === "new" ? null : editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            onMutated();
+          }}
+        />
+      )}
+
+      {deleting && (
+        <Dialog open onOpenChange={(v) => !v && setDeleting(null)}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-destructive">
+                <Trash2 className="w-4 h-4" />
+                {tr("plan.012")}
+              </DialogTitle>
+              <DialogDescription>
+                {tr("plan.013")}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="rounded-lg border border-border/60 bg-muted/30 p-3 space-y-1.5 text-xs">
+              <div className="font-bold text-sm">
+                {pickAuto(deleting.nameAr, deleting.name)}
+              </div>
+              {depsLoading ? (
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  …
+                </div>
+              ) : deps ? (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">{tr("plan.015")}</span>
+                    <span className="font-bold">{deps.activeSubscriptions}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">{tr("plan.016")}</span>
+                    <span className="font-bold">{deps.totalSubscriptions}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">{tr("plan.017")}</span>
+                    <span className="font-bold">{deps.paymentReferences}</span>
+                  </div>
+                  {!deps.deleteSafe && (
+                    <p className="text-destructive pt-1 font-semibold">
+                      {tr("plan.014")}
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="text-muted-foreground">{tr("plan.014")}</p>
+              )}
+            </div>
+            <DialogFooter>
+              <Button
+                variant="ghost"
+                onClick={() => setDeleting(null)}
+                disabled={deletingBusy}
+              >
+                {tr("plan.018")}
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => void confirmDelete()}
+                disabled={depsLoading || deletingBusy}
+              >
+                {deletingBusy && <Loader2 className="w-3.5 h-3.5 ms-1.5 animate-spin" />}
+                {tr("plan.019")}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+    </Card>
+  );
+}
+
+/** Create / edit form — mirrors the server validation (name required,
+    duration >= 1 month, price >= 0) and only the CURRENT schema fields:
+    name, nameAr, durationMonths, price, isPromo, isActive, description. */
+function PlanFormDialog({
+  plan,
+  onClose,
+  onSaved,
+}: {
+  plan: PlanRow | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const tr = useT();
+  const [form, setForm] = React.useState({
+    name: plan?.name || "",
+    nameAr: plan?.nameAr || "",
+    durationMonths: plan ? String(plan.durationMonths) : "1",
+    price: plan ? String(plan.price) : "",
+    description: plan?.description || "",
+    isPromo: plan?.isPromo || false,
+    isActive: plan ? plan.isActive : true,
+  });
+  const [saving, setSaving] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const submit = async () => {
+    const name = form.name.trim();
+    const nameAr = form.nameAr.trim() || name;
+    const durationMonths = Number(form.durationMonths);
+    const price = Number(form.price);
+    if (!name) return setError(tr("plan.028"));
+    if (!Number.isFinite(durationMonths) || durationMonths < 1)
+      return setError(tr("plan.029"));
+    if (!Number.isFinite(price) || price < 0) return setError(tr("plan.030"));
+
+    setSaving(true);
+    setError(null);
+    const body = {
+      name,
+      nameAr,
+      durationMonths: Math.floor(durationMonths),
+      price,
+      description: form.description.trim() || null,
+      isPromo: form.isPromo,
+      isActive: form.isActive,
+    };
+    try {
+      let res: Response;
+      if (plan) {
+        res = await fetch(`/api/admin/plans/${plan.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+      } else {
+        res = await fetch("/api/admin/plans", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+      }
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error || tr("plan.026"));
+      toast.success(plan ? tr("plan.011") : tr("plan.010"));
+      onSaved();
+    } catch (e: any) {
+      setError(e.message || tr("plan.026"));
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={(v) => !v && !saving && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>
+            {plan ? tr("plan.002") : tr("plan.001")}
+          </DialogTitle>
+          <DialogDescription>
+            {tr("plan.022")}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <Label className="text-xs">{tr("plan.003")}</Label>
+            <Input
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">{tr("plan.004")}</Label>
+            <Input
+              value={form.nameAr}
+              onChange={(e) => setForm({ ...form, nameAr: e.target.value })}
+              dir="rtl"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label className="text-xs">{tr("plan.006")}</Label>
+              <Input
+                type="number"
+                min={1}
+                value={form.durationMonths}
+                onChange={(e) =>
+                  setForm({ ...form, durationMonths: e.target.value })
+                }
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">{tr("plan.005")}</Label>
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                value={form.price}
+                onChange={(e) => setForm({ ...form, price: e.target.value })}
+              />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">{tr("plan.007")}</Label>
+            <Textarea
+              rows={2}
+              value={form.description}
+              onChange={(e) =>
+                setForm({ ...form, description: e.target.value })
+              }
+            />
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <label className="flex items-center gap-2 text-xs font-medium">
+              <Switch
+                checked={form.isPromo}
+                onCheckedChange={(v) => setForm({ ...form, isPromo: v })}
+              />
+              {tr("plan.008")}
+            </label>
+            <label className="flex items-center gap-2 text-xs font-medium">
+              <Switch
+                checked={form.isActive}
+                onCheckedChange={(v) => setForm({ ...form, isActive: v })}
+              />
+              {tr("plan.009")}
+            </label>
+          </div>
+          {error && <p className="text-xs text-destructive">{error}</p>}
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose} disabled={saving}>
+            {tr("plan.018")}
+          </Button>
+          <Button onClick={() => void submit()} disabled={saving}>
+            {saving && <Loader2 className="w-3.5 h-3.5 ms-1.5 animate-spin" />}
+            {plan ? tr("plan.020") : tr("plan.021")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ============================================================
 // 8. Subscriptions
 // ============================================================
 type SubscriptionRow = {
@@ -3831,68 +4277,20 @@ function SubscriptionsView() {
   const { data, loading, error, reload } = useApi<{ subscriptions: SubscriptionRow[]; plans: any[] }>(query, [status]);
   const { data: plansData, loading: plansLoading, reload: reloadPlans } = useApi<{ plans: any[] }>("/api/admin/plans");
 
-  const togglePlanActive = async (plan: any) => {
-    try {
-      const res = await fetch(`/api/admin/plans/${plan.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ isActive: !plan.isActive }),
-      });
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        throw new Error(j.error || "Failed");
-      }
-      toast.success(plan.isActive ? "Plan disabled" : "Plan enabled");
-      reloadPlans();
-      reload();
-    } catch (e: any) {
-      toast.error(e.message || tr("admin.001"));
-    }
-  };
-
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-      {/* Plans management — Phase 26C owner requirement: admin can open/close ANY package */}
-      <Card className="p-4">
-        <CardHeader className="px-0 pt-0">
-          <CardTitle className="text-base flex items-center gap-2">
-            <CreditCard className="w-4 h-4 text-emerald-500" />
-            Subscription Plans — Sale Control
-          </CardTitle>
-          <CardDescription>
-            Toggle availability — inactive plans are hidden from students and cannot be purchased, but existing subscribers keep access.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="px-0">
-          {plansLoading ? (
-            <LoadingBlock rows={3} />
-          ) : !plansData || plansData.plans.length === 0 ? (
-            <EmptyBlock message="No plans" />
-          ) : (
-            <div className="space-y-2">
-              {plansData.plans.map((p: any) => (
-                <div key={p.id} className={`flex items-center justify-between rounded-lg border p-3 ${!p.isActive ? "opacity-60 bg-muted/30" : ""}`}>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold">{pickAuto(p.nameAr, p.name)}</span>
-                      {p.isPromo && <Badge className="bg-amber-500/15 text-amber-700 border-amber-500/30 text-[10px]">Early Bird</Badge>}
-                      <Badge variant={p.isActive ? "default" : "secondary"} className="text-[10px]">
-                        {p.isActive ? "Active" : "Closed"}
-                      </Badge>
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {p.durationMonths} months · {p.price} EGP · {p.description || "—"}
-                    </div>
-                  </div>
-                  <Button size="sm" variant={p.isActive ? "outline" : "default"} onClick={() => togglePlanActive(p)}>
-                    {p.isActive ? "Disable sale" : "Enable sale"}
-                  </Button>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {/* Plans management — Phase 26C owner requirement (open/close ANY
+          package) extended post-launch: create, edit, activate, deactivate,
+          and safe delete (only zero-reference plans; referenced plans get
+          the backend dependency reason instead of a hard delete). */}
+      <PlanManagementCard
+        plans={plansData?.plans || []}
+        loading={plansLoading}
+        onMutated={() => {
+          reloadPlans();
+          reload();
+        }}
+      />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -4027,6 +4425,26 @@ function NotificationsView() {
 
       {/* Notification Center Stats */}
       <NotificationCenterStats />
+
+      {/* The admin's OWN notifications (the bell badge counts these).
+          The shared panel is embedded without a back bar — the admin is
+          already in their notifications surface. The badge and the list
+          therefore stay consistent for every role. */}
+      <Card className="glass">
+        <CardHeader className="px-4 pt-4 pb-2">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Bell className="w-4 h-4 text-primary" />
+            {tr("notif.myTitle")}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="px-0 pb-0">
+          <NotificationsPanel
+            homeView="admin-notifications"
+            title={tr("notif.myTitle")}
+            showBack={false}
+          />
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Send form */}

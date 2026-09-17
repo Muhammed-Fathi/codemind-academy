@@ -99,6 +99,12 @@ type Plan = {
   durationMonths: number;
   price: number;
   isPromo: boolean;
+  /** False = closed for sale. The public API now returns these too, so the
+      picker can render them as "غير متاحة حاليًا" (visible, clearly
+      unavailable, unselectable) instead of hiding them. The server
+      re-enforces this at submission AND approval — the flag is
+      presentation, never authorization. */
+  isActive?: boolean;
   description?: string | null;
 };
 
@@ -1160,41 +1166,82 @@ function PlanPicker({
 }) {
   const t = useT();
   if (loading) return <SkeletonGrid />;
+  const hasAvailable = plans.some((p) => p.isActive !== false);
   return (
     <div>
       <h2 className="text-lg font-bold mb-1">{t("auth.068")}</h2>
       <p className="text-sm text-muted-foreground mb-5">{t("auth.069")}</p>
-      <div className="grid sm:grid-cols-2 gap-4">
-        {plans.map((p) => (
-          <button
-            key={p.id}
-            type="button"
-            onClick={() => onChange(p.id)}
-            aria-pressed={value === p.id}
-            className={`text-end rounded-2xl p-5 border-2 transition-all relative ${
-              value === p.id
-                ? "border-primary bg-primary/5 shadow-md"
-                : "border-border bg-card hover:border-primary/40"
-            }`}
-          >
-            {p.isPromo && (
-              <Badge className="absolute top-3 end-3 bg-amber-500 text-white hover:bg-amber-500 shadow-md">
-                <Trophy className="w-3 h-3 ms-1" />
-                Limited
-              </Badge>
-            )}
-            <div className="font-bold">{pickAuto(p.nameAr, p.name)}</div>
-            <div className="text-xs text-muted-foreground">{p.name}</div>
-            <div className="mt-3 flex items-end gap-1">
-              <span className="text-3xl font-extrabold tabular-nums">{formatPaymentAmount(p.price)}</span>
-              <span className="text-sm text-muted-foreground mb-1">{t("pay.egp")}</span>
-            </div>
-            <div className="text-xs text-muted-foreground mt-1">
-              {t("pay.planDuration", { p1: p.durationMonths })}
-            </div>
-          </button>
-        ))}
-      </div>
+      {!hasAvailable ? (
+        <div className="rounded-2xl border border-border bg-muted/40 p-6 text-center">
+          <p className="text-sm font-semibold">{t("plan.031")}</p>
+        </div>
+      ) : (
+        <div className="grid sm:grid-cols-2 gap-4">
+          {plans.map((p) => {
+            const closed = p.isActive === false;
+            return (
+              <button
+                key={p.id}
+                type="button"
+                // Closed plans are unselectable client-side AND refused by
+                // the server (submission + approval) — the disabled button
+                // is UX, never the security boundary.
+                onClick={() => {
+                  if (!closed) onChange(p.id);
+                }}
+                disabled={closed}
+                aria-pressed={!closed && value === p.id}
+                aria-disabled={closed}
+                className={`text-end rounded-2xl p-5 border-2 transition-all relative ${
+                  closed
+                    ? "border-dashed border-border bg-muted/40 cursor-not-allowed"
+                    : value === p.id
+                    ? "border-primary bg-primary/5 shadow-md"
+                    : "border-border bg-card hover:border-primary/40"
+                }`}
+              >
+                {closed ? (
+                  <Badge className="absolute top-3 end-3 bg-muted text-muted-foreground border border-border text-[10px] hover:bg-muted">
+                    {t("plan.023")}
+                  </Badge>
+                ) : (
+                  p.isPromo && (
+                    <Badge className="absolute top-3 end-3 bg-amber-500 text-white hover:bg-amber-500 shadow-md">
+                      <Trophy className="w-3 h-3 ms-1" />
+                      Limited
+                    </Badge>
+                  )
+                )}
+                <div
+                  className={`font-bold ${
+                    closed ? "text-muted-foreground" : ""
+                  }`}
+                >
+                  {pickAuto(p.nameAr, p.name)}
+                </div>
+                <div className="text-xs text-muted-foreground">{p.name}</div>
+                <div className="mt-3 flex items-end gap-1">
+                  <span
+                    className={`text-3xl font-extrabold tabular-nums ${
+                      closed ? "text-muted-foreground/60 line-through" : ""
+                    }`}
+                  >
+                    {formatPaymentAmount(p.price)}
+                  </span>
+                  <span className="text-sm text-muted-foreground mb-1">
+                    {t("pay.egp")}
+                  </span>
+                </div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  {closed
+                    ? t("plan.031")
+                    : t("pay.planDuration", { p1: p.durationMonths })}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

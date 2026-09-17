@@ -438,6 +438,7 @@ const SRC = {
   dashboard: read("src/components/admin/admin-dashboard.tsx"),
   shell: read("src/components/dashboard/shell.tsx"),
   appShell: read("src/components/app-shell.tsx"),
+  viewRoles: read("src/lib/view-roles.ts"),
   store: read("src/lib/store.ts"),
 };
 ok(Object.values(SRC).every((s) => s.length > 100), "F1: all sources readable");
@@ -771,9 +772,20 @@ section("M. navigation wiring");
 {
   pinned(SRC.store, /"admin-sessions"/, "M1: store carries the admin-sessions view key");
   pinned(SRC.appShell, /case "admin-sessions":/, "M2: app shell routes admin-sessions");
+  // Post-launch: the role→view whitelist moved from app-shell.tsx to the
+  // shared src/lib/view-roles.ts (single definition consumed by the app
+  // shell AND the notifications panel). Pin it there — and pin that the
+  // app shell still consumes it, so the inline list cannot creep back.
   ok(
-    /"admin-courses",\s*"admin-sessions",\s*"admin-payments"/.test(SRC.appShell),
+    /ADMIN:\s*\[[\s\S]*?"admin-courses",\s*"admin-sessions",\s*"admin-payments"/.test(
+      SRC.viewRoles
+    ),
     "M3: admin-sessions is whitelisted for ADMIN"
+  );
+  pinned(
+    SRC.appShell,
+    /from "\/lib\/view-roles"|from "@\/lib\/view-roles"/,
+    "M3b: the app shell consumes the shared role→view whitelist"
   );
   pinned(SRC.shell, /key: "admin-sessions"/, "M4: sidebar links admin-sessions");
   pinned(SRC.shell, /label: "admin\.323"/, "M5: nav label is the localized workflow title");

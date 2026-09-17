@@ -22,8 +22,8 @@ import {
   StudentPaymentPanel,
   type StudentPaymentRequestView,
 } from "@/components/student/payment-status";
-import { navigateDeepLink, parseDeepLink } from "@/lib/deep-link";
 import { brand } from "@/lib/brand";
+import { NotificationsPanel } from "@/components/shared/notifications-panel";
 import { toast } from "sonner";
 import { GamificationPanel } from "@/components/student/gamification-panel";
 import {
@@ -38,7 +38,6 @@ import {
   Trophy,
   ArrowLeft,
   Activity,
-  Bell,
   BookOpen,
   ChevronLeft,
   Sparkles,
@@ -1343,134 +1342,16 @@ function HomeworkView() {
   );
 }
 
+// The student notifications view is now the SHARED panel (post-launch fix):
+// one implementation for Student/Teacher/Parent — see
+// src/components/shared/notifications-panel.tsx for the contract (single
+// fetch on open, role-aware deep links, instant badge refresh).
 function NotificationsView() {
   const t = useT();
-  const setView = useApp((s) => s.setView);
-  const [items, setItems] = React.useState<any[] | null>(null);
-  const [loading, setLoading] = React.useState(true);
-
-  const reload = React.useCallback(() => {
-    setLoading(true);
-    fetch("/api/notifications")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => setItems(d?.notifications || d?.items || []))
-      .catch(() => setItems([]))
-      .finally(() => setLoading(false));
-  }, []);
-
-  React.useEffect(() => {
-    reload();
-  }, [reload]);
-
-  const markAll = async () => {
-    await fetch("/api/notifications", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ markAllRead: true }),
-    });
-    reload();
-    toast.success(t("student.183"));
-  };
-
-  // Phase 16 — safe deep links. A notification carrying a well-formed
-  // `lesson:|video:|quiz:|homework:` link gets an Open button; anything else
-  // (legacy `admin-*` strings, malformed links) renders no button at all.
-  // Navigation only picks the view — the view's own fetch re-authorizes
-  // server-side, so a stale link to unpublished content lands on the same
-  // locked / not-available state as opening it by hand.
-  const openNotification = async (n: { id: string; link?: unknown }) => {
-    const landed = navigateDeepLink(n.link, useApp.getState());
-    if (!landed) {
-      toast.error(t("student.248"));
-      return;
-    }
-    await fetch("/api/notifications", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: n.id }),
-    }).catch(() => {});
-  };
-
   return (
-    <div className="space-y-4">
-      <BackBar
-        title={t("student.184")}
-        onBack={() => setView("student-dashboard")}
-        action={
-          <Button variant="ghost" size="sm" onClick={markAll}>
-            <CheckCircle2 className="w-4 h-4 ms-1.5" />
-            {t("student.185")}</Button>
-        }
-      />
-      <Card className="glass">
-        <CardContent className="p-0">
-          {loading ? (
-            <div className="p-6 space-y-2">
-              {[1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-14" />
-              ))}
-            </div>
-          ) : !items || items.length === 0 ? (
-            <EmptyState
-              icon={<Bell className="w-5 h-5" />}
-              title={t("student.186")}
-              hint={t("student.187")}
-            />
-          ) : (
-            <ScrollArea className="max-h-[70vh] overflow-y-auto">
-              <ul>
-                {items.map((n: any) => (
-                  <li
-                    key={n.id}
-                    className={`flex gap-3 px-4 py-3 border-b border-border/60 last:border-0 hover:bg-muted/40 transition-colors ${
-                      !n.isRead ? "bg-primary/5" : ""
-                    }`}
-                  >
-                    <div
-                      className={`grid place-items-center w-8 h-8 rounded-full shrink-0 ${
-                        n.isRead
-                          ? "bg-muted text-muted-foreground"
-                          : "bg-primary text-primary-foreground"
-                      }`}
-                    >
-                      <Bell className="w-4 h-4" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-semibold">{n.title}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {n.message}
-                      </div>
-                      <div className="text-[10px] text-muted-foreground/70 mt-0.5">
-                        {timeAgo(n.createdAt)}
-                      </div>
-                    </div>
-                    <div className="flex flex-col items-end gap-1.5 shrink-0">
-                      {parseDeepLink(n.link) && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 px-2 text-xs"
-                          onClick={() => openNotification(n)}
-                        >
-                          {t("student.247")}
-                          <ChevronLeft className="w-3.5 h-3.5 flip-rtl" />
-                        </Button>
-                      )}
-                      {!n.isRead && (
-                        <span className="w-2 h-2 rounded-full bg-primary" />
-                      )}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </ScrollArea>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+    <NotificationsPanel homeView="student-dashboard" title={t("student.184")} />
   );
 }
-
 function ProgressView({
   data,
   loading,

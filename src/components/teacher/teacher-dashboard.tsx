@@ -68,6 +68,7 @@ import {
 
 import { useApp, type ViewKey } from "@/lib/store";
 import { brand } from "@/lib/brand";
+import { NotificationsPanel } from "@/components/shared/notifications-panel";
 import {
   CurriculumBadge,
   StatusBadge,
@@ -116,6 +117,8 @@ import {
   CircleDashed,
   Pencil,
   ClipboardCheck,
+  MessageSquare,
+  Send,
 } from "lucide-react";
 
 // ============================================================
@@ -399,6 +402,19 @@ type HomeworkListItem = {
 export function TeacherDashboard() {
   const view = useApp((s) => s.view) as ViewKey;
   const setView = useApp((s) => s.setView);
+  const tr = useT();
+
+  // Post-launch fix: the Teacher's own notifications live in the SHARED panel
+  // (the bell used to route teachers to the student-only notifications view,
+  // so the badge worked but clicking revealed nothing).
+  if (view === "teacher-notifications") {
+    return (
+      <NotificationsPanel
+        homeView="teacher-dashboard"
+        title={tr("notif.title")}
+      />
+    );
+  }
 
   // Map view → tab id
   const tabValue: string = view.startsWith("teacher-attendance")
@@ -995,6 +1011,12 @@ function AttendanceView() {
   const groups = dashQuery.data?.groups ?? [];
   const [groupId, setGroupId] = React.useState<string>("");
   const [sessionId, setSessionId] = React.useState<string>("");
+  // Post-launch: per-student teacher notes (shared with the parent dashboard
+  // — the note row is the source of truth, the parent gets a notification).
+  const [notesTarget, setNotesTarget] = React.useState<{
+    id: string;
+    name: string;
+  } | null>(null);
 
   // Default-select first group
   React.useEffect(() => {
@@ -1265,6 +1287,9 @@ function AttendanceView() {
                   <TableHead className="text-center w-[80px] hidden md:table-cell">
                     %
                   </TableHead>
+                  <TableHead className="text-center w-[90px] hidden sm:table-cell">
+                    {tr("teacher.212")}
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1335,6 +1360,18 @@ function AttendanceView() {
                           {s.attendancePct}%
                         </span>
                       </TableCell>
+                      <TableCell className="text-center hidden sm:table-cell">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setNotesTarget({ id: s.id, name: s.name })
+                          }
+                          aria-label={`${tr("teacher.212")} — ${s.name}`}
+                          className="w-8 h-8 rounded-lg border-2 border-transparent text-muted-foreground/60 inline-flex items-center justify-center transition-all hover:bg-primary/10 hover:text-primary hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                        >
+                          <MessageSquare className="w-4 h-4" />
+                        </button>
+                      </TableCell>
                     </TableRow>
                   );
                 })}
@@ -1360,9 +1397,165 @@ function AttendanceView() {
               )}
             </Button>
           </div>
+
+          {notesTarget && (
+            <StudentNotesDialog
+              studentId={notesTarget.id}
+              studentName={notesTarget.name}
+              groupId={groupId}
+              onClose={() => setNotesTarget(null)}
+            />
+          )}
         </>
       )}
     </div>
+  );
+}
+
+// ============================================================
+// Student Notes dialog — Teacher → Student comment (post-launch).
+// Scope is enforced SERVER-SIDE (student must be in the teacher's
+// groups); the UI just renders whatever the API returns. Notes are
+// immutable history: no edit, no delete (see the API contract).
+// ============================================================
+function StudentNotesDialog({
+  studentId,
+  studentName,
+  groupId,
+  onClose,
+}: {
+  studentId: string;
+  studentName: string;
+  groupId: string;
+  onClose: () => void;
+}) {
+  const tr = useT();
+  const [open, setOpen] = React.useState(true);
+  const [notes, setNotes] = React.useState<
+    { id: string; note: string; createdAt: string }[] | null
+  >(null);
+  const [draft, setDraft] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const reload = React.useCallback(() => {
+    const params = new URLSearchParams();
+    if (groupId) params.set("groupId", groupId);
+    params.set("studentId", studentId);
+    fetch(`/api/teacher/student-notes?${params.toString()}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setNotes(d?.notes || []))
+      .catch(() => setNotes([]));
+  }, [studentId, groupId]);
+
+  React.useEffect(() => {
+    reload();
+  }, [reload]);
+
+  const send = async () => {
+    const text = draft.trim();
+    if (text.length < 3 || text.length > 2000) {
+      setError(tr("api.300"));
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const r = await fetch("/api/teacher/student-notes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ studentId, note: text }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || tr("teacher.211"));
+      setDraft("");
+      toast.success(tr("teacher.210"));
+      reload();
+    } catch (e: any) {
+      setError(e?.message || tr("teacher.211"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <MessageSquare className="w-4 h-4 text-primary" />
+            {tr("teacher.205")} — {studentName}
+          </DialogTitle>
+          <DialogDescription>{tr("teacher.206")}</DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Textarea
+              value={draft}
+              onChange={(e) => {
+                setDraft(e.target.value);
+                if (error) setError(null);
+              }}
+              placeholder={tr("teacher.207")}
+              rows={3}
+              maxLength={2000}
+            />
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] text-muted-foreground">
+                {tr("teacher.214")}
+              </span>
+              <Button
+                size="sm"
+                onClick={() => void send()}
+                disabled={saving || draft.trim().length < 3}
+              >
+                <Send className="w-3.5 h-3.5 ms-1.5" />
+                {saving ? "…" : tr("teacher.208")}
+              </Button>
+            </div>
+            {error && (
+              <p className="text-xs text-destructive">{error}</p>
+            )}
+          </div>
+
+          <div>
+            {notes && notes.length > 0 && (
+              <div className="text-xs font-bold text-muted-foreground mb-2">
+                {tr("teacher.213")}
+              </div>
+            )}
+            {notes === null ? (
+              <div className="space-y-2">
+                {[1, 2].map((i) => (
+                  <Skeleton key={i} className="h-12" />
+                ))}
+              </div>
+            ) : notes.length === 0 ? (
+              <p className="text-xs text-muted-foreground py-3 text-center">
+                {tr("teacher.209")}
+              </p>
+            ) : (
+              <ul className="space-y-2 max-h-56 overflow-y-auto pe-1">
+                {notes.map((n) => (
+                  <li
+                    key={n.id}
+                    className="p-2.5 rounded-lg bg-muted/40 border border-border/40"
+                  >
+                    <p className="text-xs leading-relaxed text-foreground/90">
+                      {n.note}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground mt-1">
+                      {fmtDateShort(n.createdAt)}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

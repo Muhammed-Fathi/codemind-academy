@@ -283,6 +283,35 @@ export const DICT_2026: Record<string, DictEntry> = {
   },
   "notif.sent": { ar: "اترسل الإشعار لـ {p1} مستخدم", en: "Notification sent to {p1} users" },
 
+  // ---------------- Post-launch: shared notifications panel ----------------
+  // One list surface for Student/Teacher/Parent (+ embedded in the Admin
+  // center). Keys shared by src/components/shared/notifications-panel.tsx.
+  "notif.back": { ar: "رجوع", en: "Back" },
+  "notif.markAll": { ar: "علم الكل كمقروء", en: "Mark all as read" },
+  "notif.markedAll": {
+    ar: "اتمخلت كل الإشعارات كمقروءة",
+    en: "All notifications marked as read",
+  },
+  "notif.empty": { ar: "مفيش إشعارات جديدة 🔕", en: "No new notifications 🔕" },
+  "notif.emptyHint": {
+    ar: "أي إشعار جديد هتلاقيه هنا.",
+    en: "Any new notification will appear here.",
+  },
+  "notif.loadError": {
+    ar: "حصلت مشكلة في جلب الإشعارات",
+    en: "Failed to load notifications",
+  },
+  "notif.retry": { ar: "حاول تاني", en: "Try again" },
+  "notif.open": { ar: "فتح", en: "Open" },
+  "notif.unread": { ar: "غير مقروء", en: "Unread" },
+  "notif.read": { ar: "مقروء", en: "Read" },
+  "notif.unreadCount": { ar: "{p1} غير مقروء", en: "{p1} unread" },
+  "notif.myTitle": { ar: "إشعاراتي", en: "My notifications" },
+  "notif.now": { ar: "دلوقتي", en: "Just now" },
+  "notif.minAgo": { ar: "من {p1} دقيقة", en: "{p1} min ago" },
+  "notif.hourAgo": { ar: "من {p1} ساعة", en: "{p1}h ago" },
+  "notif.dayAgo": { ar: "من {p1} يوم", en: "{p1}d ago" },
+
   // ---------------- Phase 9: Calendar / shell nav i18n ----------------
   // Study Scheduler page title + month navigation a11y labels.
   "student.243": { ar: "مخطط الدراسة", en: "Study Scheduler" },
@@ -979,6 +1008,102 @@ export const DICT_2026: Record<string, DictEntry> = {
     ar: "مش ممكن تحذف الكورس: مرتبط بـ{p1} مجموعة و{p2} جزء من المنهج و{p3} امتحان. الكورس المستخدم مش بيتم حذفه — أرشف دروسه أو عطّل مجموعاته.",
     en: "Cannot delete the course: it is referenced by {p1} group(s), {p2} curriculum part(s) and {p3} mock exam(s). A course in use is never deleted — archive its lessons or deactivate its groups instead.",
   },
+
+  // =======================================================================
+  // Post-launch — Teacher → Student notes (parent visibility)
+  // =======================================================================
+  "api.299": {
+    ar: "الطالب ده غير متاح",
+    en: "This student is not available",
+  },
+  "api.300": {
+    ar: "التعليق لازم يكون بين 3 و2000 حرف",
+    en: "The note must be between 3 and 2000 characters",
+  },
+  "api.301": {
+    ar: "تعليق جديد من المعلم",
+    en: "New comment from the teacher",
+  },
+  "api.302": {
+    ar: "{p1} ضاف تعليق جديد على متابعة {p2}. شوفه من لوحة المتابعة.",
+    en: "{p1} added a new note about {p2}. Read it from your dashboard.",
+  },
+
+  // ---------------- Post-launch: teacher notes UI ----------------
+  "teacher.205": { ar: "تعليقات الطلاب", en: "Student notes" },
+  "teacher.206": {
+    ar: "اتابع طالب بتعليق (تقييم / واجب / حضور). ولي أمر الطالب هيستلم إشعار.",
+    en: "Leave an observation about a student (academic / homework / attendance). The student's parent gets a notification.",
+  },
+  "teacher.207": { ar: "اكتب تعليقك…", en: "Write your note…" },
+  "teacher.208": { ar: "إرسال التعليق", en: "Send note" },
+  "teacher.209": { ar: "مفيش تعليقات لسه", en: "No notes yet" },
+  "teacher.210": {
+    ar: "اتضاف التعليق واتنبه ولي الأمر",
+    en: "Note added and the parent was notified",
+  },
+  "teacher.211": { ar: "مش اتضاف التعليق. حاول تاني.", en: "The note was not saved. Try again." },
+  "teacher.212": { ar: "تعليقات", en: "Notes" },
+  "teacher.213": { ar: "إظهار السجل", en: "Show history" },
+  "teacher.214": {
+    ar: "التعليقات بتتسجل باسمك وبتظهر لولي الأمر — مش ممكن تتحذف، فراجع قدام ما ترسل.",
+    en: "Notes are attributed to you and visible to the parent — they cannot be deleted, so review before sending.",
+  },
+
+  // ---------------- Post-launch: plan management (admin + pricing) ----
+  "plan.001": { ar: "خطة جديدة", en: "New plan" },
+  "plan.002": { ar: "تعديل الخطة", en: "Edit plan" },
+  "plan.003": { ar: "اسم الخطة (إنجليزي)", en: "Plan name (English)" },
+  "plan.004": { ar: "اسم الخطة (عربي)", en: "Plan name (Arabic)" },
+  "plan.005": { ar: "السعر (جنيه)", en: "Price (EGP)" },
+  "plan.006": { ar: "المدة (شهور)", en: "Duration (months)" },
+  "plan.007": { ar: "الوصف", en: "Description" },
+  "plan.008": { ar: "عرض ترويجي", en: "Promo plan" },
+  "plan.009": { ar: "متاحة (مفتوحة للبيع)", en: "Active (open for sale)" },
+  "plan.010": { ar: "اتضافت الخطة", en: "Plan created" },
+  "plan.011": { ar: "اتحدثت الخطة", en: "Plan updated" },
+  "plan.012": { ar: "حذف الخطة", en: "Delete plan" },
+  "plan.013": {
+    ar: "تحذف الخطة نهائياً؟ الإجراء ده مش بيتراجع.",
+    en: "Permanently delete this plan? This cannot be undone.",
+  },
+  "plan.014": {
+    ar: "الخطة دي مش ممكن تتحذف — ليها اشتراكات أو مدفوعات. عطّلها بدل الحذف.",
+    en: "This plan cannot be deleted — it has subscriptions or payments. Deactivate it instead.",
+  },
+  "plan.015": { ar: "اشتراكات نشطة", en: "Active subscriptions" },
+  "plan.016": { ar: "سجل اشتراكات", en: "Subscription history" },
+  "plan.017": { ar: "مرجعيات مدفوعات", en: "Payment references" },
+  "plan.018": { ar: "إلغاء", en: "Cancel" },
+  "plan.019": { ar: "حذف", en: "Delete" },
+  "plan.020": { ar: "حفظ", en: "Save" },
+  "plan.021": { ar: "إنشاء", en: "Create" },
+  "plan.022": {
+    ar: "الخطة اللي مش فيها أي اشتراكات أو مدفوعات ممكن تتحذف. اللي ليها مراجع مالية يتعطل بيعها — مش بتتحذف.",
+    en: "A plan with zero subscriptions and payments can be deleted. Referenced plans are deactivated instead — never deleted.",
+  },
+  "plan.023": { ar: "غير متاحة حاليًا", en: "Currently unavailable" },
+  "plan.024": { ar: "نشطة", en: "Active" },
+  "plan.025": { ar: "مغلقة", en: "Closed" },
+  "plan.026": { ar: "مش اتحفظت الخطة", en: "The plan was not saved" },
+  "plan.027": { ar: "مش اتحذفت الخطة", en: "The plan was not deleted" },
+  "plan.028": { ar: "اسم الخطة مطلوب", en: "A plan name is required" },
+  "plan.029": {
+    ar: "المدة لازم تكون شهر واحد على الأقل",
+    en: "Duration must be at least one month",
+  },
+  "plan.030": { ar: "السعر غير صالح", en: "Invalid price" },
+  "plan.031": {
+    ar: "مش متاحة — الخطة دي اتقفلت من البيع. لو محتاجها كلم الدعم.",
+    en: "Unavailable — this plan is closed for sale. Contact support if you need it.",
+  },
+  "plan.032": { ar: "شهر", en: "months" },
+  "plan.033": { ar: "جنيه", en: "EGP" },
+
+  // ---------------- Post-launch: footer contact section ----------------
+  "foot.001": { ar: "دعم تقني", en: "Technical Support" },
+  "foot.002": { ar: "دعم المعلمين", en: "Teacher Support" },
+  "foot.003": { ar: "دعم الاشتراكات", en: "Subscription Support" },
 
   // =======================================================================
   // Phase 25 PR3 — PAYMENT EXPERIENCE / UI
