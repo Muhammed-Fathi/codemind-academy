@@ -58,6 +58,7 @@ import type {
   PrivateFileStat,
 } from "./media";
 import { resolveStorageReadRange } from "./media";
+import { resolveDirectUploadOrigin } from "./r2-upload-origin";
 
 /**
  * Minimal structural surface of an S3 client. The real `S3Client` satisfies
@@ -450,6 +451,8 @@ export type R2StorageConfig = {
   region: string;
   /** Full S3 API endpoint (defaults to the R2 endpoint for the account). */
   endpoint: string;
+  /** Exact virtual-hosted upload origin (shared contract). */
+  uploadOrigin?: string;
 };
 
 /** Variables that MUST be present (and non-empty) for the s3 backend. */
@@ -489,6 +492,12 @@ export function resolveR2Config(env: NodeJS.ProcessEnv = process.env): R2Storage
     bucket: String(env.R2_BUCKET).trim(),
     region: String(env.R2_REGION ?? "").trim() || "auto",
     endpoint,
+    uploadOrigin: resolveDirectUploadOrigin({
+      MEDIA_BACKEND: "s3",
+      R2_BUCKET: String(env.R2_BUCKET).trim(),
+      R2_ACCOUNT_ID: accountId,
+      R2_S3_ENDPOINT: endpoint,
+    }).origin ?? undefined,
   };
 }
 
