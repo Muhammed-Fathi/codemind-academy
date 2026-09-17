@@ -1,4 +1,5 @@
 import { getServerT } from "@/lib/i18n-server";
+import type { Prisma } from "@prisma/client";
 // CodeMind Academy — Mock Exam API
 // Generates randomized practice exams from Question Bank.
 import { NextRequest } from "next/server";
@@ -7,15 +8,22 @@ import { db } from "@/lib/db";
 import { normalizeSchoolType, questionBankFilter } from "@/lib/school-type";
 import { getEnrollment } from "@/lib/enrollment";
 import { LESSON_STUDENT_STATUS_FILTER } from "@/lib/session-lifecycle";
-
-function shuffle<T>(arr: T[]): T[] {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
+import {
+  applyFrozenPaperOrder,
+  dedupeById,
+  encodeFrozenPaper,
+  mockExamAttemptIndex,
+  mockExamPaperSeed,
+  mockExamRandomExamScopeWhere,
+  mockExamRandomScopeWhere,
+  mockExamSampleSeed,
+  pickFrozenAttemptRow,
+  readFrozenPaper,
+  selectMockExamQuestions,
+  stableOptionOrder,
+  type FrozenMockExamPaper,
+} from "@/lib/mock-exam-pool";
+import { randomUUID } from "crypto";
 
 const EXAM_TYPES = ["UNIT", "MONTHLY", "MOCK", "FINAL"] as const;
 const MAX_EXAM_QUESTIONS = 100;
@@ -33,6 +41,33 @@ function normalizeDifficulty(value: unknown): string {
   return value === "EASY" || value === "MEDIUM" || value === "HARD"
     ? value
     : "mixed";
+}
+
+/**
+ * One row per question id, first occurrence wins. A crafted payload that
+ * repeats a question must not turn into two graded rows — an attempt is a
+ * set of questions, never a multiset. Rows without a usable string id are
+ * passed through untouched: they grade as unknown (0), exactly like before.
+ */
+function dedupeSubmittedAnswers<
+  T extends { questionId?: unknown }
+>(answers: readonly T[]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const a of answers) {
+    const id =
+      a && typeof a.questionId === "string" && a.questionId.length > 0
+        ? a.questionId
+        : null;
+    if (!id) {
+      out.push(a);
+      continue;
+    }
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push(a);
+  }
+  return out;
 }
 
 // GET /api/exams/mock?count=10&difficulty=EASY|MEDIUM|HARD|mixed&examType=MOCK|UNIT|MONTHLY|FINAL
@@ -85,7 +120,12 @@ export async function GET(req: NextRequest) {
 
   // Bank isolation: only questions tagged with the student's school type, or
   // explicitly shared (schoolType = null), can ever be selected.
-  const bankFilter = questionBankFilter(studentSchoolType);
+  const bankFilter: Prisma.QuestionWhereInput =
+    questionBankFilter(studentSchoolType);
+  // Same bank rule for the legacy table — typed for its own model so the two
+  // `findMany` calls below compose strictly typed `AND` arrays.
+  const examBankFilter: Prisma.ExamQuestionWhereInput =
+    questionBankFilter(studentSchoolType);
 
   // Get quiz questions from lessons in the course — BOTH chains: canonical
   // unit-linked lessons and legacy topic-linked lessons. Phase 5 minimal
@@ -112,10 +152,48 @@ export async function GET(req: NextRequest) {
   });
   const lessonIds = lessons.map((l) => l.id);
 
-  // FIXED exams use their pinned set; RANDOM exams sample the matching bank.
+  // ---------------------------------------------------------------------
+  // RESUME OR START: the frozen paper of a published exam
+  // ---------------------------------------------------------------------
+  // A published exam's attempt is opened HERE, on the first GET, so the
+  // selected question ids can be frozen into the attempt row: a refresh, a
+  // second tab, or coming back later replays exactly the same paper even if
+  // the Admin edits the Question Bank in between. The row stays OPEN
+  // (`finishedAt = NULL`) until the student submits, and is NOT counted as an
+  // attempt anywhere — every count in the platform (the student's list, the
+  // parent dashboard, the retry index below) only ever looks at FINISHED rows.
+  // Free practice (no `mockExamId`) writes no row at all: it is not an exam
+  // attempt, and it keeps the previous read-only behaviour.
+  const openAttempt = mockExam
+    ? await db.examAttempt.findFirst({
+        where: {
+          studentId: student.id,
+          mockExamId: mockExam.id,
+          finishedAt: null,
+        },
+        // Oldest open paper wins, deterministically: two concurrent starts can
+        // at worst leave an extra open row behind (no unique constraint can be
+        // added to this table by an additive migration), and every later read
+        // resolves to the same one instead of alternating between them.
+        orderBy: { startedAt: "asc" },
+        select: { id: true, answers: true },
+      })
+    : null;
+  const frozen = readFrozenPaper(openAttempt?.answers);
+
+  // ---------------------------------------------------------------------
+  // POOL SCOPE (src/lib/mock-exam-pool.ts)
+  // ---------------------------------------------------------------------
+  // FIXED exams resolve their pinned ids; RANDOM exams draw from the exam's
+  // course pool — the questions of a student-visible lesson of that course —
+  // PLUS the free Question Bank rows the Admin attached to THIS exam. A manual
+  // question is therefore eligible for exactly the exams it was attached to,
+  // never for every course of the bank.
+
   const isFixedExam = !!mockExam && mockExam.selectionMode === "FIXED";
+  // A resumed paper needs no pin read: the frozen ids ARE the paper.
   const pinned =
-    mockExam && isFixedExam
+    mockExam && isFixedExam && !frozen
       ? await db.mockExamQuestion.findMany({
           where: { mockExamId: mockExam.id },
           orderBy: { order: "asc" },
@@ -123,30 +201,57 @@ export async function GET(req: NextRequest) {
         })
       : null;
 
+  // NOTE: the `where` stays an INLINE ternary of object literals. Prisma
+  // infers the result payload (including `include`) from the argument literal;
+  // a computed union such as `a ?? b` makes it fall back to the bare model and
+  // the `include` silently disappears from the result type.
+  const pinnedQuestionIds = pinned
+    ? (pinned.map((p) => p.questionId).filter(Boolean) as string[])
+    : [];
+  const pinnedExamQuestionIds = pinned
+    ? (pinned.map((p) => p.examQuestionId).filter(Boolean) as string[])
+    : [];
   const quizQuestions = await db.question.findMany({
-    where: pinned
-      ? {
-          id: { in: pinned.map((p) => p.questionId).filter(Boolean) as string[] },
-          ...bankFilter,
-        }
-      : { quiz: { lessonId: { in: lessonIds } }, ...bankFilter },
+    // A frozen paper is read back BY ID, deliberately WITHOUT the bank filter:
+    // the ids were bank-validated the moment the paper was drawn, and the
+    // whole point of the freeze is that a later bank edit (a question moved to
+    // another school's bank, a lesson lifecycle change) cannot alter the paper
+    // a student has already started. Only a row that no longer exists at all
+    // (deleted) drops out — and that is reported as a shortfall.
+    where: frozen
+      ? { id: { in: frozen.ids } }
+      : pinned
+        ? { AND: [bankFilter, { id: { in: pinnedQuestionIds } }] }
+        : {
+            AND: [
+              bankFilter,
+              mockExamRandomScopeWhere(lessonIds, mockExam?.id ?? null),
+            ],
+          },
     include: { quiz: { select: { lesson: { select: { titleAr: true, title: true } } } } },
   });
 
-  // Get exam questions (same bank isolation applies)
+  // Get exam questions (same bank isolation and, for RANDOM exams, the same
+  // scope rule applied to the legacy table).
   const examQuestions = await db.examQuestion.findMany({
-    where: pinned
-      ? {
-          id: {
-            in: pinned.map((p) => p.examQuestionId).filter(Boolean) as string[],
+    // Same frozen-paper rule as above (the legacy table has no answer key
+    // difference: the ids ARE the paper).
+    where: frozen
+      ? { id: { in: frozen.ids } }
+      : pinned
+        ? { AND: [examBankFilter, { id: { in: pinnedExamQuestionIds } }] }
+        : {
+            AND: [
+              examBankFilter,
+              mockExamRandomExamScopeWhere(lessonIds, mockExam?.id ?? null),
+            ],
           },
-          ...bankFilter,
-        }
-      : { lessonId: { in: lessonIds }, ...bankFilter },
     include: { lesson: { select: { titleAr: true, title: true } } },
   });
 
-  // Combine all questions.
+  // Combine all questions. Duplicate ids are impossible across the two tables
+  // (cuid primary keys) but the pool is deduped anyway, so one attempt can
+  // never contain the same question twice whatever the source looks like.
   //
   // NOTE: this draft carries NO answer key. The stored `answer` / explanation
   // stay on the server; the client receives prompts + shuffled options only,
@@ -163,8 +268,9 @@ export async function GET(req: NextRequest) {
     marks: number;
     source: string;
     lessonTitle: string;
+    createdAt: Date | null;
   };
-  const allQs: Q[] = [
+  const allQs: Q[] = dedupeById([
     ...quizQuestions.map((q) => ({
       id: q.id,
       type: q.type,
@@ -175,6 +281,7 @@ export async function GET(req: NextRequest) {
       marks: q.marks,
       source: "quiz",
       lessonTitle: q.quiz?.lesson?.titleAr || q.quiz?.lesson?.title || "",
+      createdAt: q.createdAt ?? null,
     })),
     ...examQuestions.map((q) => ({
       id: q.id,
@@ -186,18 +293,40 @@ export async function GET(req: NextRequest) {
       marks: q.marks,
       source: "exam",
       lessonTitle: q.lesson?.titleAr || q.lesson?.title || "",
+      // ExamQuestion has no createdAt column; null sorts it before quiz rows
+      // and the id tie-break keeps the order stable.
+      createdAt: null,
     })),
-  ];
+  ]);
 
   if (allQs.length === 0) {
+    // A published Admin exam whose pool is empty is a configuration problem the
+    // student cannot fix, so it gets its own explicit message (and the Admin
+    // list flags it). Free practice keeps the original wording. No attempt row
+    // is opened for an exam that cannot serve a single question.
     return ok({
       exam: null,
-      message: tApi("api.097"),
+      message: mockExam ? tApi("api.310") : tApi("api.097"),
+      selectionMode: mockExam ? mockExam.selectionMode : "RANDOM",
+      requestedCount: count,
+      eligiblePool: 0,
+      shortfall: null,
     });
   }
 
+  // The seed on the paper: it selects the questions of a NEW paper and fixes
+  // the served option order of EVERY paper (a resumed one replays its stored
+  // seed, so a refresh cannot reshuffle the options either).
+  let paperSeed: string;
   let selected: Q[];
-  if (pinned) {
+  if (frozen) {
+    // FROZEN contract: exactly the ids stored at start, in the stored order.
+    // Rows the bank can no longer serve (deleted, or moved to another school's
+    // bank) drop out and are reported through `shortfall` below — the set is
+    // never extended or re-drawn.
+    selected = applyFrozenPaperOrder(allQs, frozen.ids);
+    paperSeed = frozen.seed;
+  } else if (pinned) {
     // FIXED contract: serve the pinned set AS-IS — every pinned in-bank
     // question, in pinned `order`. No difficulty filter, no shuffle, no
     // slicing: re-requesting the same exam yields the same questions in the
@@ -210,33 +339,53 @@ export async function GET(req: NextRequest) {
     selected = allQs
       .filter((q) => orderOf.has(q.id))
       .sort((a, b) => (orderOf.get(a.id) as number) - (orderOf.get(b.id) as number));
+    paperSeed = mockExamPaperSeed({
+      studentId: student.id,
+      examId: mockExam?.id ?? "practice",
+      nonce: randomUUID(),
+    });
   } else {
-    // RANDOM contract: filter by difficulty if specified, then shuffle the
-    // pool server-side and serve up to `count`. Every request re-samples —
-    // there is no server-side in-progress state; the attempt is created
-    // atomically at submit (POST), so a refresh before submitting simply
-    // drafts a fresh set.
+    // RANDOM contract: filter by difficulty if specified, then take the
+    // attempt-stable sample of the pool and serve up to `count`.
+    //
+    // The sample is derived from (student, exam, attempt index) through a
+    // server-secret HMAC (see src/lib/mock-exam-pool.ts), so the initial draw
+    // is unpredictable to the client and the next attempt draws a different
+    // paper. It is ALSO stored on the exam attempt as soon as it is drawn
+    // (below), which is what makes it final.
     let pool = allQs;
     if (difficulty !== "mixed") {
       pool = allQs.filter((q) => q.difficulty === difficulty);
       if (pool.length === 0) pool = allQs; // fallback
     }
 
-    // Shuffle + pick N
-    selected = shuffle(pool).slice(0, Math.min(count, pool.length));
+    const attemptIndex = await mockExamAttemptIndex(
+      student.id,
+      mockExam ? mockExam.id : null
+    );
+    paperSeed = mockExamSampleSeed({
+      studentId: student.id,
+      courseId,
+      examId: mockExam ? mockExam.id : null,
+      attemptIndex,
+      count,
+      difficulty,
+    });
+    selected = selectMockExamQuestions(pool, count, paperSeed);
   }
 
-  // Shuffle options within each question (MCQ only). Positional information
-  // is meaningless to the grader — the client answers with the selected
-  // option TEXT and POST re-grades against the stored key.
+  // Option order is PRESENTATION only, but it is derived from the paper seed
+  // (server secret + the question id) instead of `Math.random`, so the same
+  // paper always renders its options in the same order: position carries no
+  // meaning to the grader, which compares the selected option TEXT.
   const questions = selected.map((q) => {
     const opts: string[] = JSON.parse(q.options);
-    const optsAr = q.type === "MCQ" ? shuffle(opts) : opts;
+    const optsServed = q.type === "MCQ" ? stableOptionOrder(opts, paperSeed, q.id) : opts;
     return {
       id: q.id,
       type: q.type,
       prompt: q.promptAr || q.prompt,
-      options: optsAr,
+      options: optsServed,
       difficulty: q.difficulty,
       marks: q.marks,
       source: q.source,
@@ -247,6 +396,73 @@ export async function GET(req: NextRequest) {
   const totalMarks = questions.reduce((s, q) => s + q.marks, 0);
   const durationMin =
     mockExam?.durationMin ?? Math.max(10, Math.ceil(questions.length * 1.5));
+  // A resumed paper is measured against the count IT was drawn for: the Admin
+  // editing the exam's configured count mid-attempt must not turn a complete
+  // paper into a "short" one (or the reverse).
+  const requestedCount = frozen ? frozen.requested : count;
+  // A published exam whose pool shrank below its configured count serves what
+  // IS eligible and says so, instead of silently pretending it is complete.
+  // A frozen paper reports the questions the bank can still serve from it.
+  const shortfall =
+    questions.length < requestedCount
+      ? {
+          requested: requestedCount,
+          served: questions.length,
+          message: tApi("api.311", { p1: requestedCount, p2: questions.length }),
+        }
+      : null;
+
+  // ---------------------------------------------------------------------
+  // FREEZE (published exams only)
+  // ---------------------------------------------------------------------
+  // Written AFTER the payload is built, so only a paper that is really being
+  // served is stored — an empty or unservable exam never opens an attempt. A
+  // resumed paper needs no write: it is already stored, and re-freezing would
+  // be the one way a paper could change underfoot.
+  let attemptId = openAttempt?.id ?? null;
+  if (mockExam && !frozen) {
+    const paper: FrozenMockExamPaper = {
+      v: 1,
+      kind: "mock-exam-paper",
+      examId: mockExam.id,
+      selectionMode: isFixedExam ? "FIXED" : "RANDOM",
+      difficulty,
+      requested: count,
+      ids: questions.map((q) => q.id),
+      seed: paperSeed,
+      startedAt: new Date().toISOString(),
+    };
+    const data = {
+      questionCount: questions.length,
+      durationMin,
+      answers: encodeFrozenPaper(paper),
+    };
+    if (openAttempt) {
+      // An open row whose payload was not a readable paper (only possible for
+      // a row written before this contract existed): reuse it instead of
+      // littering a second open attempt for the same exam.
+      await db.examAttempt.update({ where: { id: openAttempt.id }, data });
+    } else {
+      const row = await db.examAttempt.create({
+        data: {
+          studentId: student.id,
+          mockExamId: mockExam.id,
+          schoolType: studentSchoolType,
+          examType,
+          score: 0,
+          totalMarks: 0,
+          percentage: 0,
+          passed: false,
+          // Explicit SQL NULL: the paper is OPEN until the student submits.
+          // (`finishedAt` is the only status column this table has, so every
+          // count filters on it — an open paper is not an attempt.)
+          finishedAt: null,
+          ...data,
+        },
+      });
+      attemptId = row.id;
+    }
+  }
 
   return ok({
     exam: {
@@ -255,11 +471,19 @@ export async function GET(req: NextRequest) {
       titleAr: mockExam ? mockExam.titleAr : null,
       schoolType: studentSchoolType,
       examType,
+      selectionMode: mockExam ? mockExam.selectionMode : "RANDOM",
+      requestedCount,
+      eligiblePool: allQs.length,
       questionCount: questions.length,
       durationMin,
       passMark: mockExam?.passMark ?? 60,
       totalMarks,
       questions,
+      shortfall,
+      /** The open attempt this paper belongs to (null for free practice). */
+      attemptId,
+      /** True when the paper was replayed from storage, not drawn afresh. */
+      resumed: !!frozen,
     },
   });
 }
@@ -272,14 +496,16 @@ export async function POST(req: NextRequest) {
   if (user.role !== "STUDENT") return err(tApi("api.094"), 403);
 
   const body = await req.json().catch(() => ({}));
-  const { examType: rawExamType, durationMin: rawDurationMin, answers, mockExamId } = body as {
+  const { examType: rawExamType, durationMin: rawDurationMin, answers: rawAnswers, mockExamId } = body as {
     examType?: string;
     durationMin?: number;
     mockExamId?: string | null;
     answers: { questionId: string; selected: string; isCorrect: boolean; marks: number }[];
   };
-  if (!answers || !Array.isArray(answers)) return err("Answers required", 400);
-  if (answers.length > MAX_SUBMITTED_ANSWERS) return err("Too many answers", 400);
+  if (!rawAnswers || !Array.isArray(rawAnswers)) return err("Answers required", 400);
+  if (rawAnswers.length > MAX_SUBMITTED_ANSWERS) return err("Too many answers", 400);
+  // One row per question id, first occurrence wins (see helper above).
+  const answers = dedupeSubmittedAnswers(rawAnswers);
 
   const student = await db.student.findUnique({ where: { userId: user.id } });
   if (!student) return err(tApi("api.095"), 404);
@@ -418,23 +644,49 @@ export async function POST(req: NextRequest) {
   const percentage = totalMarks > 0 ? Math.round((score / totalMarks) * 100) : 0;
   const passed = percentage >= passMark;
 
-  const attempt = await db.examAttempt.create({
-    data: {
-      studentId: student.id,
-      mockExamId: linkedExam?.id ?? null,
-      schoolType: studentSchoolType,
-      examType: normalizeExamType(rawExamType),
-      questionCount: graded.length,
-      durationMin,
-      score,
-      totalMarks,
-      percentage,
-      passed,
-      // Immutable snapshot: results survive later question edits/deletions.
-      answers: JSON.stringify(graded),
-      finishedAt: new Date(),
-    },
-  });
+  const result = {
+    studentId: student.id,
+    mockExamId: linkedExam?.id ?? null,
+    schoolType: studentSchoolType,
+    examType: normalizeExamType(rawExamType),
+    questionCount: graded.length,
+    durationMin,
+    score,
+    totalMarks,
+    percentage,
+    passed,
+    // Immutable snapshot: results survive later question edits/deletions.
+    answers: JSON.stringify(graded),
+    finishedAt: new Date(),
+  };
+
+  // If this submission answers a FROZEN paper (the student started the exam,
+  // so an open attempt holds its ids), the submission FINALIZES that row: the
+  // attempt keeps the identity and `startedAt` it was given when the paper was
+  // frozen, and only gains its result. A submission that never started an exam
+  // attempt (an API client, or free practice) creates a finished row exactly
+  // as before.
+  const openRows = linkedExam
+    ? await db.examAttempt.findMany({
+        where: {
+          studentId: student.id,
+          mockExamId: linkedExam.id,
+          finishedAt: null,
+        },
+        // Oldest open paper first, so `pickFrozenAttemptRow`'s tie-break is
+        // deterministic even if a concurrent double-start left two rows.
+        orderBy: { startedAt: "asc" },
+        select: { id: true, answers: true },
+      })
+    : [];
+  const target = pickFrozenAttemptRow(
+    openRows,
+    graded.map((g) => g.questionId)
+  );
+
+  const attempt = target
+    ? await db.examAttempt.update({ where: { id: target }, data: result })
+    : await db.examAttempt.create({ data: result });
 
   return ok({ attempt: { ...attempt, percentage, passed, score, totalMarks }, review });
 }

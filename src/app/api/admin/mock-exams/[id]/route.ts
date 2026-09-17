@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { ok, err, requireRole } from "@/lib/api";
 import { normalizeSchoolType, questionBankFilter } from "@/lib/school-type";
 import { getServerT } from "@/lib/i18n-server";
+import { countMockExamEligiblePool } from "@/lib/mock-exam-pool";
 
 export async function PATCH(
   req: NextRequest,
@@ -59,15 +60,37 @@ export async function PATCH(
   }
 
   // Do not allow publishing an exam its bank cannot satisfy. Both question
-  // tables feed mock exams, so both count toward availability.
+  // tables feed mock exams, so both count toward availability — and the count
+  // uses the SAME scope the student attempt path serves from (bank-only
+  // manual questions plus a student-visible lesson on the exam's course),
+  // otherwise a publishable exam can still be unservable.
   if (data.isPublished === true) {
     const type = (data.schoolType as any) || exam.schoolType;
     const count = (data.questionCount as number) ?? exam.questionCount;
-    const [availableQ, availableEQ] = await Promise.all([
-      db.question.count({ where: questionBankFilter(type) }),
-      db.examQuestion.count({ where: questionBankFilter(type) }),
-    ]);
-    if (availableQ + availableEQ < count) return err(tApi("api.213"), 400);
+    const course = (data.courseId as string | null | undefined) ?? exam.courseId ?? null;
+    if (exam.selectionMode === "FIXED") {
+      // A FIXED exam is served from its pins, so the pins are what must cover
+      // the configured count — not the pool.
+      const pins = await db.mockExamQuestion.count({ where: { mockExamId: id } });
+      if (pins < count) return err(tApi("api.312", { p1: count, p2: pins }), 400);
+    } else {
+      // RANDOM: the scope, the difficulty and the pool all come from the same
+      // shared contract the student path and the create guard use.
+      const pool = await countMockExamEligiblePool({
+        schoolType: type,
+        courseId: course,
+        difficulty: exam.difficulty,
+        // This exam's own attachments are part of its pool: without the id the
+        // guard would refuse an exam whose servable questions come from the
+        // manual bank rows it attached.
+        mockExamId: id,
+      });
+      if (pool.servable < count)
+        return err(
+          tApi("api.213", { p1: count, p2: pool.servable, p3: pool.bankOnly }),
+          400
+        );
+    }
   }
 
   const updated = await db.mockExam.update({ where: { id }, data });

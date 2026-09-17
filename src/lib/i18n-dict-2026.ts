@@ -26,7 +26,10 @@ export const DICT_2026: Record<string, DictEntry> = {
   "api.210": { ar: "نوع المدرسة مطلوب (عربي أو لغات)", en: "School type is required (Arabic or Language)" },
   "api.211": { ar: "الامتحان غير موجود", en: "Exam not found" },
   "api.212": { ar: "الامتحان ده مش لنوع مدرستك", en: "This exam is not for your school type" },
-  "api.213": { ar: "مفيش أسئلة كفاية في بنك الأسئلة ده", en: "Not enough questions in this question bank" },
+  "api.213": {
+    ar: "مفيش أسئلة كفاية للامتحان ده: مطلوب {p1}، المتاح {p2} (منهم {p3} أسئلة من البنك الحر مرفوعة على الامتحان ده).",
+    en: "Not enough questions for this exam: {p1} requested, {p2} eligible ({p3} of them are free-bank questions attached to this exam).",
+  },
   "api.214": { ar: "الفيديو غير موجود", en: "Video not found" },
   "api.215": { ar: "الملف كبير جداً", en: "File is too large" },
   "api.216": { ar: "نوع الملف غير مسموح", en: "File type is not allowed" },
@@ -1531,5 +1534,134 @@ export const DICT_2026: Record<string, DictEntry> = {
   "course.227": {
     ar: "الفيديو ده بيشتغل من مصدر خارجي، فمش بيتسجل منه نسبة مشاهدة.",
     en: "This video plays from an external source, so watch progress is not tracked for it.",
+  },
+
+  // ---------- Mock Exam: RANDOM/FIXED pool & manual Question Bank ----------
+  // A published exam whose eligible pool is empty is a configuration problem
+  // the student cannot fix, so it gets its own message (api.097 stays for the
+  // free-practice flow).
+  "api.310": {
+    ar: "الامتحان ده مفيش فيه أسئلة مؤهلة من بنك الأسئلة حاليًا. كلّم الأدمن يضيف أسئلة للبنك.",
+    en: "This exam has no eligible questions in its question bank right now. Ask the admin to add questions.",
+  },
+  "api.311": {
+    ar: "اتوفّر لك {p1} سؤال من أصل {p2} — البنك مش فيه أسئلة كفاية للامتحان ده حاليًا.",
+    en: "You received {p1} of {p2} questions — this exam's bank does not have enough eligible questions right now.",
+  },
+  "api.312": {
+    ar: "امتحان FIXED: عدد الأسئلة المطلوب {p1} أكبر من عدد الأسئلة المثبّتة {p2}.",
+    en: "FIXED exam: the requested count {p1} is larger than the {p2} pinned questions.",
+  },
+  "api.307": {
+    ar: "اختار أسئلة من غير تكرار — قائمة الأسئلة المختارة فاضية أو فيها أسئلة مكررة.",
+    en: "Select questions without duplicates — the selection is empty or contains repeated questions.",
+  },
+  "api.308": {
+    ar: "عدد الأسئلة المطلوب مش مطابق لعدد الأسئلة اللي اخترتها.",
+    en: "The requested question count does not match the number of questions you selected.",
+  },
+  "api.309": {
+    ar: "فيه أسئلة مختارة مش موجودة في بنك الأسئلة المختار.",
+    en: "Some selected questions are not in the chosen question bank.",
+  },
+
+  // Admin — mock exam creation dialog (mode-specific guidance + pool count).
+  "admin.539": {
+    ar: "طريقة اختيار الأسئلة",
+    en: "Question selection",
+  },
+  "admin.540": {
+    ar: "FIXED: الأسئلة اللي بتختارها بتتثبت على الامتحان، وكل طالب بياخد نفس الأسئلة بنفس الترتيب.",
+    en: "FIXED: the questions you choose are pinned to the exam; every student gets the same set in the same order.",
+  },
+  "admin.541": {
+    ar: "RANDOM: النظام بيختار أسئلة كل محاولة من أسئلة الكورس + الأسئلة اليدوية اللي ترفعها على الامتحان ده بالاسم. الاختيار بيتثبّت أول ما الطالب يبدأ، ومش بيتغير أثناء المحاولة.",
+    en: "RANDOM: each attempt is sampled from the course's questions PLUS the manual questions you attach to THIS exam by name. The set is frozen when the student starts and never changes mid-attempt.",
+  },
+  "admin.542": {
+    ar: "أسئلة مؤهلة للامتحان ده",
+    en: "Eligible questions for this exam",
+  },
+  "admin.543": {
+    ar: "البنك مش فيه أسئلة مؤهلة كفاية للعدد المطلوب. زوّد أسئلة في بنك الأسئلة أو قلّل عدد الأسئلة.",
+    en: "The bank does not have enough eligible questions for this count. Add questions to the bank or lower the count.",
+  },
+  "admin.544": {
+    ar: "اختار الأسئلة من بنك الأسئلة",
+    en: "Select questions from the question bank",
+  },
+  "admin.545": {
+    ar: "الأسئلة اللي بتضيفها من بنك الأسئلة بتتحفظ من غير ربط بدرس، وعشان كده لازم تربطها بالامتحان: اختارها هنا (RANDOM) أو ثبّتها بالاسم (FIXED). السؤال اليدوي مابيدخلش امتحان تاني من غير ما تختاره بنفسك.",
+    en: "Questions added from the Question Bank are stored without a lesson link, so you bind them to the exam: attach them here (RANDOM) or pin them by name (FIXED). A manual question never enters another exam unless you choose it there too.",
+  },
+  "admin.546": {
+    ar: "الـAI Generator مش مطلوب. أي سؤال صالح في بنك الأسئلة يقدر يدخل الامتحان.",
+    en: "The AI generator is NOT required. Any valid question in the Question Bank can enter an exam.",
+  },
+  "admin.547": {
+    ar: "متاح: {p1} سؤال",
+    en: "Available: {p1} questions",
+  },
+  "admin.548": {
+    ar: "مختار: {p1} سؤال",
+    en: "Selected: {p1} questions",
+  },
+  "admin.549": {
+    ar: "امتحان FIXED لازم يكون فيه سؤال واحد على الأقل متثبّت.",
+    en: "A FIXED exam needs at least one pinned question.",
+  },
+  "admin.550": {
+    ar: "البنك فيه {p1} سؤال مؤهل بس — قلّل عدد الأسئلة المطلوب.",
+    en: "The bank only has {p1} eligible questions — lower the requested count.",
+  },
+  "admin.551": {
+    ar: "أسئلة الامتحان الحالي",
+    en: "Current exam questions",
+  },
+  "admin.552": {
+    ar: "الأسئلة المتاحة أقل من المطلوب",
+    en: "Available questions are fewer than requested",
+  },
+  "admin.553": {
+    ar: "أسئلة متاحة للاختيار الثابت (FIXED)",
+    en: "Questions available to pin (FIXED)",
+  },
+  "admin.554": {
+    ar: "إجمالي المؤهل: {p1} · أسئلة من البنك الحر مرتبطة بالامتحان: {p2} · سهل {p3} / متوسط {p4} / صعب {p5}",
+    en: "Total eligible: {p1} · free-bank questions attached to this exam: {p2} · easy {p3} / medium {p4} / hard {p5}",
+  },
+  "admin.555": {
+    ar: "أسئلة يقدر الامتحان يسحب منها بالصعوبة المختارة",
+    en: "Questions the exam can sample at the chosen difficulty",
+  },
+  "admin.556": {
+    ar: "اربط أسئلة يدوية من البنك الحر بالامتحان (اختياري)",
+    en: "Attach manual free-bank questions to this exam (optional)",
+  },
+  "admin.557": {
+    ar: "مفيش أسئلة يدوية في البنك الحر — ضيف أسئلتك من صفحة بنك الأسئلة الأول، وبعدين اربطها بالامتحان من هنا.",
+    en: "No manual free-bank questions yet — add them in the Question Bank first, then attach them to the exam here.",
+  },
+  "admin.558": {
+    ar: "نطاق الامتحان (الكورس)",
+    en: "Exam scope (course)",
+  },
+  "admin.559": {
+    ar: "كل الكورسات (امتحان عام لكل الطلاب)",
+    en: "All courses (a general exam for every student)",
+  },
+  "admin.560": {
+    ar: "أسئلة يدوية مرفوعة على الامتحان",
+    en: "Manual questions attached to the exam",
+  },
+  "admin.561": {
+    ar: "امتحان RANDOM بيسحب من أسئلة الكورس تلقائيًا؛ الأسئلة اللي تربطها هنا بتتضاف ليك فوق دول. اللي مش مربوط مايدخلش الامتحان ده أبدًا.",
+    en: "A RANDOM exam samples the course's questions automatically; the ones you attach here are added on top. Anything you do not attach never enters this exam.",
+  },
+
+  // Student — a RANDOM exam whose pool shrank below its configured count.
+  "student.250": {
+    ar: "اتوفّر لك {p1} سؤال من أصل {p2} — البنك مش فيه أسئلة مؤهلة كفاية للامتحان ده حاليًا.",
+    en: "You received {p1} of {p2} questions — this exam's bank does not have enough eligible questions right now.",
   },
 };

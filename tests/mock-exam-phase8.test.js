@@ -144,7 +144,9 @@ function makeMockDb() {
           // SQL 3-valued `not`: NULL never matches `not <value>` (shared pins
           // survive a bank switch); `not: null` means IS NOT NULL.
           if ("not" in v) {
-            if (v.not === null) return row[k] !== null;
+            // Prisma stores an unset nullable column as NULL; the shim never
+            // materialises schema defaults, so treat `undefined` as NULL too.
+            if (v.not === null) return row[k] !== null && row[k] !== undefined;
             if (row[k] === null || row[k] === undefined) return false;
             return row[k] !== v.not;
           }
@@ -166,7 +168,9 @@ function makeMockDb() {
         if (Array.isArray(rel)) return rel.some((r) => matches(r, v, relTable));
         return matches(rel, v, relTable);
       }
-      return row[k] === v;
+      // `finishedAt: null` must match a created row whose column was never set
+      // (real Prisma persists NULL). Same for any nullable column.
+      return (row[k] === undefined ? null : row[k]) === v;
     });
   }
 
@@ -416,6 +420,9 @@ const examRoute = require(compiled("src/app/api/exams/mock/route.ts"));
 const adminRoute = require(compiled("src/app/api/admin/mock-exams/route.ts"));
 const adminIdRoute = require(compiled("src/app/api/admin/mock-exams/[id]/route.ts"));
 const studentListRoute = require(compiled("src/app/api/students/me/mock-exams/route.ts"));
+const poolLib = require(compiled("src/lib/mock-exam-pool.ts"));
+/** The frozen-paper envelope a started exam stores in `answers`. */
+const frozenPaperOf = (row) => poolLib.readFrozenPaper(row && row.answers);
 
 const getReq = (qs) => ({ url: `http://test.local/api/x?${qs || ""}` });
 const postReq = (body) => ({ json: async () => body });
@@ -794,10 +801,27 @@ async function main() {
       )
     );
     ok(again.body.attempt.id !== firstAttemptId, "second submit creates a NEW attempt (no overwrite)");
-    ok(T.examAttempt.length === examAttemptsBefore + 5, "5 POSTs created exactly 5 ExamAttempt rows");
+    // Round-2 freeze contract: the FIRST GET of a published exam opens a
+    // frozen-paper row (`finishedAt = NULL`) and the matching submit
+    // FINALIZES that row in place instead of creating another. The four
+    // submits that never started a paper create rows exactly as before, so
+    // five submits produce five FINISHED attempts (4 new rows + 1 finalized).
+    const randomRows = T.examAttempt.filter((a) => a.mockExamId === "m-random-ar");
     ok(
-      T.examAttempt.every((a) => a.finishedAt),
-      "every ExamAttempt row is finished (no open server state)"
+      randomRows.filter((a) => a.finishedAt).length === 2,
+      `honest submit finalized the open paper (2 finished attempts on m-random-ar, got ${randomRows.filter((a) => a.finishedAt).length})`
+    );
+    ok(
+      randomRows.every((a) => a.finishedAt),
+      "no open paper is left behind for a submitted exam"
+    );
+    ok(
+      T.examAttempt.length === examAttemptsBefore + 4,
+      `5 POSTs produced 5 finished attempts: 4 new rows + 1 finalized open paper (got ${T.examAttempt.length - examAttemptsBefore})`
+    );
+    ok(
+      T.examAttempt.every((a) => a.finishedAt || frozenPaperOf(a)?.ids.length > 0),
+      "every ExamAttempt row is FINISHED, or an OPEN frozen paper — no other open state exists"
     );
     ok(T.quizAttempt.length === quizAttemptsBefore, "mock submits create NO QuizAttempt");
     ok(T.quizAnswer.length === quizAnswersBefore, "mock submits create NO QuizAnswer");
@@ -906,12 +930,16 @@ async function main() {
   {
     // DELETE detaches attempts (history survives) and removes the definition.
     const attBefore = T.examAttempt.filter((a) => a.mockExamId === "m-random-ar").length;
+    const rowsBeforeDelete = T.examAttempt.length;
     ok(attBefore === 2, "2 attempts linked to m-random-ar before delete");
     const dl = await bodyOf(await adminIdRoute.DELETE(getReq(""), params({ id: "m-random-ar" })));
     ok(dl.status === 200, "DELETE -> 200");
     ok(!T.mockExam.find((e) => e.id === "m-random-ar"), "exam definition removed");
     ok(T.examAttempt.filter((a) => a.mockExamId === "m-random-ar").length === 0, "no dangling links remain");
-    ok(T.examAttempt.length === examAttemptsBefore + 5, "attempt rows themselves survive the delete");
+    ok(
+      T.examAttempt.length === rowsBeforeDelete,
+      "attempt rows themselves survive the delete (no row removed)"
+    );
     const dlMissing = await bodyOf(await adminIdRoute.DELETE(getReq(""), params({ id: "nope" })));
     ok(dlMissing.status === 404, "DELETE unknown exam -> 404");
   }
@@ -927,7 +955,33 @@ async function main() {
     ok(!/explanation\s*[:,}]/.test(getSeg), "GET segment ships no explanation payload key");
     ok(/correctText/.test(postSeg), "POST builds the post-submit review (correctText)");
     ok(!/quizAttempt|quizAnswer|lessonProgress/i.test(examSrc), "mock route never touches session-quiz/progression tables");
-    ok(!/findFirst/.test(examSrc), "mock route holds no open-attempt lookup (submit-atomic design)");
+    // Round-2 freeze contract: a started exam paper is PERSISTED, so a bank
+    // change mid-attempt cannot swap a question. GET opens/resumes the attempt
+    // row and stores the ordered ids; POST finalizes that same row.
+    ok(
+      /finishedAt: null/.test(getSeg),
+      "GET resolves the OPEN persisted paper (finishedAt NULL lookup)"
+    );
+    ok(
+      /encodeFrozenPaper/.test(getSeg),
+      "GET writes the frozen paper (ordered ids + seed) on first serve"
+    );
+    ok(
+      /applyFrozenPaperOrder/.test(getSeg),
+      "GET replays the STORED id order on resume (never re-draws)"
+    );
+    ok(
+      /finishedAt: null/.test(postSeg),
+      "POST looks up the student's open paper in order to finalize it"
+    );
+    ok(
+      /answers: JSON\.stringify\(graded\)/.test(postSeg),
+      "POST overwrites the envelope with the graded snapshot (history contract)"
+    );
+    ok(
+      !/Math\.random\(\)/.test(examSrc),
+      "no Math.random(): the paper and the per-attempt option order are server-seeded"
+    );
     const quizStart = fs.readFileSync(path.join(REPO, "src/app/api/quizzes/[id]/start/route.ts"), "utf8");
     const quizSubmit = fs.readFileSync(path.join(REPO, "src/app/api/quizzes/[id]/submit/route.ts"), "utf8");
     ok(!/examAttempt|mockExam/i.test(quizStart + quizSubmit), "session-quiz routes never touch mock-exam tables");

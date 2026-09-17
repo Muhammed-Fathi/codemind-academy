@@ -306,9 +306,16 @@ section("7. Question bank -> mock exam binding");
     /if \(!schoolType\) return err/.test(admin),
     "creating a mock exam REQUIRES a school type"
   );
+  // The admin guard measures the pool with the SAME contract the student
+  // attempt path serves from (`countMockExamEligiblePool`), and that contract
+  // is the only place the pool's school-type filter lives.
   ok(
-    /questionBankFilter\(schoolType\)/.test(admin),
-    "pool sufficiency is checked against the matching bank"
+    /countMockExamEligiblePool\(\{/.test(admin) && /schoolType,/.test(admin),
+    "pool sufficiency is checked against the matching bank (shared pool contract)"
+  );
+  ok(
+    /questionBankFilter\(schoolType\)/.test(read("src/lib/mock-exam-pool.ts")),
+    "...and that contract filters every pool query by the exam's own school type"
   );
   ok(
     /available < questionCount/.test(admin),
