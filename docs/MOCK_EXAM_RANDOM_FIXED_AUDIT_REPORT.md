@@ -3,8 +3,8 @@
 - **Scope**: Mock Exam question selection — Admin Question Bank (manual and AI-saved
   questions) → FIXED exam → RANDOM exam → candidate pool → attempt start → frozen paper →
   student attempt → submission → retry.
-- **Branch**: `arena/01a0b089-codemind-academy` (base `main`); no PR, no merge, no deploy,
-  no production data touched.
+- **Branch**: `arena/01a0b089-codemind-academy` (base `main`; delivery commit `73608f7`);
+  no PR, no merge, no deploy, no production data touched.
 - **Verdict**: **READY FOR GIT DELIVERY** (round-2 review blockers closed — see
   `## Verdict` at the end).
 
@@ -337,11 +337,18 @@ the pool library).
   All 16 errors inside touched/new files are `TS2694 ... Prisma has no exported member
   'QuestionWhereInput'` — the local generated client is an offline stub
   (`node_modules/.prisma/client/index.d.ts`, 3,989 bytes, contains no model types), because
-  `prisma generate` cannot reach the engine download in this sandbox. The authoritative check
-  is CI, which runs `npx prisma generate && npx tsc --noEmit && npm run build:postgres`
-  (`.github/workflows/migration-providers-postgres.yml`). The remaining 58 errors are
-  pre-existing/environmental in untouched files (parents dashboards 45, teacher/quizzes,
-  session-quiz lib).
+  `prisma generate` cannot reach the engine download in this sandbox. The remaining 58 errors
+  are pre-existing/environmental in untouched files (parents dashboards 45, teacher/quizzes,
+  session-quiz lib). The authoritative check is CI, which runs
+  `npx prisma generate && npx tsc --noEmit && npm run build:postgres`
+  (`.github/workflows/migration-providers-postgres.yml`) — and it **passes**: see the CI line
+  below.
+- **CI on the pushed commit** (`73608f7`, branch `arena/01a0b089-codemind-academy`): **3/3
+  workflows SUCCESS** — *Migration provider architecture gate* (runs `prisma generate`,
+  `tsc --noEmit`, the full PostgreSQL build and the app regressions), *PG17 trusted catalog
+  references* and *Phase 26D PostgreSQL concurrency gate*. So the full-repo type-check with a
+  real generated Prisma client and the production build are verified green in CI, even though
+  the sandbox cannot generate the client locally.
 - **ESLint**: 3 errors in the touched components — 2 `react-hooks/set-state-in-effect` and 1
   `react-hooks/immutability` (in `mock-exam.tsx`, pre-existing `submitExam` hoisting). The
   same 3 errors with the same rules exist at the base commit for those two files (verified by
