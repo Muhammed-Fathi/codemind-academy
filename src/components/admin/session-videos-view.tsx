@@ -24,9 +24,13 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Users, Upload, Link2, Video, Trash2, Loader2, CheckCircle2 } from "lucide-react";
-import { directUpload } from "@/lib/direct-upload";
-import { uploadErrorCodeKey } from "@/lib/upload-error-text";
+import { uploadFailureMessage } from "@/lib/upload-error-text";
 import { normalizeExternalVideoUrl } from "@/lib/video-url";
+import {
+  useMediaUpload,
+  type MediaUploadResult,
+} from "@/hooks/use-media-upload";
+import { UploadProgressPanel } from "@/components/admin/upload-progress-panel";
 
 type Batch = {
   id: string;
@@ -304,6 +308,15 @@ function PublishVideoCard({
   const [videoUrl, setVideoUrl] = React.useState("");
   const [file, setFile] = React.useState<File | null>(null);
   const [saving, setSaving] = React.useState(false);
+  // Phase 23 UX — the SAME state machine the session-PDF screen uses, so a
+  // video upload and a PDF upload show identical phases, identical REAL byte
+  // progress and identical failure wording.
+  const uploader = useMediaUpload();
+  /** Remembered so a retry reports the same publish/draft outcome. */
+  const lastPublishRef = React.useRef(false);
+  const busy = saving || uploader.isBusy;
+  /** The publish button names the phase it is in, not a generic "saving". */
+  const uploadLabel = uploader.isBusy ? tr("admin.423") : tr("admin.210");
 
   const reset = () => {
     setTitle("");
@@ -313,9 +326,38 @@ function PublishVideoCard({
     setFile(null);
   };
 
+  /** One place turns an upload result into what the admin sees. */
+  const handleUploadResult = (res: MediaUploadResult, publish: boolean) => {
+    if (res.ok) {
+      toast.success(tr(publish ? "admin.237" : "admin.238"));
+      reset();
+      onPublished();
+      return;
+    }
+    if ("duplicate" in res) {
+      toast.error(tr("admin.570"));
+      return;
+    }
+    if ("cancelled" in res) {
+      toast.info(tr("admin.569"));
+      return;
+    }
+    // Stage-specific + code-specific wording, resolved once for every surface.
+    toast.error(uploadFailureMessage(res.failure, tr));
+  };
+
+  /** Retry the SAME file after a failure — a fresh init/PUT/complete cycle. */
+  const retryUpload = async () => {
+    const res = await uploader.retry();
+    if (res) handleUploadResult(res, lastPublishRef.current);
+  };
+
   const submit = async (publish: boolean) => {
+    // The hook's latch is the real single-flight guarantee (it is synchronous);
+    // this only stops a second click from building a request at all.
+    if (busy) return;
     if (!title.trim()) {
-      toast.error(tr("admin.179"));
+      toast.error(tr("admin.580"));
       return;
     }
     if (method === "URL" && !videoUrl.trim()) {
@@ -346,18 +388,18 @@ function PublishVideoCard({
       toast.error(tr("api.219"));
       return;
     }
-    setSaving(true);
-    try {
-      let res: Response;
-      if (method === "UPLOAD") {
-        // Phase 23 — direct browser → private R2 upload (short-lived presigned
-        // PUT): bytes no longer buffer through the app server. When the active
-        // backend cannot serve direct uploads (MEDIA_BACKEND=local), the init
-        // endpoint answers PRESIGNED_UNSUPPORTED and we fall back to the
-        // buffered multipart POST below.
-        const out = await directUpload({
+    lastPublishRef.current = publish;
+
+    if (method === "UPLOAD") {
+      const target = file!;
+      const res = await uploader.run(
+        {
+          // Phase 23 — direct browser → private R2 upload (short-lived
+          // presigned PUT): bytes never buffer through the app server. The
+          // second argument is the MEDIA_BACKEND=local fallback, used when the
+          // init endpoint answers PRESIGNED_UNSUPPORTED.
           purpose: "SESSION_VIDEO",
-          file: file!,
+          file: target,
           initFields: { batchId: batch.id },
           completeFields: {
             batchId: batch.id,
@@ -369,54 +411,55 @@ function PublishVideoCard({
           // No browser-side hash for videos: a 512 MB buffer just to hash it
           // is worse than skipping the optional integrity proof.
           sha256: null,
-        });
-        if (out.ok) {
-          toast.success(tr(publish ? "admin.237" : "admin.238"));
-          reset();
-          onPublished();
-          return;
-        }
-        if (out.code === "PRESIGNED_UNSUPPORTED") {
+        },
+        async (f) => {
           const form = new FormData();
           form.set("batchId", batch.id);
           form.set("title", title);
           form.set("titleAr", titleAr || title);
           form.set("description", description);
           form.set("publish", String(publish));
-          form.set("file", file!);
-          res = await fetch("/api/admin/session-videos", { method: "POST", body: form });
-        } else {
-          // Prefer the SPECIFIC server reason (wrong type / too large / storage
-          // down / wrong group) over the generic stage text, so the admin knows
-          // what to change instead of retrying the same file.
-          const reasonKey = uploadErrorCodeKey(out.code);
-          if (reasonKey) {
-            toast.error(tr(reasonKey));
-            return;
+          form.set("file", f);
+          try {
+            const r = await fetch("/api/admin/session-videos", {
+              method: "POST",
+              body: form,
+            });
+            const d = await r.json().catch(() => null);
+            if (!r.ok) {
+              return {
+                ok: false,
+                status: r.status,
+                error:
+                  (d && typeof d.error === "string" && d.error) || "admin.001",
+              };
+            }
+            return { ok: true };
+          } catch {
+            return { ok: false, status: 0, error: "admin.001" };
           }
-          const stageText =
-            out.stage === "init"
-              ? tr("admin.506")
-              : out.stage === "transfer"
-                ? tr("admin.507")
-                : tr("admin.508");
-          toast.error(out.error ? `${stageText} (${out.error})` : stageText);
-          return;
         }
-      } else {
-        res = await fetch("/api/admin/session-videos", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            batchId: batch.id,
-            title,
-            titleAr: titleAr || title,
-            description,
-            videoUrl,
-            publish,
-          }),
-        });
-      }
+      );
+      handleUploadResult(res, publish);
+      return;
+    }
+
+    // URL method: no bytes move through the browser, so there is nothing to
+    // measure — one JSON POST, contract unchanged.
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/session-videos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          batchId: batch.id,
+          title,
+          titleAr: titleAr || title,
+          description,
+          videoUrl,
+          publish,
+        }),
+      });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || tr("admin.001"));
       toast.success(tr(publish ? "admin.237" : "admin.238"));
@@ -448,6 +491,7 @@ function PublishVideoCard({
               key={value}
               type="button"
               aria-pressed={method === value}
+              disabled={busy}
               onClick={() => setMethod(value)}
               className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
                 method === value
@@ -468,6 +512,7 @@ function PublishVideoCard({
               id="sv-title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
+              disabled={busy}
               className="mt-1"
             />
           </div>
@@ -477,6 +522,7 @@ function PublishVideoCard({
               id="sv-title-ar"
               value={titleAr}
               onChange={(e) => setTitleAr(e.target.value)}
+              disabled={busy}
               className="mt-1"
             />
           </div>
@@ -497,6 +543,7 @@ function PublishVideoCard({
               onChange={(e) => setVideoUrl(e.target.value)}
               placeholder="https://..."
               dir="ltr"
+              disabled={busy}
               className="mt-1"
             />
             {/* State the contract in the form, so an admin does not have to
@@ -512,9 +559,21 @@ function PublishVideoCard({
               id="sv-file"
               type="file"
               accept="video/mp4,video/webm,video/ogg,video/quicktime"
-              onChange={(e) => setFile(e.target.files?.[0] || null)}
+              disabled={busy}
+              onChange={(e) => {
+                setFile(e.target.files?.[0] || null);
+                // A new pick clears any previous failure so the admin is never
+                // stuck with a stale panel (and can always retry with a
+                // different file).
+                uploader.reset();
+              }}
               className="mt-1"
             />
+            {/* State the accepted formats + ceiling in the form, so an admin
+                does not have to discover them through a rejection. */}
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              {tr("admin.582")}
+            </p>
           </div>
         )}
 
@@ -525,20 +584,30 @@ function PublishVideoCard({
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={2}
+            disabled={busy}
             className="mt-1"
           />
         </div>
 
+        {/* Real upload state — the same panel the session-PDF screen renders:
+            preparing → uploading (MB / MB — %) → confirming → success/failure.
+            "Completed" is only ever shown AFTER the server confirmed the save. */}
+        <UploadProgressPanel
+          state={uploader.state}
+          onCancel={uploader.cancel}
+          onRetry={retryUpload}
+        />
+
         <div className="flex flex-wrap items-center gap-2 pt-1">
-          <Button onClick={() => submit(true)} disabled={saving}>
-            {saving ? (
+          <Button onClick={() => submit(true)} disabled={busy}>
+            {busy ? (
               <Loader2 className="w-4 h-4 me-2 animate-spin" />
             ) : (
               <CheckCircle2 className="w-4 h-4 me-2" />
             )}
-            {tr("admin.210")}
+            {uploadLabel}
           </Button>
-          <Button variant="outline" onClick={() => submit(false)} disabled={saving}>
+          <Button variant="outline" onClick={() => submit(false)} disabled={busy}>
             {tr("admin.212")}
           </Button>
         </div>

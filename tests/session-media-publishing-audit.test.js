@@ -494,10 +494,24 @@ section("7. Source pins — the fixes stay wired into the real endpoints");
   ok(!/init\.data\.upload\b/.test(client), "the browser helper no longer reads the non-existent body.upload");
 }
 {
+  // Both admin upload surfaces go through ONE state machine and ONE failure
+  // resolver, so a video upload and a PDF upload can never drift apart. The
+  // code → specific-reason map itself is defined once (upload-error-text.ts)
+  // and is what the resolver consults — the components no longer duplicate it.
   for (const f of ["src/components/admin/session-videos-view.tsx", "src/components/admin/session-pdf-manager.tsx"]) {
     const s = read(f);
-    ok(s.includes("uploadErrorCodeKey"), `${f} maps server codes to specific admin reasons`);
+    ok(s.includes("useMediaUpload"), `${f} drives uploads through the shared upload state machine`);
+    ok(s.includes("UploadProgressPanel"), `${f} renders the shared upload progress panel`);
+    ok(s.includes("uploadFailureMessage"), `${f} presents failures through the shared stage/code resolver`);
   }
+  const errText = read("src/lib/upload-error-text.ts");
+  ok(/const reasonKey = uploadErrorCodeKey\(code\)/.test(errText),
+    "resolveUploadFailure consults the single code → specific-reason map");
+  ok(/export function uploadFailureMessage/.test(errText),
+    "the resolver renders ONE message shape for every admin surface");
+  const hook = read("src/hooks/use-media-upload.ts");
+  ok(/resolveUploadFailure\(/.test(hook), "the shared hook resolves every failure through the resolver");
+  ok(/^"use client";/m.test(hook), "the upload hook stays inside the client boundary");
 }
 {
   const csp = read("src/lib/content-security-policy.ts");

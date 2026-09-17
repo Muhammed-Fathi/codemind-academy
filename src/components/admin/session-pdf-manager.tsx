@@ -36,8 +36,10 @@ import {
   serverErrorText,
   type AdminSessionMaterialSummary,
 } from "@/components/admin/session-workflow-shared";
-import { directUpload, sha256HexOfFile } from "@/lib/direct-upload";
-import { uploadErrorCodeKey } from "@/lib/upload-error-text";
+import { sha256HexOfFile } from "@/lib/direct-upload";
+import { uploadFailureMessage } from "@/lib/upload-error-text";
+import { useMediaUpload, type MediaUploadResult } from "@/hooks/use-media-upload";
+import { UploadProgressPanel } from "@/components/admin/upload-progress-panel";
 
 export function SessionPdfManager({
   lessonId,
@@ -54,24 +56,49 @@ export function SessionPdfManager({
   const [file, setFile] = React.useState<File | null>(null);
   const [title, setTitle] = React.useState("");
   const [scope, setScope] = React.useState<string>("INHERIT");
-  const [uploading, setUploading] = React.useState(false);
+  // Phase 23 UX — one shared state machine drives the upload: real byte
+  // progress, visible preparing/uploading/confirming stages, single-flight
+  // protection, cancellation and retry. `uploading` stays the single boolean
+  // every input/button in this card is disabled with.
+  const uploader = useMediaUpload();
+  const uploading = uploader.isBusy;
   const [deactivateTarget, setDeactivateTarget] =
     React.useState<AdminSessionMaterialSummary | null>(null);
   const [deactivating, setDeactivating] = React.useState(false);
   const replaceInputRef = React.useRef<HTMLInputElement>(null);
   const [replaceScope, setReplaceScope] = React.useState<string | null>(null);
 
+  /** One place turns an upload result into what the admin sees. */
+  const handleUploadResult = (res: MediaUploadResult) => {
+    setReplaceScope(null);
+    if (res.ok) {
+      toast.success(tr("admin.424"));
+      setFile(null);
+      setTitle("");
+      onChanged();
+      return;
+    }
+    if ("duplicate" in res) {
+      toast.error(tr("admin.570"));
+      return;
+    }
+    if ("cancelled" in res) {
+      toast.info(tr("admin.569"));
+      return;
+    }
+    // Stage-specific + code-specific wording, resolved once for every surface.
+    toast.error(uploadFailureMessage(res.failure, tr));
+  };
+
   const upload = async (f: File | null, explicitScope: string | null, customTitle: string) => {
     if (!f) return;
-    setUploading(true);
-    try {
-      // Phase 23 — direct browser → private R2 upload (short-lived presigned
-      // PUT). No file bytes pass through the app server. On deployments whose
-      // active backend cannot serve direct uploads (MEDIA_BACKEND=local) the
-      // server answers PRESIGNED_UNSUPPORTED and we transparently fall back
-      // to the buffered multipart endpoint below.
-      const sha256 = await sha256HexOfFile(f);
-      const out = await directUpload({
+    const res = await uploader.run(
+      {
+        // Phase 23 — direct browser → private R2 upload (short-lived presigned
+        // PUT). No file bytes pass through the app server. On deployments whose
+        // active backend cannot serve direct uploads (MEDIA_BACKEND=local) the
+        // server answers PRESIGNED_UNSUPPORTED and the second argument below
+        // transparently falls back to the buffered multipart endpoint.
         purpose: "LESSON_PDF",
         file: f,
         initFields: { lessonId },
@@ -83,59 +110,34 @@ export function SessionPdfManager({
             ? { trackScope: explicitScope }
             : {}),
         },
-        sha256,
-      });
-      if (out.ok) {
-        toast.success(tr("admin.424"));
-        setFile(null);
-        setTitle("");
-        onChanged();
-        return;
-      }
-      if (out.code === "PRESIGNED_UNSUPPORTED") {
+        // Hashing reads the whole file into memory BEFORE init, so it runs
+        // inside the visible "preparing" phase (and inside its own timing)
+        // instead of looking like a frozen button.
+        prepare: async () => ({ sha256: await sha256HexOfFile(f) }),
+      },
+      async (target) => {
         const form = new FormData();
-        form.append("file", f);
+        form.append("file", target);
         if (customTitle.trim()) form.append("title", customTitle.trim());
         if (explicitScope && explicitScope !== "INHERIT") {
           form.append("trackScope", explicitScope);
         }
-        const res = await fetchJson<{ material: { id: string } }>(
+        const r = await fetchJson<{ material: { id: string } }>(
           `/api/admin/lessons/${encodeURIComponent(lessonId)}/materials`,
           { method: "POST", body: form }
         );
-        if (!res.ok) {
-          toast.error(serverErrorText(tr, res.error));
-          return;
-        }
-        toast.success(tr("admin.424"));
-        setFile(null);
-        setTitle("");
-        onChanged();
-        return;
+        return r.ok
+          ? { ok: true }
+          : { ok: false, status: r.status, error: r.error };
       }
-      // Prefer the SPECIFIC server reason (wrong type / too large / storage
-      // down / wrong session). Fall back to the stage text only when the
-      // server gave no code — e.g. a network failure reaching the endpoint.
-      const reasonKey = uploadErrorCodeKey(out.code);
-      const stageText =
-        out.stage === "init"
-          ? tr("admin.506")
-          : out.stage === "transfer"
-            ? tr("admin.507")
-            : tr("admin.508");
-      if (reasonKey) {
-        toast.error(tr(reasonKey));
-        return;
-      }
-      const detail =
-        out.error && out.error !== "admin.001"
-          ? ` — ${serverErrorText(tr, out.error)}`
-          : "";
-      toast.error(`${stageText}${detail}`);
-    } finally {
-      setUploading(false);
-      setReplaceScope(null);
-    }
+    );
+    handleUploadResult(res);
+  };
+
+  /** Retry the SAME file after a failure — a fresh init/PUT/complete cycle. */
+  const retryUpload = async () => {
+    const res = await uploader.retry();
+    if (res) handleUploadResult(res);
   };
 
   const deactivate = async () => {
@@ -171,7 +173,13 @@ export function SessionPdfManager({
             id="pdf-file"
             type="file"
             accept="application/pdf,.pdf"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            onChange={(e) => {
+              const f = e.target.files?.[0] ?? null;
+              setFile(f);
+              // Choosing another file clears any previous failure/panel state,
+              // so a retry after a bad pick is never blocked.
+              uploader.reset();
+            }}
             disabled={uploading}
           />
         </div>
@@ -212,6 +220,15 @@ export function SessionPdfManager({
         </Button>
       </div>
 
+      {/* Real upload state: preparing → uploading (bytes/percent) →
+          confirming → success/failure. Shared with the session-video surface
+          so both media types read exactly the same. */}
+      <UploadProgressPanel
+        state={uploader.state}
+        onCancel={uploader.cancel}
+        onRetry={retryUpload}
+      />
+
       {/* Active materials */}
       {active.length === 0 ? (
         <p className="py-2 text-center text-sm text-muted-foreground">{tr("admin.426")}</p>
@@ -221,6 +238,7 @@ export function SessionPdfManager({
             <MaterialRow
               key={m.id}
               material={m}
+              busy={uploading}
               onReplace={() => {
                 // Replace = upload into the SAME scope; the server deactivates
                 // the prior active row of that scope.
@@ -255,9 +273,11 @@ export function SessionPdfManager({
         className="hidden"
         aria-hidden="true"
         tabIndex={-1}
+        disabled={uploading}
         onChange={(e) => {
           const f = e.target.files?.[0] ?? null;
           e.target.value = "";
+          uploader.reset();
           if (f && replaceScope) upload(f, replaceScope, "");
           else setReplaceScope(null);
         }}
@@ -280,10 +300,13 @@ export function SessionPdfManager({
 
 function MaterialRow({
   material: m,
+  busy,
   onReplace,
   onDeactivate,
 }: {
   material: AdminSessionMaterialSummary;
+  /** True while an upload is in flight — replace would start a second one. */
+  busy?: boolean;
   onReplace?: () => void;
   onDeactivate?: () => void;
 }) {
@@ -318,7 +341,7 @@ function MaterialRow({
           </Button>
         )}
         {onReplace && (
-          <Button size="sm" variant="outline" onClick={onReplace}>
+          <Button size="sm" variant="outline" onClick={onReplace} disabled={busy}>
             <RefreshCw className="w-3.5 h-3.5 me-1" />
             {tr("admin.421")}
           </Button>

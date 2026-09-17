@@ -1526,6 +1526,72 @@ export const DICT_2026: Record<string, DictEntry> = {
     en: "Supported: a direct video file link (MP4/WebM/OGG/MOV) over https, a YouTube link, or a Vimeo link. Any other link is rejected.",
   },
 
+  // ---------- Admin: media upload progress + multi-stage states ----------
+  // The stage keys above (admin.506/507/508) name a FAILED leg; these describe
+  // the upload while it is happening, so "sending bytes" is never confused with
+  // "the server is verifying and recording the file". One wording, shared by the
+  // session-video and the session-PDF screens (src/lib/upload-progress.ts).
+  "admin.562": { ar: "جارٍ تجهيز الرفع…", en: "Preparing upload…" },
+  "admin.563": { ar: "جارٍ رفع الملف…", en: "Uploading file…" },
+  "admin.564": { ar: "{p1} من {p2} — {p3}%", en: "{p1} of {p2} — {p3}%" },
+  "admin.565": {
+    ar: "تم رفع الملف، جارٍ تأكيد الحفظ…",
+    en: "File uploaded — confirming the save…",
+  },
+  "admin.566": { ar: "تم رفع الملف بنجاح", en: "File uploaded successfully" },
+  "admin.567": {
+    ar: "تعذّر الاتصال بخدمة الرفع — راجع اتصال الإنترنت وحاول تاني.",
+    en: "Could not reach the upload service — check your connection and try again.",
+  },
+  "admin.568": { ar: "إلغاء الرفع", en: "Cancel upload" },
+  "admin.569": { ar: "تم إلغاء الرفع", en: "Upload cancelled" },
+  "admin.570": {
+    ar: "فيه رفع شغال حاليًا — استنى لحد ما يخلص.",
+    en: "An upload is already running — wait for it to finish.",
+  },
+  "admin.571": { ar: "الملف: {p1} ({p2})", en: "File: {p1} ({p2})" },
+  "admin.572": { ar: "فشل الرفع", en: "Upload failed" },
+  "admin.573": {
+    ar: "الرفع بيتم عن طريق سيرفر التطبيق — نسبة التقدم بالبايت مش متاحة في الوضع ده.",
+    en: "The file is uploading through the app server — byte-level progress is not available in this mode.",
+  },
+  "admin.574": {
+    ar: "الملف ده مش PDF صالح — ملف PDF الحقيقي بيبدأ ببصمة PDF.",
+    en: "That file is not a valid PDF — a real PDF file starts with the PDF signature.",
+  },
+  "admin.575": {
+    ar: "لازم اسم الملف ينتهي بـ .pdf",
+    en: "The file name must end with .pdf",
+  },
+  "admin.576": {
+    ar: "الملف فاضي — اختار ملف فيه محتوى.",
+    en: "The file is empty — choose a file with content.",
+  },
+  "admin.577": {
+    ar: "الملف اتلف أثناء الرفع أو اختفى من التخزين — ارفعه من جديد.",
+    en: "The file was corrupted during the upload or disappeared from storage — upload it again.",
+  },
+  "admin.578": {
+    ar: "انتهت صلاحية إذن الرفع — ابدأ الرفع من جديد.",
+    en: "The upload grant expired — start the upload again.",
+  },
+  "admin.579": {
+    ar: "الملف ده مرتبط بالفعل بمحتوى تاني — ارفع ملف مختلف.",
+    en: "That file is already linked to different content — upload a different file.",
+  },
+  "admin.580": {
+    ar: "اكتب عنوان الفيديو الأول.",
+    en: "Write the video title first.",
+  },
+  "admin.581": {
+    ar: "تم إرسال الملف — في انتظار رد التخزين…",
+    en: "File sent — waiting for the storage response…",
+  },
+  "admin.582": {
+    ar: "الملفات المقبولة: MP4، WebM، OGG، MOV. لو الملف أكبر من الحد المسموح هتظهرلك رسالة واضحة.",
+    en: "Accepted files: MP4, WebM, OGG, MOV. If the file is larger than the allowed maximum you will get a clear message.",
+  },
+
   // ---------- Student: external video playback states ----------
   "course.226": {
     ar: "الفيديو ده مش متاح للتشغيل حاليًا. من فضلك راسل الدعم.",
