@@ -432,8 +432,9 @@ function record(id, desc, pass, detail=""){
   const res2 = await call("PATCH",`/api/admin/plans/${PLAN_ID}`,{ body:{ isActive:false }, cookie:ADMIN_COOKIE });
   record("ADMIN-07b","Disable plan", res2.status===200 && res2.json?.plan?.isActive===false, `status=${res2.status}`);
   const studentPlans = await call("GET","/api/subscription-plans",{ cookie:"cm_session=qa26c-ar-raw-token" });
-  const seesDisabled = studentPlans.json?.plans?.some(p=>p.id===PLAN_ID);
-  record("ADMIN-07c","Student hides inactive plan", !seesDisabled, `seesDisabled=${seesDisabled}`);
+  const disabledPlan = studentPlans.json?.plans?.find(p=>p.id===PLAN_ID);
+  const seesDisabled = !!disabledPlan;
+  record("ADMIN-07c","Student catalogue keeps inactive plan visible and flagged", seesDisabled && disabledPlan.isActive === false, `seesDisabled=${seesDisabled} isActive=${disabledPlan?.isActive}`);
   const enrollRes = await call("POST","/api/enroll",{ body:{ planId: PLAN_ID, groupId: AR_GROUP_ID }, cookie:"cm_session=qa26c-ar-raw-token" });
   record("ADMIN-07d","Enroll inactive rejected", enrollRes.status===400 || enrollRes.status===409, `status=${enrollRes.status}`);
   const res3 = await call("PATCH",`/api/admin/plans/${PLAN_ID}`,{ body:{ isActive:true }, cookie:ADMIN_COOKIE });
@@ -448,8 +449,9 @@ function record(id, desc, pass, detail=""){
   const res = await call("PATCH",`/api/admin/plans/${EARLY_BIRD_ID}`,{ body:{ isActive:false }, cookie:ADMIN_COOKIE });
   record("ADMIN-08a","Close Early Bird", res.status===200, `status=${res.status}`);
   const studentPlans = await call("GET","/api/subscription-plans",{ cookie:"cm_session=qa26c-ar-raw-token" });
-  const seesEB = studentPlans.json?.plans?.some(p=>p.id===EARLY_BIRD_ID);
-  record("ADMIN-08b","After close not offer Early Bird", !seesEB, `seesEB=${seesEB}`);
+  const closedEarlyBird = studentPlans.json?.plans?.find(p=>p.id===EARLY_BIRD_ID);
+  const seesEB = !!closedEarlyBird;
+  record("ADMIN-08b","After close Early Bird remains visible but unavailable", seesEB && closedEarlyBird.isActive === false, `seesEB=${seesEB} isActive=${closedEarlyBird?.isActive}`);
   const enrollRes = await call("POST","/api/enroll",{ body:{ planId: EARLY_BIRD_ID, groupId: AR_GROUP_ID }, cookie:"cm_session=qa26c-ar-raw-token" });
   record("ADMIN-08c","API cannot purchase closed Early Bird", enrollRes.status===400 || enrollRes.status===409, `status=${enrollRes.status}`);
   const res2 = await call("PATCH",`/api/admin/plans/${EARLY_BIRD_ID}`,{ body:{ isActive:true }, cookie:ADMIN_COOKIE });
@@ -695,12 +697,23 @@ function record(id, desc, pass, detail=""){
   record("ADMIN-15-login-o","Unrelated user unchanged after teacher deactivate/reactivate", unrelated?.isActive===1, `isActive=${unrelated?.isActive}`);
 }
 
+// Test-only hook used by the fail-closed regression test. It creates a real
+// failed assertion without mutating application code or database fixtures.
+if (process.env.PHASE26C_FORCE_FAILURE === "1") {
+  record("SELF-TEST-FORCED-FAILURE", "Deterministic forced assertion failure", false, "requested by PHASE26C_FORCE_FAILURE=1");
+}
+
 console.log("\n=== PHASE 26C ADMIN VERIFIER SUMMARY ===");
 const passed = results.filter(r=>r.pass).length;
+const failed = results.filter(r=>!r.pass).length;
 const total = results.length;
-console.log(`Passed ${passed}/${total}`);
+console.log(`Passed ${passed}/${total}; Failed ${failed}/${total}`);
 for (const r of results) if (!r.pass) console.log(`  FAIL ${r.id}: ${r.desc} — ${r.detail}`);
-if (passed/total < 0.8) fail(`Too many failures ${passed}/${total} < 80%`);
+if (failed > 0) {
+  console.error(`[26C] verifier failed closed: ${failed} assertion(s) failed`);
+  server.close();
+  process.exit(1);
+}
 console.log("[26C] verifier completed successfully");
 server.close();
 process.exit(0);
