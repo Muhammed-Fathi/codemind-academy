@@ -14,6 +14,7 @@
 // Counting anything else is how an exam ends up published but unservable.
 
 import { NextRequest } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { ok, err, requireRole } from "@/lib/api";
 import { normalizeSchoolType, questionBankFilter } from "@/lib/school-type";
@@ -180,11 +181,13 @@ export async function POST(req: NextRequest) {
     // question of a student-visible lesson on this exam's course. Rejecting
     // the rest keeps a FIXED exam from being pinned to material its students
     // must never see (another school's bank, another course, a draft lesson).
+    const bankFilter: Prisma.QuestionWhereInput =
+      questionBankFilter(schoolType);
     const eligible = await db.question.findMany({
       where: {
         AND: [
           { id: { in: fixedQuestionIds } },
-          questionBankFilter(schoolType),
+          bankFilter,
           mockExamQuestionScopeWhere(lessonIds),
         ],
       },
@@ -234,12 +237,11 @@ export async function POST(req: NextRequest) {
     if (pinnedIds.length === 0) {
       // No explicit selection supplied (API-only path): fall back to the
       // eligible pool, so the legacy shape of this endpoint keeps working.
+      const difficultyFilter: Prisma.QuestionWhereInput =
+        difficulty !== "MIXED" ? { difficulty } : {};
       const candidates = await db.question.findMany({
         where: {
-          AND: [
-            mockExamQuestionPoolWhere(schoolType, lessonIds),
-            ...(difficulty !== "MIXED" ? [{ difficulty }] : []),
-          ],
+          AND: [mockExamQuestionPoolWhere(schoolType, lessonIds), difficultyFilter],
         },
         select: { id: true },
         take: questionCount * 3,

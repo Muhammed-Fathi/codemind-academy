@@ -1,4 +1,5 @@
 import { getServerT } from "@/lib/i18n-server";
+import type { Prisma } from "@prisma/client";
 // CodeMind Academy — Mock Exam API
 // Generates randomized practice exams from Question Bank.
 import { NextRequest } from "next/server";
@@ -111,7 +112,8 @@ export async function GET(req: NextRequest) {
 
   // Bank isolation: only questions tagged with the student's school type, or
   // explicitly shared (schoolType = null), can ever be selected.
-  const bankFilter = questionBankFilter(studentSchoolType);
+  const bankFilter: Prisma.QuestionWhereInput =
+    questionBankFilter(studentSchoolType);
 
   // Get quiz questions from lessons in the course — BOTH chains: canonical
   // unit-linked lessons and legacy topic-linked lessons. Phase 5 minimal
@@ -175,7 +177,7 @@ export async function GET(req: NextRequest) {
     : [];
   const quizQuestions = await db.question.findMany({
     where: pinned
-      ? { id: { in: pinnedQuestionIds }, ...bankFilter }
+      ? { AND: [bankFilter, { id: { in: pinnedQuestionIds } }] }
       : { AND: [bankFilter, mockExamQuestionScopeWhere(lessonIds)] },
     include: { quiz: { select: { lesson: { select: { titleAr: true, title: true } } } } },
   });
@@ -183,7 +185,7 @@ export async function GET(req: NextRequest) {
   // Get exam questions (same bank isolation applies)
   const examQuestions = await db.examQuestion.findMany({
     where: pinned
-      ? { id: { in: pinnedExamQuestionIds }, ...bankFilter }
+      ? { AND: [bankFilter, { id: { in: pinnedExamQuestionIds } }] }
       : { AND: [bankFilter, mockExamExamQuestionScopeWhere(lessonIds)] },
     include: { lesson: { select: { titleAr: true, title: true } } },
   });

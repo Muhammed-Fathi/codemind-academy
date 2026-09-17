@@ -69,6 +69,7 @@
 // submit, so a recorded result stays readable even if the bank changes later.
 
 import { createHmac } from "crypto";
+import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { questionBankFilter, type SchoolType } from "@/lib/school-type";
 import { getSecurityHashSecret } from "@/lib/env";
@@ -81,7 +82,7 @@ export type MockExamSelectionMode = "RANDOM" | "FIXED";
 // ---------------------------------------------------------------------------
 
 /** `Question` rows that belong to no lesson: the Admin's manual free bank. */
-export function bankOnlyQuestionWhere() {
+export function bankOnlyQuestionWhere(): Prisma.QuestionWhereInput {
   return {
     // `quizId: null` covers the manual "Add Question" row; the second arm
     // covers a question whose quiz exists but is not attached to a lesson.
@@ -90,7 +91,9 @@ export function bankOnlyQuestionWhere() {
 }
 
 /** `Question` rows attached to one of `lessonIds`. */
-export function lessonLinkedQuestionWhere(lessonIds: readonly string[]) {
+export function lessonLinkedQuestionWhere(
+  lessonIds: readonly string[]
+): Prisma.QuestionWhereInput {
   return { quiz: { lessonId: { in: [...lessonIds] } } };
 }
 
@@ -104,7 +107,7 @@ export function lessonLinkedQuestionWhere(lessonIds: readonly string[]) {
 export function mockExamQuestionPoolWhere(
   schoolType: SchoolType,
   lessonIds: readonly string[]
-) {
+): Prisma.QuestionWhereInput {
   return {
     AND: [
       questionBankFilter(schoolType),
@@ -119,14 +122,18 @@ export function mockExamQuestionPoolWhere(
  * literally (the Admin create route validates FIXED selections) can compose
  * the two without duplicating either rule.
  */
-export function mockExamQuestionScopeWhere(lessonIds: readonly string[]) {
+export function mockExamQuestionScopeWhere(
+  lessonIds: readonly string[]
+): Prisma.QuestionWhereInput {
   return lessonIds.length > 0
     ? { OR: [bankOnlyQuestionWhere(), lessonLinkedQuestionWhere(lessonIds)] }
     : bankOnlyQuestionWhere();
 }
 
 /** The scope half of the `ExamQuestion` contract (legacy table). */
-export function mockExamExamQuestionScopeWhere(lessonIds: readonly string[]) {
+export function mockExamExamQuestionScopeWhere(
+  lessonIds: readonly string[]
+): Prisma.ExamQuestionWhereInput {
   return lessonIds.length > 0
     ? { OR: [{ lessonId: null }, { lessonId: { in: [...lessonIds] } }] }
     : { lessonId: null };
@@ -136,7 +143,7 @@ export function mockExamExamQuestionScopeWhere(lessonIds: readonly string[]) {
 export function mockExamExamQuestionPoolWhere(
   schoolType: SchoolType,
   lessonIds: readonly string[]
-) {
+): Prisma.ExamQuestionWhereInput {
   return {
     AND: [
       questionBankFilter(schoolType),

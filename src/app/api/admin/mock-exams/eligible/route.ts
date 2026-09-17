@@ -16,6 +16,7 @@
 // metadata, never the stored answer or explanation.
 
 import { NextRequest } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { ok, err, requireRole } from "@/lib/api";
 import { normalizeSchoolType } from "@/lib/school-type";
@@ -40,9 +41,15 @@ export async function GET(req: NextRequest) {
     return err(tApi("api.211"), 400);
   }
   const rawDifficulty = url.searchParams.get("difficulty") ?? "";
-  const difficulty = ["EASY", "MEDIUM", "HARD", "MIXED"].includes(rawDifficulty)
-    ? rawDifficulty
-    : "MIXED";
+  // Typed as the stored Difficulty values (plus MIXED = "no filter"), so the
+  // Prisma filter below is a valid `Difficulty` input, not a bare string.
+  const difficulty: "MIXED" | "EASY" | "MEDIUM" | "HARD" =
+    rawDifficulty === "EASY" ||
+    rawDifficulty === "MEDIUM" ||
+    rawDifficulty === "HARD" ||
+    rawDifficulty === "MIXED"
+      ? rawDifficulty
+      : "MIXED";
 
   const lessonIds = await loadMockExamLessonIds(courseId);
   const pool = await countMockExamEligiblePool({
@@ -68,21 +75,22 @@ export async function GET(req: NextRequest) {
   }[] = [];
   if (withList) {
     const search = url.searchParams.get("search")?.trim() || "";
+    const difficultyFilter: Prisma.QuestionWhereInput =
+      difficulty !== "MIXED" ? { difficulty } : {};
+    const searchFilter: Prisma.QuestionWhereInput = search
+      ? {
+          OR: [
+            { prompt: { contains: search } },
+            { promptAr: { contains: search } },
+          ],
+        }
+      : {};
     const rows = await db.question.findMany({
       where: {
         AND: [
           mockExamQuestionPoolWhere(schoolType, lessonIds),
-          ...(difficulty !== "MIXED" ? [{ difficulty }] : []),
-          ...(search
-            ? [
-                {
-                  OR: [
-                    { prompt: { contains: search } },
-                    { promptAr: { contains: search } },
-                  ],
-                },
-              ]
-            : []),
+          difficultyFilter,
+          searchFilter,
         ],
       },
       include: {
