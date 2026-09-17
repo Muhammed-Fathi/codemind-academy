@@ -27,10 +27,15 @@ import {
   HeartHandshake,
   Star,
   Quote,
+  Headset,
+  MessageCircle,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { formatPaymentAmount } from "@/lib/payment-ux";
 import {
   Accordion,
   AccordionContent,
@@ -447,47 +452,48 @@ function MiniStat({
 export function PricingSection() {
   const tr = useT();
   const setView = useApp((s) => s.setView);
+  // Post-launch: the pricing cards are rendered from the CANONICAL public
+  // plans API (GET /api/subscription-plans) — the same source the enrolment
+  // flow reads. Admin edits (name / price / duration / availability) are
+  // reflected here without a code change; closed plans stay visible but
+  // clearly flagged + disabled (the server still re-refuses them). Deleted
+  // plans disappear naturally. On API failure we show an honest retry state
+  // — never a fake hardcoded price.
+  const [plans, setPlans] = React.useState<PricingPlanRow[] | null>(null);
+  const [error, setError] = React.useState(false);
 
-  const plans = [
-    {
-      name: "Early Bird",
-      nameAr: "Early Bird",
-      price: 100,
-      duration: tr("landing.066"),
-      desc: tr("landing.067"),
-      features: ["Live Classes", "Recordings", "Quizzes", "PDFs"],
-      highlight: false,
-      promo: true,
-    },
-    {
-      name: "Monthly",
-      nameAr: tr("landing.068"),
-      price: 200,
-      duration: tr("landing.069"),
-      desc: tr("landing.070"),
-      features: [
-        tr("landing.071"),
-        "Homework + Grading",
-        "Parent Dashboard",
-        "Monthly Report",
-      ],
-      highlight: true,
-    },
-    {
-      name: "6 Months",
-      nameAr: tr("landing.072"),
-      price: 1000,
-      duration: tr("landing.073"),
-      desc: tr("landing.074"),
-      features: [
-        tr("landing.075"),
-        tr("landing.060"),
-        tr("landing.077"),
-        "Mock Exams",
-      ],
-      highlight: false,
-    },
-  ];
+  const reload = React.useCallback(() => {
+    setError(false);
+    fetch("/api/subscription-plans")
+      .then((r) => {
+        if (!r.ok) throw new Error(String(r.status));
+        return r.json();
+      })
+      .then((d) => setPlans(d?.plans || []))
+      .catch(() => {
+        setError(true);
+        setPlans(null);
+      });
+  }, []);
+
+  React.useEffect(() => {
+    reload();
+  }, [reload]);
+
+  const activePlans = (plans || []).filter((p) => p.isActive !== false);
+  // Flagship highlight (premium look): the most expensive ACTIVE plan.
+  // Deterministic — ties keep the first (API order: active, promo-first).
+  const highlightId = activePlans.length
+    ? activePlans.reduce((a, b) => (b.price > a.price ? b : a)).id
+    : null;
+  const closedCount = (plans?.length || 0) - activePlans.length;
+
+  const gridCls =
+    (plans?.length || 0) >= 3
+      ? "md:grid-cols-3"
+      : (plans?.length || 0) === 2
+      ? "sm:grid-cols-2"
+      : "mx-auto max-w-md";
 
   return (
     <section id="pricing" className="py-24 sm:py-32 bg-gradient-to-b from-muted/40 to-background">
@@ -497,59 +503,177 @@ export function PricingSection() {
           title={tr("landing.079")}
           subtitle={tr("landing.080")}
         />
-        <div className="mt-14 grid md:grid-cols-3 gap-6 items-stretch">
-          {plans.map((p) => (
-            <Card
-              key={p.name}
-              className={`relative flex flex-col overflow-hidden transition-all ${
-                p.highlight
-                  ? "border-primary/30 shadow-xl shadow-primary/10 md:-translate-y-2"
-                  : "border-0 glass shadow-sm"
-              }`}
-            >
-              {p.highlight && (
-                <div className="absolute top-0 start-0 end-0 h-1 bg-gradient-to-r from-primary via-teal-500 to-amber-400" />
-              )}
-              {p.promo && (
-                <Badge className="absolute top-3 start-4 bg-amber-500 hover:bg-amber-500 text-white shadow-md">
-                  <Star className="w-3 h-3 ms-1 fill-white" />
-                  Limited Offer
-                </Badge>
-              )}
-              <CardContent className="p-6 flex flex-col flex-1">
-                <div className="mb-4">
-                  <h3 className="text-lg font-bold">{pickAuto(p.nameAr, p.name)}</h3>
-                  <p className="text-xs text-muted-foreground mt-1">{p.desc}</p>
+        {error ? (
+          <div className="mt-14 mx-auto max-w-md">
+            <Card className="border-0 glass shadow-sm">
+              <CardContent className="p-8 flex flex-col items-center gap-3 text-center">
+                <div className="grid place-items-center w-10 h-10 rounded-full bg-destructive/10">
+                  <AlertTriangle className="w-5 h-5 text-destructive" />
                 </div>
-                <div className="flex items-end gap-1.5 mb-5">
-                  <span className="text-4xl font-extrabold">{p.price}</span>
-                  <span className="text-sm text-muted-foreground mb-1.5">EGP</span>
-                  <span className="text-xs text-muted-foreground mb-1.5">{p.duration}</span>
-                </div>
-                <ul className="space-y-2.5 flex-1">
-                  {p.features.map((f) => (
-                    <li key={f} className="flex items-start gap-2 text-sm">
-                      <CheckCircle2 className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-                      <span>{f}</span>
-                    </li>
-                  ))}
-                </ul>
-                <Button
-                  className="mt-6 w-full font-bold"
-                  variant={p.highlight ? "default" : "outline"}
-                  onClick={() => setView("register")}
-                >
-                  {tr("landing.081")}</Button>
+                <p className="text-sm font-semibold">{tr("plan.035")}</p>
+                <Button variant="outline" size="sm" onClick={reload}>
+                  {tr("plan.036")}
+                </Button>
               </CardContent>
             </Card>
-          ))}
-        </div>
+          </div>
+        ) : plans === null ? (
+          <div className={`mt-14 grid gap-6 items-stretch ${gridCls}`}>
+            {[1, 2, 3].map((i) => (
+              <Card key={i} className="border-0 glass shadow-sm">
+                <CardContent className="p-6 space-y-4">
+                  <Skeleton className="h-5 w-2/3" />
+                  <Skeleton className="h-10 w-1/2" />
+                  <div className="space-y-2">
+                    {[1, 2, 3, 4].map((j) => (
+                      <Skeleton key={j} className="h-4 w-full" />
+                    ))}
+                  </div>
+                  <Skeleton className="h-10 w-full" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : plans.length === 0 ? (
+          <div className="mt-14 mx-auto max-w-md">
+            <Card className="border-0 glass shadow-sm">
+              <CardContent className="p-8 text-center">
+                <p className="text-sm text-muted-foreground">{tr("plan.034")}</p>
+              </CardContent>
+            </Card>
+          </div>
+        ) : (
+          <div className={`mt-14 grid gap-6 items-stretch ${gridCls}`}>
+            {plans.map((p) => {
+              const closed = p.isActive === false;
+              const highlight = !closed && p.id === highlightId;
+              return (
+                <Card
+                  key={p.id}
+                  className={`relative flex flex-col overflow-hidden transition-all ${
+                    highlight
+                      ? "border-primary/30 shadow-xl shadow-primary/10 md:-translate-y-2"
+                      : closed
+                      ? "border-dashed border-border bg-muted/30 shadow-sm"
+                      : "border-0 glass shadow-sm"
+                  }`}
+                >
+                  {highlight && (
+                    <div className="absolute top-0 start-0 end-0 h-1 bg-gradient-to-r from-primary via-teal-500 to-amber-400" />
+                  )}
+                  {closed ? (
+                    <Badge className="absolute top-3 start-4 bg-muted text-muted-foreground border border-border text-[10px] hover:bg-muted">
+                      {tr("plan.023")}
+                    </Badge>
+                  ) : (
+                    p.isPromo && (
+                      <Badge className="absolute top-3 start-4 bg-amber-500 hover:bg-amber-500 text-white shadow-md">
+                        <Star className="w-3 h-3 ms-1 fill-white" />
+                        {tr("plan.037")}
+                      </Badge>
+                    )
+                  )}
+                  <CardContent className="p-6 flex flex-col flex-1">
+                    <div className="mb-4">
+                      <h3
+                        className={`text-lg font-bold ${
+                          closed ? "text-muted-foreground" : ""
+                        }`}
+                      >
+                        {pickAuto(p.nameAr, p.name)}
+                      </h3>
+                      {p.description && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {p.description}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-end gap-1.5 mb-1">
+                      <span
+                        className={`text-4xl font-extrabold ${
+                          closed ? "text-muted-foreground/60 line-through" : ""
+                        }`}
+                      >
+                        {formatPaymentAmount(p.price)}
+                      </span>
+                      <span className="text-sm text-muted-foreground mb-1.5">
+                        {tr("pay.egp")}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-5">
+                      {tr("pay.planDuration", { p1: p.durationMonths })}
+                    </p>
+                    <ul className="space-y-2.5 flex-1">
+                      {PRICING_FEATURES(tr).map((f) => (
+                        <li
+                          key={f}
+                          className={`flex items-start gap-2 text-sm ${
+                            closed ? "text-muted-foreground/60" : ""
+                          }`}
+                        >
+                          <CheckCircle2
+                            className={`w-4 h-4 shrink-0 mt-0.5 ${
+                              closed ? "text-muted-foreground/40" : "text-primary"
+                            }`}
+                          />
+                          <span>{f}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    <Button
+                      className="mt-6 w-full font-bold"
+                      variant={highlight ? "default" : "outline"}
+                      disabled={closed}
+                      aria-disabled={closed}
+                      onClick={() => {
+                        if (!closed) setView("register");
+                      }}
+                    >
+                      {tr("landing.081")}
+                    </Button>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
         <p className="text-center text-xs text-muted-foreground mt-6">
-          {tr("landing.082")}{brand.payments.instapay}) · e&
-          Cash ({brand.payments.eCash}{tr("landing.083")}</p>
+          {tr("landing.082")}
+          {brand.payments.instapay}) · e&
+          Cash ({brand.payments.eCash}{tr("landing.083")}
+        </p>
       </div>
     </section>
   );
+}
+
+type PricingPlanRow = {
+  id: string;
+  name: string;
+  nameAr: string;
+  durationMonths: number;
+  price: number;
+  isPromo: boolean;
+  isActive?: boolean;
+  description?: string | null;
+};
+
+/**
+ * Feature list shown on every pricing card. Every plan includes the FULL
+ * platform experience — plans differ in duration and price (the admin-managed
+ * data), not in feature gates, so one honest shared list is correct here.
+ */
+function PRICING_FEATURES(tr: (k: string) => string): string[] {
+  return [
+    tr("plan.038"),
+    tr("plan.039"),
+    tr("plan.040"),
+    tr("plan.041"),
+    tr("plan.042"),
+    tr("plan.043"),
+    tr("landing.060"),
+    tr("plan.044"),
+  ];
 }
 
 /* ---------------------------------- FAQ ----------------------------------- */
@@ -810,61 +934,59 @@ export function Footer() {
 
           <div>
             <h4 className="font-bold mb-3 text-sm">{tr("landing.118")}</h4>
-            <ul className="space-y-3 text-sm text-muted-foreground">
-              <li>
-                <a
-                  href={whatsappLink(technical.phoneIntl)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="hover:text-foreground inline-flex items-center gap-1.5"
+            {/* Post-launch redesign: person + number travel TOGETHER.
+                The old layout dropped an orphaned number under each label;
+                now each line is "role label" + "Eng. Name · 0XXXXXXXXXX"
+                (number tel-actionable, WhatsApp as a compact secondary
+                icon). Names/numbers come from SUPPORT_CONTACTS (brand.ts) —
+                the single source of truth. The name+number row is pinned
+                dir=ltr because it is Latin text + digits; the surrounding
+                list stays RTL-aware via logical properties. */}
+            <ul className="space-y-2.5 text-sm">
+              {([
+                { person: technical, label: tr("foot.001"), Icon: Headset },
+                { person: teacher, label: tr("foot.002"), Icon: GraduationCap },
+                { person: subscription, label: tr("foot.003"), Icon: CreditCard },
+              ] as const).map(({ person, label, Icon }) => (
+                <li
+                  key={person.id + label}
+                  className="rounded-xl border border-border/50 bg-muted/30 p-2.5"
                 >
-                  <Bell className="w-3.5 h-3.5 shrink-0" />
-                  Technical Support
-                </a>
-                <a
-                  href={telLink(technical.phoneDisplay)}
-                  dir="ltr"
-                  className="block text-xs font-bold text-foreground/80 hover:text-primary transition-colors mt-0.5 ps-5"
-                >
-                  {technical.phoneDisplay}
-                </a>
-              </li>
-              <li>
-                <a
-                  href={whatsappLink(teacher.phoneIntl)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="hover:text-foreground inline-flex items-center gap-1.5"
-                >
-                  <GraduationCap className="w-3.5 h-3.5 shrink-0" />
-                  {tr("landing.119")}
-                </a>
-                <a
-                  href={telLink(teacher.phoneDisplay)}
-                  dir="ltr"
-                  className="block text-xs font-bold text-foreground/80 hover:text-primary transition-colors mt-0.5 ps-5"
-                >
-                  {teacher.phoneDisplay}
-                </a>
-              </li>
-              <li>
-                <a
-                  href={whatsappLink(subscription.phoneIntl)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="hover:text-foreground inline-flex items-center gap-1.5"
-                >
-                  <CreditCard className="w-3.5 h-3.5 shrink-0" />
-                  Subscription Support
-                </a>
-                <a
-                  href={telLink(subscription.phoneDisplay)}
-                  dir="ltr"
-                  className="block text-xs font-bold text-foreground/80 hover:text-primary transition-colors mt-0.5 ps-5"
-                >
-                  {subscription.phoneDisplay}
-                </a>
-              </li>
+                  <div className="flex items-center gap-1.5 text-[10px] font-bold text-primary mb-1">
+                    <Icon className="w-3 h-3 shrink-0" />
+                    <span>{label}</span>
+                  </div>
+                  <div
+                    dir="ltr"
+                    className="flex items-center flex-wrap gap-x-1.5 gap-y-0.5 text-xs"
+                  >
+                    <span className="font-bold text-foreground truncate">
+                      {person.name}
+                    </span>
+                    <span
+                      aria-hidden="true"
+                      className="text-muted-foreground/50"
+                    >
+                      ·
+                    </span>
+                    <a
+                      href={telLink(person.phoneDisplay)}
+                      className="font-black tabular-nums text-foreground hover:text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 rounded-sm"
+                    >
+                      {person.phoneDisplay}
+                    </a>
+                    <a
+                      href={whatsappLink(person.phoneIntl)}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label={`WhatsApp — ${person.name}`}
+                      className="ms-0.5 inline-flex items-center justify-center w-5 h-5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                    >
+                      <MessageCircle className="w-3 h-3" />
+                    </a>
+                  </div>
+                </li>
+              ))}
             </ul>
           </div>
         </div>

@@ -25,6 +25,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { brand } from "@/lib/brand";
 import { SupportCard } from "@/components/shared/support-card";
+import { NOTIFICATIONS_CHANGED_EVENT } from "@/components/shared/notifications-panel";
 import { GlobalControls } from "@/components/global-controls";
 import {
   LayoutDashboard,
@@ -86,12 +87,14 @@ const NAV_BY_ROLE: Record<string, NavItem[]> = {
   PARENT: [
     { key: "parent-dashboard", label: "shell.027", icon: LayoutDashboard },
     { key: "parent-report", label: "shell.006", icon: FileText },
+    { key: "parent-notifications", label: "shell.005", icon: Bell },
   ],
   TEACHER: [
     { key: "teacher-dashboard", label: "shell.027", icon: LayoutDashboard },
     { key: "teacher-attendance", label: "shell.034", icon: CalendarDays },
     { key: "teacher-quizzes", label: "shell.035", icon: Trophy },
     { key: "teacher-homework", label: "shell.004", icon: ClipboardList },
+    { key: "teacher-notifications", label: "shell.005", icon: Bell },
   ],
   ADMIN: [
     { key: "admin-overview", label: "shell.036", icon: LayoutDashboard },
@@ -299,6 +302,21 @@ function pageTitle(view: string, role: string) {
   return all.find((i) => i.key === view)?.label || "Dashboard";
 }
 
+/**
+ * The bell opens the CURRENT role's own notifications surface. Before the
+ * post-launch fix every non-admin role was sent to `student-notifications`,
+ * a view only the Student dashboard renders — so a Teacher's badge showed an
+ * unread count while clicking the bell revealed no notification content.
+ * (ADMIN keeps the management center, which now also lists the admin's own
+ * notifications.)
+ */
+const NOTIFICATION_VIEW_BY_ROLE: Record<string, string> = {
+  STUDENT: "student-notifications",
+  TEACHER: "teacher-notifications",
+  PARENT: "parent-notifications",
+  ADMIN: "admin-notifications",
+};
+
 function NotificationsBell() {
   const tr = useT();
   const user = useApp((s) => s.user);
@@ -319,9 +337,22 @@ function NotificationsBell() {
     return () => clearInterval(t);
   }, [refresh]);
 
+  // Instant badge refresh when the notifications panel marks things read
+  // (event-driven — no extra polling).
+  React.useEffect(() => {
+    const onChanged = () => refresh();
+    window.addEventListener(NOTIFICATIONS_CHANGED_EVENT, onChanged);
+    return () => window.removeEventListener(NOTIFICATIONS_CHANGED_EVENT, onChanged);
+  }, [refresh]);
+
   return (
     <button
-      onClick={() => setView(user?.role === "ADMIN" ? "admin-notifications" : "student-notifications")}
+      onClick={() =>
+        setView(
+          (NOTIFICATION_VIEW_BY_ROLE[user?.role || "STUDENT"] ||
+            "student-notifications") as any
+        )
+      }
       className="relative p-2 rounded-md hover:bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
       aria-label={tr("shell.005")}
     >

@@ -25,6 +25,10 @@ import { StudentDashboard } from "@/components/student/student-dashboard";
 import { ParentDashboard } from "@/components/parent/parent-dashboard";
 import { TeacherDashboard } from "@/components/teacher/teacher-dashboard";
 import { AdminDashboard } from "@/components/admin/admin-dashboard";
+// SHARED role → view whitelist (single definition, also used by the
+// notifications panel): stale/illegal persisted views redirect safely
+// instead of rendering a component that would hit a forbidden API.
+import { isViewForRole } from "@/lib/view-roles";
 import { StudentCourseView } from "@/components/course/student-course";
 import { StudentLessonView } from "@/components/course/student-lesson";
 import { QuizRunner } from "@/components/course/quiz-runner";
@@ -223,6 +227,7 @@ function renderView(view: string, role?: string | null) {
       return <CertificateView />;
     case "parent-dashboard":
     case "parent-report":
+    case "parent-notifications":
       return <ParentDashboard />;
     case "teacher-dashboard":
     case "teacher-attendance":
@@ -230,6 +235,7 @@ function renderView(view: string, role?: string | null) {
     case "teacher-homework":
     case "teacher-templates":
     case "teacher-analytics":
+    case "teacher-notifications":
       return <TeacherDashboard />;
     // All admin-* views route to the AdminDashboard shell
     case "admin-overview":
@@ -253,61 +259,4 @@ function renderView(view: string, role?: string | null) {
   }
 }
 
-/**
- * Whitelist of view keys per role — used to detect stale/illegal views
- * (e.g. an admin landing on a student-only view after a role change or a
- * previously-persisted in-memory state) so we can redirect safely instead
- * of rendering a component that will hit a forbidden API.
- */
-function isViewForRole(view: string, role: string): boolean {
-  // Public / auth / enrollment pages are valid before/after login.
-  if (view === "landing" || view === "login" || view === "register" || view === "enroll") {
-    return true;
-  }
-  const VIEWS_BY_ROLE: Record<string, string[]> = {
-    STUDENT: [
-      "student-dashboard",
-      "student-course",
-      "student-lesson",
-      "student-quiz",
-      "student-homework",
-      "student-notifications",
-      "student-progress",
-      "student-exam",
-      "student-session-videos",
-      "student-bookmarks",
-      "student-scheduler",
-      "student-referral",
-      "student-leaderboard",
-      "student-achievements",
-      "student-certificate",
-    ],
-    PARENT: ["parent-dashboard", "parent-report"],
-    TEACHER: [
-      "teacher-dashboard",
-      "teacher-attendance",
-      "teacher-quizzes",
-      "teacher-homework",
-      "teacher-templates",
-      "teacher-analytics",
-    ],
-    ADMIN: [
-      "admin-overview",
-      "admin-students",
-      "admin-teachers",
-      "admin-groups",
-      "admin-courses",
-      "admin-sessions",
-      "admin-payments",
-      "admin-subscriptions",
-      "admin-coupons",
-      "admin-question-bank",
-      "admin-notifications",
-      "admin-session-videos",
-      "admin-mock-exams",
-      "admin-quiz-review",
-      "admin-settings",
-    ],
-  };
-  return (VIEWS_BY_ROLE[role] || []).includes(view);
-}
+

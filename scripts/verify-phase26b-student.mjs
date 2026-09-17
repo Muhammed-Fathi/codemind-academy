@@ -783,14 +783,28 @@ matrixRow(
 );
 
 // ===========================================================================
-section("STUDENT-05 — Active plan listing (Early Bird visible while open)");
+section("STUDENT-05 — Plan listing (active first; closed stay VISIBLE, flagged)");
 // ===========================================================================
+// Post-launch contract (owner decision): a plan that is CLOSED for sale no
+// longer disappears from the catalogue — it stays listed, flagged
+// `isActive:false`, so the enrolment UI can render it as "غير متاحة حاليًا"
+// (visible, clearly unavailable, unselectable). Ordering keeps active plans
+// first. Availability is still enforced SERVER-side at submission (§8 below)
+// and at approval — the flag is presentation, never authorization.
 const plansOpen = await call("GET", "/api/subscription-plans");
-const planIdsOpen = (plansOpen.json?.plans ?? []).map((p) => p.id);
+const plansList = plansOpen.json?.plans ?? [];
+const planIdsOpen = plansList.map((p) => p.id);
 ok(planIdsOpen.includes("qa26b-plan-early"), "Early Bird (active) is listed");
 ok(planIdsOpen.includes("qa26b-plan-monthly"), "Monthly is listed");
-ok(!planIdsOpen.includes("qa26b-plan-closed"), "CLOSED plan is NOT listed");
-matrixRow("STUDENT-05", "Active plan listing", "only isActive plans are selectable", "only active plans listed; closed plan hidden", "PASS", "/api/subscription-plans (where isActive: true)");
+const closedPlan = plansList.find((p) => p.id === "qa26b-plan-closed");
+ok(Boolean(closedPlan), "CLOSED plan stays listed (visible, not hidden)");
+eq(closedPlan?.isActive, false, "CLOSED plan is flagged isActive:false");
+const closedIdx = planIdsOpen.indexOf("qa26b-plan-closed");
+ok(
+  plansList.every((p) => (p.isActive !== false ? planIdsOpen.indexOf(p.id) < closedIdx : true)),
+  "active plans are ordered before closed plans"
+);
+matrixRow("STUDENT-05", "Plan listing", "active first; closed visible + flagged, unselectable", "closed plan stays listed but flagged isActive:false; purchase refused at submit/approval", "PASS", "/api/subscription-plans (orderBy isActive desc) + enroll isActive guard");
 
 // ===========================================================================
 section("STUDENT-04/06 + §6 — Enrollment tampering: groups & plans (server-side)");
@@ -872,7 +886,11 @@ section("§8 — Early Bird: closing it removes it from sale (and re-opening res
 // ===========================================================================
 db.prepare(`UPDATE "SubscriptionPlan" SET "isActive"=0 WHERE "id"='qa26b-plan-early'`).run();
 const plansClosed = await call("GET", "/api/subscription-plans");
-ok(!(plansClosed.json?.plans ?? []).some((p) => p.id === "qa26b-plan-early"), "closed Early Bird disappears from the plan list");
+// Post-launch: closing does NOT hide the plan — it stays listed, flagged,
+// and the enrolment UI renders it as unavailable. What MUST hold is the
+// next line: a closed plan is refused at submission.
+const closedEarly = (plansClosed.json?.plans ?? []).find((p) => p.id === "qa26b-plan-early");
+ok(Boolean(closedEarly) && closedEarly.isActive === false, "closed Early Bird stays listed but flagged isActive:false");
 const tEarlyClosed = await call("POST", "/api/enroll", { body: enrollBody({ planId: "qa26b-plan-early" }), cookie: AR });
 ok(tEarlyClosed.status === 400, "closed Early Bird is NOT purchasable via the API (400)");
 db.prepare(`UPDATE "SubscriptionPlan" SET "isActive"=1 WHERE "id"='qa26b-plan-early'`).run();

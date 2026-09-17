@@ -76,9 +76,12 @@ section("A1. /api/enroll — closed-for-sale plans are refused at submission");
     src.includes("api.276"),
     "A1: the refusal reuses the approved decision-layer copy (api.276), not a new message"
   );
-  // The listing endpoint filters closed plans (student can never SEE one).
+  // Post-launch: the catalogue no longer HIDES closed plans (owner decision:
+  // a closed plan stays visible, flagged, unselectable). The pin now guards
+  // the NEW contract: no active-only filter, active plans ordered first.
   const plansSrc = read("src/app/api/subscription-plans/route.ts");
-  ok(plansSrc.includes("isActive: true"), "A1: /api/subscription-plans lists isActive plans only");
+  ok(!plansSrc.includes("isActive: true"), "A1: /api/subscription-plans no longer filters out closed plans");
+  ok(plansSrc.includes('{ isActive: "desc" }'), "A1: /api/subscription-plans keeps active plans first (flagged closed stay visible)");
   // The decision layer already refused inactive plans (approval side).
   const transitions = read("src/lib/payment-transitions.ts");
   ok(

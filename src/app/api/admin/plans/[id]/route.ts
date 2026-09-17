@@ -11,6 +11,39 @@ import { db } from "@/lib/db";
 import { ok, err, requireRole } from "@/lib/api";
 import { getServerT } from "@/lib/i18n-server";
 
+// GET /api/admin/plans/[id] — plan + the dependency counts that decide
+// whether hard delete is safe. The Admin UI uses this to show WHY a delete
+// is impossible (dependency counts + backend reason) instead of hiding the
+// action or letting the user guess.
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const tApi = await getServerT();
+  const { error } = await requireRole("ADMIN");
+  if (error) return error;
+
+  const { id } = await params;
+  const plan = await db.subscriptionPlan.findUnique({ where: { id } });
+  if (!plan) return err(tApi("api.025"), 404);
+
+  const [activeSubscriptions, totalSubscriptions, paymentReferences] =
+    await Promise.all([
+      db.subscription.count({ where: { planId: id, status: "ACTIVE" } }),
+      db.subscription.count({ where: { planId: id } }),
+      db.payment.count({ where: { requestedPlanId: id } }),
+    ]);
+
+  // deleteSafe mirrors the DELETE route's guard exactly — the UI and the
+  // API can never disagree about whether a hard delete is allowed.
+  const deleteSafe =
+    activeSubscriptions === 0 &&
+    totalSubscriptions === 0 &&
+    paymentReferences === 0;
+
+  return ok({ plan, dependencies: { activeSubscriptions, totalSubscriptions, paymentReferences, deleteSafe } });
+}
+
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }

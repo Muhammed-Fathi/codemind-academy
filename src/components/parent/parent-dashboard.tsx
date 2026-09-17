@@ -17,6 +17,7 @@ import {
   type ParentSubscriptionPayload,
 } from "@/lib/parent-subscription";
 import { NotificationPreferences } from "@/components/shared/notification-preferences";
+import { NotificationsPanel } from "@/components/shared/notifications-panel";
 import { ParentAnalyticsView } from "@/components/parent/analytics-view";
 import { WeeklyReportView } from "@/components/parent/weekly-report";
 
@@ -267,6 +268,7 @@ function formatDateAr(date: string | Date): string {
 export function ParentDashboard() {
   const tr = useT();
   const locale = useLocale();
+  const view = useApp((s) => s.view);
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["parent-dashboard"],
     queryFn: async () => {
@@ -274,6 +276,9 @@ export function ParentDashboard() {
       if (!r.ok) throw new Error("failed to load dashboard");
       return (await r.json()) as DashboardPayload;
     },
+    // The notifications view is its own surface — no dashboard fetch needed
+    // (one intentional fetch per view, per the performance rules).
+    enabled: view !== "parent-notifications",
   });
 
   const [activeChildId, setActiveChildId] = React.useState<string | null>(null);
@@ -286,6 +291,17 @@ export function ParentDashboard() {
       setActiveChildId(data.children[0].id);
     }
   }, [data, activeChildId]);
+
+  // Post-launch fix: the Parent's own notifications live in the SHARED panel
+  // (the bell used to route parents to the student-only notifications view).
+  if (view === "parent-notifications") {
+    return (
+      <NotificationsPanel
+        homeView="parent-dashboard"
+        title={tr("notif.title")}
+      />
+    );
+  }
 
   if (showReport) {
     // Phase 7: the report covers the SELECTED child, not children[0].
