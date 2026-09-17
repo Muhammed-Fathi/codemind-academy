@@ -47,8 +47,9 @@ Pool عربي للكورس = 17 سؤال، والـRANDOM بياخد 5 منهم�
 
 1. **البنك**: `schoolType` = بنك الامتحان أو `null` (مشترك) — نفس `questionBankFilter`.
 2. **النطاق**: واحد من:
-   - **بنك حر بدون درس** (`Question.quizId = null` أو الكويز بدون درس،
-     و`ExamQuestion.lessonId = null`) → مؤهل لأي كورس من نفس البنك. ✅ ده اللي كان مكسور.
+   - **بنك حر بدون درس** (`Question.quizId = null` — و`Quiz.lessonId` عمود غير قابل
+     للـnull، فالسؤال إما بدون كويز تمامًا أو داخل درس؛ و`ExamQuestion.lessonId = null`)
+     → مؤهل لأي كورس من نفس البنك. ✅ ده اللي كان مكسور.
    - **مربوط بدرس** من دروس الكورس اللي **مرئية للطالب** (`status = PUBLISHED`،
      والدرس تابع لكورس الامتحان أو كورس الطالب لو الامتحان مش مربوط بكورس) — على السلسلتين
      (canonical: unit→part، وlegacy: topic→unit→part).
@@ -173,10 +174,24 @@ Pool عربي للكورس = 17 سؤال، والـRANDOM بياخد 5 منهم�
   بيخرج `ENOENT` لعدم وجودهم هنا.
 - `phase26d-concurrency-postgres`: `SKIPPED` — محتاج PostgreSQL حقيقي (CI بيبنيها).
 
-**TypeScript:** `npx tsc --noEmit` ⟹ 58 خطأ قبل التغيير و58 بعده، بنفس القائمة بالحرف
-(`diff` فاضي). الـ58 كلها في 14 ملف **مش من ضمنها أي ملف اتغيّر**، وسببها إن
-`@prisma/client` غير مولّد في البيئة دي (`prisma generate` محتاج تنزيل engines، مش متاح
-offline) — يعني مفيش أي خطأ جديد في الكود الجديد/المعدّل.
+**TypeScript (المصدر الرسمي = CI):** بوابة CI بتعمل `npx prisma generate && npx tsc --noEmit`
+على الـclient الحقيقي المتولّد — و**3/3 بوابات CI كلها success** على آخر commit:
+
+- Migration provider architecture gate — success
+  (https://github.com/Muhammed-Fathi/codemind-academy/actions/runs/35260699546)
+- Phase 26D PostgreSQL concurrency gate — success
+  (https://github.com/Muhammed-Fathi/codemind-academy/actions/runs/35260699446)
+- PG17 trusted catalog references (pre-26D + POST-26D full chain) — success
+  (https://github.com/Muhammed-Fathi/codemind-academy/actions/runs/35260699433)
+
+في البيئة المحلية للـsandbox الـ`@prisma/client` **غير مولّد** (`prisma generate` محتاج
+تنزيل engines ومش متاح offline)، فالمقارنة المحلية هي: 58 خطأ قبل التغيير (كلها في ملفات
+قديمة بسبب العميل غير المولّد) و58 بعده + 11 خطأ إضافي في ملفات الإصلاح، كلها من نوع
+واحد: `Namespace ... Prisma has no exported member 'QuestionWhereInput' /
+'ExamQuestionWhereInput' / 'LessonWhereInput'` — أي إن السطر اللي بيقول "استخدم نوع
+Prisma الحقيقي" هو نفسه اللي بيفشل محليًا لغياب العميل. البوابات الثلاثة (وعلى رأسها
+`tsc` مع العميل الحقيقي + `next build` على Postgres) كلها خضراء، يعني الكود يمرّ
+type-check كامل في البيئة الصحيحة.
 
 **ESLint:** نفس عدد أخطاء ما قبل التغيير بالظبط (3 أخطاء قائمة في ملفين، نمط قديم)،
 صفر أخطاء إضافية.
