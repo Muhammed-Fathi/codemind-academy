@@ -94,7 +94,9 @@ const connectSrcOf = (env) => Csp.parseCsp(prodCsp(env).value)["connect-src"];
 
 // The canonical trusted origin used across the scenarios below.
 const ACCT = "acme123";
-const R2_ORIGIN = `https://${ACCT}.r2.cloudflarestorage.com`;
+const BUCKET = "media-bucket";
+const R2_ACCOUNT_ENDPOINT = `https://${ACCT}.r2.cloudflarestorage.com`;
+const R2_ORIGIN = `https://${BUCKET}.${ACCT}.r2.cloudflarestorage.com`;
 
 // ---------------------------------------------------------------------------
 section("1. 'self' always remains allowed (backend-independent baseline)");
@@ -139,14 +141,14 @@ section("2. MEDIA_BACKEND=s3 adds exactly the trusted R2 origin");
     Csp.resolveDirectUploadConnectOrigin?.({ ...env });
 
   // Derived from R2_ACCOUNT_ID (the same resolution resolveR2Config uses).
-  const fromAccount = decide({ MEDIA_BACKEND: "s3", R2_ACCOUNT_ID: ACCT });
+  const fromAccount = decide({ MEDIA_BACKEND: "s3", R2_BUCKET: BUCKET, R2_ACCOUNT_ID: ACCT });
   ok(fromAccount && fromAccount.status === "ok", "s3 + R2_ACCOUNT_ID → status ok");
   ok(
     fromAccount && fromAccount.origin === R2_ORIGIN,
     "s3 + R2_ACCOUNT_ID → origin is https://<account>.r2.cloudflarestorage.com"
   );
   eq(
-    connectSrcOf({ MEDIA_BACKEND: "s3", R2_ACCOUNT_ID: ACCT }),
+    connectSrcOf({ MEDIA_BACKEND: "s3", R2_BUCKET: BUCKET, R2_ACCOUNT_ID: ACCT }),
     ["'self'", R2_ORIGIN],
     "connect-src = ['self', <R2 origin>] (exact list, in order)"
   );
@@ -154,7 +156,7 @@ section("2. MEDIA_BACKEND=s3 adds exactly the trusted R2 origin");
   // Case-insensitive backend selector, case-normalised host (matches
   // resolveStorageBackendName / URL host normalisation).
   eq(
-    connectSrcOf({ MEDIA_BACKEND: "S3", R2_ACCOUNT_ID: ACCT.toUpperCase() }),
+    connectSrcOf({ MEDIA_BACKEND: "S3", R2_BUCKET: BUCKET, R2_ACCOUNT_ID: ACCT.toUpperCase() }),
     ["'self'", R2_ORIGIN],
     "MEDIA_BACKEND=S3 (case-insensitive) + uppercase account → same exact origin"
   );
@@ -162,25 +164,25 @@ section("2. MEDIA_BACKEND=s3 adds exactly the trusted R2 origin");
   // Explicit R2_S3_ENDPOINT wins, mirroring resolveR2Config.
   eq(
     connectSrcOf({
-      MEDIA_BACKEND: "s3",
+      MEDIA_BACKEND: "s3", R2_BUCKET: BUCKET,
       R2_ACCOUNT_ID: "other-account",
-      R2_S3_ENDPOINT: R2_ORIGIN,
+      R2_S3_ENDPOINT: R2_ACCOUNT_ENDPOINT,
     }),
     ["'self'", R2_ORIGIN],
     "R2_S3_ENDPOINT overrides the account-derived default"
   );
   eq(
     connectSrcOf({
-      MEDIA_BACKEND: "s3",
+      MEDIA_BACKEND: "s3", R2_BUCKET: BUCKET,
       R2_S3_ENDPOINT: `https://${ACCT}.eu.r2.cloudflarestorage.com`,
     }),
-    ["'self'", `https://${ACCT}.eu.r2.cloudflarestorage.com`],
+    ["'self'", `https://${BUCKET}.${ACCT}.eu.r2.cloudflarestorage.com`],
     "jurisdiction endpoint (eu.) is allowed as an exact origin"
   );
   eq(
     connectSrcOf({
-      MEDIA_BACKEND: "s3",
-      R2_S3_ENDPOINT: `${R2_ORIGIN}/`,
+      MEDIA_BACKEND: "s3", R2_BUCKET: BUCKET,
+      R2_S3_ENDPOINT: `${R2_ACCOUNT_ENDPOINT}/`,
     }),
     ["'self'", R2_ORIGIN],
     "endpoint with a trailing slash → bare origin (no path inserted)"
@@ -188,13 +190,13 @@ section("2. MEDIA_BACKEND=s3 adds exactly the trusted R2 origin");
 
   // Serialized header contract, exactly as a browser parses it.
   ok(
-    prodCsp({ MEDIA_BACKEND: "s3", R2_ACCOUNT_ID: ACCT }).value.includes(
+    prodCsp({ MEDIA_BACKEND: "s3", R2_BUCKET: BUCKET, R2_ACCOUNT_ID: ACCT }).value.includes(
       `connect-src 'self' ${R2_ORIGIN}`
     ),
     "serialized header contains `connect-src 'self' <R2 origin>`"
   );
   ok(
-    prodCsp({ MEDIA_BACKEND: "s3", R2_ACCOUNT_ID: ACCT }).header ===
+    prodCsp({ MEDIA_BACKEND: "s3", R2_BUCKET: BUCKET, R2_ACCOUNT_ID: ACCT }).header ===
       "Content-Security-Policy",
     "with the R2 origin the CSP is still ENFORCED (not report-only)"
   );
@@ -204,7 +206,7 @@ section("2. MEDIA_BACKEND=s3 adds exactly the trusted R2 origin");
   const dev = Csp.parseCsp(
     Csp.decideCspHeader({
       NODE_ENV: "development",
-      MEDIA_BACKEND: "s3",
+      MEDIA_BACKEND: "s3", R2_BUCKET: BUCKET,
       R2_ACCOUNT_ID: ACCT,
     }).value
   );
@@ -225,20 +227,20 @@ section("3. Fail-closed: missing/malformed endpoint NEVER weakens the policy");
 {
   const cases = [
     ["s3 backend with NO R2 env at all", { MEDIA_BACKEND: "s3" }, "R2_S3_ENDPOINT or R2_ACCOUNT_ID"],
-    ["s3 backend with EMPTY R2_ACCOUNT_ID (would derive a leading-dot host)", { MEDIA_BACKEND: "s3", R2_ACCOUNT_ID: "" }, null],
-    ["s3 backend with WHITESPACE-only R2_ACCOUNT_ID", { MEDIA_BACKEND: "s3", R2_ACCOUNT_ID: "   " }, null],
-    ["http:// endpoint (HTTPS required)", { MEDIA_BACKEND: "s3", R2_S3_ENDPOINT: `http://${ACCT}.r2.cloudflarestorage.com` }, null],
-    ["path in endpoint", { MEDIA_BACKEND: "s3", R2_S3_ENDPOINT: `${R2_ORIGIN}/prefix` }, null],
-    ["query string in endpoint", { MEDIA_BACKEND: "s3", R2_S3_ENDPOINT: `${R2_ORIGIN}?X-Amz-Signature=x` }, null],
-    ["fragment in endpoint", { MEDIA_BACKEND: "s3", R2_S3_ENDPOINT: `${R2_ORIGIN}#frag` }, null],
-    ["credentials in endpoint", { MEDIA_BACKEND: "s3", R2_S3_ENDPOINT: "https://key:secret@storage.example.com" }, null],
-    ["not a URL", { MEDIA_BACKEND: "s3", R2_S3_ENDPOINT: "not-a-url" }, null],
-    ["javascript: pseudo-URL", { MEDIA_BACKEND: "s3", R2_S3_ENDPOINT: "javascript:alert(1)" }, null],
-    ["empty host", { MEDIA_BACKEND: "s3", R2_S3_ENDPOINT: "https://" }, null],
-    ["dot-only relative host", { MEDIA_BACKEND: "s3", R2_S3_ENDPOINT: "https://." }, null],
-    ["empty-label host", { MEDIA_BACKEND: "s3", R2_S3_ENDPOINT: "https://a..b.example" }, null],
-    ["path injection via R2_ACCOUNT_ID", { MEDIA_BACKEND: "s3", R2_ACCOUNT_ID: "evil.com/inject" }, null],
-    ["ftp scheme via R2_ACCOUNT_ID is impossible; endpoint ftp:", { MEDIA_BACKEND: "s3", R2_S3_ENDPOINT: `ftp://${ACCT}.r2.cloudflarestorage.com` }, null],
+    ["s3 backend with EMPTY R2_ACCOUNT_ID (would derive a leading-dot host)", { MEDIA_BACKEND: "s3", R2_BUCKET: BUCKET, R2_ACCOUNT_ID: "" }, null],
+    ["s3 backend with WHITESPACE-only R2_ACCOUNT_ID", { MEDIA_BACKEND: "s3", R2_BUCKET: BUCKET, R2_ACCOUNT_ID: "   " }, null],
+    ["http:// endpoint (HTTPS required)", { MEDIA_BACKEND: "s3", R2_BUCKET: BUCKET, R2_S3_ENDPOINT: `http://${ACCT}.r2.cloudflarestorage.com` }, null],
+    ["path in endpoint", { MEDIA_BACKEND: "s3", R2_BUCKET: BUCKET, R2_S3_ENDPOINT: `${R2_ORIGIN}/prefix` }, null],
+    ["query string in endpoint", { MEDIA_BACKEND: "s3", R2_BUCKET: BUCKET, R2_S3_ENDPOINT: `${R2_ORIGIN}?X-Amz-Signature=x` }, null],
+    ["fragment in endpoint", { MEDIA_BACKEND: "s3", R2_BUCKET: BUCKET, R2_S3_ENDPOINT: `${R2_ORIGIN}#frag` }, null],
+    ["credentials in endpoint", { MEDIA_BACKEND: "s3", R2_BUCKET: BUCKET, R2_S3_ENDPOINT: "https://key:secret@storage.example.com" }, null],
+    ["not a URL", { MEDIA_BACKEND: "s3", R2_BUCKET: BUCKET, R2_S3_ENDPOINT: "not-a-url" }, null],
+    ["javascript: pseudo-URL", { MEDIA_BACKEND: "s3", R2_BUCKET: BUCKET, R2_S3_ENDPOINT: "javascript:alert(1)" }, null],
+    ["empty host", { MEDIA_BACKEND: "s3", R2_BUCKET: BUCKET, R2_S3_ENDPOINT: "https://" }, null],
+    ["dot-only relative host", { MEDIA_BACKEND: "s3", R2_BUCKET: BUCKET, R2_S3_ENDPOINT: "https://." }, null],
+    ["empty-label host", { MEDIA_BACKEND: "s3", R2_BUCKET: BUCKET, R2_S3_ENDPOINT: "https://a..b.example" }, null],
+    ["path injection via R2_ACCOUNT_ID", { MEDIA_BACKEND: "s3", R2_BUCKET: BUCKET, R2_ACCOUNT_ID: "evil.com/inject" }, null],
+    ["ftp scheme via R2_ACCOUNT_ID is impossible; endpoint ftp:", { MEDIA_BACKEND: "s3", R2_BUCKET: BUCKET, R2_S3_ENDPOINT: `ftp://${ACCT}.r2.cloudflarestorage.com` }, null],
   ];
   for (const [label, env] of cases) {
     eq(connectSrcOf(env), ["'self'"], `${label} → connect-src is EXACTLY 'self' (fail closed)`);
@@ -247,7 +249,7 @@ section("3. Fail-closed: missing/malformed endpoint NEVER weakens the policy");
   // Reasons name VARIABLES, never values — safe for boot logs, no secret echo.
   const missing = { status: "invalid", reason: "" };
   const withCreds = (Csp.resolveDirectUploadConnectOrigin?.({
-    MEDIA_BACKEND: "s3",
+    MEDIA_BACKEND: "s3", R2_BUCKET: BUCKET,
     R2_S3_ENDPOINT: "https://key:secret@storage.example.com",
   }) ?? missing);
   ok(
@@ -257,7 +259,7 @@ section("3. Fail-closed: missing/malformed endpoint NEVER weakens the policy");
     "invalid-endpoint reason names the VARIABLE, never echoes the value"
   );
   const notUrl = (Csp.resolveDirectUploadConnectOrigin?.({
-    MEDIA_BACKEND: "s3",
+    MEDIA_BACKEND: "s3", R2_BUCKET: BUCKET,
     R2_S3_ENDPOINT: "not-a-url",
   }) ?? missing);
   ok(
@@ -270,7 +272,7 @@ section("3. Fail-closed: missing/malformed endpoint NEVER weakens the policy");
 section("4. No wildcards, no unrelated origins, other directives intact");
 // ---------------------------------------------------------------------------
 {
-  const env = { MEDIA_BACKEND: "s3", R2_ACCOUNT_ID: ACCT };
+  const env = { MEDIA_BACKEND: "s3", R2_BUCKET: BUCKET, R2_ACCOUNT_ID: ACCT };
   const prod = prodCsp(env);
   const withR2 = Csp.parseCsp(prod.value);
   const baseline = Csp.parseCsp(prodCsp({}).value); // same build, backend off

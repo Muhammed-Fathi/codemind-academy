@@ -78,6 +78,8 @@
 // Directives
 // ---------------------------------------------------------------------------
 
+import { resolveDirectUploadOrigin } from "./r2-upload-origin";
+
 export const CSP_DIRECTIVE_ORDER = [
   "default-src",
   "script-src",
@@ -98,13 +100,6 @@ export type CspDirective = (typeof CSP_DIRECTIVE_ORDER)[number];
 
 /** The environment shape every CSP decision reads (never values are logged). */
 export type CspEnv = Record<string, string | undefined>;
-
-/**
- * Default R2 S3-API host suffix, mirroring `resolveR2Config` in
- * src/lib/media-s3.ts: when `R2_S3_ENDPOINT` is unset the endpoint is derived
- * from the mandatory `R2_ACCOUNT_ID`.
- */
-const R2_DEFAULT_ENDPOINT_HOST_SUFFIX = ".r2.cloudflarestorage.com";
 
 /**
  * Why (and whether) `connect-src` gains a direct-upload origin.
@@ -132,103 +127,16 @@ export type DirectUploadOriginDecision =
  * PURE and FAIL-CLOSED. Never throws, never returns a wildcard, never returns
  * anything but an exact https origin (or null). Reasons name VARIABLES, never
  * values, so the strings are safe for boot logs.
+ *
+ * NOTE: Cloudflare R2 S3 SDK defaults to virtual-hosted addressing.
+ * When the endpoint is the account endpoint the generated URL uses the
+ * bucket-prefixed host  https://<bucket>.<account>.r2.cloudflarestorage.com.
+ * CSP must allow that exact virtual-hosted origin.
  */
 export function resolveDirectUploadConnectOrigin(
   env: CspEnv = process.env as CspEnv
 ): DirectUploadOriginDecision {
-  // Mirror `resolveStorageBackendName` (src/lib/media.ts): the selector is
-  // `MEDIA_BACKEND`, empty/unset means "local", comparison is
-  // case-insensitive. Only "s3" produces direct browser uploads.
-  const backend = String(env.MEDIA_BACKEND ?? "").trim().toLowerCase();
-  if (backend !== "s3") {
-    return {
-      status: "not-required",
-      origin: null,
-      reason:
-        `MEDIA_BACKEND is not "s3" — the browser never connects to object ` +
-        `storage directly, so connect-src stays 'self'.`,
-    };
-  }
-
-  // Same endpoint resolution order as `resolveR2Config` in media-s3.ts:
-  // R2_S3_ENDPOINT when set, else https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com
-  const endpointRaw = String(env.R2_S3_ENDPOINT ?? "").trim();
-  let candidate = endpointRaw;
-  if (!candidate) {
-    const accountId = String(env.R2_ACCOUNT_ID ?? "").trim();
-    if (!accountId) {
-      return {
-        status: "invalid",
-        origin: null,
-        reason:
-          `MEDIA_BACKEND="s3" but neither R2_S3_ENDPOINT nor R2_ACCOUNT_ID ` +
-          `is set, so the trusted upload origin cannot be derived. ` +
-          `connect-src stays 'self' and direct browser uploads will be ` +
-          `blocked by the CSP. Set the R2 environment and REBUILD (the CSP ` +
-          `header is produced at build time) — see .env.example.`,
-      };
-    }
-    candidate = `https://${accountId}${R2_DEFAULT_ENDPOINT_HOST_SUFFIX}`;
-  }
-
-  // Structural validation — an EXACT https origin, nothing else:
-  //   * scheme MUST be https (uploads are signed against the TLS endpoint);
-  //   * no userinfo (credentials must never appear in a policy), no path, no
-  //     query, no fragment — only scheme://host[:port] is accepted;
-  //   * the URL must parse and carry a real hostname at all.
-  // Anything else is rejected WITHOUT echoing it: the policy simply stays
-  // 'self' (never weaker than the pre-direct-upload policy) and the reason
-  // names the variable so the operator can fix the deployment.
-  let url: URL;
-  try {
-    url = new URL(candidate);
-  } catch {
-    return {
-      status: "invalid",
-      origin: null,
-      reason:
-        `MEDIA_BACKEND="s3" requires a usable upload origin, but ` +
-        `${endpointRaw ? "R2_S3_ENDPOINT" : "R2_ACCOUNT_ID"} is set to a ` +
-        `value that does not parse as an https URL. connect-src stays 'self' ` +
-        `and direct browser uploads will be blocked by the CSP. Fix the ` +
-        `variable (bare https origin, no path/query/credentials) and rebuild.`,
-    };
-  }
-  const isBareHttpsOrigin =
-    url.protocol === "https:" &&
-    url.hostname.length > 0 &&
-    // Reject structurally-broken hostnames (leading/trailing dot, empty
-    // label — e.g. an EMPTY R2_ACCOUNT_ID would otherwise produce the
-    // parseable-but-bogus host ".r2.cloudflarestorage.com").
-    !url.hostname.startsWith(".") &&
-    !url.hostname.endsWith(".") &&
-    !url.hostname.includes("..") &&
-    url.username === "" &&
-    url.password === "" &&
-    url.pathname === "/" &&
-    url.search === "" &&
-    url.hash === "" &&
-    url.origin !== "null";
-  if (!isBareHttpsOrigin) {
-    return {
-      status: "invalid",
-      origin: null,
-      reason:
-        `MEDIA_BACKEND="s3" requires the upload origin in ` +
-        `${endpointRaw ? "R2_S3_ENDPOINT" : "R2_ACCOUNT_ID"} to be a BARE ` +
-        `https origin (https://host — no path, no query, no credentials, no ` +
-        `non-https scheme). connect-src stays 'self' and direct browser ` +
-        `uploads will be blocked by the CSP. Fix the variable and rebuild.`,
-    };
-  }
-
-  return {
-    status: "ok",
-    origin: url.origin,
-    reason:
-      `MEDIA_BACKEND="s3": the presigned browser PUT targets this origin, ` +
-      `derived from ${endpointRaw ? "R2_S3_ENDPOINT" : "R2_ACCOUNT_ID"}.`,
-  };
+  return resolveDirectUploadOrigin(env as Record<string, string | undefined>);
 }
 
 /**

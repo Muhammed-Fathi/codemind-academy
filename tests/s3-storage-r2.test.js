@@ -729,7 +729,7 @@ async function main() {
     // never emits the values, and — pinned below — never touches the
     // credential variables at all.
     eq(grep(path.join(REPO, "src/lib")).sort(),
-      ["src/lib/content-security-policy.ts", "src/lib/media-s3.ts"],
+      ["src/lib/content-security-policy.ts", "src/lib/media-s3.ts", "src/lib/r2-upload-origin.ts"],
       "R2_* referenced ONLY in src/lib/media-s3.ts (server module) + content-security-policy.ts (connect-src origin derivation)");
 
     // The CSP derivation may use the ENDPOINT variables only — the credential

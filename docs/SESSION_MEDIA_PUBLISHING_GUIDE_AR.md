@@ -388,6 +388,10 @@ Security Policy directive: connect-src 'self'. The action has been blocked.
 معناها الحرفي: سياسة أمان التطبيق (`connect-src`) بتسمح بس بالمتصفح إنه يتصل بنفس نطاق المنصة (`'self'`)، وما بتسمحش بالنطاق بتاع التخزين. **الحل تشغيلي/نشر مش من واجهة الإدارة**: لازم إعادة بناء (rebuild) للتطبيق **وقت وجود متغيرات R2 في بيئة الـ build** (`MEDIA_BACKEND=s3` + `R2_ACCOUNT_ID` أو `R2_S3_ENDPOINT`)، عشان السياسة تتحط في الهيدر بأصل النطاق الموثوق المحدد ده بالظبط — من غير أي wildcards.
 
 > **مهم:** رسائل الـ CSP دي **لا** تعني أن الرابط الموقّع بايظ أو أن الملف غلط — الرابط سليم، والمتصفح هو اللي واقف في السكة.
+>
+> **ملاحظة R2 (Virtual-Hosted):** الـ S3 SDK الخاص بـ Cloudflare R2 بيستخدم افتراضيًا الـ **virtual-hosted addressing**، يعني رابط الـ PUT الموقّع ممكن يطلع من المتصفح على شكل:
+> `https://<bucket>.<account>.r2.cloudflarestorage.com/...`
+> مش مجرد `https://<account>.r2.cloudflarestorage.com/...`. لو الـ CSP سمح فقط بالنقطة الحسابية (account endpoint) فقط، المتصفح هيمنع الطلب قبل ما يبعت. لازم الـ CSP يوافق **الأصل بالظبط** اللي بيطلعه الـ SDK من `R2_BUCKET` + `R2_ACCOUNT_ID` / `R2_S3_ENDPOINT`. ما فيش wildcards، ولا بيانات سرية في الهيدر.
 
 ### شكل التدفق الصح في Network (المرجع)
 
@@ -395,7 +399,7 @@ Security Policy directive: connect-src 'self'. The action has been blocked.
 
 ```
 1) POST  /api/admin/media-uploads/init   → 200   (السيرفر يدي رابط PUT موقّع قصير الأجل)
-2) PUT   https://<account>.r2.cloudflarestorage.com/...   → 200   (الملف بيطير للـ R2 مباشرة)
+2) PUT   https://<bucket>.<account>.r2.cloudflarestorage.com/...   → 200   (الملف بيطير للـ R2 مباشرة — الأصل الافتراضي من الـ SDK)
 3) POST  /api/admin/media-uploads/complete → 200   (السيرفر يتحقق من الملف ويسجّله)
 ```
 

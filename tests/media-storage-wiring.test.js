@@ -366,7 +366,7 @@ section("2. No R2 URL, key or credential exposure anywhere");
   // server-only (imported solely by next.config.ts + instrumentation.ts) and
   // never emits values — the credential names stay confined to media-s3.ts
   // (pinned in tests/s3-storage-r2.test.js §12).
-  eq(libRefs.sort(), ["src/lib/content-security-policy.ts", "src/lib/media-s3.ts"],
+  eq(libRefs.sort(), ["src/lib/content-security-policy.ts", "src/lib/media-s3.ts", "src/lib/r2-upload-origin.ts"],
     "R2_* referenced only by the server-side s3 backend module + the CSP origin derivation (names only)");
 
   // Signed/public URL construction is now a CONFINED capability (Phase 23):
@@ -381,7 +381,7 @@ section("2. No R2 URL, key or credential exposure anywhere");
   // it is the non-secret default host used to derive the connect-src upload
   // origin from R2_ACCOUNT_ID (mirrors resolveR2Config). No third module may
   // ever carry it.
-  const defaultHostAllowlist = ["src/lib/media-s3.ts", "src/lib/content-security-policy.ts"];
+  const defaultHostAllowlist = ["src/lib/media-s3.ts", "src/lib/content-security-policy.ts", "src/lib/r2-upload-origin.ts"];
   for (const rel of filesUnder("src")) {
     const text = read(rel);
     if (/getSignedUrl|s3-request-presigner|createPresigned|PresignedPost|X-Amz-Signature/i.test(text)) signed.push(rel);
