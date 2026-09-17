@@ -109,7 +109,9 @@ export async function GET(req: NextRequest) {
         difficulty: q.difficulty,
         marks: q.marks,
         schoolType: q.schoolType,
-        bankOnly: !q.quizId || !q.quiz?.lessonId,
+        // Manual Question Bank rows carry no quiz at all (Quiz.lessonId is
+        // non-nullable, so "quiz without a lesson" cannot exist).
+        bankOnly: !q.quizId,
         lessonTitle: lesson ? lesson.titleAr || lesson.title : null,
       };
     });

@@ -114,6 +114,10 @@ export async function GET(req: NextRequest) {
   // explicitly shared (schoolType = null), can ever be selected.
   const bankFilter: Prisma.QuestionWhereInput =
     questionBankFilter(studentSchoolType);
+  // Same bank rule for the legacy table — typed for its own model so the two
+  // `findMany` calls below compose strictly typed `AND` arrays.
+  const examBankFilter: Prisma.ExamQuestionWhereInput =
+    questionBankFilter(studentSchoolType);
 
   // Get quiz questions from lessons in the course — BOTH chains: canonical
   // unit-linked lessons and legacy topic-linked lessons. Phase 5 minimal
@@ -185,8 +189,8 @@ export async function GET(req: NextRequest) {
   // Get exam questions (same bank isolation applies)
   const examQuestions = await db.examQuestion.findMany({
     where: pinned
-      ? { AND: [bankFilter, { id: { in: pinnedExamQuestionIds } }] }
-      : { AND: [bankFilter, mockExamExamQuestionScopeWhere(lessonIds)] },
+      ? { AND: [examBankFilter, { id: { in: pinnedExamQuestionIds } }] }
+      : { AND: [examBankFilter, mockExamExamQuestionScopeWhere(lessonIds)] },
     include: { lesson: { select: { titleAr: true, title: true } } },
   });
 

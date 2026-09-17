@@ -24,7 +24,8 @@
 //      — the platform's existing `questionBankFilter`, unchanged.
 //   2. SCOPE: either
 //        a. BANK-ONLY — the record is not attached to any lesson
-//           (`Question.quizId` is NULL, or its quiz has no lesson;
+//           (`Question.quizId` is NULL — `Quiz.lessonId` is non-nullable, so a
+//           question either has no quiz at all or a quiz inside a lesson;
 //           `ExamQuestion.lessonId` is NULL). This is the FREE BANK the Admin
 //           populates by hand, and the case that was broken.
 //        b. LESSON-LINKED — the record hangs off a lesson of a course, and
@@ -81,13 +82,15 @@ export type MockExamSelectionMode = "RANDOM" | "FIXED";
 // Pool where-fragments
 // ---------------------------------------------------------------------------
 
-/** `Question` rows that belong to no lesson: the Admin's manual free bank. */
+/**
+ * `Question` rows that belong to no lesson: the Admin's manual free bank.
+ *
+ * `quizId: null` IS the whole case: `Quiz.lessonId` is non-nullable, so a
+ * question either has no quiz at all (what the "Add Question" dialog stores)
+ * or belongs to a quiz that belongs to a lesson.
+ */
 export function bankOnlyQuestionWhere(): Prisma.QuestionWhereInput {
-  return {
-    // `quizId: null` covers the manual "Add Question" row; the second arm
-    // covers a question whose quiz exists but is not attached to a lesson.
-    OR: [{ quizId: null }, { quiz: { lessonId: null } }],
-  };
+  return { quizId: null };
 }
 
 /** `Question` rows attached to one of `lessonIds`. */
@@ -162,15 +165,25 @@ export function mockExamExamQuestionPoolWhere(
  * `topic.unit.part.courseId`). This mirrors the query in the student mock
  * route — the same rule, expressed once for the Admin-side pool count.
  */
-export function mockExamLessonWhere(courseId: string | null) {
-  const courseLink = courseId ? { courseId } : { courseId: { not: null } };
-  return {
-    ...LESSON_STUDENT_STATUS_FILTER,
-    OR: [
-      { unit: { part: courseLink } },
-      { topic: { unit: { part: courseLink } } },
-    ],
-  };
+export function mockExamLessonWhere(
+  courseId: string | null
+): Prisma.LessonWhereInput {
+  // Two explicit branches (not one shared variable) so each relation filter is
+  // a literal Prisma accepts.
+  const chain = courseId
+    ? {
+        OR: [
+          { unit: { part: { courseId } } },
+          { topic: { unit: { part: { courseId } } } },
+        ] as Prisma.LessonWhereInput[],
+      }
+    : {
+        OR: [
+          { unit: { part: { courseId: { not: null } } } },
+          { topic: { unit: { part: { courseId: { not: null } } } } },
+        ] as Prisma.LessonWhereInput[],
+      };
+  return { ...LESSON_STUDENT_STATUS_FILTER, ...chain };
 }
 
 export async function loadMockExamLessonIds(courseId: string | null) {
