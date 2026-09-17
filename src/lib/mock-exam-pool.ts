@@ -168,22 +168,24 @@ export function mockExamExamQuestionPoolWhere(
 export function mockExamLessonWhere(
   courseId: string | null
 ): Prisma.LessonWhereInput {
-  // Two explicit branches (not one shared variable) so each relation filter is
-  // a literal Prisma accepts.
-  const chain = courseId
-    ? {
-        OR: [
-          { unit: { part: { courseId } } },
-          { topic: { unit: { part: { courseId } } } },
-        ] as Prisma.LessonWhereInput[],
-      }
-    : {
-        OR: [
-          { unit: { part: { courseId: { not: null } } } },
-          { topic: { unit: { part: { courseId: { not: null } } } } },
-        ] as Prisma.LessonWhereInput[],
-      };
-  return { ...LESSON_STUDENT_STATUS_FILTER, ...chain };
+  // Two literal branches (rather than one shared variable) so each relation
+  // filter is exactly the shape Prisma's LessonWhereInput accepts.
+  if (courseId) {
+    return {
+      ...LESSON_STUDENT_STATUS_FILTER,
+      OR: [
+        { unit: { part: { courseId } } },
+        { topic: { unit: { part: { courseId } } } },
+      ],
+    };
+  }
+  return {
+    ...LESSON_STUDENT_STATUS_FILTER,
+    OR: [
+      { unit: { part: { courseId: { not: null } } } },
+      { topic: { unit: { part: { courseId: { not: null } } } } },
+    ],
+  };
 }
 
 export async function loadMockExamLessonIds(courseId: string | null) {
