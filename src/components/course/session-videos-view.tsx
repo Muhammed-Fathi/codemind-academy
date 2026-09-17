@@ -22,6 +22,10 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { useApp } from "@/lib/store";
+// Isomorphic, dependency-free — safe in a client component. Deciding the
+// render mode here (rather than trusting a server flag) also repairs rows
+// stored before the URL contract existed.
+import { resolveExternalVideoPlayback } from "@/lib/video-url";
 import { CheckCircle2, PlayCircle, Video, Lock } from "lucide-react";
 
 type SessionVideo = {
@@ -204,6 +208,22 @@ function SessionVideoPlayer({
   const [completed, setCompleted] = React.useState(video.progress.isCompleted);
   const playingRef = React.useRef(false);
 
+  // Decide HOW to render before rendering anything.
+  //   * Uploaded / managed media → `/api/media/<id>`, always a <video>.
+  //   * External URL → the contract in src/lib/video-url.ts decides between a
+  //     direct media file (<video>) and a YouTube/Vimeo embed (<iframe>).
+  // `null` means "no media, or a URL outside the contract" and is rendered as
+  // an explicit message rather than a player that silently never starts.
+  const playback = React.useMemo(() => {
+    if (!video.src) return null;
+    if (!video.isExternal) return { mode: "video" as const, src: video.src };
+    return resolveExternalVideoPlayback(video.src);
+  }, [video.src, video.isExternal]);
+  // Watch-time credit depends on a real playhead, which only a <video> exposes.
+  // An iframe embed cannot report one, so the progress bar is not shown for it
+  // (a bar frozen at 0% would misreport the student's own work).
+  const trackable = playback?.mode === "video";
+
   const beat = React.useCallback(async () => {
     const el = ref.current;
     if (!el || !el.duration || Number.isNaN(el.duration)) return;
@@ -251,10 +271,22 @@ function SessionVideoPlayer({
   return (
     <Card className="overflow-hidden">
       <div className="bg-black">
-        {video.src ? (
+        {playback?.mode === "iframe" ? (
+          // YouTube / Vimeo: the ONLY form these providers allow inside a page
+          // is their embed player. A <video> element pointed at a watch URL can
+          // never play — that was the production bug this branch replaces.
+          <iframe
+            src={playback.src}
+            title={pickAuto(video.titleAr, video.title)}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allowFullScreen
+            referrerPolicy="strict-origin-when-cross-origin"
+            className="aspect-video w-full border-0"
+          />
+        ) : playback?.mode === "video" ? (
           <video
             ref={ref}
-            src={video.src}
+            src={playback.src}
             controls
             controlsList="nodownload"
             onContextMenu={(e) => e.preventDefault()}
@@ -275,8 +307,12 @@ function SessionVideoPlayer({
             }}
           />
         ) : (
-          <div className="grid aspect-video w-full place-items-center text-muted-foreground">
+          // Either no media is attached, or the stored URL is outside the
+          // supported contract (a row created before validation existed).
+          // Say so plainly instead of rendering a player that stays black.
+          <div className="grid aspect-video w-full place-items-center gap-2 px-6 text-center text-muted-foreground">
             <PlayCircle className="w-10 h-10" />
+            <p className="text-xs">{tr("course.226")}</p>
           </div>
         )}
       </div>
@@ -293,16 +329,26 @@ function SessionVideoPlayer({
               <CheckCircle2 className="w-3.5 h-3.5 me-1" />
               {tr("course.211")}
             </Badge>
-          ) : (
+          ) : trackable ? (
             <Badge variant="outline">
               {tr("course.210")}: {percent}%
             </Badge>
-          )}
+          ) : null}
         </div>
-        <Progress value={percent} className="h-2" />
-        <p className="text-[11px] text-muted-foreground">
-          {tr("course.206")} ({video.requiredPercent}%)
-        </p>
+        {trackable ? (
+          <>
+            <Progress value={percent} className="h-2" />
+            <p className="text-[11px] text-muted-foreground">
+              {tr("course.206")} ({video.requiredPercent}%)
+            </p>
+          </>
+        ) : playback?.mode === "iframe" ? (
+          // An embedded player cannot report a playhead, so watch-time credit
+          // is not tracked for it. State that explicitly rather than showing a
+          // bar stuck at 0%. (Not shown when there is no playable media at
+          // all — that case already explains itself above.)
+          <p className="text-[11px] text-muted-foreground">{tr("course.227")}</p>
+        ) : null}
       </CardContent>
     </Card>
   );

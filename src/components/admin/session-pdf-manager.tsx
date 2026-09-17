@@ -37,6 +37,7 @@ import {
   type AdminSessionMaterialSummary,
 } from "@/components/admin/session-workflow-shared";
 import { directUpload, sha256HexOfFile } from "@/lib/direct-upload";
+import { uploadErrorCodeKey } from "@/lib/upload-error-text";
 
 export function SessionPdfManager({
   lessonId,
@@ -112,12 +113,20 @@ export function SessionPdfManager({
         onChanged();
         return;
       }
+      // Prefer the SPECIFIC server reason (wrong type / too large / storage
+      // down / wrong session). Fall back to the stage text only when the
+      // server gave no code — e.g. a network failure reaching the endpoint.
+      const reasonKey = uploadErrorCodeKey(out.code);
       const stageText =
         out.stage === "init"
           ? tr("admin.506")
           : out.stage === "transfer"
             ? tr("admin.507")
             : tr("admin.508");
+      if (reasonKey) {
+        toast.error(tr(reasonKey));
+        return;
+      }
       const detail =
         out.error && out.error !== "admin.001"
           ? ` — ${serverErrorText(tr, out.error)}`

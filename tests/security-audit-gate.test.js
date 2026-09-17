@@ -568,8 +568,32 @@ section("10. Verified non-exposures (documented, not speculative controls)");
     const calls = [...du.matchAll(/\bpostJson\(\s*([A-Za-z_$][\w$]*)\s*,/g)].map((m) => m[1]);
     if (calls.length !== 2 || calls[0] !== "initEndpoint" || calls[1] !== "completeEndpoint")
       v.push(`postJson called with unpinned arguments: ${JSON.stringify(calls)}`);
-    if (!/const\s+upload\s*=\s*init\.data\.upload/.test(du))
+    // The grant must be sourced from the INIT RESPONSE BODY and nothing else —
+    // never from caller-controlled `input`, never from storage or config.
+    //
+    // This pin previously required the literal `init.data.upload`. That shape
+    // is one the init endpoint has never returned (`ok(result.init)` puts the
+    // grant at the TOP LEVEL), so the pin enforced a defect: every real
+    // MEDIA_BACKEND=s3 upload failed at the init leg. The security property is
+    // "the grant comes from the server's init response", which the shared
+    // extractor preserves — it is pinned here instead, together with a
+    // guarantee that it cannot read caller-controlled fields.
+    if (!/const\s+upload\s*=\s*extractUploadGrant\(\s*init\.data\s*\)/.test(du))
       v.push("the upload grant is no longer sourced from the init response");
+    const extractor = /function\s+extractUploadGrant\([\s\S]*?\n}/.exec(du)?.[0] ?? "";
+    if (!extractor)
+      v.push("extractUploadGrant is not defined in the browser helper");
+    else {
+      if (/\binput\b/.test(extractor))
+        v.push("extractUploadGrant reads caller-controlled input");
+      if (/\bprocess\.env\b/.test(extractor))
+        v.push("extractUploadGrant reads environment/configuration");
+      // It must still require BOTH a URL and a token before accepting a grant.
+      if (!/typeof uploadUrl !== "string" \|\| !uploadUrl/.test(extractor))
+        v.push("extractUploadGrant no longer requires a non-empty uploadUrl");
+      if (!/typeof token !== "string" \|\| !token/.test(extractor))
+        v.push("extractUploadGrant no longer requires a non-empty token");
+    }
     if (/credentials\s*:/.test(du))
       v.push("a credentials option is attached to a fetch");
     if (/redirect\s*:/.test(du))

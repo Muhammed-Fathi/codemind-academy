@@ -37,6 +37,11 @@ import { promises as fs } from "fs";
 import path from "path";
 import { createHash, randomBytes } from "crypto";
 import { Readable } from "stream";
+// Isomorphic and dependency-free — safe to pull into this server module, and it
+// keeps the SSRF host block-list defined in exactly one place.
+// Relative (not "@/lib/...") to match the convention inside src/lib and so the
+// emitted JS resolves without a path-alias hook.
+import { isSafeMediaHost } from "./video-url";
 
 export const MEDIA_ROOT =
   process.env.MEDIA_STORAGE_PATH || path.join(process.cwd(), "storage", "media");
@@ -228,24 +233,24 @@ export function validatePdfUpload(input: {
   };
 }
 
-/** Basic hardening for admin-supplied video URLs. */
+/**
+ * Basic hardening for admin-supplied external media URLs: https only, and never
+ * a host that could reach the server itself (SSRF).
+ *
+ * The host block-list is DELEGATED to `isSafeMediaHost` in `src/lib/video-url.ts`
+ * so there is exactly ONE definition of "a host we may fetch media from",
+ * shared with the client-side pre-check. Note this is the generic *fetch*
+ * guard; whether a URL is a video the student player can actually RENDER is a
+ * separate, stricter question answered by `normalizeExternalVideoUrl`.
+ */
 export function isSafeExternalUrl(raw: string): boolean {
   try {
     const url = new URL(raw);
-    if (url.protocol !== "https:" && url.protocol !== "http:") return false;
-    // Block obvious SSRF targets.
-    const host = url.hostname.toLowerCase();
-    if (
-      host === "localhost" ||
-      host === "0.0.0.0" ||
-      host.endsWith(".local") ||
-      /^127\./.test(host) ||
-      /^10\./.test(host) ||
-      /^192\.168\./.test(host) ||
-      /^172\.(1[6-9]|2\d|3[01])\./.test(host)
-    )
-      return false;
-    return true;
+    // https only — http media is mixed content on an HSTS origin and is
+    // blocked by the CSP (`media-src ... https:`), so accepting it would let an
+    // admin store a URL that provably cannot play.
+    if (url.protocol !== "https:") return false;
+    return isSafeMediaHost(url.hostname);
   } catch {
     return false;
   }

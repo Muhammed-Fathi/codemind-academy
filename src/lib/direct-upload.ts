@@ -119,6 +119,53 @@ export type DirectUploadInput = {
 };
 
 /**
+ * Read the upload grant out of an init response.
+ *
+ * THE WIRE CONTRACT: `/api/admin/media-uploads/init` answers
+ * `ok(result.init)` — `NextResponse.json(init)` — so the grant fields sit at the
+ * TOP LEVEL of the body:
+ *
+ *   { uploadUrl, method, token, contentType, maxBytes, expiresInSec, expiresAt, purpose }
+ *
+ * This used to be read as `body.upload`, a shape the endpoint has never
+ * produced. Every real (MEDIA_BACKEND=s3) upload therefore failed at the init
+ * leg with a 200 response, surfacing to the admin as "تعذّر بدء الرفع" even
+ * though the server had issued a perfectly valid presigned URL. Under
+ * MEDIA_BACKEND=local the endpoint answers 409 PRESIGNED_UNSUPPORTED first, so
+ * the client fell back to the buffered path and the defect stayed invisible in
+ * development — which is exactly why it only ever appeared in production.
+ *
+ * Both shapes are accepted: the documented top-level contract, and a nested
+ * `upload` wrapper, so a future server that namespaces the payload cannot
+ * silently break uploads again.
+ */
+function extractUploadGrant(
+  data: Record<string, unknown> | null
+): UploadInitPayload | null {
+  if (!data) return null;
+  const candidate =
+    data.upload && typeof data.upload === "object"
+      ? (data.upload as Record<string, unknown>)
+      : data;
+  const { uploadUrl, method, token, contentType, maxBytes, expiresInSec, expiresAt } =
+    candidate as Partial<UploadInitPayload>;
+  // A grant is only usable with a URL to PUT to and a token to finalize with.
+  if (typeof uploadUrl !== "string" || !uploadUrl) return null;
+  if (typeof token !== "string" || !token) return null;
+  return {
+    uploadUrl,
+    method: typeof method === "string" && method ? method : "PUT",
+    token,
+    contentType: typeof contentType === "string" ? contentType : "",
+    maxBytes: typeof maxBytes === "number" ? maxBytes : 0,
+    expiresInSec: typeof expiresInSec === "number" ? expiresInSec : 0,
+    expiresAt: typeof expiresAt === "string" ? expiresAt : "",
+    purpose:
+      typeof candidate.purpose === "string" ? (candidate.purpose as string) : "",
+  };
+}
+
+/**
  * Run the full direct-upload flow. Never throws — every failure is a typed
  * outcome with the failing stage.
  */
@@ -141,17 +188,14 @@ export async function directUpload(
   if (init.status === 0) {
     return failure("init", 0, null, "Could not reach the upload service", true);
   }
-  if (init.status >= 400 || !init.data || typeof (init.data as { upload?: unknown }).upload !== "object") {
+  // A rejected init carries { error, code }; the code is what lets callers
+  // branch (PRESIGNED_UNSUPPORTED → buffered fallback) and what turns a
+  // generic message into a specific admin-facing reason.
+  if (init.status >= 400 || !init.data) {
     return failure("init", init.status, init.data, "Could not start the upload", false);
   }
-  const upload = init.data.upload as unknown as UploadInitPayload;
-  if (
-    !upload ||
-    typeof upload.uploadUrl !== "string" ||
-    !upload.uploadUrl ||
-    typeof upload.token !== "string" ||
-    !upload.token
-  ) {
+  const upload = extractUploadGrant(init.data);
+  if (!upload) {
     return failure("init", init.status, null, "Malformed upload grant", false);
   }
 
