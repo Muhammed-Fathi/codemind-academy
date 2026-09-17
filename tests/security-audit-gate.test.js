@@ -598,6 +598,40 @@ section("10. Verified non-exposures (documented, not speculative controls)");
       v.push("a credentials option is attached to a fetch");
     if (/redirect\s*:/.test(du))
       v.push("redirect handling is overridden");
+
+    // Media-upload UX follow-up: leg 2 may ALSO run over XMLHttpRequest — the
+    // only browser transport that reports REAL upload byte progress (`fetch`
+    // has no upload-progress event). Same fail-closed discipline, pinned to
+    // the same guarantees:
+    //   * exactly ONE XHR exists in the helper;
+    //   * it is opened on the init-granted `upload.uploadUrl` with the
+    //     server-granted method ("PUT" fallback) — never a caller-supplied URL;
+    //   * it sends the server-granted Content-Type byte for byte;
+    //   * the body is the caller's file and nothing else;
+    //   * it carries NO credential to the storage origin (`withCredentials`
+    //     stays at its false default), and no response handling is added that
+    //     could echo storage internals back into the page.
+    const xhrCount = [...du.matchAll(/new\s+XMLHttpRequest\s*\(\s*\)/g)].length;
+    if (xhrCount !== 1)
+      v.push(`expected exactly 1 XMLHttpRequest, found ${xhrCount}`);
+    if (!/xhr\.open\(\s*upload\.method\s*\|\|\s*"PUT"\s*,\s*upload\.uploadUrl\s*,\s*true\s*\)/.test(du))
+      v.push("the XHR transfer is not opened on the init-granted URL with the server-granted method");
+    if (!/xhr\.setRequestHeader\(\s*"Content-Type"\s*,\s*upload\.contentType\s*\)/.test(du))
+      v.push("the XHR transfer no longer sends the server-granted Content-Type");
+    if (/withCredentials\s*=\s*true/.test(du))
+      v.push("the XHR transfer sends credentials to the storage origin");
+    if (/xhr\.send\(\s*(?!file\s*\))/.test(du))
+      v.push("the XHR body is not the caller's file");
+    if (/responseType\s*=/.test(du))
+      v.push("XHR response handling was added (storage response bodies must not be surfaced)");
+    if (/xhr\.setRequestHeader\(\s*["'](?!Content-Type["'])/i.test(du))
+      v.push("the XHR transfer sends a header other than the granted Content-Type");
+    // Both transfer implementations must be driven by the SAME grant object
+    // extracted from the init response — never by caller-controlled input.
+    if (!/putBytesWithProgress\(\s*upload\s*,\s*input\.file\s*,/.test(du))
+      v.push("the XHR transfer is not driven by the init-granted upload object");
+    if (!/putBytesWithFetch\(\s*upload\s*,\s*input\.file\s*,\s*signal\s*\)/.test(du))
+      v.push("the fetch transfer fallback is not driven by the init-granted upload object");
     return v;
   };
   const duImporters = srcFiles.filter(
@@ -634,6 +668,36 @@ section("10. Verified non-exposures (documented, not speculative controls)");
   ok(
     auditDirectUpload(duSrc.replace('method: upload.method || "PUT",', 'method: upload.method || "PUT",\n      credentials: "include",')).length > 0,
     "negative: attaching credentials to the transfer fetch is caught"
+  );
+  ok(
+    auditDirectUpload(
+      duSrc.replace(
+        'xhr.open(upload.method || "PUT", upload.uploadUrl, true)',
+        'xhr.open("PUT", input.uploadUrl, true)'
+      )
+    ).length > 0,
+    "negative: an XHR transfer to a caller-provided URL is caught"
+  );
+  ok(
+    auditDirectUpload(duSrc.replace('xhr.open(upload.method || "PUT"', 'xhr.open("GET"')).length > 0,
+    "negative: changing the XHR transfer off the server-granted PUT is caught"
+  );
+  ok(
+    auditDirectUpload(
+      duSrc.replace(
+        'xhr.setRequestHeader("Content-Type", upload.contentType)',
+        'xhr.setRequestHeader("Content-Type", "application/octet-stream")'
+      )
+    ).length > 0,
+    "negative: substituting the granted Content-Type on the XHR transfer is caught"
+  );
+  ok(
+    auditDirectUpload(duSrc.replace("xhr.send(file);", "xhr.send(file);\n    xhr.withCredentials = true;")).length > 0,
+    "negative: sending credentials on the XHR transfer is caught"
+  );
+  ok(
+    auditDirectUpload(duSrc + "\nconst spare = new XMLHttpRequest();\n").length > 0,
+    "negative: a second XHR inside the browser helper is caught"
   );
   ok(
     auditDirectUpload(duSrc.replace("fetch(upload.uploadUrl, {", "fetch(input.uploadUrl, {")).length > 0,

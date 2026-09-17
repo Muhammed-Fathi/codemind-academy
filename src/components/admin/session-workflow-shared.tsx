@@ -30,6 +30,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { useT } from "@/lib/i18n";
+import { formatUploadBytes } from "@/lib/upload-progress";
 import {
   CheckCircle2,
   XCircle,
@@ -432,17 +433,13 @@ export function SectionCard({
   );
 }
 
+/**
+ * Human-readable bytes. Delegates to the ONE definition in
+ * `src/lib/upload-progress.ts` so a material row and the live upload progress
+ * bar can never format the same size differently.
+ */
 export function formatBytes(n: number | null | undefined): string {
-  if (typeof n !== "number" || !Number.isFinite(n) || n < 0) return "—";
-  if (n < 1024) return `${n} B`;
-  const units = ["KB", "MB", "GB"];
-  let v = n / 1024;
-  let u = 0;
-  while (v >= 1024 && u < units.length - 1) {
-    v /= 1024;
-    u++;
-  }
-  return `${v >= 100 ? Math.round(v) : v.toFixed(1)} ${units[u]}`;
+  return formatUploadBytes(n);
 }
 
 export function formatDateTime(value: string | Date | null | undefined): string {

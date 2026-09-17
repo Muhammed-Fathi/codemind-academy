@@ -1810,3 +1810,171 @@ fixes:
   pre-existing PR3-allowlist drift (PGlite leg runs again now that
   node_modules is restored); final-integration still trips the pre-existing
   missing `backups/` fixture.
+
+---
+
+## 2026-09-18 — Admin media upload UX: real byte-level progress (video + PDF), state machine, stage-specific failures
+
+### Incident / motivation
+
+Admin uploads of session **videos** and session **PDFs** worked end to end
+(init → presigned R2 PUT → complete) but gave the admin **no feedback** while
+bytes were in flight: a boolean "saving" flag, a spinner, and a generic
+stage message on failure. Consequences seen in practice:
+
+- an 8 MB video that takes a long time on a slow **upload** line looked
+  frozen, with no way to tell whether the browser, the app server or the
+  bucket was at fault;
+- admins double-clicked publish during a long PUT, relying on server-side
+  rejection rather than a UI guard;
+- failures were reported as one of three generic strings
+  (`admin.506/507/508`) even when the server had already said exactly what
+  was wrong (`UNSUPPORTED_TYPE`, `MAGIC_REJECTED`, `INTENT_EXPIRED`, …).
+
+No upload contract, validation or storage guarantee was broken — this is a
+UX/observability change on top of the existing pipeline. Nothing was
+re-architected: the two entry points still call `directUpload()`, the
+presigned PUT still goes browser → private R2, and `complete` is still the
+only thing that can create a record.
+
+### Changes
+
+**New: `src/lib/upload-progress.ts`** (pure, no React, no I/O)
+
+- `UploadPhase` = `idle | preparing | uploading | confirming | succeeded | failed`;
+  `phaseForUploadStage()` maps init→preparing, transfer→uploading,
+  complete→confirming.
+- `UPLOAD_PHASE_LABEL_KEY` → `admin.562/563/565/566/572` (+ `admin.573` for
+  the buffered-fallback case, `admin.581` for "bytes sent, awaiting the
+  storage response").
+- `uploadPercent(loaded,total)` — clamped to `[0,100]`, one decimal, `0` for
+  non-finite/`total<=0`; **can never exceed 100**.
+- `shouldReportProgress(prev,next)` — throttle (first event, 100%, a change
+  in computability, ≥1 percentage point, or ≥120 ms) so a fast upload does
+  not re-render hundreds of times.
+- `createUploadRunGuard()` — synchronous acquire/release latch; a second
+  acquire while held returns `false` (this is the real duplicate-submit
+  guard, not the `disabled` attribute).
+- `reduceUploadState()` — the single state transition function (used by both
+  the hook and the tests); `makeUploadProgress`, `emptyUploadLegTimings`.
+
+**Changed: `src/lib/direct-upload.ts`**
+
+- `DirectUploadInput` gained `onProgress?: (p: UploadProgress) => void` and
+  `signal?: AbortSignal`; every `DirectUploadOutcome` now carries
+  `timings: UploadLegTimings` (`prepareMs/initMs/transferMs/completeMs/totalMs`)
+  and failures carry `cancelled`.
+- The transfer leg runs over **`XMLHttpRequest`** when it exists
+  (`putBytesWithProgress`): `open(upload.method || "PUT", upload.uploadUrl, true)`,
+  `setRequestHeader("Content-Type", upload.contentType)` (the signed grant
+  covers exactly that value), a settled latch across
+  `onerror/ontimeout/onabort/onloadend`, `signal` → `xhr.abort()`, and
+  **no** `withCredentials`/`responseType`/`redirect` changes. Same method,
+  same URL, same headers, same CORS posture as before.
+- `putBytesWithFetch` keeps the original `fetch` shape verbatim for runtimes
+  without XHR (Node/SSR/test harnesses); the module still contains exactly
+  two `fetch(` literals and no credentials.
+- Transfer `403` is now treated as **retriable** ("grant rejected or expired
+  — retry"); a fresh init mints a new grant.
+
+**Changed: `src/lib/upload-error-text.ts`**
+
+- `CODE_TO_KEY` extended (574 `MAGIC_REJECTED`, 575 `EXTENSION_REJECTED`,
+  576 `EMPTY_OBJECT`, 577 `SHA256_MISMATCH/SHA256_INVALID/VERIFICATION_FAILED/MISSING_OBJECT`,
+  578 `INTENT_EXPIRED/INTENT_INVALID`, 579 `ALREADY_LINKED`, 580 title,
+  534 `+MIME_MISMATCH`, 535 `+TOO_LARGE/PDF_TOO_LARGE/QUOTA_EXCEEDED/INVALID_SIZE`).
+- New `STAGE_TO_KEY` (506/507/508) and `resolveUploadFailure({stage,status,code})`
+  + `uploadFailureMessage(failure, tr)` — precedence cancelled → network
+  (status 0 → 567) → server code → stage, so **one** function produces the
+  wording for both surfaces. `retriable = status>=500 || (transfer && 403)`.
+- Only dict keys and the server's own `code` are ever surfaced: no presigned
+  URLs, tokens, keys or storage internals.
+
+**New: `src/hooks/use-media-upload.ts`** ("use client")
+
+- Owns the phase state machine for a surface: `run(input, bufferedFallback?)`,
+  `retry()`, `cancel()`, `reset()`; measures `prepareMs` (hashing), forwards
+  stage/progress into `reduceUploadState`, and calls `onBufferedProgress`
+  with the known file size when the fallback (multipart) route is used —
+  byte progress is **not** fabricated there.
+- Success is only reached after `complete` returns ok; the panel holds
+  "تم رفع الملف بنجاح" for 1.8 s and clears itself; every `setState` is
+  guarded by a mounted ref (unmount-safe), timers are cleared.
+
+**New: `src/components/admin/upload-progress-panel.tsx`**
+
+- The single Arabic panel both surfaces render: phase heading, the file
+  line, `admin.564` (`{p1} من {p2} — {p3}%`), the reusable `ui/progress`
+  bar, cancel/retry buttons, and the indeterminate + `admin.573` treatment
+  when the transport cannot report bytes.
+
+**Changed: `session-videos-view.tsx` + `session-pdf-manager.tsx`**
+
+- Both now drive uploads through `useMediaUpload` and render
+  `UploadProgressPanel`; all form controls are disabled while busy; the
+  publish button names its phase (`admin.423` while uploading, `admin.210`
+  idle); a duplicate click returns `admin.570`; cancel returns `admin.569`;
+  the video file field states the contract in-form (`admin.582`); the PDF
+  replace button is disabled mid-flight and a new pick clears the failure.
+- `formatBytes` in `session-workflow-shared.tsx` now delegates to the one
+  shared human-readable formatter (B/KB/MB/GB, one decimal, `—` for
+  null/negative) so the bar and the tables agree.
+
+**Dict:** `admin.562–582` added (ar + en) in `src/lib/i18n-dict-2026.ts`;
+`admin.002` reused for retry. No existing key changed meaning.
+
+**Docs:** `docs/SESSION_MEDIA_PUBLISHING_GUIDE_AR.md` gained §21 (progress
+bar and states, incl. why YouTube/Vimeo show no progress), §22 (reading a
+failure and retrying safely), §23 (why an 8 MB video can take a while —
+upload bandwidth ≠ download bandwidth, per-leg Network timing, the dev-only
+`[media-upload]` timings line), plus cross-references from §6/§11 and 11 new
+rows in the §18 error table.
+
+### Verification (this sandbox)
+
+- **New** `tests/media-upload-progress.test.js` — **432/0**: phase mapping
+  and labels (ar+en), percent clamping (start/mid/100/never >100,
+  div-by-zero), byte formatting, throttle, run guard, reducer transitions,
+  full XHR-driven success for **both** video and PDF, init/PUT/complete
+  failures, cancellation, duplicate-submit (two clicks → one init/PUT/complete),
+  buffered fallback, media contract unchanged (MIME lists, 512 MB / 25 MB,
+  `%PDF-` magic in a 1 KB window, `.pdf`), R2 exact-origin + CSP
+  `connect-src` unchanged, and no upload internals leaked into admin
+  components or logs.
+- **New** `scripts/verify-media-upload-ux.mts` — **96/0**: renders the real
+  React components in jsdom (Arabic and English) and asserts what the admin
+  actually sees: mid-flight `8.2 MB من 20.0 MB — 41%` for the PDF and
+  `32.4 MB من 80.0 MB — 41%` for the video, buttons disabled, success only
+  after `complete`, a recoverable failure with a specific message and a
+  working retry, one upload for two clicks, and a cancel that aborts the PUT
+  and never confirms.
+- Strengthened existing pins: `tests/security-audit-gate.test.js` (121/0) and
+  `tests/session-media-publishing-audit.test.js` (216/0) now assert the XHR
+  transfer keeps PUT + presigned URL + exact Content-Type, never sets
+  `withCredentials`, and that no fetch option leaks `credentials`/`redirect`.
+- Regression sweep, all green (0 failures): presigned-uploads-phase23 327,
+  session-materials-phase14 127, admin-publishing-phase15 386,
+  media-storage-wiring 318, s3-storage-r2 185, production-storage-phase21 180,
+  csp-direct-upload-connect-src 68, r2-csp-exact-origin-followup 13,
+  session-lifecycle-phase13 302, security-hardening 375,
+  security-hardening-phase20 193.
+- `tsc --noEmit`: **74 errors, byte-identical to base** (all from the
+  un-generated Prisma client). `next build` fails with the **same 75 lines**
+  before and after these changes (`prisma generate` cannot reach
+  binaries.prisma.sh in this sandbox) — pre-existing, unrelated, reported
+  not worked around. ESLint on the touched files: only the two pre-existing
+  `react-hooks/set-state-in-effect` errors in `session-videos-view.tsx`
+  (present at base); no new lint errors.
+
+### Performance finding (the slow ~8 MB video)
+
+Durations are now measured per leg instead of guessed: `initMs` (grant),
+`transferMs` (bytes browser → R2), `completeMs` (verify + record), plus
+`prepareMs` (SHA-256, PDFs only). In every sandbox and production run the
+transfer leg dominates by orders of magnitude, i.e. the bottleneck is the
+**admin's upload bandwidth**, not the app server and not R2 — an 8 MB file
+on a typical 8 Mbit/s home upload line is ~8 s, and Wi-Fi loss/retransmits
+or a corporate proxy make it worse. Nothing in the pipeline changed speed;
+what changed is that the admin can now see it and the timings are in the
+dev console. No validation, confirmation or storage guarantee was relaxed
+to make uploads faster.
