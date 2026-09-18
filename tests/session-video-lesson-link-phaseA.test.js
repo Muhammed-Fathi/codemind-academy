@@ -8,7 +8,9 @@
 //   2. the Lesson exists               → LESSON_NOT_FOUND  (404)
 //   3. the Lesson is not ARCHIVED      → LESSON_ARCHIVED   (409)
 //   4. the Batch exists                → BATCH_NOT_FOUND   (404)
-//   5. ONE shared course               → COURSE_MISMATCH   (400)
+//   5. batch declares a course →  COURSE_MISMATCH   (400)
+//      it must be THE same one (pool batches — the school-type audience the
+//      readiness engine counts — declare none and bind no course)
 //   6. track fits the batch's school   → TRACK_MISMATCH    (400)
 //
 // The SAME shared validator (src/lib/session-video-link.ts) guards all three
@@ -116,6 +118,7 @@ const REAL_CODE_MODULES = [
   "src/lib/parent-access.ts",
   "src/lib/session-materials.ts",
   "src/lib/session-video-link.ts",
+  "src/lib/session-video-picker.ts",
   "src/lib/media-upload.ts",
   "src/lib/db-serialization.ts",
   "src/lib/admin-sessions.ts",
@@ -266,6 +269,7 @@ const R = {
 const MediaS3 = require(path.join(EMIT, "lib", "media-s3.js"));
 const Uploads = require(path.join(EMIT, "lib", "media-upload.js"));
 const Link = require(path.join(EMIT, "lib", "session-video-link.js"));
+const Picker = require(path.join(EMIT, "lib", "session-video-picker.js"));
 
 // ---------------------------------------------------------------------------
 // In-memory private bucket + real S3StorageBackend (Phase 23 pattern).
@@ -810,12 +814,162 @@ test("Phase A: Lesson is the canonical academic session for video linking", asyn
   eq((await v(L_ARCHIVED.id, batchAr.id)).code, "LESSON_ARCHIVED", "19: archived refused");
   eq((await v(L_OTHER.id, batchAr.id)).code, "COURSE_MISMATCH", "19: cross-course refused");
   eq((await v(L_AR.id, batchLang.id)).code, "TRACK_MISMATCH", "19: track mismatch refused");
+
+  // Pool batches (courseId = null) — the batches the Admin batch UI actually
+  // creates (created here, after every e2e flow, so nothing above sees them).
+  // Audience = the school type, exactly what readiness counts, so the course
+  // constraint binds only when the batch DECLARES a course.
+  const poolAr = await client.batch.create({
+    data: { name: "Pool AR", nameAr: "قاعدة عربي", schoolType: "ARABIC", courseId: null },
+  });
+  const poolLang = await client.batch.create({
+    data: { name: "Pool LANG", nameAr: "قاعدة لغات", schoolType: "LANGUAGE", courseId: null },
+  });
+  eq((await v(L_SHARED.id, poolAr.id)).ok, true, "19: SHARED × ARABIC pool valid");
+  eq((await v(L_SHARED.id, poolLang.id)).ok, true, "19: SHARED × LANGUAGE pool valid");
+  eq((await v(L_AR.id, poolAr.id)).ok, true, "19: ARABIC × ARABIC pool valid");
+  eq((await v(L_AR.id, poolLang.id)).code, "TRACK_MISMATCH", "19: ARABIC × LANGUAGE pool still refused");
+  eq((await v(L_OTHER.id, poolAr.id)).ok, true, "19: pool batch spans courses (other-course lesson valid)");
+
+  // The acceptance repro's exact shape: an OFFICIAL lesson in the DRAFT
+  // lifecycle (like "Lesson 1-1") is a valid staging target — DRAFT is not
+  // ARCHIVED and the contract never demanded PUBLISHED/READY for Admin.
+  const L_DRAFT_OFFICIAL = await client.lesson.create({
+    data: {
+      unitId: unit1.id, officialCode: "1-9",
+      title: "Draft official shared", titleAr: "رسمية مشتركة مسودة",
+      order: 9, trackScope: "SHARED", isPublished: false,
+      status: "DRAFT", curriculumStatus: "OFFICIAL",
+    },
+  });
+  eq((await v(L_DRAFT_OFFICIAL.id, poolAr.id)).ok, true,
+    "19: SHARED DRAFT OFFICIAL × ARABIC pool valid (acceptance repro)");
+  eq((await v(L_DRAFT_OFFICIAL.id, poolLang.id)).ok, true,
+    "19: SHARED DRAFT OFFICIAL × LANGUAGE pool valid");
+
+  // A lesson whose course cannot be proven (no unit/topic chain): refused by
+  // a course-declaring batch, accepted by a pool batch (no course declared).
+  const L_NO_COURSE = await client.lesson.create({
+    data: {
+      title: "Orphan lesson", titleAr: "حصة يتيمة",
+      order: 10, trackScope: "SHARED", isPublished: false,
+    },
+  });
+  eq((await v(L_NO_COURSE.id, batchAr.id)).code, "COURSE_MISMATCH",
+    "19: unprovable course × course-bound batch refused");
+  eq((await v(L_NO_COURSE.id, poolAr.id)).ok, true,
+    "19: unprovable course × pool batch valid");
   // The client-side mirror agrees (the picker filter is this predicate).
   ok(Link.lessonFitsBatch("SHARED", "ARABIC") === true, "19: mirror — SHARED fits ARABIC");
   ok(Link.lessonFitsBatch("SHARED", "LANGUAGE") === true, "19: mirror — SHARED fits LANGUAGE");
   ok(Link.lessonFitsBatch("ARABIC", "LANGUAGE") === false, "19: mirror — ARABIC ≠ LANGUAGE");
   ok(Link.lessonFitsBatch("LANGUAGE", "ARABIC") === false, "19: mirror — LANGUAGE ≠ ARABIC");
   ok(Link.lessonFitsBatch(null, "ARABIC") === false, "19: mirror — null scope never fits");
+
+  // ===========================================================================
+  // 19b. The PURE picker module (what the Admin UI offers, per batch model):
+  //      pool batches span courses, course-bound batches are scoped, track
+  //      fit + non-archived always apply, and the deep link lands correctly.
+  // ===========================================================================
+  {
+    // A two-course tree exercising both chains (canonical unit + legacy topic).
+    const TREE = [
+      {
+        id: "cA", name: "Course A", nameAr: "كورس أ",
+        parts: [
+          {
+            id: "pA1",
+            units: [
+              {
+                id: "uA1", order: 1,
+                lessons: [
+                  { id: "lShared", title: "Shared", titleAr: "مشتركة", officialCode: "1-1", trackScope: "SHARED", curriculumStatus: "OFFICIAL", status: "DRAFT" },
+                  { id: "lArabic", title: "Arabic", titleAr: "عربي", officialCode: null, trackScope: "ARABIC", curriculumStatus: "OFFICIAL" },
+                  { id: "lArch", title: "Archived", titleAr: "مؤرشفة", officialCode: null, trackScope: "SHARED", curriculumStatus: "ARCHIVED" },
+                ],
+                topics: [
+                  { id: "tA1", lessons: [
+                    // Same id as the unit-chain SHARED lesson (dual-chained):
+                    // must appear exactly once per unit group.
+                    { id: "lShared", title: "Shared", titleAr: "مشتركة", officialCode: "1-1", trackScope: "SHARED", curriculumStatus: "OFFICIAL" },
+                    { id: "lTopic", title: "Topic lesson", titleAr: "حصة توبيك", officialCode: "1-T", trackScope: "SHARED", curriculumStatus: "OFFICIAL" },
+                  ] },
+                ],
+              },
+              {
+                id: "uA2", order: 2,
+                lessons: [
+                  { id: "lLang", title: "Language", titleAr: "لغة", officialCode: null, trackScope: "LANGUAGE", curriculumStatus: "OFFICIAL" },
+                ],
+                topics: [],
+              },
+            ],
+          },
+        ],
+      },
+      {
+        id: "cB", name: "Course B", nameAr: "كورس ب",
+        parts: [
+          {
+            id: "pB1",
+            units: [
+              { id: "uB1", order: 1,
+                lessons: [
+                  { id: "lB", title: "B shared", titleAr: "ب مشتركة", officialCode: "2-1", trackScope: "SHARED", curriculumStatus: "OFFICIAL" },
+                ],
+                topics: [] },
+            ],
+          },
+        ],
+      },
+    ];
+
+    // Pool ARABIC batch: spans BOTH courses, SHARED + ARABIC lessons only.
+    const poolGroups = Picker.buildLessonGroups(TREE, { id: "poolAr", schoolType: "ARABIC", course: null });
+    const poolIds = Picker.flattenEligibleLessonIds(poolGroups);
+    eq(poolGroups.length, 2, "19b: pool ARABIC — one group per course-with-eligible-units");
+    ok(poolIds.has("lShared"), "19b: SHARED lesson offered to the ARABIC pool");
+    ok(poolIds.has("lArabic"), "19b: ARABIC lesson offered to the ARABIC pool");
+    ok(poolIds.has("lTopic"), "19b: legacy topic-chain lesson offered");
+    ok(poolIds.has("lB"), "19b: second course's lesson offered to the pool batch");
+    ok(!poolIds.has("lArch"), "19b: archived lesson never offered");
+    ok(!poolIds.has("lLang"), "19b: LANGUAGE lesson not offered to the ARABIC pool");
+    const gShared = poolGroups.find((g) => g.lessons.some((l) => l.id === "lShared"));
+    eq(gShared.lessons.length, 3, "19b: dual-chained lesson deduped (unit: SHARED+ARABIC+topic lesson)");
+    eq(gShared.courseName, "كورس أ", "19b: pool groups carry the Arabic-first course name");
+    eq(gShared.unitOrder, 1, "19b: group carries its unit order");
+
+    // Course-bound ARABIC batch for course B: sees ONLY course B's lessons.
+    const bGroups = Picker.buildLessonGroups(TREE, { id: "bB", schoolType: "ARABIC", course: { id: "cB" } });
+    const bIds = Picker.flattenEligibleLessonIds(bGroups);
+    ok(bIds.has("lB"), "19b: course-bound batch sees its own course");
+    ok(!bIds.has("lShared"), "19b: course-bound batch does not leak other courses");
+
+    // Pool LANGUAGE batch: SHARED lessons + the LANGUAGE lesson.
+    const langIds = Picker.flattenEligibleLessonIds(
+      Picker.buildLessonGroups(TREE, { id: "poolLang", schoolType: "LANGUAGE", course: null })
+    );
+    ok(langIds.has("lShared") && langIds.has("lTopic") && langIds.has("lLang") && langIds.has("lB"),
+      "19b: LANGUAGE pool offers SHARED (both courses) + LANGUAGE lessons");
+    ok(!langIds.has("lArabic"), "19b: ARABIC lesson not offered to the LANGUAGE pool");
+
+    // Deep link: SHARED keeps the active batch; track-specific switches to
+    // its own track; a track with no batch has no legal home (not consumed).
+    const batches = [
+      { id: "bAr", schoolType: "ARABIC" },
+      { id: "bLang", schoolType: "LANGUAGE" },
+    ];
+    const dShared = Picker.deepLinkTargetBatch("SHARED", batches, "bAr");
+    ok(dShared && dShared.switchTo === null, "19b: SHARED deep link keeps the active batch");
+    const dSwitch = Picker.deepLinkTargetBatch("LANGUAGE", batches, "bAr");
+    ok(dSwitch && dSwitch.switchTo === "bLang", "19b: LANGUAGE deep link switches to the LANGUAGE batch");
+    const dKeep = Picker.deepLinkTargetBatch("ARABIC", batches, "bAr");
+    ok(dKeep && dKeep.switchTo === null, "19b: ARABIC deep link with the ARABIC batch active keeps it");
+    const dNoHome = Picker.deepLinkTargetBatch("LANGUAGE", [batches[0]], "bAr");
+    eq(dNoHome, null, "19b: track with no batch = no legal home (deep link not consumed)");
+    eq(Picker.deepLinkTargetBatch(null, batches, "bAr"), null, "19b: unknown scope = no legal home");
+  }
+
 
   // ===========================================================================
   // 20. Source + dictionary + scope pins.
@@ -854,7 +1008,10 @@ test("Phase A: Lesson is the canonical academic session for video linking", asyn
     ok(/INTENT_VERSION = 2/.test(service), "20: the intent is version 2");
 
     const ui = read("src/components/admin/session-videos-view.tsx");
-    ok(ui.includes("lessonFitsBatch"), "20: UI picker filters with the shared track predicate");
+    // The track predicate itself lives in the pure picker module (which the
+    // suite exercises directly in 19b); the view delegates to it.
+    ok(ui.includes('from "@/lib/session-video-picker"'),
+      "20: UI picker filters with the shared track predicate (via the pure module)");
     ok(ui.includes("initFields: { batchId: batch.id, lessonId }"),
       "20: presigned init fields carry the lesson");
     ok(/form\.set\("lessonId", lessonId\)/.test(ui), "20: buffered fallback carries the lesson");
@@ -884,6 +1041,40 @@ test("Phase A: Lesson is the canonical academic session for video linking", asyn
     const linkSrc = read("src/lib/session-video-link.ts");
     ok(linkSrc.includes("LESSON_REQUIRED: { status: 400"), "20: LESSON_REQUIRED → 400");
     ok(linkSrc.includes("LESSON_ARCHIVED: { status: 409"), "20: LESSON_ARCHIVED → 409");
+    // The course rule binds ONLY when the batch declares a course (pool
+    // batches — the kind the Admin UI creates — impose no course constraint).
+    ok(
+      linkSrc.includes("batchCourseId !== null && lessonCourseId !== batchCourseId"),
+      "20: course rule binds only for course-declaring batches"
+    );
+
+    // The Admin UI flow: the lesson page hands its identity over, the videos
+    // view consumes it through the pure picker module, the preselect lands
+    // only where the lesson is actually offered, and a batch switch clears
+    // only genuinely ineligible selections.
+    const detailSrc = read("src/components/admin/session-detail-view.tsx");
+    ok(
+      detailSrc.includes('setView("admin-session-videos")') &&
+        detailSrc.includes("setNavParam(lessonId)"),
+      "20: lesson detail page hands its lesson identity to the videos view"
+    );
+    const viewSrc = read("src/components/admin/session-videos-view.tsx");
+    ok(
+      viewSrc.includes('from "@/lib/session-video-picker"'),
+      "20: the picker runs on the pure, tested selection module"
+    );
+    ok(viewSrc.includes("findLessonInTree(courseTree, navParam)"),
+      "20: the view consumes the handed-over lesson identity");
+    ok(viewSrc.includes("deepLinkTargetBatch("),
+      "20: deep link routes through the pure batch resolver");
+    ok(viewSrc.includes("eligibleLessonIds.has(initialLessonId)"),
+      "20: preselect lands only where the lesson is offered");
+    ok(viewSrc.includes("eligibleLessonIds.has(prev)"),
+      "20: batch switch clears only ineligible selections");
+    ok(
+      !viewSrc.includes("if (!courseTree || !activeBatch?.course) return [];"),
+      "20: the old course-bound-only picker gate is gone"
+    );
   }
   {
     // Phase A scope: NO schema, migration or seed change — the data model was

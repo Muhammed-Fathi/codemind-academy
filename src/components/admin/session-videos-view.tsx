@@ -45,15 +45,18 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { uploadFailureMessage } from "@/lib/upload-error-text";
+import {
+  buildLessonGroups,
+  flattenEligibleLessonIds,
+  deepLinkTargetBatch,
+  type PickerLesson,
+} from "@/lib/session-video-picker";
 import { normalizeExternalVideoUrl } from "@/lib/video-url";
 import {
   useMediaUpload,
   type MediaUploadResult,
 } from "@/hooks/use-media-upload";
 import { UploadProgressPanel } from "@/components/admin/upload-progress-panel";
-// Client-safe (pure, no Prisma) mirror of the server's track-fit rule — the
-// picker may only OFFER what the server will accept; it never widens it.
-import { lessonFitsBatch } from "@/lib/session-video-link";
 
 type Batch = {
   id: string;
@@ -91,17 +94,9 @@ type SessionVideo = {
   viewers: number;
 };
 
-/** One selectable lesson in the picker — the minimum the UI needs to label it. */
-type PickerLesson = {
-  id: string;
-  title: string;
-  titleAr: string;
-  officialCode: string | null;
-  trackScope: string;
-};
-
-/** Lessons grouped by their unit — the picker renders one <optgroup> per group. */
-type LessonGroup = {
+/** Lessons grouped for the picker — one <optgroup> per group; the label is
+    formatted in the component (i18n) from the pure group data. */
+type LessonGroupView = {
   key: string;
   label: string;
   lessons: PickerLesson[];
@@ -224,8 +219,8 @@ export function SessionVideosView() {
   // id via navParam (setView clears it, so the button sets it AFTER the view).
   // Once the picker data is ready, preselect that lesson — switching the
   // batch to the lesson's track when the lesson is track-specific and that
-  // batch exists. The param is consumed once; nothing is preselected that the
-  // picker cannot show (archived lessons are never offered).
+  // batch exists. The param is consumed once; nothing is preselected that
+  // the picker cannot show (archived lessons are never offered).
   const navParam = useApp((s) => s.navParam);
   const setNavParam = useApp((s) => s.setNavParam);
   const [preselectLessonId, setPreselectLessonId] = React.useState<string | null>(null);
@@ -233,10 +228,10 @@ export function SessionVideosView() {
     if (!navParam || !courseTree || batches.length === 0) return;
     const found = findLessonInTree(courseTree, navParam);
     if (!found) return;
-    if (found.trackScope === "ARABIC" || found.trackScope === "LANGUAGE") {
-      const target = batches.find((b) => b.schoolType === found.trackScope);
-      if (!target) return; // that track has no batch — there is no legal home
-      if (target.id !== activeBatchId) setActiveBatchId(target.id);
+    const target = deepLinkTargetBatch(found.trackScope, batches, activeBatchId);
+    if (!target) return; // the lesson's track has no batch — no legal home
+    if (target.switchTo && target.switchTo !== activeBatchId) {
+      setActiveBatchId(target.switchTo);
     }
     setPreselectLessonId(found.id);
     setNavParam(null);
@@ -259,42 +254,23 @@ export function SessionVideosView() {
 
   const activeBatch = batches.find((b) => b.id === activeBatchId) || null;
 
-  // The picker shows ONLY the lessons this batch can legally hold: same
-  // course, non-archived, track fit (the server re-checks all of it).
-  const lessonGroups = React.useMemo<LessonGroup[]>(() => {
-    if (!courseTree || !activeBatch?.course) return [];
-    const course = courseTree.find((c: any) => c.id === activeBatch.course!.id);
-    if (!course) return [];
-    const groups: LessonGroup[] = [];
-    for (const part of course.parts || []) {
-      for (const unit of part.units || []) {
-        const seen = new Set<string>();
-        const lessons: PickerLesson[] = [];
-        const push = (l: any) => {
-          if (!l || seen.has(l.id)) return;
-          if (l.curriculumStatus === "ARCHIVED") return;
-          if (!lessonFitsBatch(l.trackScope, activeBatch.schoolType)) return;
-          seen.add(l.id);
-          lessons.push({
-            id: l.id,
-            title: l.title,
-            titleAr: l.titleAr,
-            officialCode: l.officialCode ?? null,
-            trackScope: l.trackScope,
-          });
-        };
-        for (const l of unit.lessons || []) push(l);
-        for (const t of unit.topics || []) for (const l of t.lessons || []) push(l);
-        if (lessons.length > 0) {
-          groups.push({
-            key: `unit-${unit.id}`,
-            label: tr("admin.593", { p1: unit.order }),
-            lessons,
-          });
-        }
-      }
-    }
-    return groups;
+  // The picker shows ONLY the lessons this batch can legally hold, per the
+  // system's batch model: a course-bound batch is scoped to its course; a
+  // school-type pool batch spans every course; always non-archived + track
+  // fit. The pure logic lives in src/lib/session-video-picker.ts — the
+  // server re-validates the final pair on every creation path.
+  const lessonGroups = React.useMemo<LessonGroupView[]>(() => {
+    if (!courseTree || !activeBatch) return [];
+    return buildLessonGroups(courseTree, activeBatch).map((g) => ({
+      key: g.key,
+      lessons: g.lessons,
+      // A pool batch spans courses — disambiguate each unit with its course
+      // name so two «الوحدة 1» groups can never be confused.
+      label:
+        g.courseName && !activeBatch.course
+          ? `${g.courseName} · ${tr("admin.593", { p1: g.unitOrder })}`
+          : tr("admin.593", { p1: g.unitOrder }),
+    }));
   }, [courseTree, activeBatch, tr]);
 
   return (
@@ -498,7 +474,7 @@ function PublishVideoCard({
   batch: Batch;
   /** Set when the admin arrived from a lesson page — preselected once. */
   initialLessonId: string | null;
-  lessonGroups: LessonGroup[];
+  lessonGroups: LessonGroupView[];
   lessonsLoading: boolean;
   lessonsError: boolean;
   onRetryLessons: () => void;
@@ -528,19 +504,32 @@ function PublishVideoCard({
   /** The publish button names the phase it is in, not a generic "saving". */
   const uploadLabel = uploader.isBusy ? tr("admin.423") : tr("admin.210");
 
-  // Switching the batch drops a selection that can no longer fit it (a
-  // LANGUAGE lesson is not valid for the Arabic batch) — and this runs FIRST
-  // so the one-shot preselect below can still land on the deep-linked batch.
+  // Every lesson id the picker can currently offer for the ACTIVE batch.
+  const eligibleLessonIds = React.useMemo(
+    () => flattenEligibleLessonIds(lessonGroups),
+    [lessonGroups]
+  );
+  // Switching the batch clears the selection ONLY when it can no longer fit
+  // the new batch — an incompatible lesson/batch pair never lingers, while a
+  // lesson that stays eligible (a SHARED lesson across the Arabic and
+  // Language batches) keeps its selection. Runs before the preselect effect
+  // below so a deep link can still land after the batch switch.
   React.useEffect(() => {
-    setLessonId("");
+    setLessonId((prev) => (prev && eligibleLessonIds.has(prev) ? prev : ""));
+    // The eligibility check is evaluated at the moment the batch changes;
+    // the memo already reflects the new batch at that point.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [batch.id]);
-  // Preselect — applied exactly once, when the deep link arrives.
+  // Preselect — applied exactly once, and only where the lesson is actually
+  // offered (the picker never shows, and the server would reject, an
+  // ineligible pair). If the lesson is not eligible for the current batch,
+  // the deep link waits: switching to a batch that fits lands it.
   React.useEffect(() => {
-    if (initialLessonId && preselectAppliedRef.current !== initialLessonId) {
-      preselectAppliedRef.current = initialLessonId;
-      setLessonId(initialLessonId);
-    }
-  }, [initialLessonId]);
+    if (!initialLessonId || preselectAppliedRef.current === initialLessonId) return;
+    if (!eligibleLessonIds.has(initialLessonId)) return;
+    preselectAppliedRef.current = initialLessonId;
+    setLessonId(initialLessonId);
+  }, [initialLessonId, eligibleLessonIds]);
 
   const reset = () => {
     setTitle("");
@@ -716,7 +705,8 @@ function PublishVideoCard({
       <CardContent className="p-0 space-y-3">
         {/* Academic ownership — REQUIRED for every new video (Phase A).
             The picker offers only lessons this batch can legally hold:
-            same course, not archived, track compatible. */}
+            the batch's course when it declares one (or any course for a
+            school-type pool), never archived, track compatible. */}
         <div>
           <Label htmlFor="sv-lesson" className="inline-flex items-center gap-1.5">
             <BookOpen className="w-3.5 h-3.5" />

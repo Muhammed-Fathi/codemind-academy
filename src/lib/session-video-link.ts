@@ -23,7 +23,8 @@
 //   2. the Lesson exists                      → LESSON_NOT_FOUND
 //   3. the Lesson is not ARCHIVED             → LESSON_ARCHIVED
 //   4. the Batch exists                       → BATCH_NOT_FOUND
-//   5. Lesson and Batch belong to ONE course  → COURSE_MISMATCH
+//   5. the Batch declares a course → the Lesson must be of THE same course
+//                                             → COURSE_MISMATCH
 //   6. Lesson.trackScope fits Batch.schoolType→ TRACK_MISMATCH
 //
 // Track fit is the same predicate readiness applies (Phase 12/13): a SHARED
@@ -167,14 +168,19 @@ export async function validateSessionVideoLink(
     return linkError("BATCH_NOT_FOUND", "The selected batch does not exist");
   }
 
-  // 5. ONE course. The lesson's course is resolved through its real chain
-  //    (canonical unit chain first, legacy topic chain as fallback) and must
-  //    equal the batch's course. Null on either side is a refusal: a link
-  //    whose course cannot be proven the same is a cross-course link.
+  // 5. ONE course — per the system's actual batch model. A batch is a
+  //    school-type audience pool: readiness (src/lib/session-lifecycle.ts)
+  //    and student visibility resolve videos purely by batch.schoolType, and
+  //    the Admin batch UI creates batches WITHOUT a course. So the course
+  //    constraint binds only when the batch DECLARES a course: then the
+  //    lesson must belong to exactly that course — and a lesson whose course
+  //    cannot be proven is refused rather than guessed. A pool batch (no
+  //    course) imposes no course constraint; the track rule above remains
+  //    the real eligibility gate.
   const lessonCourseId =
     lesson.unit?.part?.courseId ?? lesson.topic?.unit?.part?.courseId ?? null;
   const batchCourseId = batch.courseId ?? null;
-  if (lessonCourseId !== batchCourseId) {
+  if (batchCourseId !== null && lessonCourseId !== batchCourseId) {
     return linkError(
       "COURSE_MISMATCH",
       "The lesson and the batch belong to different courses"
