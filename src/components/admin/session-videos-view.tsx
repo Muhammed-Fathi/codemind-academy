@@ -3,10 +3,19 @@
 // ============================================================
 // CodeMind Academy — Admin: Session Video management
 //
+// ACADEMIC IDENTITY (Phase A): the Lesson IS the canonical academic session.
+// Every NEW video is bound to a Lesson × Batch pair: the Lesson owns the
+// content, the Batch (school type) is the audience. The form therefore
+// requires a Lesson — chosen from a human-readable, unit-grouped picker —
+// and the server re-validates the exact same contract on every creation path
+// (presigned, buffered fallback, external URL). Legacy rows without a lesson
+// stay readable and deletable and are labelled, never migrated.
+//
 // Batches are school-type based (Arabic School / Language School). The admin
-// opens a batch, supplies EITHER an uploaded video file OR a video URL, and
-// publishes once — the media is stored a single time and becomes available to
-// every eligible student of that batch. No per-student copies are made.
+// opens a batch, picks the lesson, supplies EITHER an uploaded video file OR a
+// video URL, and publishes once — the media is stored a single time and
+// becomes available to every eligible student of that batch. No per-student
+// copies are made.
 //
 // All spacing/alignment uses logical properties so the layout is correct in
 // both Arabic (RTL) and English (LTR).
@@ -16,6 +25,7 @@ import * as React from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { useT, useLocale, pickAuto } from "@/lib/i18n";
+import { useApp } from "@/lib/store";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -23,8 +33,24 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Users, Upload, Link2, Video, Trash2, Loader2, CheckCircle2 } from "lucide-react";
+import {
+  Users,
+  Upload,
+  Link2,
+  Video,
+  Trash2,
+  Loader2,
+  CheckCircle2,
+  BookOpen,
+  AlertTriangle,
+} from "lucide-react";
 import { uploadFailureMessage } from "@/lib/upload-error-text";
+import {
+  buildLessonGroups,
+  flattenEligibleLessonIds,
+  deepLinkTargetBatch,
+  type PickerLesson,
+} from "@/lib/session-video-picker";
 import { normalizeExternalVideoUrl } from "@/lib/video-url";
 import {
   useMediaUpload,
@@ -43,13 +69,22 @@ type Batch = {
   videos: number;
 };
 
+type SessionVideoLesson = {
+  id: string;
+  title: string;
+  titleAr: string;
+  officialCode: string | null;
+  unit: { id: string; title: string; titleAr: string; order: number } | null;
+};
+
 type SessionVideo = {
   id: string;
   title: string;
   titleAr: string;
   description: string | null;
   batch: { id: string; name: string; nameAr: string; schoolType: string };
-  lesson: { id: string; title: string; titleAr: string } | null;
+  /** The academic session this video belongs to (Phase A). null = legacy row. */
+  lesson: SessionVideoLesson | null;
   requiredPercent: number;
   isPublished: boolean;
   publishedAt: string | null;
@@ -58,6 +93,58 @@ type SessionVideo = {
   streamUrl: string | null;
   viewers: number;
 };
+
+/** Lessons grouped for the picker — one <optgroup> per group; the label is
+    formatted in the component (i18n) from the pure group data. */
+type LessonGroupView = {
+  key: string;
+  label: string;
+  lessons: PickerLesson[];
+};
+
+type TrFn = (key: string, params?: Record<string, unknown>) => string;
+
+/** "Lesson 1-1 — Variables" (code + title) or just the title when the lesson
+    has no official code. Raw ids are never shown to the admin. */
+function lessonOptionLabel(l: PickerLesson, tr: TrFn): string {
+  const title = pickAuto(l.titleAr, l.title);
+  return l.officialCode ? `${tr("admin.594", { p1: l.officialCode })} — ${title}` : title;
+}
+
+/** The lesson line for a listed video: "Lesson 1-1 — Variables · Unit 1".
+    null for legacy rows (they get the "not linked" warning instead). */
+function videoLessonLabel(v: SessionVideo, tr: TrFn): string | null {
+  if (!v.lesson) return null;
+  const title = pickAuto(v.lesson.titleAr, v.lesson.title);
+  const name = v.lesson.officialCode
+    ? `${tr("admin.594", { p1: v.lesson.officialCode })} — ${title}`
+    : title;
+  return v.lesson.unit ? `${name} · ${tr("admin.593", { p1: v.lesson.unit.order })}` : name;
+}
+
+/** Walk the full course tree (both the canonical unit chain and the legacy
+    topic chain) and return the first non-archived lesson with this id. */
+function findLessonInTree(
+  courses: any[],
+  lessonId: string
+): { id: string; trackScope: string } | null {
+  for (const c of courses) {
+    for (const p of c.parts || []) {
+      for (const u of p.units || []) {
+        const candidates = [
+          ...(u.lessons || []),
+          ...(u.topics || []).flatMap((t: any) => t.lessons || []),
+        ];
+        for (const l of candidates) {
+          if (l && l.id === lessonId && l.curriculumStatus !== "ARCHIVED") {
+            return { id: l.id, trackScope: l.trackScope };
+          }
+        }
+      }
+    }
+  }
+  return null;
+}
 
 export function SessionVideosView() {
   const tr = useT();
@@ -72,6 +159,11 @@ export function SessionVideosView() {
   const [videos, setVideos] = React.useState<SessionVideo[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [loadingVideos, setLoadingVideos] = React.useState(false);
+
+  // Lesson picker data — the full course tree (units → lessons, both chains),
+  // fetched once; filtered per active batch below.
+  const [courseTree, setCourseTree] = React.useState<any[] | null>(null);
+  const [treeError, setTreeError] = React.useState(false);
 
   const loadBatches = React.useCallback(async () => {
     setLoading(true);
@@ -101,13 +193,49 @@ export function SessionVideosView() {
     }
   }, []);
 
+  const loadCourseTree = React.useCallback(async () => {
+    setTreeError(false);
+    try {
+      // tree=1 is required — without it the API omits parts/units/topics/lessons.
+      const r = await fetch("/api/admin/courses?tree=1");
+      if (!r.ok) throw new Error(String(r.status));
+      const d = await r.json();
+      setCourseTree(d.courses || []);
+    } catch {
+      setTreeError(true);
+    }
+  }, []);
+
   React.useEffect(() => {
     loadBatches();
-  }, [loadBatches]);
+    loadCourseTree();
+  }, [loadBatches, loadCourseTree]);
 
   React.useEffect(() => {
     if (activeBatchId) loadVideos(activeBatchId);
   }, [activeBatchId, loadVideos]);
+
+  // Deep link from the lesson page: ManageVideosButton hands over the lesson
+  // id via navParam (setView clears it, so the button sets it AFTER the view).
+  // Once the picker data is ready, preselect that lesson — switching the
+  // batch to the lesson's track when the lesson is track-specific and that
+  // batch exists. The param is consumed once; nothing is preselected that
+  // the picker cannot show (archived lessons are never offered).
+  const navParam = useApp((s) => s.navParam);
+  const setNavParam = useApp((s) => s.setNavParam);
+  const [preselectLessonId, setPreselectLessonId] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    if (!navParam || !courseTree || batches.length === 0) return;
+    const found = findLessonInTree(courseTree, navParam);
+    if (!found) return;
+    const target = deepLinkTargetBatch(found.trackScope, batches, activeBatchId);
+    if (!target) return; // the lesson's track has no batch — no legal home
+    if (target.switchTo && target.switchTo !== activeBatchId) {
+      setActiveBatchId(target.switchTo);
+    }
+    setPreselectLessonId(found.id);
+    setNavParam(null);
+  }, [navParam, courseTree, batches, activeBatchId, setNavParam]);
 
   const ensureBatch = async (schoolType: "ARABIC" | "LANGUAGE") => {
     const r = await fetch("/api/admin/batches", {
@@ -125,6 +253,25 @@ export function SessionVideosView() {
   };
 
   const activeBatch = batches.find((b) => b.id === activeBatchId) || null;
+
+  // The picker shows ONLY the lessons this batch can legally hold, per the
+  // system's batch model: a course-bound batch is scoped to its course; a
+  // school-type pool batch spans every course; always non-archived + track
+  // fit. The pure logic lives in src/lib/session-video-picker.ts — the
+  // server re-validates the final pair on every creation path.
+  const lessonGroups = React.useMemo<LessonGroupView[]>(() => {
+    if (!courseTree || !activeBatch) return [];
+    return buildLessonGroups(courseTree, activeBatch).map((g) => ({
+      key: g.key,
+      lessons: g.lessons,
+      // A pool batch spans courses — disambiguate each unit with its course
+      // name so two «الوحدة 1» groups can never be confused.
+      label:
+        g.courseName && !activeBatch.course
+          ? `${g.courseName} · ${tr("admin.593", { p1: g.unitOrder })}`
+          : tr("admin.593", { p1: g.unitOrder }),
+    }));
+  }, [courseTree, activeBatch, tr]);
 
   return (
     <motion.div
@@ -193,6 +340,11 @@ export function SessionVideosView() {
         <>
           <PublishVideoCard
             batch={activeBatch}
+            initialLessonId={preselectLessonId}
+            lessonGroups={lessonGroups}
+            lessonsLoading={courseTree === null}
+            lessonsError={treeError}
+            onRetryLessons={loadCourseTree}
             onPublished={() => {
               loadVideos(activeBatch.id);
               loadBatches();
@@ -234,6 +386,22 @@ export function SessionVideosView() {
                           <Badge variant="outline" className="text-[10px]">
                             {v.source === "URL" ? tr("admin.209") : tr("admin.208")}
                           </Badge>
+                          {v.lesson ? (
+                            <span className="inline-flex items-center gap-1">
+                              <BookOpen className="w-3 h-3 shrink-0" />
+                              {videoLessonLabel(v, tr)}
+                            </span>
+                          ) : (
+                            // Legacy row (created before Phase A): warn, never
+                            // block — the row stays manageable and deletable.
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                            >
+                              <AlertTriangle className="w-3 h-3 me-1" />
+                              {tr("admin.591")}
+                            </Badge>
+                          )}
                           <span>
                             {tr("admin.213")}: {v.viewers}
                           </span>
@@ -292,12 +460,24 @@ export function SessionVideosView() {
   );
 }
 
-/** Upload-or-URL publishing form. Both methods are first-class. */
+/** Upload-or-URL publishing form. Both methods are first-class; both are
+    bound to the same required lesson (Phase A). */
 function PublishVideoCard({
   batch,
+  initialLessonId,
+  lessonGroups,
+  lessonsLoading,
+  lessonsError,
+  onRetryLessons,
   onPublished,
 }: {
   batch: Batch;
+  /** Set when the admin arrived from a lesson page — preselected once. */
+  initialLessonId: string | null;
+  lessonGroups: LessonGroupView[];
+  lessonsLoading: boolean;
+  lessonsError: boolean;
+  onRetryLessons: () => void;
   onPublished: () => void;
 }) {
   const tr = useT();
@@ -308,6 +488,12 @@ function PublishVideoCard({
   const [videoUrl, setVideoUrl] = React.useState("");
   const [file, setFile] = React.useState<File | null>(null);
   const [saving, setSaving] = React.useState(false);
+  // The lesson the video belongs to — REQUIRED (Phase A). Preselected when
+  // the admin deep-linked here from the lesson's detail page.
+  const [lessonId, setLessonId] = React.useState("");
+  /** One-shot memory of the preselect, so a LATER manual batch switch
+      (which clears the selection) never re-applies the deep link. */
+  const preselectAppliedRef = React.useRef<string | null>(null);
   // Phase 23 UX — the SAME state machine the session-PDF screen uses, so a
   // video upload and a PDF upload show identical phases, identical REAL byte
   // progress and identical failure wording.
@@ -318,12 +504,40 @@ function PublishVideoCard({
   /** The publish button names the phase it is in, not a generic "saving". */
   const uploadLabel = uploader.isBusy ? tr("admin.423") : tr("admin.210");
 
+  // Every lesson id the picker can currently offer for the ACTIVE batch.
+  const eligibleLessonIds = React.useMemo(
+    () => flattenEligibleLessonIds(lessonGroups),
+    [lessonGroups]
+  );
+  // Switching the batch clears the selection ONLY when it can no longer fit
+  // the new batch — an incompatible lesson/batch pair never lingers, while a
+  // lesson that stays eligible (a SHARED lesson across the Arabic and
+  // Language batches) keeps its selection. Runs before the preselect effect
+  // below so a deep link can still land after the batch switch.
+  React.useEffect(() => {
+    setLessonId((prev) => (prev && eligibleLessonIds.has(prev) ? prev : ""));
+    // The eligibility check is evaluated at the moment the batch changes;
+    // the memo already reflects the new batch at that point.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [batch.id]);
+  // Preselect — applied exactly once, and only where the lesson is actually
+  // offered (the picker never shows, and the server would reject, an
+  // ineligible pair). If the lesson is not eligible for the current batch,
+  // the deep link waits: switching to a batch that fits lands it.
+  React.useEffect(() => {
+    if (!initialLessonId || preselectAppliedRef.current === initialLessonId) return;
+    if (!eligibleLessonIds.has(initialLessonId)) return;
+    preselectAppliedRef.current = initialLessonId;
+    setLessonId(initialLessonId);
+  }, [initialLessonId, eligibleLessonIds]);
+
   const reset = () => {
     setTitle("");
     setTitleAr("");
     setDescription("");
     setVideoUrl("");
     setFile(null);
+    setLessonId("");
   };
 
   /** One place turns an upload result into what the admin sees. */
@@ -358,6 +572,13 @@ function PublishVideoCard({
     if (busy) return;
     if (!title.trim()) {
       toast.error(tr("admin.580"));
+      return;
+    }
+    // Phase A — a video without a lesson is not a video: it has no academic
+    // session to belong to. Told BEFORE any request, and re-enforced by the
+    // server on every creation path.
+    if (!lessonId) {
+      toast.error(tr("admin.583"));
       return;
     }
     if (method === "URL" && !videoUrl.trim()) {
@@ -400,9 +621,10 @@ function PublishVideoCard({
           // init endpoint answers PRESIGNED_UNSUPPORTED.
           purpose: "SESSION_VIDEO",
           file: target,
-          initFields: { batchId: batch.id },
+          initFields: { batchId: batch.id, lessonId },
           completeFields: {
             batchId: batch.id,
+            lessonId,
             title,
             titleAr: titleAr || title,
             description,
@@ -415,6 +637,7 @@ function PublishVideoCard({
         async (f) => {
           const form = new FormData();
           form.set("batchId", batch.id);
+          form.set("lessonId", lessonId);
           form.set("title", title);
           form.set("titleAr", titleAr || title);
           form.set("description", description);
@@ -453,6 +676,7 @@ function PublishVideoCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           batchId: batch.id,
+          lessonId,
           title,
           titleAr: titleAr || title,
           description,
@@ -479,6 +703,58 @@ function PublishVideoCard({
         <CardDescription className="text-xs">{tr("admin.205")}</CardDescription>
       </CardHeader>
       <CardContent className="p-0 space-y-3">
+        {/* Academic ownership — REQUIRED for every new video (Phase A).
+            The picker offers only lessons this batch can legally hold:
+            the batch's course when it declares one (or any course for a
+            school-type pool), never archived, track compatible. */}
+        <div>
+          <Label htmlFor="sv-lesson" className="inline-flex items-center gap-1.5">
+            <BookOpen className="w-3.5 h-3.5" />
+            {tr("admin.586")}
+          </Label>
+          {lessonsLoading ? (
+            <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              {tr("admin.588")}
+            </div>
+          ) : lessonsError ? (
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-destructive">
+              <span>{tr("admin.590")}</span>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-6 px-2"
+                onClick={onRetryLessons}
+              >
+                {tr("notif.retry")}
+              </Button>
+            </div>
+          ) : lessonGroups.length === 0 ? (
+            <div className="mt-1 text-xs text-muted-foreground">{tr("admin.589")}</div>
+          ) : (
+            <select
+              id="sv-lesson"
+              value={lessonId}
+              onChange={(e) => setLessonId(e.target.value)}
+              disabled={busy}
+              className="flex h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] dark:bg-input/30 md:text-sm"
+            >
+              <option value="">{tr("admin.587")}</option>
+              {lessonGroups.map((g) => (
+                <optgroup key={g.key} label={g.label}>
+                  {g.lessons.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {lessonOptionLabel(l, tr)}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          )}
+          <p className="mt-1 text-[11px] text-muted-foreground">{tr("admin.583")}</p>
+        </div>
+
         {/* Method switch — both upload and URL are clearly supported. */}
         <div className="flex flex-wrap gap-2">
           {(

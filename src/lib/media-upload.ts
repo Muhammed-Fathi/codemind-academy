@@ -76,6 +76,7 @@ import {
 import { acquireUploadFinalizeLock } from "@/lib/db-serialization";
 import { normalizeTrackScope, type TrackScope } from "@/lib/track-scope";
 import { assertVolumeQuota } from "@/lib/storage-quotas";
+import { validateSessionVideoLink } from "@/lib/session-video-link";
 
 // ---------------------------------------------------------------------------
 // Purposes
@@ -172,7 +173,15 @@ export function resolvePresignExpiresSec(
 // Upload intent token — HMAC-SHA256 over every bound upload parameter
 // ---------------------------------------------------------------------------
 
-const INTENT_VERSION = 1;
+/**
+ * v2 (Phase A): the validated academic identity — the exact (batch, lesson)
+ * pair authorized at init — is now SIGNED INTO THE TOKEN. Completion re-runs
+ * the target authorization against THESE values and ignores whatever the
+ * client sends, so the identity cannot be swapped between init and complete.
+ * v1 tokens (unbound) are rejected as MALFORMED — they are minutes-old
+ * artifacts of a single upload and cannot outlive this boundary.
+ */
+const INTENT_VERSION = 2;
 /** Domain-separated HMAC context: this MAC never signs anything else. */
 const INTENT_HMAC_CONTEXT = "codemind.upload-intent.v1";
 /**
@@ -195,6 +204,14 @@ export type UploadIntentPayload = {
   contentType: string;
   /** Ceiling the object must not exceed (declared size at init). */
   maxBytes: number;
+  /**
+   * The validated target identity, signed at init (Phase A):
+   *   SESSION_VIDEO — batchId + lessonId (the academic link, both required)
+   *   LESSON_PDF    — lessonId (batchId is always null)
+   * Completion MUST use these values, never the request body's.
+   */
+  batchId: string | null;
+  lessonId: string | null;
   /** Issued-at / expiry, unix seconds. */
   iat: number;
   exp: number;
@@ -292,6 +309,18 @@ export function verifyUploadIntent(
   if (typeof maxBytes !== "number" || !Number.isSafeInteger(maxBytes) || maxBytes <= 0) {
     return { ok: false, reason: "MALFORMED" };
   }
+  // The signed academic identity (Phase A). v2 tokens always carry it; a
+  // token without it (v1 or hand-shaped) is structurally invalid, so an
+  // unbound completion is impossible by construction.
+  const batchId = p.batchId;
+  const lessonId = p.lessonId;
+  if (purpose === "SESSION_VIDEO") {
+    if (typeof batchId !== "string" || !batchId.trim()) return { ok: false, reason: "MALFORMED" };
+    if (typeof lessonId !== "string" || !lessonId.trim()) return { ok: false, reason: "MALFORMED" };
+  } else {
+    if (typeof lessonId !== "string" || !lessonId.trim()) return { ok: false, reason: "MALFORMED" };
+    if (batchId !== null) return { ok: false, reason: "MALFORMED" };
+  }
   const iat = p.iat;
   const exp = p.exp;
   if (
@@ -312,7 +341,22 @@ export function verifyUploadIntent(
   }
   return {
     ok: true,
-    payload: { v: INTENT_VERSION, jti, sub, purpose, kind, key, contentType, maxBytes, iat, exp },
+    payload: {
+      v: INTENT_VERSION,
+      jti,
+      sub,
+      purpose,
+      kind,
+      key,
+      contentType,
+      maxBytes,
+      // SESSION_VIDEO: both non-empty strings. LESSON_PDF: lessonId only
+      // (batchId was verified to be exactly null above).
+      batchId: typeof batchId === "string" ? batchId : null,
+      lessonId: String(lessonId),
+      iat,
+      exp,
+    },
   };
 }
 
@@ -330,6 +374,13 @@ export const UPLOAD_ERROR_STATUS = {
   BATCH_NOT_FOUND: 404,
   LESSON_NOT_FOUND: 404,
   LESSON_ARCHIVED: 409,
+  // Academic link contract (Phase A): a NEW session video must be bound to a
+  // valid Lesson × Batch identity. The codes are the machine-readable names
+  // of the contract itself (src/lib/session-video-link.ts) — the UI maps them
+  // onto specific admin-facing reasons.
+  LESSON_REQUIRED: 400,
+  COURSE_MISMATCH: 400,
+  TRACK_MISMATCH: 400,
   STORAGE_UNAVAILABLE: 500,
   // intent
   INTENT_INVALID: 400,
@@ -473,19 +524,24 @@ async function validateUploadTarget(
   lessonIdRaw: unknown
 ): Promise<TargetValidation> {
   if (purpose === "SESSION_VIDEO") {
-    const batchId = asTrimmedString(batchIdRaw);
-    if (!batchId) return { ok: false, code: "BATCH_NOT_FOUND", message: "Batch not found" };
-    const batch = await client.batch.findUnique({ where: { id: batchId }, select: { id: true } });
-    if (!batch) return { ok: false, code: "BATCH_NOT_FOUND", message: "Batch not found" };
-    const lessonId = asTrimmedString(lessonIdRaw);
-    if (lessonId) {
-      const lesson = await client.lesson.findUnique({
-        where: { id: lessonId },
-        select: { id: true },
-      });
-      if (!lesson) return { ok: false, code: "LESSON_NOT_FOUND", message: "Lesson not found" };
+    // THE canonical academic-link contract (Phase A): a NEW session video
+    // requires a valid Lesson × Batch identity — lesson present, exists, not
+    // archived, batch exists, one course, track fit. The same function the
+    // buffered upload and external-URL paths call, so all creation paths
+    // validate identically.
+    const link = await validateSessionVideoLink(client, {
+      lessonId: lessonIdRaw,
+      batchId: batchIdRaw,
+    });
+    if (!link.ok) {
+      return {
+        ok: false,
+        // Every link code is a valid upload error code (see UPLOAD_ERROR_STATUS).
+        code: link.code,
+        message: link.message,
+      };
     }
-    return { ok: true, batchId, lessonId, lesson: null };
+    return { ok: true, batchId: link.batchId, lessonId: link.lessonId, lesson: null };
   }
 
   // LESSON_PDF — same lesson rules as uploadLessonPdfMaterial.
@@ -676,7 +732,10 @@ export async function initPresignedUpload(
   }
 
   // 8. Sign the upload intent — bound to user, purpose, kind, exact key,
-  //    content type, max size and expiry.
+  //    content type, max size, expiry AND the validated target identity
+  //    (Phase A: the exact (batch, lesson) pair the server authorized at
+  //    init). Completion re-derives the identity from THIS token — the
+  //    client's later claims about it are ignored.
   const nowSec = deps.nowSec ?? (() => Math.floor(Date.now() / 1000));
   const iat = nowSec();
   const token = signUploadIntent(
@@ -689,6 +748,8 @@ export async function initPresignedUpload(
       key: grant.key,
       contentType: grant.contentType,
       maxBytes: spec.maxBytes,
+      batchId: target.batchId,
+      lessonId: target.lessonId,
       iat,
       exp: iat + grant.expiresInSec,
     },
@@ -845,12 +906,19 @@ export type PresignedUploadCompleteInput = {
   /** Original filename — metadata + (.pdf extension check), never a key. */
   originalName?: unknown;
   // SESSION_VIDEO payload:
+  /**
+   * NOT TRUSTED for identity (Phase A): the (batch, lesson) identity comes
+   * from the signed intent token. These body fields are accepted only for
+   * wire compatibility with existing clients and are deliberately ignored
+   * when re-authorizing and when creating the rows.
+   */
   batchId?: unknown;
   title?: unknown;
   titleAr?: unknown;
   description?: unknown;
   publish?: unknown;
   // Shared / LESSON_PDF payload:
+  /** NOT TRUSTED for identity (Phase A) — see `batchId`. */
   lessonId?: unknown;
   trackScope?: unknown;
 };
@@ -923,11 +991,20 @@ export async function completePresignedUpload(
     return { ok: false, code: "INTENT_INVALID", message: "Invalid upload token" };
   }
 
-  // 2. Re-run target authorization (batch/lesson may have changed since init).
+  // 2. Re-run target authorization — against the SIGNED identity from the
+  //    intent token (Phase A), never the request body's: the client cannot
+  //    swap the batch or the lesson between init and complete. The rows may
+  //    still have changed since init (deleted/archived), which the re-run
+  //    catches the same way as before.
   const client = deps.db ?? db;
   let target: TargetValidation;
   try {
-    target = await validateUploadTarget(client, payload.purpose, input.batchId, input.lessonId);
+    target = await validateUploadTarget(
+      client,
+      payload.purpose,
+      payload.batchId,
+      payload.lessonId
+    );
   } catch (e) {
     // DB outage during re-authorization: fail closed BEFORE any storage or
     // cleanup I/O — nothing was verified, nothing may be deleted.

@@ -313,10 +313,12 @@ export function SessionDetailView({
         <ReadinessChecklist readiness={detail.readiness} />
       </SectionCard>
 
-      {/* Video — display only; staging lives in the session-videos view */}
+      {/* Video — display only; staging lives in the session-videos view.
+          The button hands the view this lesson's id so the new-video form
+          preselects it (Phase A academic link). */}
       <SectionCard
         title={tr("admin.380")}
-        action={<ManageVideosButton />}
+        action={<ManageVideosButton lessonId={lessonId} />}
       >
         <VideoSection detail={detail} />
       </SectionCard>
@@ -426,11 +428,22 @@ function IdentityGrid({ detail }: { detail: AdminSessionDetail }) {
   );
 }
 
-function ManageVideosButton() {
+function ManageVideosButton({ lessonId }: { lessonId: string }) {
   const tr = useT();
   const setView = useApp((s) => s.setView);
+  const setNavParam = useApp((s) => s.setNavParam);
   return (
-    <Button size="sm" variant="outline" onClick={() => setView("admin-session-videos")}>
+    <Button
+      size="sm"
+      variant="outline"
+      onClick={() => {
+        // setView clears navParam, so the param is set AFTER the view —
+        // the video screen preselects this lesson in the new-video form
+        // (Phase A: the Lesson is the academic session the video belongs to).
+        setView("admin-session-videos");
+        setNavParam(lessonId);
+      }}
+    >
       <VideoIcon className="w-3.5 h-3.5 me-1.5" />
       {tr("admin.418")}
     </Button>

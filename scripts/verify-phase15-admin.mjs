@@ -137,6 +137,7 @@ const REAL_CODE_MODULES = [
   "src/lib/session-progress.ts",
   "src/lib/parent-access.ts",
   "src/lib/session-materials.ts",
+  "src/lib/session-video-link.ts",
   "src/lib/admin-sessions.ts",
   "src/lib/api.ts",
   // route handlers under test
@@ -440,11 +441,13 @@ async function main() {
     },
   });
 
+  // Phase A — a batch belongs to the SAME course as the lessons its videos
+  // cover (the academic-link contract checks this); the seeds spell it out.
   const batchAr = await client.batch.create({
-    data: { name: "Batch AR", nameAr: "دفعة عربي", schoolType: "ARABIC" },
+    data: { name: "Batch AR", nameAr: "دفعة عربي", schoolType: "ARABIC", courseId: course.id },
   });
   const batchLang = await client.batch.create({
-    data: { name: "Batch LANG", nameAr: "دفعة لغات", schoolType: "LANGUAGE" },
+    data: { name: "Batch LANG", nameAr: "دفعة لغات", schoolType: "LANGUAGE", courseId: course.id },
   });
 
   const quiz1 = await client.quiz.create({
@@ -898,8 +901,11 @@ async function main() {
     );
   }
   {
+    // Phase A — the lesson is part of the identity, so these negative cases
+    // carry a VALID lesson and probe exactly one broken thing at a time.
     const badBatch = await POST_JSON(R.videos, "http://t/api/admin/session-videos", {
       batchId: "nope",
+      lessonId: LA.id,
       title: "x",
       videoUrl: "https://example.com/v.mp4",
     });
@@ -909,8 +915,24 @@ async function main() {
       videoUrl: "https://example.com/v.mp4",
     });
     eq(noTitle.status, 400, "Q23: missing title 400");
+    const noLesson = await POST_JSON(R.videos, "http://t/api/admin/session-videos", {
+      batchId: batchAr.id,
+      title: "no lesson",
+      videoUrl: "https://example.com/v.mp4",
+    });
+    eq(noLesson.status, 400, "Q23b: missing lesson 400");
+    eq(noLesson.json.code, "LESSON_REQUIRED", "Q23b: exact machine code");
+    const crossBatch = await POST_JSON(R.videos, "http://t/api/admin/session-videos", {
+      batchId: batchLang.id,
+      lessonId: LA.id,
+      title: "track mismatch",
+      videoUrl: "https://example.com/v.mp4",
+    });
+    eq(crossBatch.status, 400, "Q23c: ARABIC lesson → LANGUAGE batch 400");
+    eq(crossBatch.json.code, "TRACK_MISMATCH", "Q23c: exact machine code");
     const bigForm = new FormData();
     bigForm.set("batchId", batchAr.id);
+    bigForm.set("lessonId", LA.id);
     bigForm.set("title", "big");
     bigForm.set(
       "file",
