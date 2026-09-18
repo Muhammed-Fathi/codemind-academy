@@ -186,6 +186,38 @@ export function readinessStateLabelKey(state: string): string {
 }
 
 /**
+ * Phase D — human, Arabic-first explanation of a readiness code. Readiness
+ * stays SERVER-COMPUTED (the code comes from the checklist payload); this
+ * map only translates the stable code into what an admin reads. Unknown
+ * codes fall back to `null` so the raw code is shown instead of a lie.
+ */
+const READINESS_REASON_LABEL: Record<string, string> = {
+  VIDEO_OK: "admin.610",
+  VIDEO_MISSING: "admin.611",
+  VIDEO_TRACK_INCOMPLETE: "admin.612",
+  PDF_OK: "admin.613",
+  PDF_MISSING: "admin.614",
+  PDF_TRACK_INCOMPLETE: "admin.615",
+  QUIZ_OK: "admin.616",
+  QUIZ_MISSING: "admin.617",
+  QUIZ_EMPTY: "admin.618",
+  HOMEWORK_OK: "admin.619",
+  HOMEWORK_MISSING: "admin.620",
+  HOMEWORK_INSTRUCTIONS_EMPTY: "admin.621",
+  HOMEWORK_TRACK_INCOMPLETE: "admin.622",
+  CURRICULUM_ARCHIVED: "admin.623",
+};
+
+/** The translated reason for a checklist item's code (or null). */
+export function readinessReasonText(
+  tr: (k: string) => string,
+  code: string
+): string | null {
+  const key = READINESS_REASON_LABEL[code];
+  return key ? tr(key) : null;
+}
+
+/**
  * The checklist. `readiness` is the server snapshot — `present`, `valid`,
  * `required` and `state` are displayed exactly as received. No prop here is
  * ever derived from lesson fields in the component.
@@ -221,6 +253,19 @@ export function ReadinessChecklist({
                   {item.required ? tr("admin.406") : tr("admin.407")}
                 </Badge>
               </div>
+              {/* Phase D — the human reason first (Arabic-first, no DB jargon),
+                  machine detail secondary. */}
+              {readinessReasonText(tr, item.code) && (
+                <p
+                  className={`mt-1 text-[12px] leading-relaxed ${
+                    item.state === "OK"
+                      ? "text-muted-foreground"
+                      : "font-medium text-foreground"
+                  }`}
+                >
+                  {readinessReasonText(tr, item.code)}
+                </p>
+              )}
               <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
                 <span>
                   {item.present ? tr("admin.408") : tr("admin.409")}

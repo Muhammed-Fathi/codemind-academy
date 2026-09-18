@@ -396,21 +396,29 @@ section("6. Content-Disposition + access HTTP mapping");
 }
 
 // ---------------------------------------------------------------------------
-section("7. Readiness PDF dimension (Phase 14 codes)");
+section("7. Readiness PDF dimension (Phase D contract over the Phase 14 architecture)");
 // ---------------------------------------------------------------------------
+// Phase D made the Material a REQUIRED readiness dimension; the AUTHORITY is
+// still exactly the Phase 14 architecture (active ADMIN_UPLOADED Material +
+// MediaAsset, track-scoped). These assertions were rewritten in place when
+// Phase D landed.
 {
   const base = {
     id: "L1",
     status: "DRAFT",
     trackScope: "SHARED",
     curriculumStatus: "OFFICIAL",
+    // Phase D note: a legacy `videoUrl` is deliberately left on the fixture —
+    // it must NOT satisfy video readiness either, and must not interfere.
     videoUrl: "https://cdn.example/v.mp4",
   };
   const absent = L.computeLessonReadiness(base);
   const pdfItem = absent.items.find((i) => i.key === "PDF");
-  eq(pdfItem.state, "NOT_APPLICABLE", "PDF still never required");
-  eq(pdfItem.code, "PDF_ABSENT_NOT_REQUIRED", "stable absent code");
-  ok(absent.canBeReady === true, "missing PDF does not block READY");
+  eq(pdfItem.state, "MISSING", "absent Material is MISSING");
+  eq(pdfItem.code, "PDF_MISSING", "stable absent code");
+  eq(pdfItem.required, true, "PHASE D: the Material is REQUIRED for READY");
+  ok(absent.canBeReady === false, "missing PDF blocks READY");
+  ok(absent.blocking.includes("PDF_MISSING"), "…and is named in the blocking list");
 
   const withMat = L.computeLessonReadiness({
     ...base,
@@ -425,9 +433,10 @@ section("7. Readiness PDF dimension (Phase 14 codes)");
     ],
   });
   const pdf2 = withMat.items.find((i) => i.key === "PDF");
-  eq(pdf2.code, "PDF_PRESENT_NOT_REQUIRED", "present material credited");
+  eq(pdf2.code, "PDF_OK", "present material credited");
   eq(pdf2.present, true, "present=true");
-  ok(withMat.canBeReady === true, "present PDF still does not block");
+  eq(pdf2.state, "OK", "valid=true");
+  ok(!withMat.blocking.includes("PDF_MISSING"), "a valid material clears the PDF block");
 
   const foreign = L.computeLessonReadiness({
     ...base,
@@ -444,6 +453,7 @@ section("7. Readiness PDF dimension (Phase 14 codes)");
   });
   const pdf3 = foreign.items.find((i) => i.key === "PDF");
   eq(pdf3.present, false, "foreign-track material does not credit PDF");
+  eq(pdf3.state, "MISSING", "PHASE D: foreign-track-only material leaves the requirement MISSING");
   ok(
     foreign.notes.some((n) => n.startsWith("PDF_PRESENT_BUT_OTHER_TRACK")),
     "foreign track noted"

@@ -2363,3 +2363,66 @@ fetch `<file>` + `<file>.gz.sha256` (= sha256 of the wire bytes) +
 gzip stream; PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING does not bypass the
 CLI-side check. Placeholder engines are sufficient for generate/build
 (types only; suites shim @/lib/db).
+
+## 2026-09-18 — Phase D: readiness & publishing aligned to the real academic Session
+
+Full documentation: `docs/PHASE_D_READINESS_PUBLISHING.md`. Dedicated suite:
+`tests/phase-D-readiness-publishing.test.js` — 321/0.
+
+**Contract change (deliberate):** readiness now requires ALL FOUR academic
+components — VIDEO (published SessionVideo covering the audience), PDF/Material
+(active Phase 14 Material with a MediaAsset, track-valid), QUIZ (track-valid,
+≥1 question), HOMEWORK (track-valid, real instructions). Legacy
+`Lesson.videoUrl` / `pdfUrl` are compat links only — never readiness authorities
+(admin sees `*_LEGACY_URL_NOT_COUNTED` notes). "Present" always means present FOR
+THE AUDIENCE: foreign-track-only content → MISSING + `*_PRESENT_BUT_OTHER_TRACK:<n>`;
+partial audience coverage → `*_TRACK_INCOMPLETE`. Blocking order fixed:
+CURRICULUM_ARCHIVED, VIDEO, PDF, QUIZ, HOMEWORK.
+
+**Files (core):**
+- `src/lib/session-lifecycle.ts` — single readiness authority rewritten for the
+  four requirements (`audienceTracksForScope`/`audienceCoverage` helpers); override
+  wiring: `normalizeOverrideReason` (≤1000), `OVERRIDE_REASON_*` codes,
+  `openLessonWithOverride` + `applyOverrideOpen` (single tx, conditional
+  DRAFT→READY staging, publication upsert that never clobbers, audits
+  LESSON_MARK_READY via EMERGENCY_OVERRIDE / LESSON_OPEN override:true /
+  LESSON_OPEN_OVERRIDE); `lifecycleHttpStatus` maps OVERRIDE_REASON_INVALID→400.
+  Nothing bypassed: archived / cross-course / not-found / concurrency / idempotent
+  no-op all precede the override. MARK_READY/UNPUBLISH ignore smuggled override.
+- `src/app/api/admin/lessons/[id]/open-override/route.ts` — NEW. ADMIN-only,
+  rate-limited, mirrors the normal open route (incl. notification fan-out with the
+  `courseId: null` fallback); invalid reason → 400 +
+  LESSON_OPEN_OVERRIDE_REJECTED best-effort audit.
+- `src/components/admin/session-open-dialog.tsx` — CRITICAL scroll fix: bounded
+  flex column (shrink-0 header/footer + single `flex-1 min-h-0 overflow-y-auto`
+  middle, `data-testid=open-dialog-scroll-region`), nested ScrollArea gone from both
+  dialogs; override panel (warning admin.596/597, missing items with human labels,
+  required reason textarea ≤1000 + counter, destructive confirm); normal confirm
+  disabled while blocked; 409 keeps the dialog open with refreshed checklist.
+- `src/components/admin/session-detail-view.tsx` — Open control for
+  `(isDraft || isReady) && !archived`.
+- `src/components/admin/session-workflow-shared.tsx` — `readinessReasonText` human
+  reason lines for every blocking code.
+- `src/lib/i18n-dict-2026.ts` — new keys admin.595–admin.624; admin.432 (quiz) and
+  admin.434 (homework) now say "(مطلوب للجاهزية)" instead of "(اختياري)".
+
+**Contract-migration of older suites (same file, rewritten in place):**
+phase13 readiness sections 4–7 + ceremony fixtures stage all four components
+(314/0, incl. real-DB layer); scripts/verify-phase13-db.mjs stages batches +
+assets + videos + material + quiz + homework and breaks readiness by deleting the
+homework row; phase14 §7 → Material REQUIRED, PDF_OK/PDF_MISSING (131/0);
+phase15 + verify-phase15-admin.mjs blocking lists include PDF_MISSING, item codes
+PDF_OK, I15 pin updated (386/0, e2e 220/0).
+
+**Verification:** tsc exit 0; Phase D suite 321/0; phase13 314/0 · phase14 131/0 ·
+phase15 386/0 · phase16 381/0 · phase12 310/0 · phase20 193/0 · media-audit 218/0 ·
+progression 163/0 · parent-isolation 112/0 · authz 94/0 · quiz 70/0 · phaseA/B/C
+node:test pass; `SKIP_PRODUCTION_ENV_CHECK=1 npm run build:postgres` exit 0
+(open-override route in build output); SQLite client re-generated afterwards.
+No schema/migration/seed changes; no changes to attempts/scoring, homework
+grading/submission, progression, attendance, LiveSession, notifications semantics,
+Teacher workspace.
+
+**Sandbox note:** binaries.prisma.sh remains blocked; prisma CLI runs via dummy
+engines (PRISMA_SCHEMA_ENGINE_BINARY + PRISMA_QUERY_ENGINE_LIBRARY pointing at
+/tmp/fake-engines/). generate/build only — never runtime queries.

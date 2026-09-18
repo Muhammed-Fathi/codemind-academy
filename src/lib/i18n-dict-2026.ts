@@ -554,9 +554,9 @@ export const DICT_2026: Record<string, DictEntry> = {
   "admin.429": { ar: "اختار ملف PDF…", en: "Choose a PDF file…" },
   "admin.430": { ar: "تراك الـPDF", en: "PDF track scope" },
   "admin.431": { ar: "زي الجلسة", en: "Same as session" },
-  "admin.432": { ar: "مفيش اختبار على الجلسة دي (اختياري)", en: "No quiz on this session (optional)" },
+  "admin.432": { ar: "مفيش اختبار على الجلسة دي (مطلوب للجاهزية)", en: "No quiz on this session (required for readiness)" },
   "admin.433": { ar: "إدارة من بنك الأسئلة", en: "Manage in question bank" },
-  "admin.434": { ar: "مفيش واجب على الجلسة دي (اختياري)", en: "No homework on this session (optional)" },
+  "admin.434": { ar: "مفيش واجب على الجلسة دي (مطلوب للجاهزية)", en: "No homework on this session (required for readiness)" },
   "admin.435": {
     ar: "الواجبات بينشئها المعلم من لوحة المعلم (إنشاء واجب). الواجبات الموجودة معروضة هنا للقراءة بس.",
     en: "Homework is authored by the teacher from the teacher workflow (Create homework). Existing assignments are listed here read-only.",
@@ -1638,6 +1638,107 @@ export const DICT_2026: Record<string, DictEntry> = {
   "admin.594": {
     ar: "الحصة {p1}",
     en: "Lesson {p1}",
+  },
+
+  // ---------- Phase D: readiness reasons + emergency override ----------
+  "admin.595": {
+    ar: "افتح على أي حال (إجراء طارئ)",
+    en: "Open anyway (emergency action)",
+  },
+  "admin.596": {
+    ar: "تحذير: الجلسة دي مش مستوفية شروط الجاهزية",
+    en: "Warning: this session does not meet the readiness requirements",
+  },
+  "admin.597": {
+    ar: "الفتح في الحالة دي إجراء استثنائي: الطلاب هيشوفوا الجلسة وهي ناقصة محتوى مطلوب. لازم تكتب سبب واضح، والفتح الطارئ بيتسجل بالكامل في سجل النشر.",
+    en: "Opening in this state is an exceptional action: students will see the session while required content is missing. You must write a clear reason, and the emergency open is fully recorded in the publication history.",
+  },
+  "admin.598": { ar: "السبب (مطلوب)", en: "Reason (required)" },
+  "admin.599": {
+    ar: "اكتب سبب الفتح الطارئ…",
+    en: "Write the emergency opening reason…",
+  },
+  "admin.600": { ar: "تأكيد الفتح الطارئ", en: "Confirm emergency open" },
+  "admin.601": { ar: "جارٍ الفتح الطارئ…", en: "Opening (emergency)…" },
+  "admin.602": {
+    ar: "اتنشرت الجلسة بفتح طارئ — واتسجل الإجراء في السجل",
+    en: "Session published via emergency open — the action was recorded",
+  },
+  "admin.603": { ar: "المتطلبات الناقصة", en: "Missing requirements" },
+  "admin.604": { ar: "رجوع", en: "Back" },
+  "admin.605": {
+    ar: "لازم تكتب سبب للفتح الطارئ قبل التأكيد",
+    en: "You must write a reason before confirming the emergency open",
+  },
+  "admin.606": {
+    ar: "علّم الجلسة كجاهزة الأول، وبعدين افتحها",
+    en: "Mark the session ready first, then open it",
+  },
+  "admin.607": {
+    ar: "الفتح العادي متعطل لأن الجاهزية ناقصة",
+    en: "Normal open is blocked because readiness is incomplete",
+  },
+  // Human, Arabic-first explanations of every readiness code (the machine
+  // codes stay visible secondary — these are what the admin reads).
+  "admin.610": {
+    ar: "الفيديو منشور ومتاح للجلسة",
+    en: "A published video is available for the session",
+  },
+  "admin.611": {
+    ar: "مفيش فيديو منشور للجلسة دي — جهّز فيديو ونشره من شاشة فيديوهات الجلسات",
+    en: "No published video for this session — stage and publish one from the session videos screen",
+  },
+  "admin.612": {
+    ar: "الفيديو منشور لبعض الدفعات فقط — لازم يغطي كل طلاب الجلسة",
+    en: "The video is published for some batches only — it must cover all of the session's students",
+  },
+  "admin.613": {
+    ar: "مادة الجلسة (PDF) مرفوعة ومتاحة",
+    en: "The session material (PDF) is uploaded and available",
+  },
+  "admin.614": {
+    ar: "مفيش مادة (PDF) مرفوعة للجلسة دي",
+    en: "No material (PDF) is uploaded for this session",
+  },
+  "admin.615": {
+    ar: "المادة مرفوعة لكنها لا تغطي كل طلاب الجلسة",
+    en: "The material is uploaded but does not cover all of the session's students",
+  },
+  "admin.616": {
+    ar: "الاختبار مربوط بالجلسة وفيه أسئلة",
+    en: "A quiz is linked to the session and has questions",
+  },
+  "admin.617": {
+    ar: "مفيش اختبار مربوط بالجلسة دي",
+    en: "No quiz is linked to this session",
+  },
+  "admin.618": {
+    ar: "الاختبار موجود لكنه فارغ من الأسئلة",
+    en: "A quiz exists but has no questions",
+  },
+  "admin.619": {
+    ar: "الواجب مربوط بالجلسة وبتعليمات واضحة",
+    en: "Homework is linked to the session with clear instructions",
+  },
+  "admin.620": {
+    ar: "مفيش واجب مربوط بالجلسة دي",
+    en: "No homework is linked to this session",
+  },
+  "admin.621": {
+    ar: "الواجب موجود لكن من غير تعليمات يقدر الطالب ينفذها",
+    en: "Homework exists but has no actionable instructions",
+  },
+  "admin.622": {
+    ar: "الواجب موجود لكنه لا يغطي كل طلاب الجلسة",
+    en: "Homework exists but does not cover all of the session's students",
+  },
+  "admin.623": {
+    ar: "الجلسة مؤرشفة — مينفعش تتنشر",
+    en: "The session is archived — it cannot be published",
+  },
+  "admin.624": {
+    ar: "السبب اتسجل مع الفتح الطارئ في سجل النشر",
+    en: "The reason was recorded with the emergency open in the publication history",
   },
 
   // ---------- Student: external video playback states ----------

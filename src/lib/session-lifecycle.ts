@@ -51,9 +51,44 @@
 //     has since landed — `session-notifications.ts` — and fans out from the
 //     OPEN ROUTE after a successful ceremony; the engine itself remains
 //     notification-free, and the Phase 17 columns on SessionPublication are
-//     written by the fan-out, never here.) PDFs are also out of scope in
-//     Phase 13: the readiness contract reports the PDF dimension as
-//     NOT_APPLICABLE rather than pretending an unimplemented upload exists.
+//     written by the fan-out, never here.)
+//
+// PHASE D — THE FOUR-REQUIREMENT READINESS CONTRACT + EMERGENCY OVERRIDE
+// ========================================================================
+// Phase D replaced the Phase 13 "video-only requirement" contract. A lesson
+// is normally READY only when ALL FOUR academic components exist and are
+// valid for the lesson's audience:
+//
+//   VIDEO     — a PUBLISHED SessionVideo linked to the lesson, covering the
+//               lesson's audience batches (the modern Phase A/B authority).
+//               Legacy `Lesson.videoUrl` is NO LONGER a readiness authority:
+//               it is still surfaced to admins as a compatibility link, but
+//               it never satisfies the requirement on its own.
+//   PDF       — at least one valid lesson-linked Material (the Phase 14
+//               architecture: active, document-like — ADMIN_UPLOADED or
+//               carrying a MediaAsset), covering the lesson's audience.
+//               Legacy `Lesson.pdfUrl` is likewise compatibility-only.
+//   QUIZ      — at least one linked Quiz with questions, covering the
+//               lesson's audience.
+//   HOMEWORK  — at least one linked Homework with actionable instructions,
+//               covering the lesson's audience.
+//
+// "Covering the lesson's audience" = the Phase 12 track rule extended to a
+// coverage rule: an ARABIC/LANGUAGE lesson needs a resource scoped to its own
+// track or SHARED; a SHARED lesson needs BOTH tracks covered (a SHARED
+// resource covers both by itself). A requirement with missing coverage fails
+// closed with a machine code (see `computeLessonReadiness`).
+//
+// EMERGENCY OVERRIDE (admin-only, audited): when readiness is incomplete an
+// ADMIN may open the session anyway through `openLessonWithOverride`
+// (`POST /api/admin/lessons/[id]/open-override`). The override NEVER happens
+// silently: it requires a non-empty reason, re-validates everything else
+// server-side (archived/orphan/concurrency rules still apply — the override
+// bypasses READINESS ONLY, never permissions, lifecycle order or
+// progression), stages DRAFT→READY inside the same atomic ceremony when
+// needed, and writes a dedicated `LESSON_OPEN_OVERRIDE` audit row carrying
+// the admin, the lesson, the timestamp, the missing requirements and the
+// reason. Teachers, students and parents have no override of any kind.
 //
 // Track interaction (Phase 12): `trackScope` decides WHO a session is for,
 // `status` decides WHETHER it exists for students at all. They are ANDed, never
@@ -172,44 +207,53 @@ export function canTransition(from: unknown, to: unknown): boolean {
 // THE CONTRACT, stated in full (every question the phase must not leave
 // ambiguous is answered here, in the code that enforces it):
 //
-//   VIDEO      REQUIRED for READY. Satisfied by a legacy `Lesson.videoUrl`
-//              (track-agnostic, so it satisfies every scope) or by a
-//              PUBLISHED `SessionVideo` whose batch school type applies to the
-//              lesson's trackScope. A SHARED lesson needs the video in BOTH
-//              batches, because a video published to one batch is invisible to
-//              the other track — one-sided staging is MISSING, not READY.
-//              An UNPUBLISHED SessionVideo never counts: it is staged media,
-//              not prepared media.
-//   PDF        NEVER required in Phase 13. PDF upload/storage is Phase 14;
-//              reporting "PDF missing" for every lesson would either block all
-//              publishing or force a fake upload mechanism into this phase. The
-//              dimension is therefore reported as NOT_APPLICABLE, and a
-//              PRESENT one is informational only. Legacy `pdfUrl` is read but
-//              never trusted as "content": the seeded placeholder `"#"` is
-//              explicitly treated as ABSENT, so a row that only carries the
-//              placeholder is not credited with a document.
-//   QUIZ       OPTIONAL — the Phase 4 progression rule is that a component
-//              which does not exist is not required, and readiness must not
-//              become a second, stricter progression engine. But a quiz that
-//              DOES exist must be answerable: zero questions is INVALID,
-//              because a session that shows a quiz badge and then presents an
-//              empty attempt is a broken lesson, not a staged one.
-//   HOMEWORK   Same rule as QUIZ: optional, invalid when it carries no
-//              instructions (an assignment a student cannot act on).
-//   trackScope A resource counts toward a lesson only if its own scope is the
-//              lesson's scope or SHARED. Unrelated track content never makes a
-//              lesson ready. A resource present but NOT applicable is reported
-//              as a `note`, never silently — silently ignoring it is how a
-//              SHARED lesson ends up published with ARABIC-only material.
-//   requirements do NOT vary per track beyond that: there is no per-track
+//   VIDEO      REQUIRED for READY. Phase D: satisfied ONLY by a PUBLISHED
+//              `SessionVideo` linked to the lesson whose batch school type
+//              covers the lesson's audience (the modern Phase A/B authority).
+//              A SHARED lesson needs published videos in BOTH batches,
+//              because a video published to one batch is invisible to the
+//              other track — one-sided staging is NOT READY. An UNPUBLISHED
+//              SessionVideo never counts: it is staged media, not prepared
+//              media. Legacy `Lesson.videoUrl` is NOT a readiness authority
+//              any more (it is reported as a note when present so admins see
+//              why it no longer counts); it remains a read-only compatibility
+//              link on the admin surfaces and the student player fallback.
+//   PDF        REQUIRED for READY (Phase D). Satisfied by at least one valid
+//              lesson-linked Material — the Phase 14 architecture: the row is
+//              ACTIVE and document-like (`kind === "ADMIN_UPLOADED"` or it
+//              carries a `mediaAssetId`) and its trackScope covers the
+//              lesson's audience. Legacy `Lesson.pdfUrl` is NOT a readiness
+//              authority: the seeded placeholder `"#"` was never content, and
+//              a real legacy url is reported as a note, never as credit.
+//              What qualifies, exactly: `Material(kind=ADMIN_UPLOADED,
+//              isActive=true)` rows created by the Phase 14 upload flow
+//              (each carries a MediaAsset); GENERATED rows without a media
+//              asset are not documents and never count.
+//   QUIZ       REQUIRED for READY (Phase D). A quiz applies when its own
+//              trackScope applies to the considered audience track, and it is
+//              VALID only when it has at least one question: zero questions
+//              is INVALID (a session that shows a quiz badge and then
+//              presents an empty attempt is a broken lesson), and an
+//              unreadable question count fails closed the same way.
+//   HOMEWORK   REQUIRED for READY (Phase D). Same coverage rule as QUIZ;
+//              invalid when it carries no actionable instructions (an
+//              assignment a student cannot act on).
+//   trackScope A resource counts toward an audience track only if its own
+//              scope is SHARED or exactly that track. Unrelated track content
+//              never makes a lesson ready; it is reported as a `note`, never
+//              silently — silently ignoring it is how a SHARED lesson ends up
+//              published with ARABIC-only material.
+//   requirements do NOT vary per track beyond coverage: there is no per-track
 //              readiness state, and no hidden variant model.
 //   ARCHIVED   blocks READY and blocks PUBLISHED. `LEGACY` and `OFFICIAL`
 //              lessons follow the same readiness rules — the lifecycle is not
 //              an official-curriculum-only privilege — but see the ceremony: an
 //              archived lesson can never be opened at all.
-//   missing OPTIONAL resources do not block READY; missing REQUIRED ones block
-//              READY, and since publishing requires READY + re-validated
-//              readiness, they block PUBLISHED through the same single rule.
+//   missing REQUIRED resources block READY, and since publishing requires
+//              READY + re-validated readiness, they block PUBLISHED through
+//              the same single rule. The ONLY way around a blocked readiness
+//              is the admin emergency override (`openLessonWithOverride`),
+//              which is explicit, reason-bearing and audited.
 
 export type ReadinessResourceKey = "VIDEO" | "PDF" | "QUIZ" | "HOMEWORK";
 
@@ -356,6 +400,42 @@ export function resourceAppliesToScope(
 }
 
 /**
+ * Phase D — the audience tracks a lesson's readiness must COVER.
+ *
+ * A SHARED lesson teaches BOTH school types, so every requirement must be
+ * covered for ARABIC and LANGUAGE students alike (a SHARED-scoped resource
+ * covers both tracks by itself). A track-specific lesson has a one-track
+ * audience. Pure and total: unrecognised scopes normalise to SHARED first.
+ */
+export function audienceTracksForScope(scope: TrackScope): readonly SchoolType[] {
+  return scope === "SHARED" ? (["ARABIC", "LANGUAGE"] as const) : [scope];
+}
+
+/**
+ * Phase D — audience COVERAGE evaluation shared by the PDF/QUIZ/HOMEWORK
+ * dimensions (video uses the same shape over batch school types).
+ *
+ * For every audience track, `applies` says whether a given resource row
+ * covers it; the verdict distinguishes three situations the UI must render
+ * differently: fully covered (OK), present but with at least one audience
+ * track uncovered (TRACK_INCOMPLETE), and nothing present at all (MISSING).
+ */
+function audienceCoverage<T>(
+  audience: readonly SchoolType[],
+  rows: readonly T[],
+  applies: (row: T, track: SchoolType) => boolean
+): { covered: boolean; present: boolean; missingTracks: readonly SchoolType[] } {
+  const missingTracks = audience.filter(
+    (t) => !rows.some((r) => applies(r, t))
+  );
+  return {
+    covered: missingTracks.length === 0,
+    present: rows.length > 0,
+    missingTracks,
+  };
+}
+
+/**
  * THE readiness computation — pure, deterministic, total, UI-free.
  *
  * It takes an already-loaded lesson and returns the checklist. `getLessonReadiness`
@@ -381,36 +461,38 @@ export function computeLessonReadiness(
   const notes: string[] = [];
 
   // ---- VIDEO -------------------------------------------------------------
+  // Phase D: the MODERN SessionVideo authority is the ONLY video readiness
+  // source. Legacy `Lesson.videoUrl` is read for one purpose only — telling
+  // the admin why an old link no longer counts (a note, never credit).
   const legacyVideo = usableUrl(input.videoUrl);
   const videos = Array.isArray(input.sessionVideos) ? input.sessionVideos : [];
-  const applicable = videos.filter((v) => {
-    const batchTrack = normalizeSchoolType(v?.batch?.schoolType);
-    return trackScope === "SHARED"
-      ? batchTrack === "ARABIC" || batchTrack === "LANGUAGE"
-      : batchTrack === trackScope;
-  });
-  const publishedForTrack = applicable.filter((v) => v?.isPublished === true);
-  const unpublishedSeen = applicable.length > publishedForTrack.length;
-  const coveredBatches = new Set(
-    publishedForTrack.map(
+  const audience = audienceTracksForScope(trackScope);
+  const publishedForAudience = videos.filter(
+    (v) =>
+      v?.isPublished === true &&
+      audience.includes(normalizeSchoolType(v?.batch?.schoolType) as SchoolType)
+  );
+  const unpublishedSeen = videos.some(
+    (v) =>
+      v?.isPublished !== true &&
+      audience.includes(normalizeSchoolType(v?.batch?.schoolType) as SchoolType)
+  );
+  const coveredTracks = new Set(
+    publishedForAudience.map(
       (v) => normalizeSchoolType(v?.batch?.schoolType) as SchoolType
     )
   );
-  const needsBothBatches = trackScope === "SHARED" && !legacyVideo;
-  const videoBatchesMissing = needsBothBatches
-    ? (["ARABIC", "LANGUAGE"] as SchoolType[]).filter((t) => !coveredBatches.has(t))
-    : [];
-  const videoPresent = legacyVideo || publishedForTrack.length > 0;
-  const videoSatisfied =
-    legacyVideo ||
-    (trackScope === "SHARED"
-      ? publishedForTrack.length > 0 && videoBatchesMissing.length === 0
-      : publishedForTrack.length > 0);
+  const videoTracksMissing = audience.filter((t) => !coveredTracks.has(t));
+  const videoPresent = publishedForAudience.length > 0;
+  const videoSatisfied = videoTracksMissing.length === 0;
   if (!videoPresent && unpublishedSeen) {
     notes.push("VIDEO_PRESENT_BUT_UNPUBLISHED");
   }
-  for (const missing of videoBatchesMissing) {
-    notes.push(`SHARED_VIDEO_MISSING_BATCH:${missing}`);
+  for (const missing of videoTracksMissing) {
+    if (videoPresent) notes.push(`SHARED_VIDEO_MISSING_BATCH:${missing}`);
+  }
+  if (legacyVideo && !videoSatisfied) {
+    notes.push("VIDEO_LEGACY_URL_NOT_COUNTED");
   }
   items.push({
     key: "VIDEO",
@@ -428,14 +510,15 @@ export function computeLessonReadiness(
       : videoPresent
         ? "VIDEO_TRACK_INCOMPLETE"
         : "VIDEO_MISSING",
-    count: legacyVideo ? publishedForTrack.length + 1 : publishedForTrack.length,
+    count: publishedForAudience.length,
   });
 
-  // ---- PDF (Phase 14: present via Material+MediaAsset or legacy pdfUrl) ---
-  // Still OPTIONAL for READY — a session without a PDF is a valid session.
-  // When materials exist they must apply to the lesson's trackScope (same rule
-  // as quiz/homework); a LANGUAGE PDF on an ARABIC lesson is a note, not a
-  // credit. Legacy `pdfUrl` remains a read-only compatibility path.
+  // ---- PDF / MATERIAL (Phase 14 architecture, REQUIRED since Phase D) -----
+  // A lesson needs at least one valid lesson-linked academic Material:
+  // ACTIVE + document-like (`kind === "ADMIN_UPLOADED"` or carrying a media
+  // asset) + covering the lesson's audience tracks. Legacy `Lesson.pdfUrl`
+  // is compatibility-only: reported as a note when it is the only thing
+  // present, never credited as content.
   const legacyPdf = usableUrl(input.pdfUrl);
   const materials = (Array.isArray(input.materials) ? input.materials : []).filter(
     (m) => m?.isActive !== false
@@ -443,84 +526,159 @@ export function computeLessonReadiness(
   const documentMaterials = materials.filter(
     (m) => m?.kind === "ADMIN_UPLOADED" || m?.kind === "DOCUMENT" || !!m?.mediaAssetId
   );
+  // Materials without a trackScope are treated as SHARED (schema default).
+  const materialApplies = (m: (typeof documentMaterials)[number], t: SchoolType) =>
+    resourceAppliesToScope(t, m?.trackScope ?? "SHARED");
+  const pdfCoverage = audienceCoverage(audience, documentMaterials, materialApplies);
   const applicableDocuments = documentMaterials.filter((m) =>
-    // Materials without a trackScope are treated as SHARED (schema default).
-    resourceAppliesToScope(trackScope, m?.trackScope ?? "SHARED")
+    audience.some((t) => materialApplies(m, t))
   );
   const foreignDocuments = documentMaterials.length - applicableDocuments.length;
   if (foreignDocuments > 0) {
     notes.push(`PDF_PRESENT_BUT_OTHER_TRACK:${foreignDocuments}`);
   }
-  const pdfPresent = legacyPdf || applicableDocuments.length > 0;
+  for (const missing of pdfCoverage.missingTracks) {
+    if (applicableDocuments.length > 0) notes.push(`PDF_MISSING_TRACK:${missing}`);
+  }
+  if (legacyPdf && !pdfCoverage.covered) {
+    notes.push("PDF_LEGACY_URL_NOT_COUNTED");
+  }
+  // "Present" follows the VIDEO convention: present FOR THE LESSON'S
+  // AUDIENCE. A document that only belongs to another track is somebody
+  // else's content — MISSING with an explanatory note, not a partial credit.
+  const pdfPresent = applicableDocuments.length > 0;
+  const pdfSatisfied = pdfCoverage.covered;
   items.push({
     key: "PDF",
-    required: false,
+    required: true,
     present: pdfPresent,
-    // Informational by design: PDF never blocks READY. `valid` mirrors
-    // `present` so a later phase can flip `required` without touching callers.
-    valid: pdfPresent,
-    state: "NOT_APPLICABLE",
-    code: pdfPresent
-      ? "PDF_PRESENT_NOT_REQUIRED"
-      : "PDF_ABSENT_NOT_REQUIRED",
-    count: (legacyPdf ? 1 : 0) + applicableDocuments.length,
+    valid: pdfSatisfied,
+    state: pdfSatisfied ? "OK" : pdfPresent ? "INVALID" : "MISSING",
+    code: pdfSatisfied
+      ? "PDF_OK"
+      : pdfPresent
+        ? "PDF_TRACK_INCOMPLETE"
+        : "PDF_MISSING",
+    count: applicableDocuments.length,
   });
 
-  // ---- QUIZ --------------------------------------------------------------
+  // ---- QUIZ (REQUIRED since Phase D) --------------------------------------
+  // A valid linked quiz must exist for EVERY audience track of the lesson:
+  // an ARABIC-only quiz never satisfies a LANGUAGE lesson, and a SHARED
+  // lesson needs a SHARED quiz or one quiz per track. A quiz is valid only
+  // when its question count is readable and at least one.
   const quizzes = Array.isArray(input.quizzes) ? input.quizzes : [];
+  const quizzesCovering = (t: SchoolType) =>
+    quizzes.filter((q) => resourceAppliesToScope(t, q?.trackScope));
+  const quizTrackStatus = audience.map((t) => {
+    const covering = quizzesCovering(t);
+    const validCount = covering.filter(
+      (q) => (questionCountOf(q) ?? 0) > 0
+    ).length;
+    return {
+      track: t,
+      present: covering.length > 0,
+      satisfied: validCount > 0,
+    };
+  });
   const applicableQuizzes = quizzes.filter((q) =>
-    resourceAppliesToScope(trackScope, q?.trackScope)
+    audience.some((t) => resourceAppliesToScope(t, q?.trackScope))
   );
   const foreignQuizzes = quizzes.length - applicableQuizzes.length;
   if (foreignQuizzes > 0) {
     notes.push(`QUIZ_PRESENT_BUT_OTHER_TRACK:${foreignQuizzes}`);
   }
-  const quizCounts = applicableQuizzes.map((q) => questionCountOf(q));
-  const emptyQuizzes = quizCounts.filter((c) => c === 0).length;
-  const quizUnknownCounts = quizCounts.filter((c) => c === null).length;
+  const quizUncoveredTracks = quizTrackStatus
+    .filter((s) => !s.present)
+    .map((s) => s.track);
+  const quizInvalidTracks = quizTrackStatus
+    .filter((s) => s.present && !s.satisfied)
+    .map((s) => s.track);
+  for (const t of quizInvalidTracks) {
+    notes.push(`QUIZ_INVALID_FOR_TRACK:${t}`);
+  }
+  if (applicableQuizzes.length > 0) {
+    for (const t of quizUncoveredTracks) {
+      notes.push(`QUIZ_MISSING_TRACK:${t}`);
+    }
+  }
+  // Same present/state convention as VIDEO/PDF: present FOR THE AUDIENCE;
+  // a quiz that only exists on another track is MISSING (with a note).
   const quizPresent = applicableQuizzes.length > 0;
-  // An unreadable question count is NOT treated as "has questions": readiness
-  // fails closed on the data it can actually verify.
-  const quizValid = quizPresent && emptyQuizzes === 0 && quizUnknownCounts === 0;
+  const quizSatisfied = quizTrackStatus.every((s) => s.satisfied);
   items.push({
     key: "QUIZ",
-    required: false,
+    required: true,
     present: quizPresent,
-    valid: quizValid,
-    state: !quizPresent ? "NOT_APPLICABLE" : quizValid ? "OK" : "INVALID",
-    code: !quizPresent
-      ? "QUIZ_ABSENT_NOT_REQUIRED"
-      : quizValid
-        ? "QUIZ_OK"
-        : "QUIZ_EMPTY",
+    valid: quizSatisfied,
+    state: quizSatisfied ? "OK" : quizPresent ? "INVALID" : "MISSING",
+    code: quizSatisfied
+      ? "QUIZ_OK"
+      : !quizPresent
+        ? "QUIZ_MISSING"
+        : quizInvalidTracks.length > 0
+          ? // covering quizzes exist but none is usable (empty / unreadable)
+            "QUIZ_EMPTY"
+          : // quizzes exist for part of the audience only
+            "QUIZ_TRACK_INCOMPLETE",
     count: applicableQuizzes.length,
   });
 
-  // ---- HOMEWORK ----------------------------------------------------------
+  // ---- HOMEWORK (REQUIRED since Phase D) ----------------------------------
+  // Same coverage rule as QUIZ: every audience track of the lesson needs a
+  // linked homework with actionable instructions (empty or placeholder
+  // instructions are an assignment a student cannot act on — invalid).
   const homeworks = Array.isArray(input.homeworks) ? input.homeworks : [];
+  const homeworkTrackStatus = audience.map((t) => {
+    const covering = homeworks.filter((h) =>
+      resourceAppliesToScope(t, h?.trackScope)
+    );
+    const validCount = covering.filter((h) =>
+      usableInstructionText(h?.instructions)
+    ).length;
+    return {
+      track: t,
+      present: covering.length > 0,
+      satisfied: validCount > 0,
+    };
+  });
   const applicableHomeworks = homeworks.filter((h) =>
-    resourceAppliesToScope(trackScope, h?.trackScope)
+    audience.some((t) => resourceAppliesToScope(t, h?.trackScope))
   );
   const foreignHomeworks = homeworks.length - applicableHomeworks.length;
   if (foreignHomeworks > 0) {
     notes.push(`HOMEWORK_PRESENT_BUT_OTHER_TRACK:${foreignHomeworks}`);
   }
-  const instructionsMissing = applicableHomeworks.filter(
-    (h) => !usableInstructionText(h?.instructions)
-  ).length;
+  const homeworkUncoveredTracks = homeworkTrackStatus
+    .filter((s) => !s.present)
+    .map((s) => s.track);
+  const homeworkInvalidTracks = homeworkTrackStatus
+    .filter((s) => s.present && !s.satisfied)
+    .map((s) => s.track);
+  for (const t of homeworkInvalidTracks) {
+    notes.push(`HOMEWORK_INVALID_FOR_TRACK:${t}`);
+  }
+  if (applicableHomeworks.length > 0) {
+    for (const t of homeworkUncoveredTracks) {
+      notes.push(`HOMEWORK_MISSING_TRACK:${t}`);
+    }
+  }
+  // Same present/state convention as VIDEO/PDF/QUIZ.
   const homeworkPresent = applicableHomeworks.length > 0;
-  const homeworkValid = homeworkPresent && instructionsMissing === 0;
+  const homeworkSatisfied = homeworkTrackStatus.every((s) => s.satisfied);
   items.push({
     key: "HOMEWORK",
-    required: false,
+    required: true,
     present: homeworkPresent,
-    valid: homeworkValid,
-    state: !homeworkPresent ? "NOT_APPLICABLE" : homeworkValid ? "OK" : "INVALID",
-    code: !homeworkPresent
-      ? "HOMEWORK_ABSENT_NOT_REQUIRED"
-      : homeworkValid
-        ? "HOMEWORK_OK"
-        : "HOMEWORK_INSTRUCTIONS_EMPTY",
+    valid: homeworkSatisfied,
+    state: homeworkSatisfied ? "OK" : homeworkPresent ? "INVALID" : "MISSING",
+    code: homeworkSatisfied
+      ? "HOMEWORK_OK"
+      : !homeworkPresent
+        ? "HOMEWORK_MISSING"
+        : homeworkInvalidTracks.length > 0
+          ? "HOMEWORK_INSTRUCTIONS_EMPTY"
+          : "HOMEWORK_TRACK_INCOMPLETE",
     count: applicableHomeworks.length,
   });
 
@@ -678,7 +836,20 @@ export type LifecycleCode =
   | "LESSON_NOT_IN_COURSE"
   | "LESSON_NOT_FOUND"
   /** a concurrent ceremony won the race; the caller may retry */
-  | "CONCURRENT_CHANGE";
+  | "CONCURRENT_CHANGE"
+  /** Phase D — the emergency override reason was absent/blank/too long */
+  | "OVERRIDE_REASON_INVALID";
+
+/** Phase D — the audited record attached to an override-involved OPEN. */
+export type LifecycleOverrideInfo = {
+  /** true when the override actually bypassed readiness; false when the
+   * override was requested but readiness passed, so the NORMAL path ran. */
+  used: boolean;
+  /** The validated, trimmed reason (never empty when `used`). */
+  reason: string;
+  /** The readiness codes the override bypassed (empty when not used). */
+  missing: string[];
+};
 
 export type LifecycleOutcome = {
   ok: boolean;
@@ -694,6 +865,9 @@ export type LifecycleOutcome = {
    * could not be loaded at all). */
   readiness: LessonReadinessSnapshot | null;
   publication: { id: string; segment: string; publishedAt: Date | string } | null;
+  /** Phase D — set only for override-involved OPEN ceremonies; `null` for
+   * every normal ceremony, so a normal path can never masquerade as one. */
+  override?: LifecycleOverrideInfo | null;
 };
 
 const ACTION_TARGET: Record<LifecycleAction, LessonStatus> = {
@@ -707,9 +881,40 @@ const ACTION_FROM: Record<LifecycleAction, readonly LessonStatus[]> = {
   MARK_READY: ["DRAFT", "READY"],
   // READY only: DRAFT must be staged first, which is what makes
   // "READY cannot be bypassed" a machine-checked property rather than a slogan.
+  // The ONE exception is the Phase D emergency override, which stages
+  // DRAFT→READY inside its own audited ceremony — never through this table.
   OPEN: ["READY"],
   UNPUBLISH: ["PUBLISHED", "READY", "DRAFT"],
 } as const;
+
+// ---------------------------------------------------------------------------
+// Phase D — emergency override input contract
+// ---------------------------------------------------------------------------
+
+/** Hard cap on the override reason. The text is stored in an AuditLog row;
+ * the cap keeps the row small while leaving room for a real explanation. */
+export const OVERRIDE_REASON_MAX_LENGTH = 1000;
+
+export type OverrideReasonParse =
+  | { ok: true; reason: string }
+  | { ok: false; code: "OVERRIDE_REASON_REQUIRED" | "OVERRIDE_REASON_TOO_LONG" };
+
+/**
+ * The override reason is the human warrant for bypassing readiness, so it is
+ * validated like an input, not treated like a formality: a missing, empty or
+ * whitespace-only reason is REJECTED, and a reason over the cap is rejected
+ * rather than silently truncated (silent truncation would let the audit row
+ * disagree with what the admin typed).
+ */
+export function normalizeOverrideReason(raw: unknown): OverrideReasonParse {
+  if (typeof raw !== "string") return { ok: false, code: "OVERRIDE_REASON_REQUIRED" };
+  const reason = raw.trim();
+  if (reason.length === 0) return { ok: false, code: "OVERRIDE_REASON_REQUIRED" };
+  if (reason.length > OVERRIDE_REASON_MAX_LENGTH) {
+    return { ok: false, code: "OVERRIDE_REASON_TOO_LONG" };
+  }
+  return { ok: true, reason };
+}
 
 /**
  * The lifecycle ceremony. `actorUserId` keys the audit row; `client` is
@@ -722,10 +927,20 @@ export async function transitionLesson(params: {
   actorUserId?: string | null;
   // Injected clients are structural, not nominal — see `getLessonReadiness`.
   client?: any;
+  /**
+   * Phase D — the ADMIN emergency override. ONLY meaningful for `OPEN`:
+   * `{ reason }` lets the ceremony publish a lesson whose readiness is
+   * blocked (staging DRAFT→READY inside the same atomic ceremony when
+   * needed). It never bypasses the archived/orphan/concurrency rules, never
+   * applies to MARK_READY or UNPUBLISH, and it is validated, reason-bearing
+   * and audited — see `openLessonWithOverride`.
+   */
+  override?: { reason: string } | null;
 }): Promise<LifecycleOutcome> {
   const client = params.client ?? db;
   const { lessonId, action, actorUserId = null } = params;
   const to = ACTION_TARGET[action];
+  const overrideRequest = action === "OPEN" ? params.override ?? null : null;
 
   const load = async (where: Record<string, unknown>) =>
     client.lesson.findUnique({
@@ -782,11 +997,27 @@ export async function transitionLesson(params: {
     publication: null,
   });
 
-  // Rule order is part of the contract: archived first (an archived lesson is
-  // outside the lifecycle entirely), then course ownership, then idempotency,
-  // then the transition table, then readiness. Reordering them would change
-  // which refusal a caller sees for a lesson that fails several rules, and the
-  // tests pin this order deliberately.
+  // Rule order is part of the contract: override INPUT validation first
+  // (Phase D — a malformed warrant is rejected before any state is even
+  // looked at), then archived (an archived lesson is outside the lifecycle
+  // entirely), then course ownership, then idempotency, then the transition
+  // table, then readiness. Reordering them would change which refusal a
+  // caller sees for a lesson that fails several rules, and the tests pin
+  // this order deliberately.
+  let overrideReason: string | null = null;
+  if (overrideRequest) {
+    const parsedReason = normalizeOverrideReason(overrideRequest.reason);
+    if (!parsedReason.ok) {
+      return refusal(
+        "OVERRIDE_REASON_INVALID",
+        parsedReason.code === "OVERRIDE_REASON_TOO_LONG"
+          ? `The override reason is too long (maximum ${OVERRIDE_REASON_MAX_LENGTH} characters)`
+          : "An emergency override requires a non-empty reason"
+      );
+    }
+    overrideReason = parsedReason.reason;
+  }
+
   if (archived) {
     return refusal(
       "LESSON_ARCHIVED",
@@ -837,10 +1068,22 @@ export async function transitionLesson(params: {
             publishedAt: publication.publishedAt,
           }
         : null,
+      // Nothing was overridden: the state already held.
+      override: null,
     };
   }
 
-  if (!ACTION_FROM[action].includes(from) || !canTransition(from, target)) {
+  // Phase D — an ENGAGED override (validated reason + OPEN) is the one
+  // sanctioned exception to "READY cannot be bypassed": it may start from
+  // DRAFT because it stages DRAFT→READY inside its own audited ceremony.
+  // Everything outside that narrow case obeys the table exactly.
+  const overrideEngaged = action === "OPEN" && overrideReason !== null;
+  const transitionAllowed =
+    ACTION_FROM[action].includes(from) && canTransition(from, target);
+  if (
+    !transitionAllowed &&
+    !(overrideEngaged && (from === "DRAFT" || from === "READY"))
+  ) {
     return refusal(
       "ILLEGAL_TRANSITION",
       `${from} → ${target} is not a valid lifecycle transition`
@@ -848,7 +1091,6 @@ export async function transitionLesson(params: {
   }
 
   // Readiness is computed from the LIVE rows at the moment of the ceremony —
-  // never from a client-sup  // Readiness is computed from the LIVE rows at the moment of the ceremony —
   // never from a client-supplied flag, and never from the snapshot the READY
   // stamp was earned with. A lesson that lost its video since staging cannot
   // be opened.
@@ -857,6 +1099,23 @@ export async function transitionLesson(params: {
     return refusal("LESSON_NOT_FOUND", "Lesson not found");
   }
   const needsReadiness = action === "MARK_READY" || action === "OPEN";
+  if (needsReadiness && overrideEngaged && overrideReason !== null) {
+    // Phase D — the EMERGENCY path is ONE ceremony for every override-engaged
+    // OPEN: it re-validates from live rows, stages DRAFT→READY inside the
+    // same transaction when needed (so "READY cannot be bypassed" holds even
+    // here), and reports `override.used` truthfully — false when readiness
+    // actually passed and nothing was bypassed. Every other rule (archived,
+    // course ownership, idempotency, concurrency) still applies.
+    return applyOverrideOpen({
+      client,
+      lessonId,
+      from,
+      lesson,
+      readiness,
+      reason: overrideReason,
+      actorUserId,
+    });
+  }
   if (needsReadiness && !readiness.canBeReady) {
     return refusal(
       "READINESS_BLOCKED",
@@ -966,6 +1225,188 @@ export async function transitionLesson(params: {
         : `Lesson set to ${target.toLowerCase()}`,
     readiness: await readinessFor(client, lessonId),
     publication: result.publication ?? null,
+    // No override ever rides the normal path: override-engaged OPENs return
+    // from `applyOverrideOpen` above, so reaching here means no bypass.
+    override: null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Phase D — the emergency override ceremony (admin-only, audited, explicit)
+// ---------------------------------------------------------------------------
+//
+// THE ONLY code path that can publish a readiness-blocked lesson. It is a
+// ceremony, not a flag:
+//
+//   • It runs AFTER archived / course-ownership / idempotency checks and
+//     validated reason — the override bypasses READINESS ONLY. It can never
+//     bypass permissions (the route owns ADMIN enforcement), the state
+//     machine for any other pair, or student progression (a published
+//     lesson is still LOCKED until its prerequisites are met).
+//   • From DRAFT it stages DRAFT→READY→PUBLISHED inside ONE transaction,
+//     so the lesson never exists half-staged and the audit trail shows the
+//     staging as part of the override.
+//   • It writes THREE audit rows when it stages (LESSON_MARK_READY marked
+//     via override, LESSON_OPEN marked via override) and ALWAYS writes the
+//     dedicated `LESSON_OPEN_OVERRIDE` row carrying the admin id (userId
+//     column), the lesson (entityId), the timestamp (createdAt), the
+//     MISSING requirements, the REASON and the resulting state — the
+//     traceability contract repeated overrides must never escape.
+async function applyOverrideOpen(params: {
+  client: any;
+  lessonId: string;
+  from: LessonStatus;
+  lesson: { officialCode?: string | null; trackScope?: unknown };
+  readiness: LessonReadinessSnapshot;
+  reason: string;
+  actorUserId: string | null;
+}): Promise<LifecycleOutcome> {
+  const { client, lessonId, from, lesson, readiness, reason, actorUserId } =
+    params;
+  // The truth the audit must carry: did this ceremony actually bypass
+  // readiness, or was the override requested against a lesson that passed?
+  const used = !readiness.canBeReady;
+  const missing = readiness.blocking;
+
+  const apply = async (tx: Prisma.TransactionClient) => {
+    // Conditional flips only — the `status` predicate is what makes a
+    // concurrent ceremony impossible to double-apply.
+    if (from === "DRAFT") {
+      const staged = await tx.lesson.updateMany({
+        where: { id: lessonId, status: "DRAFT" },
+        data: { status: "READY", isPublished: false },
+      });
+      if (staged.count !== 1) return { kind: "CONCURRENT_CHANGE" as const };
+    }
+    const published = await tx.lesson.updateMany({
+      where: { id: lessonId, status: "READY" },
+      data: { status: "PUBLISHED", isPublished: true },
+    });
+    if (published.count !== 1) return { kind: "CONCURRENT_CHANGE" as const };
+
+    const segment = normalizeTrackScope(lesson.trackScope) ?? "SHARED";
+    const row = await tx.sessionPublication.upsert({
+      where: { lessonId },
+      update: {},
+      create: { lessonId, segment },
+      select: { id: true, segment: true, publishedAt: true },
+    });
+    const publication = row
+      ? { id: row.id, segment: String(row.segment), publishedAt: row.publishedAt }
+      : null;
+
+    if (actorUserId) {
+      const baseDetails = {
+        officialCode: lesson.officialCode ?? null,
+        trackScope: readiness.trackScope,
+        override: true,
+        overrideUsed: used,
+      };
+      const auditWrites: Promise<unknown>[] = [];
+      if (from === "DRAFT") {
+        auditWrites.push(
+          tx.auditLog
+            .create({
+              data: {
+                userId: actorUserId,
+                action: "LESSON_MARK_READY",
+                entity: "Lesson",
+                entityId: lessonId,
+                details: JSON.stringify({
+                  from: "DRAFT",
+                  to: "READY",
+                  via: "EMERGENCY_OVERRIDE",
+                  ...baseDetails,
+                }).slice(0, 1000),
+              },
+            })
+            .catch(() => undefined)
+        );
+      }
+      auditWrites.push(
+        tx.auditLog
+          .create({
+            data: {
+              userId: actorUserId,
+              action: "LESSON_OPEN",
+              entity: "Lesson",
+              entityId: lessonId,
+              details: JSON.stringify({
+                from,
+                to: "PUBLISHED",
+                publicationId: publication?.id ?? null,
+                ...baseDetails,
+              }).slice(0, 1000),
+            },
+          })
+          .catch(() => undefined),
+        // THE override record: who (userId column), what (entityId), when
+        // (createdAt), what was missing, why, and the resulting state. One
+        // row per override-engaged open, so repeated overrides stay
+        // individually traceable in the history — even a requested override
+        // that turned out to bypass nothing (`missing: []`).
+        tx.auditLog
+          .create({
+            data: {
+              userId: actorUserId,
+              action: "LESSON_OPEN_OVERRIDE",
+              entity: "Lesson",
+              entityId: lessonId,
+              details: JSON.stringify({
+                from,
+                to: "PUBLISHED",
+                used,
+                missing,
+                reason,
+                publicationId: publication?.id ?? null,
+                ...baseDetails,
+              }).slice(0, 4000),
+            },
+          })
+          .catch(() => undefined)
+      );
+      await Promise.all(auditWrites);
+    }
+    return { kind: "APPLIED" as const, publication };
+  };
+
+  let result: Awaited<ReturnType<typeof apply>>;
+  if (typeof client.$transaction === "function") {
+    result = await client.$transaction(apply);
+  } else {
+    result = await apply(client);
+  }
+
+  if (result.kind === "CONCURRENT_CHANGE") {
+    return {
+      ok: false,
+      code: "CONCURRENT_CHANGE",
+      action: "OPEN",
+      lessonId,
+      from,
+      to: null,
+      changed: false,
+      message: "The lesson changed while this request was in flight; retry",
+      readiness: await readinessFor(client, lessonId),
+      publication: null,
+      override: { used: false, reason, missing },
+    };
+  }
+
+  return {
+    ok: true,
+    code: "OK",
+    action: "OPEN",
+    lessonId,
+    from,
+    to: "PUBLISHED",
+    changed: true,
+    message: used
+      ? "Lesson published via emergency override"
+      : "Lesson published (override requested; readiness passed — nothing bypassed)",
+    readiness: await readinessFor(client, lessonId),
+    publication: result.publication ?? null,
+    override: { used, reason, missing },
   };
 }
 
@@ -995,8 +1436,9 @@ async function readinessFor(
  * `code` is always in the body: the number is for HTTP semantics, the code is
  * for programs. A client must never have to parse prose.
  */
-export function lifecycleHttpStatus(code: LifecycleCode): 200 | 404 | 409 {
+export function lifecycleHttpStatus(code: LifecycleCode): 200 | 400 | 404 | 409 {
   if (code === "OK" || code === "NO_OP_ALREADY_IN_STATE") return 200;
+  if (code === "OVERRIDE_REASON_INVALID") return 400;
   if (code === "LESSON_NOT_FOUND") return 404;
   return 409;
 }
@@ -1008,7 +1450,33 @@ export function openLesson(params: {
   // Injected clients are structural, not nominal — see `getLessonReadiness`.
   client?: any;
 }) {
+  // The normal OPEN never carries an override — that path has its own
+  // wrapper, its own route and its own audit row, on purpose.
   return transitionLesson({ ...params, action: "OPEN" });
+}
+
+/**
+ * Phase D — the ADMIN EMERGENCY override of the OPEN ceremony. The ONLY
+ * sanctioned way to publish a readiness-blocked lesson. The reason is
+ * validated server-side (never trust the client's "I checked it"), the
+ * readiness is re-computed from live rows, and the outcome is audited as
+ * `LESSON_OPEN_OVERRIDE`. When readiness actually passes, the NORMAL
+ * ceremony runs and `override.used` is false — the override never turns
+ * into a silent bypass of anything.
+ */
+export function openLessonWithOverride(params: {
+  lessonId: string;
+  actorUserId?: string | null;
+  reason: string;
+  // Injected clients are structural, not nominal — see `getLessonReadiness`.
+  client?: any;
+}) {
+  const { reason, ...rest } = params;
+  return transitionLesson({
+    ...rest,
+    action: "OPEN",
+    override: { reason },
+  });
 }
 
 export function markLessonReady(params: {

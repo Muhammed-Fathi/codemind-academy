@@ -1663,6 +1663,83 @@ async function runRealCode() {
   const client = createSqlitePrisma({ db, schemaPath: path.join(REPO, "prisma/schema.prisma") });
   globalThis.__CM_DB_CLIENT__ = client;
 
+  /**
+   * Phase D — stage the FULL readiness set for a SHARED lesson on the real
+   * database: published SessionVideos in BOTH batches, an active uploaded
+   * Material, a quiz with a question, and a homework with instructions.
+   */
+  async function stageFullContent(lessonId, suffix) {
+    const batches = [];
+    for (const schoolType of ["ARABIC", "LANGUAGE"]) {
+      batches.push(
+        await insert(client, "batch", {
+          id: `batch-${suffix}-${schoolType.toLowerCase()}`,
+          name: `${schoolType} batch ${suffix}`,
+          nameAr: `دفعة ${suffix}`,
+          schoolType,
+        })
+      );
+    }
+    const videoAsset = await insert(client, "mediaAsset", {
+      id: `asset-${suffix}`,
+      kind: "VIDEO",
+      storage: "EXTERNAL_URL",
+      externalUrl: `https://cdn.test/${suffix}.mp4`,
+    });
+    const docAsset = await insert(client, "mediaAsset", {
+      id: `asset-doc-${suffix}`,
+      kind: "DOCUMENT",
+      storage: "EXTERNAL_URL",
+      externalUrl: `https://cdn.test/${suffix}.pdf`,
+    });
+    for (const b of batches) {
+      await insert(client, "sessionVideo", {
+        id: `sv-${suffix}-${b.schoolType.toLowerCase()}`,
+        batchId: b.id,
+        lessonId,
+        mediaAssetId: videoAsset.id,
+        title: `Session video ${suffix}`,
+        titleAr: `فيديو الجلسة ${suffix}`,
+        requiredPercent: 95,
+        isPublished: true,
+        publishedAt: new Date(),
+      });
+    }
+    await insert(client, "material", {
+      id: `mat-${suffix}`,
+      lessonId,
+      kind: "ADMIN_UPLOADED",
+      title: `Session PDF ${suffix}`,
+      trackScope: "SHARED",
+      isActive: true,
+      mediaAssetId: docAsset.id,
+    });
+    const quiz = await insert(client, "quiz", {
+      id: `quiz-${suffix}`,
+      lessonId,
+      title: `Quiz ${suffix}`,
+      titleAr: `اختبار ${suffix}`,
+      trackScope: "SHARED",
+      order: 1,
+    });
+    await insert(client, "question", {
+      id: `question-${suffix}`,
+      quizId: quiz.id,
+      prompt: "What is 2 + 2?",
+      options: JSON.stringify(["3", "4", "5"]),
+      answer: "4",
+    });
+    await insert(client, "homework", {
+      id: `hw-${suffix}`,
+      lessonId,
+      title: `Homework ${suffix}`,
+      titleAr: `واجب ${suffix}`,
+      trackScope: "SHARED",
+      instructions: "Solve the exercises from the session material.",
+      deadline: new Date(Date.now() + 7 * 86400000),
+    });
+  }
+
   const { out, libDir } = compileRealCode();
   const code = loadRealCode(out);
   const schemaPath = path.join(REPO, "prisma/schema.prisma");
@@ -1711,19 +1788,31 @@ async function runRealCode() {
   const r0 = (await life.getLessonReadiness(L1, client));
   ok(!!r0, "getLessonReadiness loaded the lesson from the real DB");
   eq(r0?.status, "DRAFT", "readiness reports the stored lifecycle state");
-  eq(r0?.blocking, ["VIDEO_MISSING"], "a lesson with no video is blocked by VIDEO_MISSING");
-  eq(r0?.items.find((i) => i.key === "PDF")?.state, "NOT_APPLICABLE", "PDF is NOT_APPLICABLE, never a fake requirement");
+  // Phase D — ALL FOUR academic components are required for readiness.
+  eq(
+    r0?.blocking,
+    ["VIDEO_MISSING", "PDF_MISSING", "QUIZ_MISSING", "HOMEWORK_MISSING"],
+    "a lesson with no content is blocked by every Phase D requirement"
+  );
+  eq(r0?.items.find((i) => i.key === "PDF")?.state, "MISSING", "PDF/Material is a real requirement (never NOT_APPLICABLE again)");
+  eq(r0?.items.every((i) => i.required === true), true, "all four requirements are REQUIRED");
   ok(r0?.canBeReady === false, "not READY-able yet");
 
   const prematureOpen = (await life.openLesson({ lessonId: L1, actorUserId: null, client }));
   eq(prematureOpen.code, "ILLEGAL_TRANSITION", "DRAFT cannot be opened directly (READY cannot be bypassed)");
   const prematureMark = (await life.markLessonReady({ lessonId: L1, actorUserId: null, client }));
   eq(prematureMark.code, "READINESS_BLOCKED", "staging requires readiness");
-  eq(prematureMark.readiness?.blocking, ["VIDEO_MISSING"], "the refusal names what is missing");
+  eq(
+    prematureMark.readiness?.blocking,
+    ["VIDEO_MISSING", "PDF_MISSING", "QUIZ_MISSING", "HOMEWORK_MISSING"],
+    "the refusal names EVERYTHING that is missing"
+  );
   eq(row0(db, `SELECT "status" FROM "Lesson" WHERE "id"=?`, L1)?.status, "DRAFT", "both refusals wrote nothing");
 
-  // Stage the content for real: a legacy lesson video.
-  db.prepare(`UPDATE "Lesson" SET "videoUrl"='https://cdn.test/1-1.mp4' WHERE "id"=?`).run(L1);
+  // Stage the content for real: the full Phase D set (published SessionVideos
+  // for both batches of the SHARED lesson, an uploaded Material, a quiz with
+  // a question, and a homework with instructions).
+  await stageFullContent(L1, "l1");
   const marked = (await life.markLessonReady({ lessonId: L1, actorUserId: null, client }));
   eq(marked.code, "OK", "DRAFT → READY once readiness holds");
   eq(marked.changed, true, "the transition wrote");
@@ -1779,7 +1868,7 @@ async function runRealCode() {
 
   // PUBLISHED + LOCKED: open L2 through the ceremony, and it must be in the
   // curriculum while its content stays gated by progression.
-  db.prepare(`UPDATE "Lesson" SET "videoUrl"='https://cdn.test/1-2.mp4' WHERE "id"=?`).run(L2);
+  await stageFullContent(L2, "l2");
   (await life.markLessonReady({ lessonId: L2, actorUserId: null, client }));
   (await life.openLesson({ lessonId: L2, actorUserId: null, client }));
   const progressAfter = (await code.progression.getCourseSessionProgress("s-ar", courseId, "ARABIC"));
@@ -1962,9 +2051,9 @@ async function runRealCode() {
     fs.writeFileSync(variant, noReadiness);
     delete require.cache[variant];
     const mutated = require(variant);
-    // L2 is READY-but-incomplete after being unpublished above: without the
-    // gate it would be opened anyway.
-    db.prepare(`UPDATE "Lesson" SET "videoUrl"=NULL WHERE "id"=?`).run(L2);
+    // Make L2 incomplete by removing a REQUIRED Phase D component
+    // (the homework): without the gate it would be opened anyway.
+    db.prepare(`DELETE FROM "Homework" WHERE "lessonId"=?`).run(L2);
     const res = await mutated.openLesson({ lessonId: L2, actorUserId: null, client });
     ok(
       res.code === "OK" || res.code === "CONCURRENT_CHANGE",

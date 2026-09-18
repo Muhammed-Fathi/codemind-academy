@@ -692,7 +692,9 @@ section("I. lifecycle ceremony calls");
   pinned(SRC.detailView, /admin\.452/, "I14: archived sessions show the cannot-open notice");
   ok(
     /isDraft && !archived/.test(SRC.detailView) &&
-      /isReady && !archived/.test(SRC.detailView) &&
+      // Phase D: the open control covers DRAFT and READY alike (the override
+      // path lives inside the dialog) — both still gated on !archived.
+      /\(isDraft \|\| isReady\) && !archived/.test(SRC.detailView) &&
       /isPublished && !archived/.test(SRC.detailView),
     "I15: mark-ready/open/unpublish buttons all require !archived"
   );
