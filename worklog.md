@@ -2063,3 +2063,86 @@ Work Log:
   unlock chain, quiz/homework semantics and attendance are untouched;
   `SessionVideoView` is still deliberately NOT integrated into progression
   (pinned in the Phase B suite, section M).
+
+---
+Task ID: 19
+Agent: Arena Agent Mode
+Task: Phase B FIX ROUND — close the academic-access bypass in the standalone
+"Session Videos" library (and every student video surface) for lessons the
+student may not open yet.
+
+Context:
+- Reviewer overrode the READY verdict: the standalone library (no
+  `lessonId`) still listed PUBLISHED SessionVideos of LOCKED (and archived)
+  lessons. Round 1 had gated only the narrowed `?lessonId=` list; the media
+  path was therefore a bypass of the Lesson lifecycle / progression
+  authorization. The reviewer required ONE server-side rule on every student
+  video surface: a video with a non-null `lessonId` is discoverable /
+  listable / selectable / heartbeat-able / streamable ONLY when the student
+  is authorized to access that Lesson under the existing lesson-access
+  policy (the same `canAccessLesson` verdict the Lesson page uses).
+
+Changes (server-side only; no progression semantics touched; no schema /
+migration / seed changes; no Phase B redesign):
+- `src/app/api/students/me/session-videos/route.ts`
+  * The STANDALONE (no-lessonId) listing now re-checks every lesson-linked
+    row against `canAccessLesson` after the query (batch + track +
+    publication clauses unchanged) and drops rows whose lesson is not
+    accessible. Denial degrades to a shorter list — no oracle. Lesson-less
+    rows (`lessonId = null`) pass untouched (legacy behaviour preserved).
+  * Header documents the complete rule and the four surfaces that share it.
+- `src/app/api/students/me/session-videos/[id]/progress/route.ts`
+  * The heartbeat now selects `lessonId`; when it is non-null and
+    `canAccessLesson` denies, the heartbeat is a 403 BEFORE any row is
+    stored (progress is an academic claim — a locked lesson's recording
+    cannot accrue watch time). Legacy lesson-less videos keep the
+    batch-publication behaviour.
+- `src/app/api/media/[id]/route.ts`
+  * The student branch of the ONLY private-bytes route now applies the SAME
+    verdict to the bytes: legacy lesson-less candidates keep their historical
+    pass; when every batch/track-authorized copy of the asset is
+    lesson-linked, at least one of those lessons must pass `canAccessLesson`
+    or the request is a 403 (no bytes, no oracle). The Phase 12/20
+    substrings (`v.isPublished`, `v.batchId === student.batchId`,
+    `v.batch.schoolType === studentSchoolType`) are preserved verbatim.
+  * Deep-link exposure is closed by construction: the Lesson page and the
+    library only ever select videos present in the now-gated authorized
+    list, and any direct byte fetch for a gated lesson 403s here.
+
+Tests:
+- `tests/student-session-media-alignment-phaseB.test.js` — extended with the
+  compiled media route + LOCAL_PRIVATE assets carrying REAL BYTES on disk:
+  B7–B9 (standalone library: locked-lesson video absent, archived-lesson
+  video absent, legacy lesson-less video present with null lesson), K5–K7
+  (heartbeat: locked lesson 403 and NOTHING stored, legacy 200, accessible
+  200), S1–S9 (media bytes: locked 403 with no byte leak, accessible 200
+  with the EXACT stored bytes + content type, cross-batch 403, unpublished
+  403, legacy 200 exact bytes, owning-course student 200 exact bytes,
+  cross-track 403, unauthenticated 401, Range 206 exact window +
+  Content-Range). Also fixed a latent shim bug surfaced by the first
+  byte-level test: the NextResponse shim's `arrayBuffer()` used a RELATIVE
+  end offset in `ArrayBuffer.slice` (pooled buffers → empty result).
+  Result: 108 passed, 0 failed (was 84).
+- `tests/session-lifecycle-phase13.test.js` — the media-route pin's label
+  ("DELIBERATELY unchanged") was stale; reworded to describe what is still
+  pinned and added an assertion that the route now gates lesson-linked
+  bytes with `canAccessLesson`. 303 passed, 0 failed.
+
+Verification (this sandbox, offline):
+- Phase B suite: 108/0. Phase A: 150/0. session-progression: 162/0.
+  track-architecture-phase12: 310/0. session-media-publishing-audit: 218/0.
+  session-lifecycle-phase13: 303/0. security-hardening-phase20: 193/0.
+  security-hardening: 375/0. media-storage-wiring: 318/0.
+  session-materials-phase14: 127/0. authorization-invariants: 94/0.
+  student-locked-curriculum-phase16: 369/0. Full offline sweep: every
+  `.test.js` suite passes (the single excluded suite,
+  final-integration-phase22, is the pre-existing environmental one needing a
+  local dev db/custom.db + backups/).
+- `npx tsc --noEmit` — PASS. `npm run build:postgres` — PASS (no
+  migrations run; 74 static pages).
+
+Legacy `lessonId = null` behaviour after the fix (reported, unchanged):
+such videos are still listed in the standalone library when
+`isPublished` + batch + track hold, still heartbeat-able (200), and their
+bytes still stream through `/api/media/[id]` — they stand on their own
+`SessionVideo.isPublished` publication lifecycle, exactly as before.

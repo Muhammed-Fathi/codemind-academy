@@ -1094,7 +1094,13 @@ section("8. the ceremony — MARK_READY requires readiness");
     const media = read("src/app/api/media/[id]/route.ts");
     ok(
       /Phase 20|isPublished/.test(media) && !/LESSON_STUDENT_STATUS_FILTER/.test(media),
-      "api/media/[id] is DELIBERATELY unchanged (documented Phase 20 work; its video-isPublished oracle is reported, not hidden)"
+      "api/media/[id] keeps Phase 20's published-only oracle and does not import the lesson-list status filter"
+    );
+    // Phase B (fix) — the media byte boundary now applies the SAME lesson
+    // authority as the Lesson page (lessonId = null keeps legacy behaviour).
+    ok(
+      /canAccessLesson\(/.test(media),
+      "api/media/[id] (Phase B fix) gates lesson-linked media bytes with canAccessLesson"
     );
   }
 

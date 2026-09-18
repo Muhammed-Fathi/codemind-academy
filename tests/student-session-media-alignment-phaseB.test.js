@@ -37,6 +37,18 @@
 //   M. no progression rules changed (95% gate, unlock chain, and the
 //      deliberate non-integration of SessionVideoView into progression)
 //
+// Phase B (fix) additions — one server-side rule for every student video
+// surface: a video with a canonical lessonId is listable / selectable /
+// heartbeat-able / streamable ONLY when `canAccessLesson` allows the lesson
+// (same verdict as the Lesson page); lessonId = null keeps legacy behaviour.
+//   B7–B9. standalone library: locked/archived-lesson videos ABSENT,
+//          legacy lesson-less video PRESENT
+//   K5–K7. heartbeat: locked lesson 403 (and nothing stored), legacy 200,
+//          accessible 200
+//   S1–S9. media BYTES: locked 403 / accessible 200 (exact bytes) /
+//          cross-batch 403 / unpublished 403 / legacy 200 (exact bytes) /
+//          owner 200 / cross-track 403 / unauthenticated 401 / range 206
+//
 // What is REAL here: the compiled shipped route handlers, the SQLite database
 // built from the real migration SQL, the progression engine, the enrollment /
 // entitlement / track modules, the batch reconcile. What is SHIMMED: the
@@ -137,6 +149,7 @@ const REAL_CODE_MODULES = [
   // route handlers under test
   "src/app/api/students/me/session-videos/route.ts",
   "src/app/api/students/me/session-videos/[id]/progress/route.ts",
+  "src/app/api/media/[id]/route.ts",
   "src/app/api/courses/[slug]/route.ts",
   "src/app/api/lessons/[id]/route.ts",
   "src/app/api/lessons/[id]/progress/route.ts",
@@ -232,7 +245,8 @@ class NextResponse {
   }
   async arrayBuffer() {
     const b = await this._readAll();
-    return b.buffer.slice(b.byteOffset, b.byteLength);
+    // The end offset is ABSOLUTE into the (possibly pooled) ArrayBuffer.
+    return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
   }
 }
 class NextRequest {}
@@ -270,6 +284,7 @@ const route = (p) => require(path.join(OUT, "src/app/api", p));
 const R = {
   videos: route("students/me/session-videos/route.js"),
   videoProgress: route("students/me/session-videos/[id]/progress/route.js"),
+  media: route("media/[id]/route.js"),
   course: route("courses/[slug]/route.js"),
   lesson: route("lessons/[id]/route.js"),
   lessonProgress: route("lessons/[id]/progress/route.js"),
@@ -417,17 +432,62 @@ test("Phase B: student session media alignment", async () => {
       },
     });
   };
+  // Phase B (fix) — LOCAL_PRIVATE assets with REAL BYTES on disk so the media
+  // delivery route is exercised end-to-end (verdict → storage → bytes), not
+  // just its verdict. The bytes are distinctive per asset so a wrong-asset
+  // leak would be visible.
+  const BYTES = (tag) => Buffer.from(`cm-phaseb-bytes-${tag}-${"x".repeat(64)}`);
+  const mkPrivateVideo = async (tag, { batchId, lessonId, published = true, at = null, key }) => {
+    const file = path.join(MEDIA_DIR, key);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, BYTES(tag));
+    const asset = await client.mediaAsset.create({
+      data: {
+        kind: "VIDEO", storage: "LOCAL_PRIVATE", storageKey: key,
+        mimeType: "video/mp4", sizeBytes: BYTES(tag).length, isPrivate: true,
+      },
+    });
+    return client.sessionVideo.create({
+      data: {
+        batchId, lessonId, mediaAssetId: asset.id,
+        title: `Video ${tag}`, titleAr: `تسجيل ${tag}`,
+        isPublished: published, publishedAt: published ? (at ?? new Date()) : null,
+      },
+    });
+  };
   const D = (h) => new Date(Date.UTC(2026, 8, 1, h, 0, 0));
   const vSharedAr = await mkVideo("sharedAr", { batchId: batchArA.id, lessonId: L1.id, at: D(1) });
   const vSharedLang = await mkVideo("sharedLang", { batchId: batchLangA.id, lessonId: L1.id, at: D(1) });
-  const vUnpub = await mkVideo("unpub", { batchId: batchArA.id, lessonId: L1.id, published: false });
+  // unpublished, but with PRIVATE bytes: the byte boundary must refuse it.
+  const vUnpub = await mkPrivateVideo("unpub", {
+    batchId: batchArA.id, lessonId: L1.id, published: false, key: "phaseb/unpub-asset.mp4",
+  });
   const v2a = await mkVideo("multi-a", { batchId: batchArA.id, lessonId: L2.id, at: D(2) });
   const v2b = await mkVideo("multi-b", { batchId: batchArA.id, lessonId: L2.id, at: D(3) });
   const vArOnly = await mkVideo("arabicOnly", { batchId: batchArA.id, lessonId: L3.id, at: D(4) });
-  const vLocked = await mkVideo("locked", { batchId: batchArA.id, lessonId: L6.id, at: D(5) });
+  // Published recording of the LOCKED lesson L6, with private bytes: this is
+  // the exact reviewer scenario — batch/track/publication all pass, only the
+  // lesson authority may stop it.
+  const vLocked = await mkPrivateVideo("locked", {
+    batchId: batchArA.id, lessonId: L6.id, at: D(5), key: "phaseb/locked-asset.mp4",
+  });
   const vArch = await mkVideo("archived", { batchId: batchArA.id, lessonId: L_ARCH.id, at: D(6) });
   const vDraft = await mkVideo("draft", { batchId: batchArA.id, lessonId: L_DRAFT.id });
-  const vCross = await mkVideo("crossCourse", { batchId: poolAr.id, lessonId: LB1.id, at: D(7) });
+  // Course-B video on the pool batch, with private bytes: sB's own (200) and
+  // sAr's cross-batch denial (403) at the byte boundary.
+  const vCross = await mkPrivateVideo("crossCourse", {
+    batchId: poolAr.id, lessonId: LB1.id, at: D(7), key: "phaseb/cross-asset.mp4",
+  });
+  // Accessible-lesson private video on L3 (no strict list assertion pins L3's
+  // exact set): the 200 + correct-bytes positive case for sAr.
+  const vBytes = await mkPrivateVideo("access", {
+    batchId: batchArA.id, lessonId: L3.id, at: D(0), key: "phaseb/access-asset.mp4",
+  });
+  // Legacy row: lessonId = null, batchArA, published — the historical
+  // batch-publication behaviour must be preserved (listed AND streamed).
+  const vLegacy = await mkPrivateVideo("legacy", {
+    batchId: batchArA.id, lessonId: null, at: D(8), key: "phaseb/legacy-asset.mp4",
+  });
 
   // L5 carries a quiz → it stays incomplete (no attempt) → L6 is LOCKED.
   await client.quiz.create({
@@ -479,13 +539,21 @@ test("Phase B: student session media alignment", async () => {
   const bArIds = ids(b1.json.videos);
   eq(
     bArIds,
-    [vArch.id, vLocked.id, vArOnly.id, v2b.id, v2a.id, vSharedAr.id],
-    "B1: Arabic student's library = own batch's published linked videos (publishedAt desc)"
+    [vLegacy.id, vArOnly.id, v2b.id, v2a.id, vSharedAr.id, vBytes.id],
+    "B1: Arabic student's library = own batch's published videos of ACCESSIBLE lessons (publishedAt desc)"
   );
   ok(!bArIds.includes(vUnpub.id), "B2: unpublished video absent");
   ok(!bArIds.includes(vDraft.id), "B3: DRAFT-lesson video absent (lesson must be PUBLISHED)");
   ok(!bArIds.includes(vSharedLang.id), "B4: Language-batch video absent");
   ok(!bArIds.includes(vCross.id), "B5: pool-batch (other course) video absent");
+  // Phase B (fix) — the reviewer defect: the standalone library must NOT
+  // list published recordings of lessons the student cannot open.
+  ok(!bArIds.includes(vLocked.id), "B7: LOCKED-lesson video absent from the standalone library");
+  ok(!bArIds.includes(vArch.id), "B8: archived-lesson video absent from the standalone library");
+  // ...while lesson-less legacy rows keep their historical behaviour.
+  ok(bArIds.includes(vLegacy.id), "B9: legacy lesson-less video still listed (behaviour preserved)");
+  const legacyRow = b1.json.videos.find((v) => v.id === vLegacy.id);
+  eq(legacyRow?.lesson, null, "B9: legacy row carries no lesson identity");
 
   asUser(sLang.user);
   const b2 = await GET(R.videos, "http://t/api/students/me/session-videos");
@@ -583,11 +651,111 @@ test("Phase B: student session media alignment", async () => {
   );
   eq(k4.status, 200, "K4: the authorized heartbeat succeeds");
   ok(typeof k4.json.percent === "number", "K4: heartbeat returns server-computed percent");
+  // Phase B (fix) — the heartbeat applies the SAME lesson authority:
+  asUser(sAr.user);
+  const k5 = await POST_JSON(
+    R.videoProgress, `http://t/api/students/me/session-videos/${vLocked.id}/progress`,
+    { positionSec: 10, durationSec: 100 }, { id: vLocked.id }
+  );
+  eq(k5.status, 403, "K5: heartbeat for a LOCKED lesson's recording → 403 (no watch time accrues)");
+  const k5row = await client.sessionVideoView.findFirst({
+    where: { sessionVideoId: vLocked.id, studentId: sAr.student.id },
+  });
+  eq(k5row, null, "K5: the denied heartbeat stored NOTHING");
+  const k6 = await POST_JSON(
+    R.videoProgress, `http://t/api/students/me/session-videos/${vLegacy.id}/progress`,
+    { positionSec: 10, durationSec: 100 }, { id: vLegacy.id }
+  );
+  eq(k6.status, 200, "K6: legacy lesson-less video heartbeat still succeeds (preserved)");
+  const k7 = await POST_JSON(
+    R.videoProgress, `http://t/api/students/me/session-videos/${vBytes.id}/progress`,
+    { positionSec: 10, durationSec: 100 }, { id: vBytes.id }
+  );
+  eq(k7.status, 200, "K7: accessible-lesson video heartbeat succeeds");
+
+  // ===========================================================================
+  // S. Media byte delivery — the media route applies the SAME lesson
+  //    authority to the BYTES. These assertions stream real objects from the
+  //    local private storage through the compiled route handler.
+  // ===========================================================================
+  const mediaReq = (url, range = null) => ({
+    url,
+    method: "GET",
+    headers: {
+      get: (k) => {
+        const key = String(k).toLowerCase();
+        if (key === "content-type") return "application/json";
+        if (key === "range") return range;
+        return null;
+      },
+    },
+    json: async () => ({}),
+  });
+  const MEDIA = async (assetId, range = null) => {
+    const res = await R.media.GET(mediaReq(`http://t/api/media/${assetId}`, range), {
+      params: Promise.resolve({ id: assetId }),
+    });
+    return {
+      status: res.status,
+      bytes: Buffer.from(await res.arrayBuffer()),
+      contentRange: res.headers?.get?.("content-range") ?? null,
+      contentType: res.headers?.get?.("content-type") ?? null,
+    };
+  };
+  const assetOf = async (video) =>
+    (await client.sessionVideo.findUnique({ where: { id: video.id }, select: { mediaAssetId: true } }))
+      .mediaAssetId;
+
+  asUser(sAr.user);
+  const lockedAssetId = await assetOf(vLocked);
+  const s1 = await MEDIA(lockedAssetId);
+  eq(s1.status, 403, "S1: LOCKED-lesson media bytes are unreachable (the exact bypass, closed)");
+  ok(!s1.bytes.equals(BYTES("locked")), "S1: the denial serves an error, never the locked asset's bytes");
+
+  const accessAssetId = await assetOf(vBytes);
+  const s2 = await MEDIA(accessAssetId);
+  eq(s2.status, 200, "S2: accessible-lesson media bytes stream");
+  eq(s2.bytes, BYTES("access"), "S2: the exact stored bytes are served (no wrong-asset leak)");
+  eq(s2.contentType, "video/mp4", "S2: the stored content type is served");
+
+  const crossAssetId = await assetOf(vCross);
+  const s3 = await MEDIA(crossAssetId);
+  eq(s3.status, 403, "S3: cross-batch media bytes refused (other course's pool batch)");
+
+  const unpubAssetId = await assetOf(vUnpub);
+  const s4 = await MEDIA(unpubAssetId);
+  eq(s4.status, 403, "S4: unpublished media bytes refused");
+
+  const legacyAssetId = await assetOf(vLegacy);
+  const s5 = await MEDIA(legacyAssetId);
+  eq(s5.status, 200, "S5: legacy lesson-less media bytes still stream (preserved)");
+  eq(s5.bytes, BYTES("legacy"), "S5: the exact legacy bytes are served");
+
+  // The authorized 206 path: a range request for the accessible asset.
+  const s9 = await MEDIA(accessAssetId, "bytes=0-9");
+  eq(s9.status, 206, "S9: range requests on authorized media still work");
+  eq(s9.bytes, BYTES("access").subarray(0, 10), "S9: exactly the requested window is served");
+  eq(s9.contentRange, `bytes 0-9/${BYTES("access").length}`, "S9: Content-Range reflects the window");
+
+  // Cross-student / cross-batch denials at the byte boundary.
+  asUser(sB.user);
+  const s6 = await MEDIA(crossAssetId);
+  eq(s6.status, 200, "S6: the OWNING course's student streams the pool-batch bytes");
+  eq(s6.bytes, BYTES("crossCourse"), "S6: sB gets the exact bytes of her course's video");
+  asUser(sLang.user);
+  const s7 = await MEDIA(accessAssetId);
+  eq(s7.status, 403, "S7: Language student cannot stream the Arabic-batch bytes");
+
+  // Unauthenticated: no bytes, no oracle.
+  asUser(null);
+  const s8 = await MEDIA(lockedAssetId);
+  eq(s8.status, 401, "S8: unauthenticated media request → 401");
 
   // ===========================================================================
   // L. Archived / locked / inaccessible lessons — the media path is never a
   //    bypass, and the answer is an empty list (no oracle).
   // ===========================================================================
+  asUser(sAr.user);
   const l1 = await GET(R.videos, `http://t/api/students/me/session-videos?lessonId=${L_ARCH.id}`);
   eq(l1.json.videos, [], "L1: archived lesson yields no videos");
   const l2 = await GET(R.videos, `http://t/api/students/me/session-videos?lessonId=${L6.id}`);
