@@ -35,6 +35,7 @@
 // migration, no auto-assignment. They remain readable and deletable; only
 // NEW rows are bound to a Lesson here.
 
+import type { db } from "@/lib/db";
 import { normalizeSchoolType } from "@/lib/school-type";
 import { normalizeTrackScope } from "@/lib/track-scope";
 
@@ -74,18 +75,26 @@ const LINK_BATCH_SELECT = {
 } as const;
 
 /**
- * Structural client surface — the real Prisma client satisfies it, and tests
- * inject fakes at the same boundary (the convention every other academic
- * module uses). Only the two lookups the check performs are required.
+ * The database-client boundary of this validator — the repository's
+ * established Prisma abstraction: `typeof db` (the generated PrismaClient),
+ * exactly like `validateUploadTarget(client: typeof db, ...)` in
+ * src/lib/media-upload.ts and every admin route that passes `db` around.
+ *
+ * Why this shape and NOT a handcrafted structural delegate: the generated
+ * `lesson.findUnique` is a generic method
+ * `<T extends LessonFindUniqueArgs>(args: SelectSubset<T, LessonFindUniqueArgs>)`,
+ * and a hand-rolled `findUnique: (args: { where: { id: string }; select:
+ * unknown }) => Promise<unknown>` property is NOT assignable from it under
+ * `strictFunctionTypes` (TS2345: `select: unknown` does not satisfy the
+ * generated `LessonSelect` constraint). Typing the boundary as the real
+ * client keeps the validator's two `findUnique` calls fully type-checked by
+ * Prisma's own machinery (args, select payload, result types) and is sound
+ * for BOTH the `PrismaClient` and the interactive `$transaction` client —
+ * they expose identical delegates. `Pick` keeps the declared dependency to
+ * the two delegates this check actually queries. Test doubles inject at the
+ * same boundary at runtime (JS), as in every other academic module.
  */
-export type SessionVideoLinkClient = {
-  lesson: {
-    findUnique: (args: { where: { id: string }; select: unknown }) => Promise<unknown>;
-  };
-  batch: {
-    findUnique: (args: { where: { id: string }; select: unknown }) => Promise<unknown>;
-  };
-};
+export type SessionVideoLinkClient = Pick<typeof db, "lesson" | "batch">;
 
 function asTrimmedId(value: unknown): string | null {
   if (typeof value !== "string") return null;
