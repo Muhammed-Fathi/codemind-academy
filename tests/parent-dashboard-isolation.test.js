@@ -99,6 +99,14 @@ function makeMockDb() {
     quizAttempt: [], lessonProgress: [], attendance: [], liveSession: [],
     teacher: [], teacherNote: [], subscription: [], subscriptionPlan: [],
     examAttempt: [], mockExam: [],
+    // Phase B — the course tree's modern video-presence query reads this
+    // table; the fixtures carry no SessionVideo rows (empty → legacy
+    // videoUrl-only presence, exactly the pre-Phase-B behaviour).
+    sessionVideo: [],
+    // Phase B — the same tree route lazily reconciles the student's batch
+    // (the exact rule the session-video list uses); the fixtures carry no
+    // Batch rows, so reconciliation resolves NO_BATCH and performs no write.
+    batch: [],
   };
   const clone = (v) => (v === undefined ? v : structuredClone(v));
   const byId = (arr, id) => arr.find((r) => r.id === id) || null;

@@ -5,6 +5,18 @@
 // watch time is credited by real elapsed wall-clock time between heartbeats,
 // is monotonic, and completion requires the batch video's requiredPercent
 // (95% by default).
+//
+// Access is server-side, in order:
+//   * batch ownership is enforced server-side (`video.batchId === student.batchId`);
+//   * only PUBLISHED videos are viewable (a staged recording cannot accrue
+//     progress);
+//   * Phase B (fix) — a video LINKED TO A LESSON accrues progress only when
+//     the student is authorized to access that lesson (the SAME
+//     `canAccessLesson` verdict the lesson page and the media route use).
+//     Progress is an academic claim: a heartbeat for a locked lesson's
+//     recording is a 403 — never a silently-stored row. Legacy lesson-less
+//     videos (lessonId = null) keep the historical batch-publication
+//     behaviour.
 
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
@@ -15,6 +27,7 @@ import {
   applyRateLimit,
   rateLimitedResponse,
 } from "@/lib/api";
+import { canAccessLesson } from "@/lib/session-progress";
 
 const MAX_CREDIT_PER_BEAT_SEC = 60;
 
@@ -40,11 +53,29 @@ export async function POST(
   // The video must be published AND belong to the student's own batch.
   const video = await db.sessionVideo.findUnique({
     where: { id },
-    select: { id: true, batchId: true, isPublished: true, requiredPercent: true },
+    select: {
+      id: true,
+      batchId: true,
+      isPublished: true,
+      requiredPercent: true,
+      // Phase B (fix) — needed for the lesson gate below.
+      lessonId: true,
+    },
   });
   if (!video || !video.isPublished) return err("Not found", 404);
   if (!student.batchId || video.batchId !== student.batchId)
     return err("Forbidden", 403);
+
+  // Phase B (fix) — lesson authority (see header): a recording of a lesson
+  // the student may not open must not accrue watch time for that lesson.
+  // `canAccessLesson` carries the existing policy (enrollment, course,
+  // PUBLISHED lifecycle, non-archived, track, progression unlock), so this
+  // is the same verdict the Lesson page and the media route apply. Lesson-
+  // less legacy rows skip the gate (no lesson exists to authorize against).
+  if (video.lessonId) {
+    const lessonAccess = await canAccessLesson(student.id, video.lessonId);
+    if (!lessonAccess.allowed) return err("Forbidden", 403);
+  }
 
   const body = await req.json().catch(() => ({}));
   const positionSec = Math.max(0, Math.floor(Number(body.positionSec) || 0));

@@ -1978,3 +1978,228 @@ or a corporate proxy make it worse. Nothing in the pipeline changed speed;
 what changed is that the admin can now see it and the timings are in the
 dev console. No validation, confirmation or storage guarantee was relaxed
 to make uploads faster.
+
+---
+Task ID: 18
+Agent: Arena Agent Mode
+Task: Phase B — Student media alignment (Lesson = canonical academic session for the STUDENT experience).
+
+Work Log:
+- Discovery (live code trace, not assumptions): student video behaviour was
+  fragmented across three readers with different rules:
+    * `/api/lessons/[id]` — player rendered ONLY from legacy `Lesson.videoUrl`
+      (bare iframe); a modern SessionVideo lesson showed "video coming soon".
+    * `LessonRecordingsSection` (student-lesson.tsx) — fetched the authorized
+      `?lessonId=` list but rendered a list with NO player; each row bounced to
+      the standalone recordings view.
+    * `/api/students/me/session-videos` — authorized by batch + published +
+      track, but the `?lessonId=` narrowing had NO lesson-level gate: a
+      LOCKED lesson's video (and another course's lesson on a pool batch) was
+      reachable by passing the lessonId — a media path that bypassed the
+      lesson's own lifecycle/track/progression authorization.
+    * course tree `hasVideo` = `!!lesson.videoUrl` only — modern
+      SessionVideo rows produced no "video available" badge.
+- Changes (no schema change, no migration, no seed change):
+    1. `src/app/api/students/me/session-videos/route.ts` — the `?lessonId=`
+       narrowing now runs `canAccessLesson` (the SAME gate the lesson page
+       uses: enrollment + course + PUBLISHED lifecycle + non-archived + track
+       + progression unlock). Denial degrades to an EMPTY list (no oracle).
+       Batch/track/publication clauses unchanged. Lesson select now includes
+       `officialCode` (human-readable session identity).
+    2. `src/app/api/courses/[slug]/route.ts` — tree `hasVideo` now = legacy
+       `Lesson.videoUrl` OR an eligible modern SessionVideo (student: own
+       batch + published + `videoTrackFilter`; staff: any published).
+       Boolean presence only — locked-row redaction untouched. Student batch
+       resolved with the same lazy `syncStudentBatch` rule as the video list,
+       so tree / lesson page / library cannot contradict.
+    3. `src/components/course/student-lesson.tsx` — unified `LessonVideoSection`
+       replaces the legacy-only player card and the no-player recordings list:
+       main player + compact ordered playlist (side-by-side on desktop,
+       stacked on mobile), first eligible video = default, playlist click
+       swaps the player in place; legacy `videoUrl` retained as a documented
+       compatibility fallback (identical rendering to before) when NO eligible
+       SessionVideo exists; explicit loading / error+retry / empty states
+       (new i18n keys course.228/229, Arabic-first). No raw ids anywhere.
+    4. `src/components/course/session-videos-view.tsx` — `SessionVideoPlayer`
+       exported (ONE shared student player: same heartbeat/resume/external-URL
+       contract in the lesson workspace and the library); list items now name
+       their lesson (officialCode + title). The standalone library remains a
+       secondary surface on the same authorized endpoint.
+    5. `src/lib/i18n-dict-2026.ts` — course.228 (empty state),
+       course.229 (video load error).
+- Tests:
+    * NEW `tests/student-session-media-alignment-phaseB.test.js` (84 assertions,
+      real compiled routes over a real-migration SQLite DB): A canonical
+      linkage, B batch filtering, C SHARED+Arabic, D SHARED+Language,
+      E no cross-batch leakage, F no cross-course leakage, G multiple videos,
+      H publication/DRAFT filtering, I modern-without-legacy, J legacy
+      fallback retained, K direct-ID heartbeat 403/404, L archived/locked/
+      inaccessible lessons (empty list, no oracle; lesson route 403
+      PREVIOUS_SESSION_INCOMPLETE / 404 / 403 NOT_ENROLLED), M progression
+      unchanged (95% gate still 403s without watch credit; a 100%
+      SessionVideoView creates NO video requirement and does not block
+      completion; source pins on the engine + progress route), N course tree
+      badge (modern + legacy + lock-independent + redacted), O refresh
+      persistence, P unenrolled, Q Phase A regression pins, R gate-wiring
+      pins. Result: 84 passed, 0 failed.
+    * Full offline sweep: 64/65 `.test.js` suites pass. The single failure
+      (`final-integration-phase22`) is environmental — it requires a local
+      dev `db/custom.db` + `backups/` that do not exist in this sandbox and
+      fails at load before any assertion (pre-existing, unrelated).
+    * `tests/student-locked-curriculum-phase16.test.js` — three pins
+      superseded BY DESIGN and updated with Phase B comments (F2 badge
+      expression, J8 in-place selection, N6 responsive grid); all 369 pass.
+    * `tests/parent-dashboard-isolation.test.js` — mock DB fixture gained
+      empty `sessionVideo`/`batch` tables for the new tree query (fixtures
+      carry no session videos → behaviour for them unchanged); 112 pass.
+- Build gates:
+    * `npx tsc --noEmit` — PASS (0 errors) with the Prisma client generated
+      (`prisma generate` run offline via PRISMA_*_ENGINE_BINARY env because
+      binaries.prisma.sh is unreachable in this sandbox; generation output is
+      a pure function of schema + CLI version).
+    * `npm run build:postgres` — PASS (prisma generate → next build →
+      copy-standalone-assets; 74/74 static pages; no migrations run).
+- Progression: READ ONLY. `getCourseSessionProgress`, the 95% gate, the
+  unlock chain, quiz/homework semantics and attendance are untouched;
+  `SessionVideoView` is still deliberately NOT integrated into progression
+  (pinned in the Phase B suite, section M).
+
+---
+Task ID: 19
+Agent: Arena Agent Mode
+Task: Phase B FIX ROUND — close the academic-access bypass in the standalone
+"Session Videos" library (and every student video surface) for lessons the
+student may not open yet.
+
+Context:
+- Reviewer overrode the READY verdict: the standalone library (no
+  `lessonId`) still listed PUBLISHED SessionVideos of LOCKED (and archived)
+  lessons. Round 1 had gated only the narrowed `?lessonId=` list; the media
+  path was therefore a bypass of the Lesson lifecycle / progression
+  authorization. The reviewer required ONE server-side rule on every student
+  video surface: a video with a non-null `lessonId` is discoverable /
+  listable / selectable / heartbeat-able / streamable ONLY when the student
+  is authorized to access that Lesson under the existing lesson-access
+  policy (the same `canAccessLesson` verdict the Lesson page uses).
+
+Changes (server-side only; no progression semantics touched; no schema /
+migration / seed changes; no Phase B redesign):
+- `src/app/api/students/me/session-videos/route.ts`
+  * The STANDALONE (no-lessonId) listing now re-checks every lesson-linked
+    row against `canAccessLesson` after the query (batch + track +
+    publication clauses unchanged) and drops rows whose lesson is not
+    accessible. Denial degrades to a shorter list — no oracle. Lesson-less
+    rows (`lessonId = null`) pass untouched (legacy behaviour preserved).
+  * Header documents the complete rule and the four surfaces that share it.
+- `src/app/api/students/me/session-videos/[id]/progress/route.ts`
+  * The heartbeat now selects `lessonId`; when it is non-null and
+    `canAccessLesson` denies, the heartbeat is a 403 BEFORE any row is
+    stored (progress is an academic claim — a locked lesson's recording
+    cannot accrue watch time). Legacy lesson-less videos keep the
+    batch-publication behaviour.
+- `src/app/api/media/[id]/route.ts`
+  * The student branch of the ONLY private-bytes route now applies the SAME
+    verdict to the bytes: legacy lesson-less candidates keep their historical
+    pass; when every batch/track-authorized copy of the asset is
+    lesson-linked, at least one of those lessons must pass `canAccessLesson`
+    or the request is a 403 (no bytes, no oracle). The Phase 12/20
+    substrings (`v.isPublished`, `v.batchId === student.batchId`,
+    `v.batch.schoolType === studentSchoolType`) are preserved verbatim.
+  * Deep-link exposure is closed by construction: the Lesson page and the
+    library only ever select videos present in the now-gated authorized
+    list, and any direct byte fetch for a gated lesson 403s here.
+
+Tests:
+- `tests/student-session-media-alignment-phaseB.test.js` — extended with the
+  compiled media route + LOCAL_PRIVATE assets carrying REAL BYTES on disk:
+  B7–B9 (standalone library: locked-lesson video absent, archived-lesson
+  video absent, legacy lesson-less video present with null lesson), K5–K7
+  (heartbeat: locked lesson 403 and NOTHING stored, legacy 200, accessible
+  200), S1–S9 (media bytes: locked 403 with no byte leak, accessible 200
+  with the EXACT stored bytes + content type, cross-batch 403, unpublished
+  403, legacy 200 exact bytes, owning-course student 200 exact bytes,
+  cross-track 403, unauthenticated 401, Range 206 exact window +
+  Content-Range). Also fixed a latent shim bug surfaced by the first
+  byte-level test: the NextResponse shim's `arrayBuffer()` used a RELATIVE
+  end offset in `ArrayBuffer.slice` (pooled buffers → empty result).
+  Result: 108 passed, 0 failed (was 84).
+- `tests/session-lifecycle-phase13.test.js` — the media-route pin's label
+  ("DELIBERATELY unchanged") was stale; reworded to describe what is still
+  pinned and added an assertion that the route now gates lesson-linked
+  bytes with `canAccessLesson`. 303 passed, 0 failed.
+
+Verification (this sandbox, offline):
+- Phase B suite: 108/0. Phase A: 150/0. session-progression: 162/0.
+  track-architecture-phase12: 310/0. session-media-publishing-audit: 218/0.
+  session-lifecycle-phase13: 303/0. security-hardening-phase20: 193/0.
+  security-hardening: 375/0. media-storage-wiring: 318/0.
+  session-materials-phase14: 127/0. authorization-invariants: 94/0.
+  student-locked-curriculum-phase16: 369/0. Full offline sweep: every
+  `.test.js` suite passes (the single excluded suite,
+  final-integration-phase22, is the pre-existing environmental one needing a
+  local dev db/custom.db + backups/).
+- `npx tsc --noEmit` — PASS. `npm run build:postgres` — PASS (no
+  migrations run; 74 static pages).
+
+Legacy `lessonId = null` behaviour after the fix (reported, unchanged):
+such videos are still listed in the standalone library when
+`isPublished` + batch + track hold, still heartbeat-able (200), and their
+bytes still stream through `/api/media/[id]` — they stand on their own
+`SessionVideo.isPublished` publication lifecycle, exactly as before.
+
+---
+Task ID: 20
+Agent: Arena Agent Mode
+Task: Phase B FIX ROUND 2 — Student Course sidebar navigation: clicking the
+sidebar "الكورس" tab opened the Course view with "مفيش كورس محدد" (no course
+selected) although the student's dashboard and its "كل الكورس" button resolved
+the enrolled course correctly.
+
+Root cause:
+- The Course view (StudentCourseView) loads its content from
+  `/api/courses/${navParam}` where `navParam` comes from the app store.
+- The app store's `setView` RESETS `navParam` to null.
+- The sidebar nav buttons call `setView(key)` only — so the Course tab
+  arrived with navParam = null and the view showed the no-course error.
+- The dashboard worked because its "كل الكورس" button does
+  `setView("student-course"); setNavParam(data.group.course.slug)` — it
+  carries the slug itself (from `/api/students/me/dashboard` →
+  `group.course`, the platform's existing current-course rule: a student's
+  single group → that group's course).
+
+Changes:
+- NEW `src/app/api/students/me/current-course/route.ts` — a navigation
+  READER ONLY: STUDENT-only (401/403), resolves the caller's own
+  `student.group.course` (id + slug + display fields) from authorized
+  student data via the same `getStudentProfile` helper the dashboard uses.
+  Zero courses → `course: null`. It serves NO course content — the content
+  boundary remains GET /api/courses/[slug] (403 NOT_ENROLLED, unchanged).
+  Multiple simultaneous courses are not representable in the schema
+  (Student.groupId is singular), so resolution is deterministic: 0 or 1.
+- `src/components/course/student-course.tsx` — when the view mounts without
+  a navParam (the sidebar path), it resolves the current course through the
+  new reader and hands the slug to the SAME `setNavParam` mechanism every
+  other flow uses; the effect re-runs and fetches the course through the
+  unchanged authorized `/api/courses/[slug]` path. Zero courses keeps the
+  existing empty state (course.213). No hardcoded slug anywhere.
+- `tests/student-session-media-alignment-phaseB.test.js` — new section
+  T1–T6 (+17 assertions, 108 → 125): the reader resolves the enrolled
+  course (id + slug) and that slug opens the course through the existing
+  Course view path; per-student resolution (two students → two different
+  courses); zero-course student → 200 with course null; 401 unauthenticated;
+  foreign course still 403 NOT_ENROLLED (enforcement unchanged); no
+  hardcoded slug in reader or view; dashboard "كل الكورس" flow unchanged.
+
+Verification (this sandbox, offline):
+- Phase B suite: 125/0. student-locked-curriculum-phase16: 369/0.
+  authorization-invariants: 94/0. phase26b-student-flow: 40/0. Phase A:
+  150/0. session-progression: 162/0. Full offline sweep: every `.test.js`
+  suite passes (sole exclusion: pre-existing environmental
+  final-integration-phase22).
+- `npx tsc --noEmit` — PASS. `npm run build:postgres` — PASS; the build
+  output includes `ƒ /api/students/me/current-course`.
+- ESLint: no NEW errors (student-course.tsx carries one pre-existing
+  react-hooks/set-state-in-effect error, present on the base commit).
+
+No PR, no merge, no Phase C, no Live Sessions / Notifications / progression /
+publishing-UI changes.

@@ -132,6 +132,7 @@ export function StudentCourseView() {
   const tr = useT();
   const setView = useApp((s) => s.setView);
   const navParam = useApp((s) => s.navParam);
+  const setNavParam = useApp((s) => s.setNavParam);
 
   const [data, setData] = React.useState<CourseData | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -143,11 +144,40 @@ export function StudentCourseView() {
     setError(null);
     // No hardcoded fallback slug: guessing a course here made an
     // unenrolled/direct-navigation user look like they were enrolled in
-    // whichever course happened to be hardcoded. With no navParam there is
-    // simply nothing to load.
+    // whichever course happened to be hardcoded. When there is no navParam
+    // (e.g. the sidebar's Course tab navigates to this view with no slug),
+    // resolve the student's CURRENT COURSE from their own authorized data —
+    // GET /api/students/me/current-course applies the platform's existing
+    // current-course rule (the student's group → that group's course, the
+    // same `group.course` the dashboard's "كل الكورس" flow navigates with) —
+    // and hand it to the SAME navParam mechanism every other flow uses. The
+    // resolved slug then flows through the unchanged authorized content
+    // fetch below, so this path can never open a course the student is not
+    // enrolled in: /api/courses/[slug] still 403s server-side.
     if (!navParam) {
-      setError(tr("course.213"));
-      setLoading(false);
+      fetch("/api/students/me/current-course")
+        .then((r) =>
+          r.ok
+            ? r.json()
+            : Promise.reject(new Error(r.status === 403 || r.status === 401 ? "forbidden" : "fail"))
+        )
+        .then((d) => {
+          const slug = d?.course?.slug;
+          if (slug) {
+            // Hand off through the canonical mechanism; the effect re-runs
+            // with the slug and keeps `loading` true, so no empty frame
+            // flashes between the two fetches.
+            setNavParam(slug);
+            return;
+          }
+          // Zero courses: the existing empty state (nothing to guess).
+          setError(tr("course.213"));
+          setLoading(false);
+        })
+        .catch((e: Error) => {
+          setError(tr(e.message === "forbidden" ? "course.212" : "course.034"));
+          setLoading(false);
+        });
       return;
     }
     fetch(`/api/courses/${encodeURIComponent(navParam)}`)
@@ -172,7 +202,7 @@ export function StudentCourseView() {
         setError(tr(e.message === "forbidden" ? "course.212" : "course.034"));
       })
       .finally(() => setLoading(false));
-  }, [navParam, tr]);
+  }, [navParam, tr, setNavParam]);
 
   React.useEffect(() => {
     reload();

@@ -28,6 +28,7 @@ import {
 } from "@/lib/media";
 import { logSecurityEvent } from "@/lib/security";
 import { normalizeSchoolType } from "@/lib/school-type";
+import { canAccessLesson } from "@/lib/session-progress";
 
 export async function GET(
   req: NextRequest,
@@ -45,6 +46,8 @@ export async function GET(
           id: true,
           batchId: true,
           isPublished: true,
+          // Phase B (fix) — needed for the lesson gate in the student branch.
+          lessonId: true,
           // Phase 12: a video's track is its batch's school type.
           batch: { select: { schoolType: true } },
         },
@@ -89,6 +92,7 @@ export async function GET(
       const student = await db.student.findUnique({
         where: { userId: user.id },
         select: {
+          id: true,
           batchId: true,
           schoolType: true,
           user: { select: { isActive: true } },
@@ -110,6 +114,42 @@ export async function GET(
             v.batch.schoolType === studentSchoolType
         );
       if (!allowed) return err("Forbidden", 403);
+
+      // Phase B (fix) — the SAME lesson authority as the Lesson page now
+      // gates media bytes too. A recording of a lesson the student may not
+      // open must not stream, even though its batch/track/publication
+      // checks all passed:
+      //
+      //   * Legacy lesson-less rows (lessonId = null) keep their historical
+      //     batch-publication behaviour — no lesson exists to gate on, so a
+      //     legacy-only asset streams exactly as before.
+      //   * If every batch/track-authorized copy of this asset is linked to
+      //     a lesson, at least one of those lessons must be accessible to
+      //     THIS student (`canAccessLesson` — the same verdict the lesson
+      //     page, the standalone library and the heartbeat apply), or the
+      //     bytes are refused.
+      //
+      // A media id may be shared by the audience copies of one recording, so
+      // the check is per-lesson of the authorized candidates.
+      const authorizedCandidates = asset.sessionVideos.filter(
+        (v) =>
+          v.isPublished &&
+          v.batchId === student?.batchId &&
+          v.batch.schoolType === studentSchoolType
+      );
+      const gatedLessonIds = [
+        ...new Set(
+          authorizedCandidates.filter((v) => v.lessonId).map((v) => v.lessonId as string),
+        ),
+      ];
+      if (gatedLessonIds.length > 0) {
+        const lessonVerdicts = await Promise.all(
+          gatedLessonIds.map((lid) => canAccessLesson(student!.id, lid)),
+        );
+        const anyLessonAuthorized = lessonVerdicts.some((v) => v.allowed);
+        const anyLessonless = authorizedCandidates.some((v) => v.lessonId === null);
+        if (!anyLessonAuthorized && !anyLessonless) return err("Forbidden", 403);
+      }
     } else if (user.role === "PARENT") {
       // Parents do not stream lesson media.
       return err("Forbidden", 403);
