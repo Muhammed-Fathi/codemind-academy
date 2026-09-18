@@ -9,6 +9,18 @@
 // a second authorization path. It is a pure NARROWING filter: every clause
 // below still applies, and a lessonId from another track, another course, or
 // an unpublished session simply matches nothing.
+//
+// Phase B — that narrowing is now authorized with the SAME gate the lesson
+// page itself uses (`canAccessLesson`: enrollment + course + PUBLISHED
+// lifecycle + non-archived + track + progression unlock). A media path must
+// never be a bypass: a lesson the student cannot open yields NO videos for
+// it. The denial degrades to an EMPTY list — never a distinct status or code
+// — so probing a locked / foreign / unpublished lesson id cannot even
+// confirm the id is real (the same no-oracle rule the tree redaction uses).
+// This is a GATE ON THE NARROWING, not a change of any batch/track/publication
+// rule and not a change of progression semantics: the engine still decides
+// unlock state exactly as before; this route only refuses to serve media for
+// a lesson the engine would not let the student open.
 
 import { NextRequest } from "next/server";
 import { requireUser, ok, err } from "@/lib/api";
@@ -17,6 +29,7 @@ import { getEnrollment, syncStudentBatch } from "@/lib/enrollment";
 import { VIDEO_COMPLETION_THRESHOLD } from "@/lib/progress";
 import { videoTrackFilter } from "@/lib/track-scope";
 import { LESSON_STUDENT_STATUS_FILTER } from "@/lib/session-lifecycle";
+import { canAccessLesson } from "@/lib/session-progress";
 
 export async function GET(req: NextRequest) {
   const user = await requireUser();
@@ -39,6 +52,15 @@ export async function GET(req: NextRequest) {
   // Lazily attach the student to the batch of their school type.
   const batchId = student.batchId || (await syncStudentBatch(student.id));
   if (!batchId) return ok({ isEnrolled: true, videos: [] });
+
+  // Phase B — lesson gate for the narrowing (see header): the student must be
+  // able to open THIS session, or the session has no videos for them.
+  if (lessonId) {
+    const lessonAccess = await canAccessLesson(student.id, lessonId);
+    if (!lessonAccess.allowed) {
+      return ok({ isEnrolled: true, threshold: VIDEO_COMPLETION_THRESHOLD, videos: [] });
+    }
+  }
 
   const videos = await db.sessionVideo.findMany({
     // Phase 12 — the batch + published authorization above is unchanged; the
@@ -70,7 +92,11 @@ export async function GET(req: NextRequest) {
     orderBy: { publishedAt: "desc" },
     include: {
       media: { select: { id: true, storage: true, externalUrl: true, durationSec: true } },
-      lesson: { select: { id: true, title: true, titleAr: true } },
+      // Phase B — officialCode is the lesson's human-readable identity (1-1).
+      // It is skeleton metadata (safe for every status, as the course tree
+      // already serialises it) and lets the standalone library identify WHICH
+      // session each recording belongs to without raw ids.
+      lesson: { select: { id: true, title: true, titleAr: true, officialCode: true } },
       views: { where: { studentId: student.id }, take: 1 },
     },
     take: 100,

@@ -427,7 +427,16 @@ async function main() {
 
   const courseRoute = read("src/app/api/courses/[slug]/route.ts");
   pinned(courseRoute, /officialCode: lesson\.officialCode \?\? null,/, "F1: session identity is serialised");
-  pinned(courseRoute, /hasVideo: !!lesson\.videoUrl,/, "F2: video presence is lock-independent");
+  // PHASE B SUPERSESSION (the lock-independence intent is preserved): the
+  // badge now recognises MODERN SessionVideo rows (batch + published +
+  // track, computed server-side in this route) with the legacy column kept
+  // as a documented fallback — so a lesson with a published batch recording
+  // but a NULL videoUrl is badged like any other video-bearing session.
+  pinned(
+    courseRoute,
+    /hasVideo: !!lesson\.videoUrl \|\| videoLessonIds\.has\(lesson\.id\),/,
+    "F2: video presence = legacy videoUrl OR an eligible modern SessionVideo (lock-independent)"
+  );
   absent(courseRoute, /hasVideo: locked/, "F2-neg: video presence is never lock-gated", "      hasVideo: locked ? false : true,");
   pinned(courseRoute, /hasPdf: downloadableCount > 0,/, "F3: file presence is lock-independent");
   absent(courseRoute, /hasPdf:\s*!locked/, "F3-neg: file presence is never lock-gated", "      hasPdf: !locked && true,");
@@ -551,7 +560,11 @@ async function main() {
   pinned(lessonView, /course\.208/, "J5: assignment rule label is present");
   pinned(lessonView, /session-videos\?lessonId=\$\{encodeURIComponent\(lessonId\)\}/, "J6: recordings load through the narrowed authorized list");
   pinned(lessonView, /course\.214/, "J7: recordings block is headed + localized");
-  pinned(lessonView, /setNavParam\(v\.id\)/, "J8: a recording opens in the recordings view (no content silo)");
+  // PHASE B SUPERSESSION: the Lesson page is the canonical academic
+  // destination, so a recording no longer bounces to the standalone
+  // recordings view — selecting a playlist item swaps the lesson's own main
+  // player in place (the recordings view stays a secondary library).
+  pinned(lessonView, /setActiveId\(v\.id\)/, "J8: a recording plays in the lesson's own player (no content silo)");
   pinned(lessonView, /data\.lesson\.officialCode/, "J9: session identity shows in the header");
   pinned(lessonView, /PREVIOUS_SESSION_INCOMPLETE/, "J10: locked denials render the locked skeleton");
   pinned(lessonView, /course\.203/, "J11: locked skeleton is titled + localized");
@@ -665,7 +678,14 @@ async function main() {
     const req = sliceOf(lessonView, "function RequirementRow", "function LessonSkeleton");
     ok(req.length > 100, "N4: requirement/recordings slice extracted");
     absent(req, /\bml-|\bmr-|\bpl-|\bpr-|\bleft-|\bright-|\btext-left|\btext-right/, "N5: new session blocks use logical properties only", '<div className="mr-2" />');
-    ok(/flex-col[\s\S]*sm:flex-row/.test(req), "N6: recording rows stack on mobile, sit side-by-side on desktop");
+    // PHASE B SUPERSESSION: the recordings list became the lesson's video
+    // workspace (main player + ordered playlist). The responsive intent is
+    // preserved — the player/playlist grid stacks on mobile and sits
+    // side-by-side on desktop (lg two-column grid).
+    ok(
+      /grid gap-4 lg:grid-cols-\[minmax\(0,2fr\)_minmax\(0,1fr\)\]/.test(req),
+      "N6: player + playlist stack on mobile, sit side-by-side on desktop"
+    );
   }
   {
     const panel = sliceOf(lessonView, 'if (error || !data) {', "function LessonSkeleton");

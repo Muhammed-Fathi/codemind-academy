@@ -41,6 +41,10 @@ import {
   Circle,
 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
+// Phase B — the ONE student video player (same heartbeat / resume /
+// external-URL contract as the standalone library). Reused here so the
+// Lesson workspace and the library can never diverge.
+import { SessionVideoPlayer } from "@/components/course/session-videos-view";
 
 // ============================================================
 // Types
@@ -439,37 +443,23 @@ export function StudentLessonView() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Left: video + materials */}
         <div className="lg:col-span-2 space-y-4">
-          {/* Video */}
+          {/* Phase B — the video IS the first content of the academic
+              session: eligible SessionVideo player(s) + playlist, the legacy
+              videoUrl fallback, or a proper empty state. One section, one
+              player, one authorized source (see LessonVideoSection). */}
           <motion.div
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, delay: 0.05 }}
           >
-            <Card className="glass overflow-hidden">
-              <div className="aspect-video bg-black/90 relative">
-                {data.lesson.videoUrl ? (
-                  <iframe
-                    src={data.lesson.videoUrl}
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                    allowFullScreen
-                    className="absolute inset-0 w-full h-full"
-                    title={pickAuto(data.lesson.titleAr, data.lesson.title)}
-                  />
-                ) : (
-                  <div className="absolute inset-0 grid place-items-center text-center">
-                    <div>
-                      <div className="grid place-items-center w-16 h-16 rounded-full bg-white/10 mx-auto mb-3">
-                        <Video className="w-8 h-8 text-white/80" />
-                      </div>
-                      <p className="text-white/80 text-sm">
-                        {t("course.060")}</p>
-                      <p className="text-white/40 text-xs mt-1">
-                        {t("course.061")}</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </Card>
+            {/* key: remount per lesson so prev/next navigation never shows
+                the previous session's player or playlist */}
+            <LessonVideoSection
+              key={data.lesson.id}
+              lessonId={data.lesson.id}
+              legacyVideoUrl={data.lesson.videoUrl}
+              lessonTitle={pickAuto(data.lesson.titleAr, data.lesson.title)}
+            />
           </motion.div>
 
           {/* Summary */}
@@ -554,9 +544,6 @@ export function StudentLessonView() {
               </Card>
             </motion.div>
           )}
-
-          {/* Phase 16 — recordings linked to THIS session (unified page). */}
-          <LessonRecordingsSection lessonId={data.lesson.id} />
 
           {/* Mark complete */}
           <motion.div
@@ -854,99 +841,242 @@ function RequirementRow({
   );
 }
 
-type LinkedRecording = {
+// ============================================================
+// Phase B — the Lesson's unified video workspace
+// ============================================================
+//
+// The Lesson page is the canonical academic destination, so the video lives
+// HERE, not only in the standalone library:
+//
+//   * loads the student's ELIGIBLE SessionVideo rows for THIS lesson from
+//     /api/students/me/session-videos?lessonId= — the SAME endpoint the
+//     standalone library uses, narrowed server-side to the lesson and, since
+//     Phase B, also gated server-side by the lesson's own authorization
+//     (enrollment + course + lifecycle + track + progression unlock). There
+//     is no second authorization path and no frontend-only filtering.
+//   * one eligible video  → a single clean player, no playlist chrome;
+//   * several eligible    → main player + compact ordered playlist (beside
+//     the player on desktop, stacked underneath on mobile); selecting an
+//     item swaps the main player; the first eligible video is the default;
+//   * no eligible video, but a legacy `Lesson.videoUrl` exists → the legacy
+//     player is retained as a compatibility FALLBACK (documented; the column
+//     is neither deleted nor migrated in Phase B);
+//   * nothing at all      → a proper empty state, never a broken player;
+//   * loading and error   → explicit, localized states (retry included).
+//
+// Only human-readable information is rendered: titles, session codes,
+// durations and watch progress. Raw ids never reach the UI.
+type LessonVideoItem = {
   id: string;
   title: string;
   titleAr: string;
-  progress: { percent: number; isCompleted: boolean };
+  description: string | null;
+  lesson: {
+    id: string;
+    title: string;
+    titleAr: string;
+    officialCode: string | null;
+  } | null;
+  requiredPercent: number;
+  publishedAt: string | null;
+  src: string | null;
+  isExternal: boolean;
+  progress: { percent: number; isCompleted: boolean; watchedSec: number };
 };
 
-// The recordings linked to THIS session, fetched from the same authorized
-// endpoint as the recordings view and narrowed server-side by `?lessonId=` —
-// no second authorization path exists. Empty or failed renders nothing: an
-// unlinked session simply has no recordings block.
-function LessonRecordingsSection({ lessonId }: { lessonId: string }) {
+function LessonVideoSection({
+  lessonId,
+  legacyVideoUrl,
+  lessonTitle,
+}: {
+  lessonId: string;
+  legacyVideoUrl: string | null;
+  lessonTitle: string;
+}) {
   const t = useT();
-  const setView = useApp((s) => s.setView);
-  const setNavParam = useApp((s) => s.setNavParam);
-  const [videos, setVideos] = React.useState<LinkedRecording[] | null>(null);
+  // null = still loading; [] = loaded, none eligible; list = loaded.
+  // The PARENT keys this component by lesson id, so a lesson change remounts
+  // the section with fresh state (no stale player from the previous lesson).
+  const [videos, setVideos] = React.useState<LessonVideoItem[] | null>(null);
+  const [failed, setFailed] = React.useState(false);
+  // true while a (re)fetch is in flight — set from the retry click, cleared
+  // by the fetch outcome; drives the loading state without synchronous
+  // setState in the effect body.
+  const [pending, setPending] = React.useState(false);
+  const [activeId, setActiveId] = React.useState<string | null>(null);
+  const [attempt, setAttempt] = React.useState(0);
 
   React.useEffect(() => {
     let cancelled = false;
     fetch(
       `/api/students/me/session-videos?lessonId=${encodeURIComponent(lessonId)}`
     )
-      .then((r) => (r.ok ? r.json() : null))
+      .then((r) =>
+        r.ok ? r.json() : Promise.reject(new Error(String(r.status)))
+      )
       .then((d) => {
-        if (!cancelled) setVideos(d?.videos ?? []);
+        if (cancelled) return;
+        const list = (d?.videos ?? []) as LessonVideoItem[];
+        setVideos(list);
+        setFailed(false);
+        setPending(false);
+        // The first eligible video is the default selection.
+        setActiveId(list[0]?.id ?? null);
       })
       .catch(() => {
-        if (!cancelled) setVideos([]);
+        if (cancelled) return;
+        setVideos([]);
+        setFailed(true);
+        setPending(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [lessonId]);
+  }, [lessonId, attempt]);
 
-  if (!videos || videos.length === 0) return null;
+  const loading = videos === null || pending;
+  const active = videos?.find((v) => v.id === activeId) ?? null;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, delay: 0.13 }}
-    >
-      <Card className="glass">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Video className="w-5 h-5 text-primary" />
-            {t("course.214")}
-          </CardTitle>
-          <CardDescription className="text-xs">
-            {t("course.215")}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          {videos.map((v) => (
-            <div
-              key={v.id}
-              className="flex flex-col gap-2 rounded-lg border border-border/60 px-3 py-2.5 sm:flex-row sm:items-center sm:gap-3"
+    <Card className="glass overflow-hidden">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Video className="w-5 h-5 text-primary" />
+          {t("course.214")}
+        </CardTitle>
+        <CardDescription className="text-xs">
+          {t("course.215")}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          // Clear loading state — never a black "broken" frame.
+          <Skeleton className="aspect-video w-full" />
+        ) : failed ? (
+          // Clear error state with a localized retry.
+          <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
+            <Video className="w-8 h-8 text-muted-foreground/50" />
+            <p className="text-sm text-muted-foreground">
+              {t("course.229")}
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setPending(true);
+                setAttempt((a) => a + 1);
+              }}
             >
-              <div className="flex items-center gap-3 flex-1 min-w-0">
-                <div className="grid place-items-center w-9 h-9 rounded-lg bg-primary/10 text-primary shrink-0">
-                  {v.progress?.isCompleted ? (
-                    <CheckCircle2 className="w-4 h-4" />
-                  ) : (
-                    <PlayCircle className="w-4 h-4" />
-                  )}
+              {t("course.036")}
+            </Button>
+          </div>
+        ) : videos.length > 0 && active ? (
+          // Eligible modern SessionVideo(s): one player, ordered playlist.
+          // Desktop: player + playlist side by side. Mobile: player first,
+          // playlist stacked underneath (the grid collapses to one column).
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+            <SessionVideoPlayer
+              key={active.id}
+              video={active}
+              onProgress={(percent, isCompleted) =>
+                setVideos((prev) =>
+                  prev?.map((v) =>
+                    v.id === active.id
+                      ? {
+                          ...v,
+                          progress: { ...v.progress, percent, isCompleted },
+                        }
+                      : v
+                  ) ?? prev
+                )
+              }
+            />
+            {videos.length > 1 && (
+              <div className="rounded-lg border border-border/60 p-3 lg:self-start">
+                <div className="pb-2 text-sm font-semibold">
+                  {t("course.214")}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold truncate">
-                    {pickAuto(v.titleAr, v.title)}
-                  </div>
-                  <Progress
-                    value={v.progress?.percent ?? 0}
-                    className="mt-1 h-1"
-                  />
+                <div className="space-y-2">
+                  {videos.map((v, idx) => {
+                    const isActive = v.id === activeId;
+                    return (
+                      <button
+                        key={v.id}
+                        type="button"
+                        onClick={() => setActiveId(v.id)}
+                        aria-current={isActive}
+                        className={`flex w-full items-center gap-2.5 rounded-lg border p-2.5 text-start transition-colors ${
+                          isActive
+                            ? "border-primary bg-primary/5"
+                            : "border-border/60 hover:bg-muted/50"
+                        }`}
+                      >
+                        <div className="grid place-items-center w-8 h-8 shrink-0 rounded-lg bg-primary/10 text-primary">
+                          {v.progress.isCompleted ? (
+                            <CheckCircle2 className="w-4 h-4" />
+                          ) : (
+                            <PlayCircle className="w-4 h-4" />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-xs font-semibold">
+                            {idx + 1}. {pickAuto(v.titleAr, v.title)}
+                          </div>
+                          {v.lesson && (
+                            <div className="truncate text-[10px] text-muted-foreground">
+                              {v.lesson.officialCode
+                                ? `${v.lesson.officialCode} · `
+                                : ""}
+                              {pickAuto(v.lesson.titleAr, v.lesson.title)}
+                            </div>
+                          )}
+                          <Progress
+                            value={v.progress.percent}
+                            className="mt-1 h-1"
+                          />
+                        </div>
+                        <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+                          {v.progress.percent}%
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                className="shrink-0 self-end sm:self-auto"
-                onClick={() => {
-                  setView("student-session-videos");
-                  setNavParam(v.id);
-                }}
-              >
-                <PlayCircle className="w-4 h-4 ms-1" />
-                {t("course.216")}
-              </Button>
+            )}
+          </div>
+        ) : legacyVideoUrl ? (
+          // DOCUMENTED LEGACY FALLBACK — retained compatibility path:
+          // pre-Phase-12 lessons whose only video is the read-only
+          // Lesson.videoUrl column. Rendering is exactly the historical
+          // behaviour (bare embed of the stored URL); modern lessons never
+          // reach this branch because eligible SessionVideos are preferred.
+          <div className="aspect-video bg-black/90 relative">
+            <iframe
+              src={legacyVideoUrl}
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowFullScreen
+              className="absolute inset-0 w-full h-full"
+              title={lessonTitle}
+            />
+          </div>
+        ) : (
+          // Proper empty state — no broken player, no invented content.
+          <div className="aspect-video bg-black/90 relative">
+            <div className="absolute inset-0 grid place-items-center text-center">
+              <div>
+                <div className="grid place-items-center w-16 h-16 rounded-full bg-white/10 mx-auto mb-3">
+                  <Video className="w-8 h-8 text-white/80" />
+                </div>
+                <p className="text-white/80 text-sm">
+                  {t("course.228")}
+                </p>
+              </div>
             </div>
-          ))}
-        </CardContent>
-      </Card>
-    </motion.div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

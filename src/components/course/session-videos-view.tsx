@@ -33,7 +33,14 @@ type SessionVideo = {
   title: string;
   titleAr: string;
   description: string | null;
-  lesson: { id: string; title: string; titleAr: string } | null;
+  /** Phase B — the session this recording belongs to (null for legacy batch-only rows). */
+  lesson: {
+    id: string;
+    title: string;
+    titleAr: string;
+    /** Phase B — human-readable session identity (1-1). Never a raw id. */
+    officialCode: string | null;
+  } | null;
   requiredPercent: number;
   publishedAt: string | null;
   src: string | null;
@@ -179,6 +186,16 @@ export function StudentSessionVideosView() {
                       <div className="truncate text-xs font-semibold">
                         {pickAuto(v.titleAr, v.title)}
                       </div>
+                      {/* Phase B — every recording names its session, so the
+                          library and the Lesson page never contradict. */}
+                      {v.lesson && (
+                        <div className="truncate text-[10px] text-muted-foreground">
+                          {v.lesson.officialCode
+                            ? `${v.lesson.officialCode} · `
+                            : ""}
+                          {pickAuto(v.lesson.titleAr, v.lesson.title)}
+                        </div>
+                      )}
                       <Progress value={v.progress.percent} className="mt-1 h-1" />
                     </div>
                     <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
@@ -195,7 +212,11 @@ export function StudentSessionVideosView() {
   );
 }
 
-function SessionVideoPlayer({
+// Exported (Phase B): the Lesson page renders its canonical video section
+// with this SAME player, so there is exactly one student video player —
+// same heartbeat contract, same resume, same external-URL contract — in the
+// lesson workspace and in the standalone library.
+export function SessionVideoPlayer({
   video,
   onProgress,
 }: {

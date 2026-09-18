@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireUser, getStudentProfile } from "@/lib/api";
-import { getEnrollment, getStudentSchoolType } from "@/lib/enrollment";
+import {
+  getEnrollment,
+  getStudentSchoolType,
+  syncStudentBatch,
+} from "@/lib/enrollment";
 import {
   EXCLUDE_ARCHIVED_LESSON,
   getCourseSessionProgress,
@@ -15,6 +19,7 @@ import {
   eligibleTrackScopes,
   trackScopeInWhere,
   trackScopeWhere,
+  videoTrackFilter,
 } from "@/lib/track-scope";
 import { getServerT } from "@/lib/i18n-server";
 import { buildMaterialDescriptors } from "@/lib/session-materials";
@@ -107,9 +112,14 @@ export async function GET(
   // it) even though the engine refused it. Visibility and availability were
   // then two different answers to one question. They are now the same filter.
   let viewerLifecycleFilter: object = LESSON_STUDENT_STATUS_FILTER;
+  // Phase B — the viewer's own school type, kept for the modern video-presence
+  // query below (the batch audience rule is a schoolType equality, not a
+  // request parameter).
+  let viewerSchoolType: string | null = null;
   if (user.role === "STUDENT") {
     const viewer = await getStudentProfile(user.id);
     const schoolType = viewer ? await getStudentSchoolType(viewer.id) : null;
+    viewerSchoolType = schoolType;
     viewerTrackFilter = trackScopeWhere(schoolType);
     viewerEligibleScopes = eligibleTrackScopes(schoolType);
   } else if (user.role === "PARENT") {
@@ -170,6 +180,10 @@ export async function GET(
   // A student must never receive the content of a course they are not
   // enrolled in, even when hitting this route directly.
   let studentId: string | null = null;
+  // Phase B — the student's media audience (their batch), resolved with the
+  // SAME lazy-reconcile rule the session-video list uses, so the tree's video
+  // badge, the lesson page's player and the standalone library always agree.
+  let studentBatchId: string | null = null;
   if (user.role === "STUDENT") {
     const tApi = await getServerT();
     const s = await getStudentProfile(user.id);
@@ -182,6 +196,7 @@ export async function GET(
       );
     }
     studentId = s.id;
+    studentBatchId = s.batchId || (await syncStudentBatch(s.id));
   }
 
   // Phase 7: a parent may preview ONLY the courses of their linked children.
@@ -263,6 +278,51 @@ export async function GET(
       f.progress = lp?.progress || 0;
       f.isCompleted = !!lp?.isCompleted;
     }
+  }
+
+  // Phase B — the "video available" tree indicator recognises MODERN
+  // SessionVideo rows, not only the legacy `Lesson.videoUrl` column. The old
+  // fragmentation: a lesson whose recording was published through the batch
+  // system (SessionVideo.lessonId) had no badge, while its video rendered
+  // nowhere on the lesson page.
+  //
+  //   * students: a lesson has video when the student's OWN batch holds a
+  //     PUBLISHED, track-eligible recording linked to it — the same audience
+  //     rule the lesson page's player and the standalone library apply
+  //     (batchId + isPublished + batch.schoolType), so the three surfaces
+  //     share one definition of "student-visible video" and can never
+  //     contradict each other.
+  //   * staff previews: any PUBLISHED recording linked to the lesson.
+  //
+  // The legacy column stays a FALLBACK: pre-Phase-12 lessons whose only
+  // media is `Lesson.videoUrl` keep their badge (documented dependency —
+  // the column is neither deleted nor migrated in Phase B).
+  //
+  // The flag is a BOOLEAN presence only. A PUBLISHED + LOCKED session still
+  // shows its skeleton badge, but no URL, id or title ever leaves this route
+  // for a locked row (the Phase 4/16 redaction contract is untouched).
+  const videoLessonIds = new Set<string>();
+  if (lessonIds.length) {
+    let rows: { lessonId: string | null }[] = [];
+    if (studentId && studentBatchId) {
+      rows = await db.sessionVideo.findMany({
+        where: {
+          batchId: studentBatchId,
+          isPublished: true,
+          lessonId: { in: lessonIds },
+          // A student with an unrecognised school type gets an impossible
+          // filter — presence fails closed, exactly like the video list.
+          ...videoTrackFilter(viewerSchoolType),
+        },
+        select: { lessonId: true },
+      });
+    } else if (!studentId) {
+      rows = await db.sessionVideo.findMany({
+        where: { isPublished: true, lessonId: { in: lessonIds } },
+        select: { lessonId: true },
+      });
+    }
+    for (const r of rows) if (r.lessonId) videoLessonIds.add(r.lessonId);
   }
 
   // Determine locked / current / completed statuses from the SHARED session
@@ -361,7 +421,9 @@ export async function GET(
       // Phase 16 — lock-independent presence. A PUBLISHED + LOCKED session
       // shows its skeleton, and these flags ARE the skeleton. Booleans and a
       // count only: no identities, no locations, no titles.
-      hasVideo: !!lesson.videoUrl,
+      // Phase B — modern SessionVideo rows are authoritative for uploaded
+      // recordings; the legacy column remains a documented fallback.
+      hasVideo: !!lesson.videoUrl || videoLessonIds.has(lesson.id),
       hasPdf: downloadableCount > 0,
       materialCount: downloadableCount,
       summary: locked ? null : lesson.summary,

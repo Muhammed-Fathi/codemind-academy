@@ -1649,6 +1649,15 @@ export const DICT_2026: Record<string, DictEntry> = {
     ar: "الفيديو ده بيشتغل من مصدر خارجي، فمش بيتسجل منه نسبة مشاهدة.",
     en: "This video plays from an external source, so watch progress is not tracked for it.",
   },
+  // ---------- Phase B: lesson video workspace states ----------
+  "course.228": {
+    ar: "لا يوجد فيديو متاح لهذه الحصة حاليًا",
+    en: "No video is available for this session right now.",
+  },
+  "course.229": {
+    ar: "مش قادرين نيجي بفيديوهات الحصة دلوقتي. جرّب تاني.",
+    en: "We could not load this session's videos right now. Please try again.",
+  },
 
   // ---------- Mock Exam: RANDOM/FIXED pool & manual Question Bank ----------
   // A published exam whose eligible pool is empty is a configuration problem
