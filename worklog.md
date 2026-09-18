@@ -2203,3 +2203,101 @@ Verification (this sandbox, offline):
 
 No PR, no merge, no Phase C, no Live Sessions / Notifications / progression /
 publishing-UI changes.
+
+---
+Task ID: 21
+Agent: Arena Agent Mode
+Task: Phase C — Curriculum Aggregation / Unified Lesson Content. ONE coherent
+academic-content aggregation model: the Lesson as the single academic
+workspace with a consistent content summary shared by every student-facing
+curriculum surface.
+
+Discovery (live code, not the audit):
+- The course tree (GET /api/courses/[slug]) derived hasQuiz/hasAssignment from
+  RAW lesson.quizzes/lesson.homeworks rows WITHOUT the viewer's track filter —
+  a SHARED lesson with only a LANGUAGE quiz showed a "Quiz" badge to an ARABIC
+  student while the lesson page (which filters) said "no quiz". It also
+  carried its own private SessionVideo presence query (Phase B) next to the
+  Phase 14 material descriptors.
+- The lesson page (GET /api/lessons/[id]) already track-filtered its lists.
+- The dashboard exposed only the legacy Lesson.videoUrl on continueLesson.
+
+Changes:
+- NEW src/lib/lesson-content.ts — the ONE server-side Lesson Content Summary
+  authority. buildLessonContentSummaries (batched; ONE SessionVideo query)
+  + buildLessonContentSummary (pure) + toLessonContentPayload. States
+  ABSENT | AVAILABLE | LOCKED per component (video / material / quiz /
+  homework) + natural counts. Reuses eligibleTrackScopes / videoTrackFilter
+  (Phase 12) and buildMaterialDescriptors (Phase 14) and the Phase A/B
+  batch+publication video rule. It NEVER reads progress, never computes
+  unlock, never imports session-progress — it is not a second progression
+  engine. LOCKED is defined for the UI but NO producer emits it today (no
+  existing child-component rule fires below an accessible lesson; a
+  track-ineligible row is hidden, not locked — the documented non-oracle
+  policy). Legacy fallbacks documented: Lesson.videoUrl counts as at most one
+  video when no modern row is visible; Lesson.pdfUrl stays inside the Phase 14
+  descriptor rule; parent/staff video preview behaviour retained.
+- courses/[slug] route: badges (hasVideo/hasPdf/materialCount/hasQuiz/
+  hasAssignment) + a serialized `content` block now derive from the authority;
+  the inline SessionVideo query and the raw quiz/homework counts are gone;
+  quizzes/homeworks includes select trackScope. Locked-lesson redaction and
+  skeleton-badge contracts untouched.
+- lessons/[id] route: `content` in the payload, computed AFTER canAccessLesson
+  in the student's own audience (schoolType + batch via the same lazy
+  syncStudentBatch reconcile the video list uses).
+- students/me/dashboard route: continueLesson.content from the same authority
+  (legacy videoUrl field retained — pinned by phase19).
+- student-lesson.tsx: ONE workspace order — Videos → Summary → Materials →
+  Quiz → Homework → Mark complete → Requirements → prev/next (sidebar keeps
+  tip + notes). Materials section always renders with the approved empty state
+  course.230 "لا توجد ملفات متاحة لهذه الحصة حاليًا"; quiz/homework empty
+  states moved to the approved copy course.231/232; Arabic-first section
+  titles course.233/235/236; defensive LOCKED rendering course.239.
+- student-course.tsx: tree badges are now four compact icon chips (video /
+  material ×N / quiz / homework) with localized aria-label + title, reading
+  lesson.content; legacy flags kept as a defensive fallback.
+- student-dashboard.tsx: Continue Learning card renders the same chips from
+  continueLesson.content.
+- i18n-dict-2026.ts: course.230–course.239 (approved empty-state copy + titles
+  + chip labels), AR+EN.
+- tests/lesson-content-aggregation-phaseC.test.js — NEW suite (128 assertions,
+  A–U): modern-only/legacy video, SHARED-lesson audience isolation both ways,
+  multi-video counts, material presence/inactive/asset-less/other-track
+  filtering, quiz/homework ABSENT-vs-AVAILABLE, full + empty lessons, locked
+  lesson (403 + skeleton + redaction), cross-course 403, cross-track
+  isolation, archived/DRAFT non-oracle 404s, tree/lesson/dashboard one-author
+  ity, engine + lifecycle source pins (progression & readiness untouched).
+- tests/session-progression.test.js, tests/student-locked-curriculum-phase16
+  .test.js, tests/student-session-media-alignment-phaseB.test.js: source-pin
+  SUPERSESSIONS (documented in place; contract intent preserved).
+- tests/parent-analytics-alignment-phase19.test.js: mock gains empty batch /
+  sessionVideo tables (same accommodation Phase B made in the
+  parent-dashboard-isolation mock; students carry batchId null → NO_BATCH, no
+  write).
+- docs/PHASE_C_LESSON_CONTENT_AGGREGATION.md — full contract, matrix, legacy
+  documentation, manual QA checklist.
+
+NOT changed: Prisma schema, migrations, seeds, session-progress.ts,
+session-lifecycle.ts, session-materials.ts, track-scope.ts, quiz/homework
+attempt/grading flows, readiness/OPEN rules, 95% semantics, Phase D/F/H items.
+
+Verification (this sandbox, offline):
+- Phase C suite: 128/0. All ten required regressions 0-failed: phaseB,
+  phaseA, phase16, session-progression, authorization-invariants,
+  track-architecture-phase12, session-lifecycle-phase13,
+  session-materials-phase14, parent-dashboard-isolation, phase26b-student-flow
+  (+ session-quiz, quiz-analytics, teacher-workflow-phase18,
+  admin-publishing-phase15, curriculum-reconciliation-phase11,
+  session-media-publishing-audit, session-notifications-phase17,
+  parent-analytics-alignment-phase19 176/0). Full offline .test.js sweep:
+  green.
+- npx tsc --noEmit — PASS. npm run build:postgres — PASS (no migrations run;
+  NOTE: it regenerates the PostgreSQL Prisma client — local SQLite dev needs
+  `npx prisma generate` afterwards). ESLint: no NEW errors (the 5
+  react-hooks/set-state-in-effect errors in the three touched components are
+  byte-identical pre-existing on the base commit).
+- Sandbox note: binaries.prisma.sh is blocked here; a local engine mirror was
+  used for `prisma generate` only (types). Repo code is unaffected.
+
+No PR, no merge, no schema/migration/seed change, no data rewrite, no Phase
+D/F/H work.

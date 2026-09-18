@@ -426,22 +426,34 @@ async function main() {
   section("F. Course tree — locked skeleton without protected content");
 
   const courseRoute = read("src/app/api/courses/[slug]/route.ts");
+  const lessonContentLib = read("src/lib/lesson-content.ts");
   pinned(courseRoute, /officialCode: lesson\.officialCode \?\? null,/, "F1: session identity is serialised");
-  // PHASE B SUPERSESSION (the lock-independence intent is preserved): the
-  // badge now recognises MODERN SessionVideo rows (batch + published +
-  // track, computed server-side in this route) with the legacy column kept
-  // as a documented fallback — so a lesson with a published batch recording
-  // but a NULL videoUrl is badged like any other video-bearing session.
+  // PHASE C SUPERSESSION of the PHASE B SUPERSESSION (the lock-independence
+  // intent is preserved): the badge now reads the shared Lesson Content
+  // Summary authority (src/lib/lesson-content.ts), which still recognises
+  // MODERN SessionVideo rows (batch + published + track) with the legacy
+  // column kept as a documented fallback — so a lesson with a published
+  // batch recording but a NULL videoUrl is badged like any other
+  // video-bearing session. The authority is the SAME module the lesson page
+  // and the dashboard call, so the surfaces cannot disagree.
   pinned(
     courseRoute,
-    /hasVideo: !!lesson\.videoUrl \|\| videoLessonIds\.has\(lesson\.id\),/,
-    "F2: video presence = legacy videoUrl OR an eligible modern SessionVideo (lock-independent)"
+    /hasVideo: \(content\?\.video\.count \?\? 0\) > 0,/,
+    "F2: video presence = legacy videoUrl OR an eligible modern SessionVideo (lock-independent, via the shared authority)"
+  );
+  pinned(
+    lessonContentLib,
+    /const videoCount = modernCount > 0 \? modernCount : legacyVideo \? 1 : 0;/,
+    "F2b: the authority keeps modern-rows-first with the legacy fallback counting at most one"
   );
   absent(courseRoute, /hasVideo: locked/, "F2-neg: video presence is never lock-gated", "      hasVideo: locked ? false : true,");
-  pinned(courseRoute, /hasPdf: downloadableCount > 0,/, "F3: file presence is lock-independent");
+  pinned(courseRoute, /hasPdf: \(content\?\.material\.count \?\? 0\) > 0,/, "F3: file presence is lock-independent");
   absent(courseRoute, /hasPdf:\s*!locked/, "F3-neg: file presence is never lock-gated", "      hasPdf: !locked && true,");
-  pinned(courseRoute, /materialCount: downloadableCount,/, "F4: material count is serialised (a count, not identities)");
-  pinned(courseRoute, /includeProtected: true,/, "F5: presence is computed over the unredacted descriptor list");
+  pinned(courseRoute, /materialCount: content\?\.material\.count \?\? 0,/, "F4: material count is serialised (a count, not identities)");
+  // PHASE C SUPERSESSION: `includeProtected: true` moved INTO the authority
+  // (lesson-content.ts builds presence over the UNREDACTED descriptor list),
+  // which is exactly the property this pin was protecting.
+  pinned(lessonContentLib, /includeProtected: true,/, "F5: presence is computed over the unredacted descriptor list");
   pinned(courseRoute, /materials: locked \? \[\] : materials,/, "F6: locked sessions still get an empty descriptor list");
   // Phase 4 redaction re-asserted: every protected field stays locked→null.
   for (const field of ["videoUrl", "pdfUrl", "summary", "description", "quiz", "homework", "requirements"]) {

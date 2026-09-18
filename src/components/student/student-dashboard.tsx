@@ -100,6 +100,14 @@ type DashboardData = {
     progress: number;
     isCompleted: boolean;
     videoUrl: string | null;
+    /** Phase C — the shared Lesson Content Summary (same authority as the
+     * course tree and the lesson workspace). */
+    content?: {
+      video: { state: "ABSENT" | "AVAILABLE" | "LOCKED"; count: number };
+      material: { state: "ABSENT" | "AVAILABLE" | "LOCKED"; count: number };
+      quiz: { state: "ABSENT" | "AVAILABLE" | "LOCKED"; count: number };
+      homework: { state: "ABSENT" | "AVAILABLE" | "LOCKED"; count: number };
+    } | null;
     courseSlug: string;
   } | null;
   nextSession: {
@@ -408,6 +416,53 @@ function DashboardHome({
                     <div className="text-lg font-semibold leading-snug">
                       {data.continueLesson.title}
                     </div>
+                    {/* Phase C — content indicator chips from the SAME
+                        aggregation authority as the course tree; icons only,
+                        localized accessible labels, no raw ids. */}
+                    {data.continueLesson.content && (
+                      <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                        {(data.continueLesson.content.video.count ?? 0) > 0 && (
+                          <span
+                            role="img"
+                            aria-label={t("course.220")}
+                            title={t("course.220")}
+                            className="inline-flex items-center h-5 min-w-5 px-1 rounded-md bg-primary/10 text-primary"
+                          >
+                            <Video className="w-3 h-3" />
+                          </span>
+                        )}
+                        {(data.continueLesson.content.material.count ?? 0) > 0 && (
+                          <span
+                            role="img"
+                            aria-label={t("course.221")}
+                            title={t("course.221")}
+                            className="inline-flex items-center h-5 min-w-5 px-1 rounded-md bg-amber-400/15 text-amber-500"
+                          >
+                            <FileText className="w-3 h-3" />
+                          </span>
+                        )}
+                        {(data.continueLesson.content.quiz.count ?? 0) > 0 && (
+                          <span
+                            role="img"
+                            aria-label={t("course.237")}
+                            title={t("course.237")}
+                            className="inline-flex items-center h-5 min-w-5 px-1 rounded-md bg-primary/10 text-primary"
+                          >
+                            <Trophy className="w-3 h-3" />
+                          </span>
+                        )}
+                        {(data.continueLesson.content.homework.count ?? 0) > 0 && (
+                          <span
+                            role="img"
+                            aria-label={t("course.238")}
+                            title={t("course.238")}
+                            className="inline-flex items-center h-5 min-w-5 px-1 rounded-md bg-amber-400/15 text-amber-500"
+                          >
+                            <ClipboardList className="w-3 h-3" />
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between text-xs">

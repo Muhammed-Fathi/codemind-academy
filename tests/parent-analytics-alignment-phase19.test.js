@@ -111,6 +111,14 @@ function makeMockDb() {
     // history (pending/rejected block); the generic delegate answers an empty
     // table exactly like Prisma would for a student with no requests.
     payment: [],
+    // PHASE C: the dashboard's continueLesson content summary resolves the
+    // student's batch audience (the SAME lazy-reconcile rule the session-video
+    // list uses — empty table → NO_BATCH, no write) and counts modern
+    // SessionVideo rows through the shared Lesson Content Summary authority.
+    // The fixtures carry no Batch / SessionVideo rows, so the summary degrades
+    // to the legacy-videoUrl-only presence exactly like the pre-Phase-C card.
+    batch: [],
+    sessionVideo: [],
   };
   const clone = (v) => (v === undefined ? v : structuredClone(v));
   const byId = (arr, id) => arr.find((r) => r.id === id) || null;

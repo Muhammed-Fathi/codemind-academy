@@ -129,6 +129,13 @@ type LessonView = {
   } | null;
   /** Phase 16 — server-computed unlock requirements (video/quiz/assignment). */
   requirements?: SessionRequirements | null;
+  /** Phase C — the shared Lesson Content Summary (same authority as the tree). */
+  content?: {
+    video: { state: "ABSENT" | "AVAILABLE" | "LOCKED"; count: number };
+    material: { state: "ABSENT" | "AVAILABLE" | "LOCKED"; count: number };
+    quiz: { state: "ABSENT" | "AVAILABLE" | "LOCKED"; count: number };
+    homework: { state: "ABSENT" | "AVAILABLE" | "LOCKED"; count: number };
+  } | null;
   prevLessonId: string | null;
   nextLessonId: string | null;
 };
@@ -482,31 +489,53 @@ export function StudentLessonView() {
             </motion.div>
           )}
 
-          {/* PDF / session materials (Phase 14 — authorized download paths) */}
-          {((data.lesson.materials && data.lesson.materials.length > 0) ||
-            data.lesson.pdfUrl) && (
-            <motion.div
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.12 }}
-            >
-              <Card className="glass">
-                <CardContent className="space-y-3 py-4">
-                  {(data.lesson.materials && data.lesson.materials.length > 0
-                    ? data.lesson.materials
-                    : [
-                        {
-                          id: "legacy",
-                          title: t("course.063"),
-                          kind: "LEGACY_URL",
-                          trackScope: "SHARED",
-                          downloadUrl: data.lesson.pdfUrl,
-                          mimeType: "application/pdf",
-                          sizeBytes: null,
-                          legacy: true,
-                        },
-                      ]
-                  ).map((m) => {
+          {/* Materials — Phase C: the session's authorized files live in the
+              academic flow (Videos → Materials → Quiz → Homework). The card
+              always renders; an absent list shows the approved lightweight
+              empty state, never a broken control. */}
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.12 }}
+          >
+            <Card className="glass">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <FileText className="w-5 h-5 text-amber-500" />
+                  {t("course.233")}
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  {t("course.234")}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {(() => {
+                  const materialRows =
+                    data.lesson.materials && data.lesson.materials.length > 0
+                      ? data.lesson.materials
+                      : data.lesson.pdfUrl
+                        ? [
+                            {
+                              id: "legacy",
+                              title: t("course.063"),
+                              kind: "LEGACY_URL",
+                              trackScope: "SHARED",
+                              downloadUrl: data.lesson.pdfUrl,
+                              mimeType: "application/pdf",
+                              sizeBytes: null,
+                              legacy: true,
+                            },
+                          ]
+                        : [];
+                  if (materialRows.length === 0) {
+                    return (
+                      <div className="text-center py-3 text-sm text-muted-foreground">
+                        <FileText className="w-5 h-5 mx-auto mb-1 opacity-40" />
+                        {t("course.230")}
+                      </div>
+                    );
+                  }
+                  return materialRows.map((m) => {
                     const href = m.downloadUrl
                       ? m.legacy
                         ? m.downloadUrl
@@ -515,7 +544,7 @@ export function StudentLessonView() {
                     if (!href) return null;
                     return (
                       <div key={m.id} className="flex items-center gap-3">
-                        <div className="grid place-items-center w-10 h-10 rounded-lg bg-amber-400/15 text-amber-500">
+                        <div className="grid place-items-center w-10 h-10 rounded-lg bg-amber-400/15 text-amber-500 shrink-0">
                           <FileText className="w-5 h-5" />
                         </div>
                         <div className="flex-1 min-w-0">
@@ -539,11 +568,164 @@ export function StudentLessonView() {
                         </a>
                       </div>
                     );
-                  })}
-                </CardContent>
-              </Card>
-            </motion.div>
-          )}
+                  });
+                })()}
+              </CardContent>
+            </Card>
+          </motion.div>
+
+          {/* Quiz — Phase C: in the academic flow after materials. Presence,
+              empty and (defensively) locked states come from the SAME server
+              content summary the course tree badges use. */}
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.14 }}
+          >
+            <Card className="glass card-hover">
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <div className="grid place-items-center w-9 h-9 rounded-lg bg-primary/10 text-primary">
+                    <Trophy className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-base">
+                      {t("course.235")}
+                    </CardTitle>
+                    <CardDescription className="text-xs">
+                      {t("course.074")}
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {data.content?.quiz.state === "LOCKED" ? (
+                  <div className="text-center py-3 text-sm text-muted-foreground">
+                    <Lock className="w-5 h-5 mx-auto mb-1 opacity-40" />
+                    {t("course.239")}
+                  </div>
+                ) : data.quizzes.length > 0 ? (
+                  <div className="space-y-4">
+                    {/* One card per quiz: the Phase 4 engine requires EVERY
+                        quiz of a session to be attempted before the session
+                        completes, so each one must be reachable here. */}
+                    {data.quizzes.map((q) => (
+                      <div key={q.id} className="space-y-3">
+                        <div>
+                          <div className="text-sm font-semibold">
+                            {pickAuto(q.titleAr, q.title)}
+                          </div>
+                          {q.description && (
+                            <div className="text-xs text-muted-foreground mt-1">
+                              {q.description}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Badge variant="outline" className="bg-muted/50">
+                            {q.questions.length} Questions
+                          </Badge>
+                          <Badge variant="outline" className="bg-muted/50">
+                            Pass: {q.passMark}%
+                          </Badge>
+                        </div>
+                        <Button
+                          className="w-full"
+                          onClick={() => {
+                            setView("student-quiz");
+                            setNavParam(q.id);
+                          }}
+                        >
+                          <Trophy className="w-4 h-4 ms-1.5" />
+                          {t("course.075")}
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-3 text-sm text-muted-foreground">
+                    <Trophy className="w-5 h-5 mx-auto mb-1 opacity-40" />
+                    {t("course.231")}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </motion.div>
+
+          {/* Homework — Phase C: last stop of the academic flow. */}
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.16 }}
+          >
+            <Card className="glass card-hover">
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <div className="grid place-items-center w-9 h-9 rounded-lg bg-amber-400/15 text-amber-500">
+                    <ClipboardList className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-base">
+                      {t("course.236")}
+                    </CardTitle>
+                    <CardDescription className="text-xs">
+                      {t("course.077")}
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {data.content?.homework.state === "LOCKED" ? (
+                  <div className="text-center py-3 text-sm text-muted-foreground">
+                    <Lock className="w-5 h-5 mx-auto mb-1 opacity-40" />
+                    {t("course.239")}
+                  </div>
+                ) : data.homework ? (
+                  <div className="space-y-3">
+                    <div>
+                      <div className="text-sm font-semibold">
+                        {pickAuto(data.homework.titleAr, data.homework.title)}
+                      </div>
+                      {data.homework.instructions && (
+                        <div className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                          {data.homework.instructions}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 text-xs">
+                      <Badge variant="outline" className="bg-muted/50">
+                        <Clock className="w-3 h-3 ms-1" />
+                        {new Intl.DateTimeFormat(
+                          locale === "en" ? "en-GB" : "ar-EG",
+                          {
+                            day: "numeric",
+                            month: "short",
+                          }
+                        ).format(new Date(data.homework.deadline))}
+                      </Badge>
+                      <Badge variant="outline" className="bg-muted/50">
+                        <GraduationCap className="w-3 h-3 ms-1" />
+                        {data.homework.maxMarks} {t("course.078")}
+                      </Badge>
+                    </div>
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => setView("student-homework")}
+                    >
+                      <ClipboardList className="w-4 h-4 ms-1.5" />
+                      {t("course.079")}
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="text-center py-3 text-sm text-muted-foreground">
+                    <ClipboardList className="w-5 h-5 mx-auto mb-1 opacity-40" />
+                    {t("course.232")}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </motion.div>
 
           {/* Mark complete */}
           <motion.div
@@ -647,139 +829,8 @@ export function StudentLessonView() {
           </div>
         </div>
 
-        {/* Right sidebar: Quiz + Homework */}
+        {/* Sidebar — study companion */}
         <div className="space-y-4">
-          {/* Quiz */}
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, delay: 0.1 }}
-          >
-            <Card className="glass card-hover">
-              <CardHeader>
-                <div className="flex items-center gap-2">
-                  <div className="grid place-items-center w-9 h-9 rounded-lg bg-primary/10 text-primary">
-                    <Trophy className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-base">Quiz</CardTitle>
-                    <CardDescription className="text-xs">
-                      {t("course.074")}</CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {data.quizzes.length > 0 ? (
-                  <div className="space-y-4">
-                    {/* One card per quiz: the Phase 4 engine requires EVERY
-                        quiz of a session to be attempted before the session
-                        completes, so each one must be reachable here. */}
-                    {data.quizzes.map((q) => (
-                      <div key={q.id} className="space-y-3">
-                        <div>
-                          <div className="text-sm font-semibold">
-                            {pickAuto(q.titleAr, q.title)}
-                          </div>
-                          {q.description && (
-                            <div className="text-xs text-muted-foreground mt-1">
-                              {q.description}
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <Badge variant="outline" className="bg-muted/50">
-                            {q.questions.length} Questions
-                          </Badge>
-                          <Badge variant="outline" className="bg-muted/50">
-                            Pass: {q.passMark}%
-                          </Badge>
-                        </div>
-                        <Button
-                          className="w-full"
-                          onClick={() => {
-                            setView("student-quiz");
-                            setNavParam(q.id);
-                          }}
-                        >
-                          <Trophy className="w-4 h-4 ms-1.5" />
-                          {t("course.075")}
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-3 text-sm text-muted-foreground">
-                    <Trophy className="w-5 h-5 mx-auto mb-1 opacity-40" />
-                    {t("course.076")}</div>
-                )}
-              </CardContent>
-            </Card>
-          </motion.div>
-
-          {/* Homework */}
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, delay: 0.15 }}
-          >
-            <Card className="glass card-hover">
-              <CardHeader>
-                <div className="flex items-center gap-2">
-                  <div className="grid place-items-center w-9 h-9 rounded-lg bg-amber-400/15 text-amber-500">
-                    <ClipboardList className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-base">Homework</CardTitle>
-                    <CardDescription className="text-xs">
-                      {t("course.077")}</CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {data.homework ? (
-                  <div className="space-y-3">
-                    <div>
-                      <div className="text-sm font-semibold">
-                        {pickAuto(data.homework.titleAr, data.homework.title)}
-                      </div>
-                      {data.homework.instructions && (
-                        <div className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                          {data.homework.instructions}
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 text-xs">
-                      <Badge variant="outline" className="bg-muted/50">
-                        <Clock className="w-3 h-3 ms-1" />
-                        {new Intl.DateTimeFormat(
-                          locale === "en" ? "en-GB" : "ar-EG",
-                          {
-                            day: "numeric",
-                            month: "short",
-                          }
-                        ).format(new Date(data.homework.deadline))}
-                      </Badge>
-                      <Badge variant="outline" className="bg-muted/50">
-                        <GraduationCap className="w-3 h-3 ms-1" />
-                        {data.homework.maxMarks} {t("course.078")}</Badge>
-                    </div>
-                    <Button
-                      variant="outline"
-                      className="w-full"
-                      onClick={() => setView("student-homework")}
-                    >
-                      <ClipboardList className="w-4 h-4 ms-1.5" />
-                      {t("course.079")}</Button>
-                  </div>
-                ) : (
-                  <div className="text-center py-3 text-sm text-muted-foreground">
-                    <ClipboardList className="w-5 h-5 mx-auto mb-1 opacity-40" />
-                    {t("course.080")}</div>
-                )}
-              </CardContent>
-            </Card>
-          </motion.div>
-
           {/* Quick tip */}
           <Card className="glass border-primary/20">
             <CardContent className="py-4">

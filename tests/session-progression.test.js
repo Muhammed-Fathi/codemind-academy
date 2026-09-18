@@ -662,8 +662,15 @@ async function main() {
       `course tree redacts ${field} for locked sessions`
     );
   }
-  ok(/hasQuiz: lesson\.quizzes\.length > 0/.test(courseRoute), "course tree keeps a quiz PRESENCE flag");
-  ok(/hasAssignment: lesson\.homeworks\.length > 0/.test(courseRoute), "course tree keeps an assignment PRESENCE flag");
+  // PHASE C SUPERSESSION (the presence-flag contract is preserved): the
+  // quiz/homework badges now read the shared Lesson Content Summary
+  // authority (src/lib/lesson-content.ts) instead of raw row counts — the
+  // flags remain booleans, stay lock-independent, and no longer count the
+  // OTHER track's rows on a SHARED lesson (the aggregation the lesson page
+  // already applied).
+  ok(/hasQuiz: \(content\?\.quiz\.count \?\? 0\) > 0/.test(courseRoute), "course tree keeps a quiz PRESENCE flag");
+  ok(/hasAssignment: \(content\?\.homework\.count \?\? 0\) > 0/.test(courseRoute), "course tree keeps an assignment PRESENCE flag");
+  ok(/rowScopeEligible\(/.test(read("src/lib/lesson-content.ts")), "the authority track-filters quiz/homework presence");
   ok(/requirements: locked \? null/.test(courseRoute), "course tree redacts the requirement breakdown");
 
   section("22. Source invariants: the course tree represents BOTH chains");

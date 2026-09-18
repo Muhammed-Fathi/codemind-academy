@@ -19,10 +19,18 @@ import {
   eligibleTrackScopes,
   trackScopeInWhere,
   trackScopeWhere,
-  videoTrackFilter,
 } from "@/lib/track-scope";
 import { getServerT } from "@/lib/i18n-server";
 import { buildMaterialDescriptors } from "@/lib/session-materials";
+// Phase C — the ONE Lesson Content Summary authority. The tree's content
+// indicators (video / material / quiz / homework) derive from the SAME
+// aggregation the lesson page and the dashboard use; no per-surface hasX
+// re-implementation remains in this route.
+import {
+  buildLessonContentSummaries,
+  toLessonContentPayload,
+  type LessonContentViewer,
+} from "@/lib/lesson-content";
 
 // GET /api/courses/[slug]
 // Returns course + parts + units + lessons (+ legacy topics) with the current
@@ -65,8 +73,8 @@ type LessonRow = {
 };
 
 const LESSON_INCLUDE = {
-  quizzes: { orderBy: { order: "asc" as const }, select: { id: true, titleAr: true, title: true } },
-  homeworks: { select: { id: true, titleAr: true, title: true, deadline: true } },
+  quizzes: { orderBy: { order: "asc" as const }, select: { id: true, titleAr: true, title: true, trackScope: true } },
+  homeworks: { select: { id: true, titleAr: true, title: true, deadline: true, trackScope: true } },
   // Phase 14 — active materials only. storageKey deliberately omitted.
   materials: {
     where: { isActive: true },
@@ -116,6 +124,12 @@ export async function GET(
   // query below (the batch audience rule is a schoolType equality, not a
   // request parameter).
   let viewerSchoolType: string | null = null;
+  // Phase C — the viewer context the shared Lesson Content Summary authority
+  // aggregates in. Students aggregate in their OWN audience (school type +
+  // batch); parents in the union of their children's tracks; staff preview
+  // everything. The eligibility predicates themselves stay in the established
+  // modules (track-scope / session-materials / the batch video rule).
+  let contentViewer: LessonContentViewer = { role: "STAFF" };
   if (user.role === "STUDENT") {
     const viewer = await getStudentProfile(user.id);
     const schoolType = viewer ? await getStudentSchoolType(viewer.id) : null;
@@ -127,6 +141,7 @@ export async function GET(
     const scopes = await getParentTrackScopes(user.id);
     viewerTrackFilter = trackScopeInWhere(scopes);
     viewerEligibleScopes = [...scopes];
+    contentViewer = { role: "PARENT", scopes: [...scopes] };
   } else {
     // TEACHER / ADMIN: every status, so staging is manageable.
     viewerLifecycleFilter = {};
@@ -197,6 +212,14 @@ export async function GET(
     }
     studentId = s.id;
     studentBatchId = s.batchId || (await syncStudentBatch(s.id));
+    // Phase C — the tree's content indicators aggregate in the student's own
+    // audience (school type + batch), so a SHARED lesson's badges never count
+    // the other track's recordings or rows.
+    contentViewer = {
+      role: "STUDENT",
+      schoolType: viewerSchoolType,
+      batchId: studentBatchId,
+    };
   }
 
   // Phase 7: a parent may preview ONLY the courses of their linked children.
@@ -280,50 +303,37 @@ export async function GET(
     }
   }
 
-  // Phase B — the "video available" tree indicator recognises MODERN
-  // SessionVideo rows, not only the legacy `Lesson.videoUrl` column. The old
-  // fragmentation: a lesson whose recording was published through the batch
-  // system (SessionVideo.lessonId) had no badge, while its video rendered
-  // nowhere on the lesson page.
+  // Phase C — ONE aggregation for every content indicator on the tree. The
+  // previous fragmentation: this route carried its own modern-video query
+  // (Phase B), derived material presence through the Phase 14 descriptors,
+  // and counted quizzes/homeworks from RAW rows WITHOUT the viewer's track
+  // filter — so a SHARED lesson hosting only a LANGUAGE quiz showed a "Quiz"
+  // badge to an ARABIC student while the lesson page (which filters) said
+  // "no quiz". All four dimensions now come from
+  // `buildLessonContentSummaries`, the SAME authority the lesson page and
+  // the Continue Learning card call:
   //
-  //   * students: a lesson has video when the student's OWN batch holds a
-  //     PUBLISHED, track-eligible recording linked to it — the same audience
-  //     rule the lesson page's player and the standalone library apply
-  //     (batchId + isPublished + batch.schoolType), so the three surfaces
-  //     share one definition of "student-visible video" and can never
-  //     contradict each other.
-  //   * staff previews: any PUBLISHED recording linked to the lesson.
+  //   * video    — modern SessionVideo rows of the student's OWN batch
+  //                (PUBLISHED + track-eligible; the Phase A/B audience rule)
+  //                with the legacy `Lesson.videoUrl` kept as a documented
+  //                fallback counting as at most one video;
+  //   * material — the Phase 14 descriptor authority (isActive + downloadable
+  //                + eligible trackScope + legacy pdfUrl fallback), computed
+  //                over the UNREDACTED list so the Phase 16 skeleton badges
+  //                stay lock-independent;
+  //   * quiz /
+  //     homework — existence in the viewer's OWN track slice. The other
+  //                audience's rows are neither exposed nor counted (they read
+  //                ABSENT for this viewer), matching the lesson page exactly.
   //
-  // The legacy column stays a FALLBACK: pre-Phase-12 lessons whose only
-  // media is `Lesson.videoUrl` keep their badge (documented dependency —
-  // the column is neither deleted nor migrated in Phase B).
-  //
-  // The flag is a BOOLEAN presence only. A PUBLISHED + LOCKED session still
-  // shows its skeleton badge, but no URL, id or title ever leaves this route
-  // for a locked row (the Phase 4/16 redaction contract is untouched).
-  const videoLessonIds = new Set<string>();
-  if (lessonIds.length) {
-    let rows: { lessonId: string | null }[] = [];
-    if (studentId && studentBatchId) {
-      rows = await db.sessionVideo.findMany({
-        where: {
-          batchId: studentBatchId,
-          isPublished: true,
-          lessonId: { in: lessonIds },
-          // A student with an unrecognised school type gets an impossible
-          // filter — presence fails closed, exactly like the video list.
-          ...videoTrackFilter(viewerSchoolType),
-        },
-        select: { lessonId: true },
-      });
-    } else if (!studentId) {
-      rows = await db.sessionVideo.findMany({
-        where: { isPublished: true, lessonId: { in: lessonIds } },
-        select: { lessonId: true },
-      });
-    }
-    for (const r of rows) if (r.lessonId) videoLessonIds.add(r.lessonId);
-  }
+  // The summary is states + counts only: no ids, titles or URLs leave this
+  // route through it, and a PUBLISHED + LOCKED session still shows its
+  // skeleton badges while every protected field stays redacted below
+  // (the Phase 4/16 redaction contract is untouched).
+  const contentByLesson = await buildLessonContentSummaries({
+    lessons: flat.map((f) => f.lesson),
+    viewer: contentViewer,
+  });
 
   // Determine locked / current / completed statuses from the SHARED session
   // progression service, so the UI mirrors exactly what the backend enforces:
@@ -370,6 +380,11 @@ export async function GET(
   const toLesson = (lesson: LessonRow) => {
     const locked = statusById.get(lesson.id) === "locked";
     const lp = progressMap[lesson.id];
+    // Phase C — this lesson's content summary from the shared authority.
+    // Presence badges (hasVideo/hasPdf/hasQuiz/hasAssignment + materialCount)
+    // and the serialized `content` block all read from it — never from
+    // per-surface rules.
+    const content = contentByLesson.get(lesson.id) ?? null;
     // Phase 14 — material descriptors. Locked sessions get an empty list so
     // material ids are never leaked. Unlocked sessions get safe descriptors
     // (authorized /api/materials/[id] paths) — never storageKey / filesystem
@@ -387,17 +402,6 @@ export async function GET(
     };
     materialOpts["legacyPdfUrl"] = legacyUrl;
     const materials = buildMaterialDescriptors(materialOpts);
-    // Phase 16 — presence is computed over the UNREDACTED descriptor list, so
-    // a PUBLISHED + LOCKED session can carry safe skeleton badges without
-    // exposing any location, id, or title. Only the count below leaves this
-    // mapper for locked rows; the descriptors themselves stay server-side.
-    const presenceOpts: Parameters<typeof buildMaterialDescriptors>[0] = {
-      materials: materialRows,
-      includeProtected: true,
-      eligibleScopes: viewerEligibleScopes,
-    };
-    presenceOpts["legacyPdfUrl"] = legacyUrl;
-    const downloadableCount = buildMaterialDescriptors(presenceOpts).length;
     const unlockedPdf =
       materials.find((m) => m.downloadUrl && !m.legacy)?.downloadUrl ??
       materials.find((m) => m.legacy)?.downloadUrl ??
@@ -421,11 +425,14 @@ export async function GET(
       // Phase 16 — lock-independent presence. A PUBLISHED + LOCKED session
       // shows its skeleton, and these flags ARE the skeleton. Booleans and a
       // count only: no identities, no locations, no titles.
-      // Phase B — modern SessionVideo rows are authoritative for uploaded
-      // recordings; the legacy column remains a documented fallback.
-      hasVideo: !!lesson.videoUrl || videoLessonIds.has(lesson.id),
-      hasPdf: downloadableCount > 0,
-      materialCount: downloadableCount,
+      // Phase C — every flag derives from the shared Lesson Content Summary
+      // (video = modern SessionVideo rows of the viewer's own audience with
+      // the legacy videoUrl fallback; material = the Phase 14 descriptor
+      // authority; quiz/homework = existence in the viewer's OWN track
+      // slice). The lesson page and the dashboard read the SAME numbers.
+      hasVideo: (content?.video.count ?? 0) > 0,
+      hasPdf: (content?.material.count ?? 0) > 0,
+      materialCount: content?.material.count ?? 0,
       summary: locked ? null : lesson.summary,
       description: locked ? null : lesson.description,
       progress: locked ? 0 : lp?.progress || 0,
@@ -434,8 +441,14 @@ export async function GET(
       requirements: locked ? null : requirementsByLesson.get(lesson.id) ?? null,
       // Presence flags only — enough for the "Quiz"/"Homework" badges in the
       // course tree, without naming or linking the protected items.
-      hasQuiz: lesson.quizzes.length > 0,
-      hasAssignment: lesson.homeworks.length > 0,
+      // Phase C — track-filtered through the shared authority: the other
+      // audience's quiz/homework rows are neither exposed nor counted.
+      hasQuiz: (content?.quiz.count ?? 0) > 0,
+      hasAssignment: (content?.homework.count ?? 0) > 0,
+      // Phase C — the serialized summary itself (states + counts per
+      // component). The tree chips, the lesson page workspace and the
+      // Continue Learning card all describe content through this one shape.
+      content: toLessonContentPayload(content),
       quiz: locked ? null : lesson.quizzes[0] || null,
       homework: locked ? null : lesson.homeworks[0] || null,
     };

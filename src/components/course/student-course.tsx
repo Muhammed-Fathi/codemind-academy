@@ -37,6 +37,7 @@ import {
   Layers,
   Sparkles,
   Video,
+  ClipboardList,
 } from "lucide-react";
 
 // ============================================================
@@ -70,6 +71,17 @@ type LessonItem = {
   hasVideo?: boolean;
   hasPdf?: boolean;
   materialCount?: number;
+  /**
+   * Phase C — the shared Lesson Content Summary (video / material / quiz /
+   * homework states + counts). Same authority as the lesson page and the
+   * dashboard; the chips below never re-derive presence locally.
+   */
+  content?: {
+    video: { state: "ABSENT" | "AVAILABLE" | "LOCKED"; count: number };
+    material: { state: "ABSENT" | "AVAILABLE" | "LOCKED"; count: number };
+    quiz: { state: "ABSENT" | "AVAILABLE" | "LOCKED"; count: number };
+    homework: { state: "ABSENT" | "AVAILABLE" | "LOCKED"; count: number };
+  } | null;
   quiz: { id: string; title: string; titleAr: string } | null;
   homework: { id: string; title: string; titleAr: string } | null;
 };
@@ -475,31 +487,48 @@ function LessonRow({ lesson }: { lesson: LessonItem }) {
           <span className="flex items-center gap-1">
             <Clock className="w-3 h-3" />
             {lesson.duration} {tr("course.045")}</span>
-          {/* Phase 16 — lock-independent presence badges. The API sends
-              booleans and a count only: no URLs, no ids, no titles. */}
-          {lesson.hasVideo && (
-            <span className="flex items-center gap-0.5">
-              · <Video className="w-3 h-3" /> {tr("course.220")}
-            </span>
-          )}
-          {((lesson.materialCount ?? 0) > 0 || lesson.hasPdf) && (
-            <span className="flex items-center gap-0.5">
-              · <FileText className="w-3 h-3" /> {tr("course.221")}
-              {(lesson.materialCount ?? 0) > 1
-                ? ` ×${lesson.materialCount}`
-                : ""}
-            </span>
-          )}
-          {(lesson.hasQuiz ?? !!lesson.quiz) && (
-            <span className="flex items-center gap-0.5">
-              · <Trophy className="w-3 h-3" /> Quiz
-            </span>
-          )}
-          {(lesson.hasAssignment ?? !!lesson.homework) && (
-            <span className="flex items-center gap-0.5">
-              · <FileText className="w-3 h-3" /> Homework
-            </span>
-          )}
+          {/* Phase C — content indicator chips. One row of compact icons that
+              reads the SAME server-side Lesson Content Summary the lesson
+              workspace and the dashboard use (`lesson.content`): video,
+              material (+ count), quiz, homework. Presence only — no ids, no
+              titles, no URLs; identical numbers on every surface. The legacy
+              boolean flags stay as a defensive fallback for stale payloads. */}
+          <span className="flex items-center gap-1 flex-wrap">
+            {(lesson.content?.video.count ?? 0) > 0 || lesson.hasVideo ? (
+              <ContentChip
+                icon={<Video className="w-3 h-3" />}
+                label={tr("course.220")}
+                tone="primary"
+              />
+            ) : null}
+            {((lesson.content?.material.count ?? lesson.materialCount ?? 0) > 0 ||
+              lesson.hasPdf) && (
+              <ContentChip
+                icon={<FileText className="w-3 h-3" />}
+                label={tr("course.221")}
+                tone="amber"
+                count={(lesson.content?.material.count ?? lesson.materialCount ?? 0) > 1
+                  ? (lesson.content?.material.count ?? lesson.materialCount)
+                  : null}
+              />
+            )}
+            {(lesson.content?.quiz.count ?? 0) > 0 ||
+            (lesson.hasQuiz ?? !!lesson.quiz) ? (
+              <ContentChip
+                icon={<Trophy className="w-3 h-3" />}
+                label={tr("course.237")}
+                tone="primary"
+              />
+            ) : null}
+            {(lesson.content?.homework.count ?? 0) > 0 ||
+            (lesson.hasAssignment ?? !!lesson.homework) ? (
+              <ContentChip
+                icon={<ClipboardList className="w-3 h-3" />}
+                label={tr("course.238")}
+                tone="amber"
+              />
+            ) : null}
+          </span>
         </div>
       </div>
       {lesson.isCompleted && (
@@ -532,6 +561,42 @@ function LessonRow({ lesson }: { lesson: LessonItem }) {
 // ============================================================
 // Helpers
 // ============================================================
+/**
+ * Phase C — one compact content indicator chip. Icon-only (the label rides on
+ * aria-label + title for accessibility and RTL safety), sized to the tree
+ * row, wrapped by the parent flex row on narrow screens. `tone` mirrors the
+ * accent the lesson page uses for the same component (video/quiz = primary,
+ * material/homework = amber), so the tree and the workspace speak the same
+ * visual language.
+ */
+function ContentChip({
+  icon,
+  label,
+  tone,
+  count,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  tone: "primary" | "amber";
+  count?: number | null;
+}) {
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      title={label}
+      className={`inline-flex items-center gap-0.5 h-5 min-w-5 px-1 rounded-md text-[10px] font-semibold tabular-nums ${
+        tone === "primary"
+          ? "bg-primary/10 text-primary"
+          : "bg-amber-400/15 text-amber-500"
+      }`}
+    >
+      {icon}
+      {typeof count === "number" && count > 1 ? `×${count}` : null}
+    </span>
+  );
+}
+
 function LegendDot({
   color,
   label,

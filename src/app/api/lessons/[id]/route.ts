@@ -21,8 +21,16 @@ import {
   trackScopeInWhere,
   trackScopeWhere,
 } from "@/lib/track-scope";
-import { getStudentSchoolType } from "@/lib/enrollment";
+import { getStudentSchoolType, syncStudentBatch } from "@/lib/enrollment";
 import { buildMaterialDescriptors } from "@/lib/session-materials";
+// Phase C — the ONE Lesson Content Summary authority: the lesson workspace
+// describes its own content (video / material / quiz / homework presence)
+// through the same aggregation the course tree and the dashboard use.
+import {
+  buildLessonContentSummaries,
+  toLessonContentPayload,
+  type LessonContentViewer,
+} from "@/lib/lesson-content";
 
 // GET /api/lessons/[id]
 // Returns lesson + quizzes + homework + student progress.
@@ -55,6 +63,12 @@ export async function GET(
   // Phase 14 — the same slice filters materials.
   let viewerTrackFilter: object = {};
   let viewerEligibleScopes: import("@/lib/track-scope").TrackScope[] | null = null;
+  // Phase C — the viewer context for the shared Lesson Content Summary.
+  // Students aggregate in their own audience (school type + batch, resolved
+  // after the access gate below); parents in their children's track union;
+  // staff preview unrestricted. The authority reuses the established
+  // predicates — it never re-implements an access rule.
+  let contentViewer: LessonContentViewer = { role: "STAFF" };
   if (user.role === "STUDENT") {
     const viewer = await db.student.findUnique({
       where: { userId: user.id },
@@ -67,6 +81,7 @@ export async function GET(
     const scopes = await getParentTrackScopes(user.id);
     viewerTrackFilter = trackScopeInWhere(scopes);
     viewerEligibleScopes = [...scopes];
+    contentViewer = { role: "PARENT", scopes: [...scopes] };
   }
 
   const lesson = await db.lesson.findUnique({
@@ -258,6 +273,18 @@ export async function GET(
     }
     requirements = access.status;
 
+    // Phase C — the workspace content summary aggregates in the student's
+    // OWN audience. Reached only AFTER the lesson gate, so a locked /
+    // foreign / unpublished lesson never yields a summary at all (the
+    // aggregation never bypasses `canAccessLesson`). The batch follows the
+    // SAME lazy-reconcile rule the session-video list uses, so this summary
+    // and the player's playlist can never disagree about "has video".
+    contentViewer = {
+      role: "STUDENT",
+      schoolType: await getStudentSchoolType(s.id),
+      batchId: s.batchId || (await syncStudentBatch(s.id)),
+    };
+
     if (s) {
       const lp = await db.lessonProgress.findUnique({
         where: { studentId_lessonId: { studentId: s.id, lessonId: lesson.id } },
@@ -321,6 +348,26 @@ export async function GET(
     materials.find((m) => m.downloadUrl && !m.legacy)?.downloadUrl ??
     materials.find((m) => m.legacy)?.downloadUrl ??
     null;
+
+  // Phase C — the Lesson Content Summary (the ONE authority, shared with the
+  // course tree and the Continue Learning card). States + counts only; the
+  // workspace sections and their empty states describe content through it,
+  // so the lesson page and the tree can never contradict each other.
+  const contentSummary = (
+    await buildLessonContentSummaries({
+      lessons: [
+        {
+          id: lesson.id,
+          videoUrl: lesson.videoUrl,
+          pdfUrl: lesson.pdfUrl,
+          quizzes: lesson.quizzes,
+          homeworks: lesson.homeworks,
+          materials: lesson.materials,
+        },
+      ],
+      viewer: contentViewer,
+    })
+  ).get(lesson.id) ?? null;
 
   return ok({
     lesson: {
@@ -387,6 +434,9 @@ export async function GET(
       : null,
     progress,
     requirements,
+    // Phase C — serialized Lesson Content Summary (video / material / quiz /
+    // homework states + counts for THIS viewer). Same authority as the tree.
+    content: toLessonContentPayload(contentSummary),
     videoThreshold: VIDEO_COMPLETION_THRESHOLD,
     prevLessonId,
     nextLessonId,
