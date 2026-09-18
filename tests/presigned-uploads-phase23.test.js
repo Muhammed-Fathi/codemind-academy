@@ -287,15 +287,33 @@ const MP4_BYTES = Buffer.concat([
 function makeFakeDb() {
   const calls = [];
   const rows = {
-    batches: new Map([["batch-1", { id: "batch-1" }]]),
+    // Phase A — the fixture rows carry the full academic identity the shared
+    // link validator checks: the batch's school type + course and the lesson's
+    // unit → part → course chain (same course), so (lesson-1, batch-1) is a
+    // valid academic pair.
+    batches: new Map([
+      ["batch-1", { id: "batch-1", schoolType: "ARABIC", courseId: "course-1" }],
+    ]),
     lessons: new Map([
       [
         "lesson-1",
-        { id: "lesson-1", title: "Lesson One", curriculumStatus: "READY", trackScope: "SHARED" },
+        {
+          id: "lesson-1",
+          title: "Lesson One",
+          curriculumStatus: "READY",
+          trackScope: "SHARED",
+          unit: { part: { courseId: "course-1" } },
+        },
       ],
       [
         "lesson-archived",
-        { id: "lesson-archived", title: "Old", curriculumStatus: "ARCHIVED", trackScope: "SHARED" },
+        {
+          id: "lesson-archived",
+          title: "Old",
+          curriculumStatus: "ARCHIVED",
+          trackScope: "SHARED",
+          unit: { part: { courseId: "course-1" } },
+        },
       ],
     ]),
     mediaAssets: [],
@@ -601,6 +619,9 @@ async function initVideo(deps, overrides = {}) {
       contentType: "video/mp4",
       fileName: "lesson.mp4",
       batchId: "batch-1",
+      // Phase A — a NEW session video requires its academic lesson; the
+      // validated (batch, lesson) pair is signed into the intent token.
+      lessonId: "lesson-1",
       ...overrides,
     },
     deps

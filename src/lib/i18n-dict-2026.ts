@@ -1592,6 +1592,54 @@ export const DICT_2026: Record<string, DictEntry> = {
     en: "Accepted files: MP4, WebM, OGG, MOV. If the file is larger than the allowed maximum you will get a clear message.",
   },
 
+  // ---------- Admin: session-video lesson/batch link (academic workflow Phase A) ----------
+  // Upload error reasons (mapped from server codes in src/lib/upload-error-text.ts).
+  "admin.583": {
+    ar: "لازم تختار الحصة اللي الفيديو ده بتاعتها — الفيديو بيوصل للحصة من خلال المجموعة.",
+    en: "Select the lesson this video belongs to — a video reaches its lesson through the batch.",
+  },
+  "admin.584": {
+    ar: "الحصة والمجموعة مش في نفس الكورس — اختار حصة ومجموعة من نفس الكورس.",
+    en: "The lesson and the batch belong to different courses — choose a lesson and a batch from the same course.",
+  },
+  "admin.585": {
+    ar: "الحصة مش متوافقة مع مسار المجموعة — حصة عربي للأدمن عربي، وحصة لغة لمجموعة اللغات.",
+    en: "The lesson is not compatible with the batch's track — Arabic lessons go to the Arabic batch and language lessons to the language batch.",
+  },
+  // Session video management screen.
+  "admin.586": {
+    ar: "الحصة",
+    en: "Lesson",
+  },
+  "admin.587": {
+    ar: "اختر الحصة",
+    en: "Select a lesson",
+  },
+  "admin.588": {
+    ar: "جاري تحميل الحصص…",
+    en: "Loading lessons…",
+  },
+  "admin.589": {
+    ar: "مفيش حصص متاحة للربط بالمجموعة دي.",
+    en: "No lessons are available to link to this batch.",
+  },
+  "admin.590": {
+    ar: "تعذّر تحميل الحصص. حاول تاني.",
+    en: "Could not load the lessons. Try again.",
+  },
+  "admin.591": {
+    ar: "غير مرتبط بحصة",
+    en: "Not linked to a lesson",
+  },
+  "admin.593": {
+    ar: "الوحدة {p1}",
+    en: "Unit {p1}",
+  },
+  "admin.594": {
+    ar: "الحصة {p1}",
+    en: "Lesson {p1}",
+  },
+
   // ---------- Student: external video playback states ----------
   "course.226": {
     ar: "الفيديو ده مش متاح للتشغيل حاليًا. من فضلك راسل الدعم.",
@@ -1617,6 +1665,30 @@ export const DICT_2026: Record<string, DictEntry> = {
   "api.312": {
     ar: "امتحان FIXED: عدد الأسئلة المطلوب {p1} أكبر من عدد الأسئلة المثبّتة {p2}.",
     en: "FIXED exam: the requested count {p1} is larger than the {p2} pinned questions.",
+  },
+  // Session-video academic link contract (Phase A): every NEW video must be
+  // bound to a valid Lesson × Batch pair. These are the localized server
+  // messages for the machine codes LESSON_REQUIRED / LESSON_NOT_FOUND /
+  // LESSON_ARCHIVED / BATCH_NOT_FOUND / COURSE_MISMATCH / TRACK_MISMATCH.
+  "api.313": {
+    ar: "لازم تختار الحصة اللي الفيديو ده بتاعتها.",
+    en: "A lesson is required for every new session video.",
+  },
+  "api.314": {
+    ar: "الحصة المختارة غير موجودة.",
+    en: "The selected lesson does not exist.",
+  },
+  "api.315": {
+    ar: "ما يمكنش تربط فيديو بحصة مؤرشفة.",
+    en: "A session video cannot be linked to an archived lesson.",
+  },
+  "api.316": {
+    ar: "الحصة والمجموعة مش في نفس الكورس.",
+    en: "The lesson and the batch belong to different courses.",
+  },
+  "api.317": {
+    ar: "الحصة مش متوافقة مع مسار المجموعة.",
+    en: "The lesson track is incompatible with the selected batch.",
   },
   "api.307": {
     ar: "اختار أسئلة من غير تكرار — قائمة الأسئلة المختارة فاضية أو فيها أسئلة مكررة.",

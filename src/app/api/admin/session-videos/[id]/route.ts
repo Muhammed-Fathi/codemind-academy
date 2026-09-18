@@ -4,11 +4,25 @@
 // Publishing is a single flag flip on ONE row: it instantly makes the media
 // available to every eligible student of the batch. No records are copied.
 
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireRole } from "@/lib/api";
 import { deletePrivateFile, isManagedPrivateStorage } from "@/lib/media";
 import { getServerT } from "@/lib/i18n-server";
+import {
+  SESSION_VIDEO_LINK_ERRORS,
+  validateSessionVideoLink,
+  type SessionVideoLinkCode,
+} from "@/lib/session-video-link";
+
+/** Localized message + machine code, same shape as the POST route. */
+function sessionVideoLinkError(
+  tApi: (key: string) => string,
+  code: SessionVideoLinkCode
+): NextResponse {
+  const meta = SESSION_VIDEO_LINK_ERRORS[code];
+  return NextResponse.json({ error: tApi(meta.i18n), code }, { status: meta.status });
+}
 
 export async function PATCH(
   req: NextRequest,
@@ -27,7 +41,25 @@ export async function PATCH(
   if (typeof body.title === "string") data.title = body.title.trim();
   if (typeof body.titleAr === "string") data.titleAr = body.titleAr.trim();
   if (typeof body.description === "string") data.description = body.description;
-  if (body.lessonId !== undefined) data.lessonId = body.lessonId || null;
+  if (body.lessonId !== undefined) {
+    // Phase A — an explicit re-link goes through the SAME academic-link
+    // contract as creation: the new Lesson must exist, not be archived, and
+    // fit the row's batch (one course, track fit). Invalid relationships are
+    // refused, never silently accepted or corrected. Unsetting (null/empty)
+    // keeps the existing manual-unlink semantics for legacy management — it
+    // is not a creation path, and the UI offers it nowhere.
+    const lessonIdRaw = body.lessonId;
+    if (lessonIdRaw === null || lessonIdRaw === "") {
+      data.lessonId = null;
+    } else {
+      const link = await validateSessionVideoLink(db, {
+        lessonId: String(lessonIdRaw),
+        batchId: video.batchId,
+      });
+      if (!link.ok) return sessionVideoLinkError(tApi, link.code);
+      data.lessonId = link.lessonId;
+    }
+  }
   if (body.requiredPercent !== undefined)
     data.requiredPercent = Math.min(100, Math.max(50, Number(body.requiredPercent)));
   if (typeof body.isPublished === "boolean") {

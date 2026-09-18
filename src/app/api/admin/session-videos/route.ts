@@ -18,8 +18,19 @@
 //
 // The media is stored once and associated with the batch. Publishing makes it
 // available to every eligible student of that batch — no per-student copies.
+//
+// ACADEMIC IDENTITY (Phase A): a NEW video always carries `lessonId` — the
+// canonical Lesson IS the academic session, `batchId` is the audience/track.
+// POST validates the (lesson, batch) pair with the shared
+// `validateSessionVideoLink` contract BEFORE any media is written:
+// lesson required → exists → not archived → batch exists → same course →
+// track fit. The same contract guards the presigned flow
+// (src/lib/media-upload.ts) and the explicit re-link in the PATCH route
+// (src/app/api/admin/session-videos/[id]/route.ts), so every creation path
+// produces the same relationship. Existing legacy rows with `lessonId = null`
+// are untouched: readable and deletable, never migrated.
 
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireRole } from "@/lib/api";
 import {
@@ -33,6 +44,24 @@ import {
 import { normalizeExternalVideoUrl } from "@/lib/video-url";
 import { assertVolumeQuota } from "@/lib/storage-quotas";
 import { getServerT } from "@/lib/i18n-server";
+import {
+  SESSION_VIDEO_LINK_ERRORS,
+  validateSessionVideoLink,
+  type SessionVideoLinkCode,
+} from "@/lib/session-video-link";
+
+/**
+ * One response shape for every academic-link refusal: a LOCALIZED admin-facing
+ * message plus the MACHINE-READABLE contract code, so the UI can both show a
+ * human reason and branch on the cause.
+ */
+function sessionVideoLinkError(
+  tApi: (key: string) => string,
+  code: SessionVideoLinkCode
+): NextResponse {
+  const meta = SESSION_VIDEO_LINK_ERRORS[code];
+  return NextResponse.json({ error: tApi(meta.i18n), code }, { status: meta.status });
+}
 
 export async function GET(req: NextRequest) {
   const { error } = await requireRole("ADMIN");
@@ -56,7 +85,18 @@ export async function GET(req: NextRequest) {
       take: pageSize,
       include: {
         batch: { select: { id: true, name: true, nameAr: true, schoolType: true } },
-        lesson: { select: { id: true, title: true, titleAr: true } },
+        // Academic ownership for the list (Phase A): the lesson's code/title
+        // plus its unit, so the admin sees "Lesson 1-1 — Variables / Unit 1"
+        // instead of a raw id. Legacy rows carry lesson = null.
+        lesson: {
+          select: {
+            id: true,
+            title: true,
+            titleAr: true,
+            officialCode: true,
+            unit: { select: { id: true, title: true, titleAr: true, order: true } },
+          },
+        },
         media: {
           select: { id: true, storage: true, externalUrl: true, durationSec: true, mimeType: true, sizeBytes: true },
         },
@@ -134,8 +174,15 @@ export async function POST(req: NextRequest) {
 
   if (!title) return err(tApi("api.187"), 400);
 
-  const batch = await db.batch.findUnique({ where: { id: batchId } });
-  if (!batch) return err(tApi("api.218"), 404);
+  // Phase A — academic ownership: a NEW session video must belong to a valid
+  // Lesson × Batch pair. The SAME shared validator the presigned init/complete
+  // use enforces the whole contract here (lesson present, exists, not
+  // archived, batch exists, one course, track fit), so the buffered file
+  // path and the external-URL path can never create a lesson-less or
+  // cross-course / cross-track video. The validated pair (below) is what is
+  // persisted — client values are never corrected or guessed.
+  const link = await validateSessionVideoLink(db, { lessonId, batchId });
+  if (!link.ok) return sessionVideoLinkError(tApi, link.code);
 
   if (!file && !externalUrl) return err(tApi("api.219"), 400);
 
@@ -213,10 +260,12 @@ export async function POST(req: NextRequest) {
     mediaAssetId = asset.id;
   }
 
+  // Persist EXACTLY the validated pair — the row's academic identity is the
+  // Lesson (canonical session) plus the Batch (audience), never a guess.
   const video = await db.sessionVideo.create({
     data: {
-      batchId,
-      lessonId,
+      batchId: link.batchId,
+      lessonId: link.lessonId,
       mediaAssetId,
       title,
       titleAr,

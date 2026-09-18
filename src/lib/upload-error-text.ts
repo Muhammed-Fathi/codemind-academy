@@ -55,6 +55,11 @@ const CODE_TO_KEY: Record<string, string> = {
   BATCH_NOT_FOUND: "admin.537",
   LESSON_NOT_FOUND: "admin.537",
   LESSON_ARCHIVED: "admin.537",
+  // Academic link contract (Phase A) — the video's Lesson × Batch identity.
+  // LESSON_REQUIRED has its own reason because the picker itself is the fix.
+  LESSON_REQUIRED: "admin.583",
+  COURSE_MISMATCH: "admin.584",
+  TRACK_MISMATCH: "admin.585",
 };
 
 /** Stage → the message that names the leg (used when no code mapped). */

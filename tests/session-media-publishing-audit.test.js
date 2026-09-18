@@ -71,6 +71,7 @@ const MODULES = [
   "src/lib/enrollment.ts",
   "src/lib/parent-access.ts",
   "src/lib/session-materials.ts",
+  "src/lib/session-video-link.ts",
   "src/lib/media-upload.ts",
   "src/lib/db-serialization.ts",
   "src/lib/direct-upload.ts",
@@ -114,9 +115,11 @@ const FAKE_DB_PATH = path.join(OUT, "fake-db.js");
 fs.writeFileSync(
   FAKE_DB_PATH,
   `module.exports = { db: {
-    batch: { findUnique: async () => ({ id: "b1", isActive: true, archivedAt: null, courseId: "c1" }) },
+    // Phase A — the fake rows carry the academic identity the shared link
+    // validator checks (school type + one course via the unit chain).
+    batch: { findUnique: async () => ({ id: "b1", isActive: true, archivedAt: null, courseId: "c1", schoolType: "ARABIC" }) },
     course: { findUnique: async () => ({ id: "c1", isActive: true, archivedAt: null }) },
-    lesson: { findUnique: async () => ({ id: "l1", isActive: true, archivedAt: null, batchId: "b1" }) },
+    lesson: { findUnique: async () => ({ id: "l1", isActive: true, archivedAt: null, batchId: "b1", curriculumStatus: "READY", trackScope: "SHARED", unit: { part: { courseId: "c1" } } }) },
     mediaAsset: { findFirst: async () => null },
   } };`
 );
@@ -362,18 +365,31 @@ async function main() {
       contentType: "video/mp4",
       fileName: "lesson.mp4",
       batchId: "b1",
+      // Phase A — the academic lesson is part of the validated identity; the
+      // grant is only issued for a legal (lesson, batch) pair.
+      lessonId: "l1",
     },
     { backend: fakeBackend, hmacSecret: SECRET }
   );
   ok(res.ok === true, "server issues a presigned grant");
   const wire = JSON.parse(JSON.stringify(res.init));
 
+  // Phase A — the validated identity is signed into the intent token, so the
+  // completion leg can be replayed (or swapped) only as that exact pair.
+  if (res.ok) {
+    const tokenPayload = JSON.parse(
+      Buffer.from(res.init.token.split(".")[0], "base64url").toString("utf8")
+    );
+    eq(tokenPayload.batchId, "b1", "intent token binds the init-time batch");
+    eq(tokenPayload.lessonId, "l1", "intent token binds the init-time lesson");
+  }
+
   // The grant MUST be at the top level — this is the shape the client parses.
   ok(typeof wire.uploadUrl === "string" && wire.uploadUrl.length > 0, "wire carries uploadUrl at top level");
   ok(typeof wire.token === "string" && wire.token.length > 0, "wire carries token at top level");
   ok(!("upload" in wire), "wire does NOT nest the grant under 'upload'");
 
-  const { out, calls } = await runFlow("SESSION_VIDEO", { batchId: "b1" }, { batchId: "b1", title: "L", publish: true }, wire);
+  const { out, calls } = await runFlow("SESSION_VIDEO", { batchId: "b1", lessonId: "l1" }, { batchId: "b1", lessonId: "l1", title: "L", publish: true }, wire);
   ok(out.ok === true, "VIDEO upload completes end-to-end over the real client (was: init-stage failure)");
   ok(
     calls.some((c) => c.startsWith("https://r2.invalid/")),
