@@ -49,6 +49,16 @@
 //          cross-batch 403 / unpublished 403 / legacy 200 (exact bytes) /
 //          owner 200 / cross-track 403 / unauthenticated 401 / range 206
 //
+// Phase B (fix round 2) additions — Course navigation context: the sidebar
+// Course tab opens the view with no slug; the view now resolves the
+// student's current course from GET /api/students/me/current-course (the
+// platform's existing group → course rule, authorized server-side) and
+// navigates through the SAME navParam mechanism.
+//   T1–T6. current-course reader: resolves the enrolled course (opens via
+//          the Course view path), per-student, zero-course → null, 401 /
+//          403 boundaries, foreign-course enrollment enforcement unchanged,
+//          no hardcoded slug, dashboard "all courses" flow unchanged
+//
 // What is REAL here: the compiled shipped route handlers, the SQLite database
 // built from the real migration SQL, the progression engine, the enrollment /
 // entitlement / track modules, the batch reconcile. What is SHIMMED: the
@@ -150,6 +160,7 @@ const REAL_CODE_MODULES = [
   "src/app/api/students/me/session-videos/route.ts",
   "src/app/api/students/me/session-videos/[id]/progress/route.ts",
   "src/app/api/media/[id]/route.ts",
+  "src/app/api/students/me/current-course/route.ts",
   "src/app/api/courses/[slug]/route.ts",
   "src/app/api/lessons/[id]/route.ts",
   "src/app/api/lessons/[id]/progress/route.ts",
@@ -285,6 +296,7 @@ const R = {
   videos: route("students/me/session-videos/route.js"),
   videoProgress: route("students/me/session-videos/[id]/progress/route.js"),
   media: route("media/[id]/route.js"),
+  currentCourse: route("students/me/current-course/route.js"),
   course: route("courses/[slug]/route.js"),
   lesson: route("lessons/[id]/route.js"),
   lessonProgress: route("lessons/[id]/progress/route.js"),
@@ -894,6 +906,70 @@ test("Phase B: student session media alignment", async () => {
   const videosView = read("src/components/course/session-videos-view.tsx");
   ok(/export function SessionVideoPlayer/.test(videosView), "R8: the shared player is exported from the library view");
   ok(/v\.lesson\.officialCode/.test(videosView), "R8: the library identifies each recording's lesson");
+
+  // ===========================================================================
+  // T. Course navigation context (sidebar "Course" tab) — the Course view
+  //    resolves the student's CURRENT COURSE from their own authorized data,
+  //    so clicking the sidebar tab never lands on "No course selected" when
+  //    the platform can deterministically resolve the student's course.
+  //    This is the fix for: sidebar → Course → `مفيش كورس محدد`.
+  // ===========================================================================
+  // T1. A student with exactly one active/enrolled course: the current-course
+  //     reader resolves THAT course (id + slug) from their own group.
+  asUser(sAr.user);
+  const t1 = await GET(R.currentCourse, "http://t/api/students/me/current-course");
+  eq(t1.status, 200, "T1: current-course reader 200 for an enrolled student");
+  eq(t1.json.course?.id, course.id, "T1: resolves the enrolled course's id (no hardcoding)");
+  eq(t1.json.course?.slug, course.slug, "T1: resolves the enrolled course's slug");
+  // The resolved identity is the SAME one the Course view consumes: feeding
+  // the returned slug into /api/courses/[slug] opens the course (200).
+  const t1b = await GET(R.course, `http://t/api/courses/${t1.json.course.slug}`, {
+    slug: t1.json.course.slug,
+  });
+  eq(t1b.status, 200, "T1: the resolved slug opens the course via the existing Course view path");
+
+  // T2. The reader is per-student (not a global/first course): a student in
+  //     course B resolves course B, and a student with NO group resolves null.
+  asUser(sB.user);
+  const t2 = await GET(R.currentCourse, "http://t/api/students/me/current-course");
+  eq(t2.json.course?.id, courseB.id, "T2: a different student resolves THEIR OWN course");
+  eq(t2.json.course?.slug, courseB.slug, "T2: ...by slug, not a hardcoded/first course");
+
+  // T3. Zero-course student: valid empty state, no crash, no invented course.
+  asUser(sNone.user);
+  const t3 = await GET(R.currentCourse, "http://t/api/students/me/current-course");
+  eq(t3.status, 200, "T3: zero-course student gets 200 (no crash)");
+  eq(t3.json.course, null, "T3: ...with course null (existing empty state may remain)");
+
+  // T4. Authorization: unauthenticated and non-student roles are refused, and
+  //     the reader never serves a course's content (identity only).
+  asUser(null);
+  const t4 = await GET(R.currentCourse, "http://t/api/students/me/current-course");
+  eq(t4.status, 401, "T4: unauthenticated current-course → 401");
+
+  // T5. Enrollment authorization UNCHANGED: a student who is NOT enrolled in a
+  //     course still cannot open it by slug, even though the reader only ever
+  //     hands them their OWN course. (sAr is enrolled in course A; course B is
+  //     foreign to them.)
+  asUser(sAr.user);
+  const t5 = await GET(R.course, `http://t/api/courses/${courseB.slug}`, { slug: courseB.slug });
+  eq(t5.status, 403, "T5: a foreign course is still refused server-side by slug (403)");
+  eq(t5.json.code, "NOT_ENROLLED", "T5: ...with the NOT_ENROLLED code (enforcement unchanged)");
+
+  // T6. No hardcoded course id/slug in the resolution path: the reader source
+  //     derives the course from the student's own group (authorized data), and
+  //     the Course view navigates via navParam (not a literal slug).
+  const currentCourseRoute = read("src/app/api/students/me/current-course/route.ts");
+  ok(/student\.group/.test(currentCourseRoute), "T6: the reader resolves from the student's own group row");
+  ok(!/["']phaseb-/.test(currentCourseRoute), "T6: the reader hardcodes no course slug");
+  const courseView = read("src/components/course/student-course.tsx");
+  ok(/fetch\("\/api\/students\/me\/current-course"\)/.test(courseView), "T6: the Course view asks the authorized reader when no navParam");
+  ok(/setNavParam\(slug\)/.test(courseView), "T6: the view navigates through the SAME navParam mechanism");
+  ok(!/["']phaseb-/.test(courseView), "T6: the Course view hardcodes no course slug");
+  // The dashboard "كل الكورس" flow is unchanged: it still passes its own
+  // group.course.slug straight into navParam.
+  const dash = read("src/components/student/student-dashboard.tsx");
+  ok(/setNavParam\(data\.group\.course\.slug\)/.test(dash), "T6: the dashboard 'all courses' flow is unchanged");
 
   console.log(`\nPhase B suite: ${pass} passed, ${fail} failed`);
   if (fail > 0) {

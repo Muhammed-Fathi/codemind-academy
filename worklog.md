@@ -2146,3 +2146,60 @@ such videos are still listed in the standalone library when
 `isPublished` + batch + track hold, still heartbeat-able (200), and their
 bytes still stream through `/api/media/[id]` — they stand on their own
 `SessionVideo.isPublished` publication lifecycle, exactly as before.
+
+---
+Task ID: 20
+Agent: Arena Agent Mode
+Task: Phase B FIX ROUND 2 — Student Course sidebar navigation: clicking the
+sidebar "الكورس" tab opened the Course view with "مفيش كورس محدد" (no course
+selected) although the student's dashboard and its "كل الكورس" button resolved
+the enrolled course correctly.
+
+Root cause:
+- The Course view (StudentCourseView) loads its content from
+  `/api/courses/${navParam}` where `navParam` comes from the app store.
+- The app store's `setView` RESETS `navParam` to null.
+- The sidebar nav buttons call `setView(key)` only — so the Course tab
+  arrived with navParam = null and the view showed the no-course error.
+- The dashboard worked because its "كل الكورس" button does
+  `setView("student-course"); setNavParam(data.group.course.slug)` — it
+  carries the slug itself (from `/api/students/me/dashboard` →
+  `group.course`, the platform's existing current-course rule: a student's
+  single group → that group's course).
+
+Changes:
+- NEW `src/app/api/students/me/current-course/route.ts` — a navigation
+  READER ONLY: STUDENT-only (401/403), resolves the caller's own
+  `student.group.course` (id + slug + display fields) from authorized
+  student data via the same `getStudentProfile` helper the dashboard uses.
+  Zero courses → `course: null`. It serves NO course content — the content
+  boundary remains GET /api/courses/[slug] (403 NOT_ENROLLED, unchanged).
+  Multiple simultaneous courses are not representable in the schema
+  (Student.groupId is singular), so resolution is deterministic: 0 or 1.
+- `src/components/course/student-course.tsx` — when the view mounts without
+  a navParam (the sidebar path), it resolves the current course through the
+  new reader and hands the slug to the SAME `setNavParam` mechanism every
+  other flow uses; the effect re-runs and fetches the course through the
+  unchanged authorized `/api/courses/[slug]` path. Zero courses keeps the
+  existing empty state (course.213). No hardcoded slug anywhere.
+- `tests/student-session-media-alignment-phaseB.test.js` — new section
+  T1–T6 (+17 assertions, 108 → 125): the reader resolves the enrolled
+  course (id + slug) and that slug opens the course through the existing
+  Course view path; per-student resolution (two students → two different
+  courses); zero-course student → 200 with course null; 401 unauthenticated;
+  foreign course still 403 NOT_ENROLLED (enforcement unchanged); no
+  hardcoded slug in reader or view; dashboard "كل الكورس" flow unchanged.
+
+Verification (this sandbox, offline):
+- Phase B suite: 125/0. student-locked-curriculum-phase16: 369/0.
+  authorization-invariants: 94/0. phase26b-student-flow: 40/0. Phase A:
+  150/0. session-progression: 162/0. Full offline sweep: every `.test.js`
+  suite passes (sole exclusion: pre-existing environmental
+  final-integration-phase22).
+- `npx tsc --noEmit` — PASS. `npm run build:postgres` — PASS; the build
+  output includes `ƒ /api/students/me/current-course`.
+- ESLint: no NEW errors (student-course.tsx carries one pre-existing
+  react-hooks/set-state-in-effect error, present on the base commit).
+
+No PR, no merge, no Phase C, no Live Sessions / Notifications / progression /
+publishing-UI changes.
