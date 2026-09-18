@@ -286,10 +286,28 @@ function makeDb(seed = {}) {
     if (!select && !extra) return { ...row };
     const out = {};
     for (const [k, v] of Object.entries(select ?? {})) {
-      if (v === true) out[k] = row[k];
+      if (v === true) {
+        out[k] = row[k];
+        continue;
+      }
+      if (k === "_count" && v && typeof v === "object" && v.select) {
+        // Prisma's `_count` nested INSIDE `select` (the readiness loader's
+        // shape) — Phase D readiness reads quiz question counts this way.
+        out._count = out._count ?? {};
+        for (const rel of Object.keys(v.select)) {
+          if (rel === "questions") out._count.questions = row.questions?.length ?? row.questionCount ?? 0;
+          else throw new Error(`fake db: unsupported _count of ${rel}`);
+        }
+        continue;
+      }
+      if (v && typeof v === "object") {
+        // A nested RELATION select (e.g. `batch: { select: { schoolType } }`).
+        out[k] = row[k] == null ? null : shape(row[k], v.select ?? v);
+        continue;
+      }
     }
     if (extra?._count) {
-      out._count = {};
+      out._count = out._count ?? {};
       for (const rel of Object.keys(extra._count.select ?? {})) {
         if (rel === "questions") out._count.questions = row.questions?.length ?? row.questionCount ?? 0;
         else throw new Error(`fake db: unsupported _count of ${rel}`);
@@ -533,16 +551,40 @@ for (const [from, targets] of Object.entries(L.ALLOWED_TRANSITIONS)) {
 }
 
 // ---------------------------------------------------------------------------
-// 4. readiness: VIDEO (the only required dimension)
+// 4–7. readiness — the PHASE D four-requirement contract
 // ---------------------------------------------------------------------------
-section("4. readiness — video is required, track-aware, and never inferred from the mirror");
+// Phase D replaced the Phase 13 "video-only" contract: a lesson is normally
+// READY only when VIDEO + PDF/MATERIAL + QUIZ + HOMEWORK all exist and are
+// valid for the lesson's audience. The legacy `videoUrl`/`pdfUrl` strings are
+// compatibility links, never readiness authorities. These sections were
+// rewritten in place (same numbering) when Phase D landed.
+section("4. readiness — video is required, modern-authority, track-aware");
 const R = L.computeLessonReadiness;
 const videoState = (input) => R(input).items.find((i) => i.key === "VIDEO");
+const BOTH_BATCHES = [
+  { isPublished: true, batch: { schoolType: "ARABIC" } },
+  { isPublished: true, batch: { schoolType: "LANGUAGE" } },
+];
+const FULL = {
+  sessionVideos: BOTH_BATCHES,
+  materials: [{ kind: "ADMIN_UPLOADED", isActive: true, mediaAssetId: "a1", trackScope: "SHARED" }],
+  quizzes: [{ trackScope: "SHARED", questionCount: 3 }],
+  homeworks: [{ trackScope: "SHARED", instructions: "Do the exercise" }],
+};
 
 eq(videoState({}).state, "MISSING", "no video at all → MISSING");
 eq(videoState({}).code, "VIDEO_MISSING", "with the stable code");
 eq(R({}).canBeReady, false, "and the lesson cannot be staged");
-eq(videoState({ videoUrl: "https://cdn.example/v.mp4" }).state, "OK", "a legacy lesson videoUrl counts");
+eq(videoState({ sessionVideos: BOTH_BATCHES }).state, "OK", "published SessionVideos covering the audience satisfy");
+eq(
+  videoState({ videoUrl: "https://cdn.example/v.mp4" }).state,
+  "MISSING",
+  "PHASE D: the legacy lesson videoUrl is NOT a readiness authority"
+);
+ok(
+  R({ videoUrl: "https://cdn.example/v.mp4" }).notes.includes("VIDEO_LEGACY_URL_NOT_COUNTED"),
+  "…and the admin is told why the old link no longer counts"
+);
 eq(videoState({ videoUrl: "#" }).state, "MISSING", "the seeded placeholder '#' is not a video");
 eq(videoState({ videoUrl: "  " }).state, "MISSING", "whitespace is not a video");
 eq(videoState({ videoUrl: null }).state, "MISSING", "null is not a video");
@@ -602,35 +644,66 @@ eq(
   "…and the reason is reported, so an admin is not told 'add a video' when one exists"
 );
 eq(
-  R({ status: "PUBLISHED", isPublished: true, videoUrl: "https://cdn/v.mp4" }).canBeReady,
+  R({ status: "PUBLISHED", isPublished: true, ...FULL }).canBeReady,
   true,
   "readiness never consults the lifecycle state or the mirror it is feeding"
 );
 
-section("5. readiness — PDF is deferred, never faked");
+section("5. readiness — PDF/Material is REQUIRED (Phase 14 architecture, Phase D contract)");
 const pdf = (input) => R(input).items.find((i) => i.key === "PDF");
-eq(pdf({}).state, "NOT_APPLICABLE", "absent PDF is NOT_APPLICABLE");
-// Phase 14 adopted PDF handling; the deferred code is retired in favour of
-// the stable "absent, not required" code. PDF still never blocks READY.
-eq(pdf({}).code, "PDF_ABSENT_NOT_REQUIRED", "and says so with a stable code");
-eq(pdf({}).required, false, "never required in this phase");
+eq(pdf({}).state, "MISSING", "absent Material is MISSING");
+eq(pdf({}).code, "PDF_MISSING", "with a stable code");
+eq(pdf({}).required, true, "PHASE D: the material is REQUIRED for READY");
 eq(pdf({ pdfUrl: "#" }).present, false, "the '#' placeholder is not a document");
-eq(pdf({ pdfUrl: "https://cdn/p.pdf" }).present, true, "a real url is present");
-eq(pdf({ pdfUrl: "https://cdn/p.pdf" }).state, "NOT_APPLICABLE", "…but still not a requirement");
+eq(
+  pdf({ pdfUrl: "https://cdn/p.pdf" }).state,
+  "MISSING",
+  "PHASE D: a legacy pdfUrl alone is NOT a readiness authority"
+);
+ok(
+  R({ pdfUrl: "https://cdn/p.pdf" }).notes.includes("PDF_LEGACY_URL_NOT_COUNTED"),
+  "…and the admin is told why"
+);
+eq(
+  pdf({ materials: [{ kind: "ADMIN_UPLOADED", mediaAssetId: "m1", isActive: true, trackScope: "SHARED" }] }).state,
+  "OK",
+  "an active uploaded material satisfies the requirement"
+);
+eq(
+  pdf({ materials: [{ kind: "GENERATED", mediaAssetId: null, isActive: true }] }).state,
+  "MISSING",
+  "a GENERATED row without an asset is not a document"
+);
+eq(
+  pdf({ materials: [{ kind: "ADMIN_UPLOADED", mediaAssetId: "m1", isActive: false, trackScope: "SHARED" }] }).state,
+  "MISSING",
+  "a deactivated material does not count"
+);
+eq(
+  pdf({
+    trackScope: "ARABIC",
+    materials: [{ kind: "ADMIN_UPLOADED", mediaAssetId: "m1", isActive: true, trackScope: "LANGUAGE" }],
+  }).state,
+  "MISSING",
+  "another track's material never satisfies this lesson"
+);
+ok(
+  R({
+    trackScope: "ARABIC",
+    materials: [{ kind: "ADMIN_UPLOADED", mediaAssetId: "m1", isActive: true, trackScope: "LANGUAGE" }],
+  }).notes.includes("PDF_PRESENT_BUT_OTHER_TRACK:1"),
+  "…and the observation is recorded rather than silently dropped"
+);
 eq(
   R({ pdfUrl: "https://cdn/p.pdf" }).canBeReady,
   false,
-  "a PDF alone cannot make a lesson ready (video is still required)"
-);
-eq(
-  pdf({ materials: [{ kind: "ADMIN_UPLOADED", mediaAssetId: "m1" }, { kind: "ANNOUNCEMENT_TEXT", isActive: true }] }).count,
-  1,
-  "only document-like, active materials count as a PDF"
+  "a legacy PDF alone can never make a lesson ready"
 );
 
-section("6. readiness — quiz and homework are optional but must be valid");
+section("6. readiness — quiz and homework are REQUIRED and must be valid");
 const quiz = (input) => R(input).items.find((i) => i.key === "QUIZ");
-eq(quiz({}).state, "NOT_APPLICABLE", "no quiz is fine");
+eq(quiz({}).state, "MISSING", "PHASE D: no quiz → MISSING (no longer optional)");
+eq(quiz({}).required, true, "quiz is a hard requirement");
 eq(quiz({ quizzes: [{ trackScope: "SHARED", questionCount: 0 }] }).state, "INVALID", "an empty quiz is blocking");
 eq(quiz({ quizzes: [{ trackScope: "SHARED", questionCount: 0 }] }).code, "QUIZ_EMPTY", "with a stable code");
 eq(quiz({ quizzes: [{ trackScope: "SHARED", questions: [1, 2, 3] }] }).state, "OK", "a quiz with questions is OK");
@@ -638,37 +711,46 @@ eq(quiz({ quizzes: [{ trackScope: "SHARED" }] }).state, "INVALID", "a quiz whose
 eq(
   R({
     trackScope: "ARABIC",
-    videoUrl: "https://cdn/v.mp4",
+    ...FULL,
     quizzes: [{ trackScope: "LANGUAGE", questionCount: 0 }],
   }).canBeReady,
-  true,
-  "another track's broken quiz never blocks this lesson"
+  false,
+  "PHASE D: another track's quiz does NOT satisfy (and its brokenness is not ours)"
 );
 eq(
   R({
     trackScope: "ARABIC",
-    videoUrl: "https://cdn/v.mp4",
     quizzes: [{ trackScope: "LANGUAGE", questionCount: 5 }],
   }).notes.join(),
   "QUIZ_PRESENT_BUT_OTHER_TRACK:1",
   "…and the observation is recorded rather than silently dropped"
 );
+eq(
+  quiz({ trackScope: "SHARED", quizzes: [{ trackScope: "ARABIC", questionCount: 3 }] }).state,
+  "INVALID",
+  "a SHARED lesson covered for one track only is incomplete"
+);
 const hw = (input) => R(input).items.find((i) => i.key === "HOMEWORK");
-eq(hw({}).state, "NOT_APPLICABLE", "no homework is fine");
+eq(hw({}).state, "MISSING", "PHASE D: no homework → MISSING (no longer optional)");
 eq(hw({ homeworks: [{ trackScope: "SHARED", instructions: "  " }] }).state, "INVALID", "homework with no instructions is blocking");
 eq(hw({ homeworks: [{ trackScope: "SHARED", instructions: "#" }] }).state, "INVALID", "a placeholder instruction counts as empty");
 eq(hw({ homeworks: [{ trackScope: "SHARED", instructions: "Do X" }] }).state, "OK", "real instructions are OK");
 eq(
-  R({ homeworks: [{ trackScope: "SHARED", instructions: "x" }], videoUrl: "https://cdn/v.mp4" }).canBeReady,
-  true,
-  "homework + video with no quiz at all is still a valid lesson (nothing is invented)"
+  R({ ...FULL, quizzes: [] }).canBeReady,
+  false,
+  "PHASE D: homework + video with no quiz is NOT ready any more"
+);
+eq(
+  R({ ...FULL, homeworks: [] }).canBeReady,
+  false,
+  "PHASE D: …and neither is a lesson with no homework"
 );
 
 section("7. readiness — determinism, archive, and code ordering");
 eq(
-  R({ curriculumStatus: "ARCHIVED", videoUrl: "https://cdn/v.mp4" }).blocking,
-  ["CURRICULUM_ARCHIVED"],
-  "an archived lesson is never ready, however complete it looks"
+  R({ curriculumStatus: "ARCHIVED" }).blocking,
+  ["CURRICULUM_ARCHIVED", "VIDEO_MISSING", "PDF_MISSING", "QUIZ_MISSING", "HOMEWORK_MISSING"],
+  "an archived lesson is never ready, however complete it looks — and every gap is named"
 );
 eq(R({ curriculumStatus: "archived" }).archived, true, "curriculumStatus is compared case-insensitively");
 eq(
@@ -677,11 +759,11 @@ eq(
     quizzes: [{ trackScope: "SHARED", questionCount: 0 }],
     homeworks: [{ trackScope: "SHARED", instructions: "" }],
   }).blocking,
-  ["VIDEO_MISSING", "QUIZ_EMPTY", "HOMEWORK_INSTRUCTIONS_EMPTY"],
+  ["VIDEO_MISSING", "PDF_MISSING", "QUIZ_EMPTY", "HOMEWORK_INSTRUCTIONS_EMPTY"],
   "blocking codes follow the fixed resource order, so two snapshots diff literally"
 );
 eq(
-  JSON.stringify(R({ trackScope: "bogus", videoUrl: "https://cdn/v.mp4" }).trackScope),
+  JSON.stringify(R({ trackScope: "bogus", ...FULL }).trackScope),
   '"SHARED"',
   "an unrecognised trackScope normalizes to SHARED (the column default) rather than throwing"
 );
@@ -690,15 +772,27 @@ eq(
   null,
   "a blank officialCode is reported as null, not as a code"
 );
+eq(R({ ...FULL }).canBeReady, true, "all four satisfied → READY (the Phase D happy path)");
 
 // ---------------------------------------------------------------------------
 // 8. the ceremony
 // ---------------------------------------------------------------------------
 section("8. the ceremony — MARK_READY requires readiness");
 (async () => {
+  // Phase D — a "ready" fixture carries ALL FOUR requirements, staged as the
+  // real architecture stages them (SessionVideo / Material / Quiz / Homework).
   const ready = () =>
     makeDb({
-      lessons: { L1: { status: "DRAFT", videoUrl: "https://cdn/v.mp4" } },
+      lessons: { L1: { status: "DRAFT" } },
+      sessionVideos: [
+        { id: "v1", lessonId: "L1", isPublished: true, batch: { schoolType: "ARABIC" } },
+        { id: "v2", lessonId: "L1", isPublished: true, batch: { schoolType: "LANGUAGE" } },
+      ],
+      materials: [
+        { id: "m1", lessonId: "L1", kind: "ADMIN_UPLOADED", isActive: true, mediaAssetId: "a1", trackScope: "SHARED" },
+      ],
+      quizzes: [{ id: "q1", lessonId: "L1", trackScope: "SHARED", questionCount: 3 }],
+      homeworks: [{ id: "h1", lessonId: "L1", trackScope: "SHARED", instructions: "Do the exercise" }],
     });
 
   {
@@ -707,7 +801,11 @@ section("8. the ceremony — MARK_READY requires readiness");
     const res = await L.markLessonReady({ lessonId: "L1", actorUserId: "u-admin", client: db });
     eq(res.code, "READINESS_BLOCKED", "incomplete lesson refuses staging");
     eq(res.changed, false, "…without writing");
-    eq(res.readiness.blocking, ["VIDEO_MISSING"], "…and returns the live checklist so the UI can show why");
+    eq(
+      res.readiness.blocking,
+      ["VIDEO_MISSING", "PDF_MISSING", "QUIZ_MISSING", "HOMEWORK_MISSING"],
+      "…and returns the live checklist naming EVERY missing requirement (Phase D)"
+    );
     eq(db.__tables.lesson.get("L1").status, "DRAFT", "row untouched");
     eq(db.__writes.updateMany, 0, "no UPDATE was attempted at all");
   }
@@ -745,10 +843,11 @@ section("8. the ceremony — MARK_READY requires readiness");
     const db = ready();
     globalThis.__CM_FAKE_DB__ = db;
     await L.markLessonReady({ lessonId: "L1", actorUserId: "u-admin", client: db });
-    // The video disappears between staging and opening.
-    db.__tables.lesson.get("L1").videoUrl = null;
+    // The videos disappear between staging and opening.
+    db.__tables.sessionVideo.length = 0;
     const res = await L.openLesson({ lessonId: "L1", actorUserId: "u-admin", client: db });
     eq(res.code, "READINESS_BLOCKED", "a stale READY stamp is not a warrant: readiness is re-checked at OPEN");
+    ok(res.readiness.blocking.includes("VIDEO_MISSING"), "…naming the vanished video");
     eq(db.__tables.lesson.get("L1").status, "READY", "…and the lesson is not published");
   }
   {
@@ -770,8 +869,19 @@ section("8. the ceremony — MARK_READY requires readiness");
     eq(db.__tables.auditLog.filter((a) => a.action === "LESSON_OPEN").length, 1, "…one audit row for one publication");
   }
   {
-    // An ARABIC-scoped lesson records its own segment.
-    const db = makeDb({ lessons: { LA: { status: "READY", videoUrl: "https://cdn/v.mp4", trackScope: "ARABIC" } } });
+    // An ARABIC-scoped lesson records its own segment. Phase D: its content
+    // is staged per-track (one batch video + ARABIC material/quiz/homework).
+    const db = makeDb({
+      lessons: { LA: { status: "READY", trackScope: "ARABIC" } },
+      sessionVideos: [
+        { id: "va", lessonId: "LA", isPublished: true, batch: { schoolType: "ARABIC" } },
+      ],
+      materials: [
+        { id: "ma", lessonId: "LA", kind: "ADMIN_UPLOADED", isActive: true, mediaAssetId: "a1", trackScope: "ARABIC" },
+      ],
+      quizzes: [{ id: "qa", lessonId: "LA", trackScope: "ARABIC", questionCount: 2 }],
+      homeworks: [{ id: "ha", lessonId: "LA", trackScope: "ARABIC", instructions: "حل التمرين" }],
+    });
     globalThis.__CM_FAKE_DB__ = db;
     const opened = await L.openLesson({ lessonId: "LA", actorUserId: "u-admin", client: db });
     eq(opened.code, "OK", "an ARABIC lesson can be opened");
@@ -895,7 +1005,7 @@ section("8. the ceremony — MARK_READY requires readiness");
     eq(payload.lifecycle.canTransitionTo, ["DRAFT", "PUBLISHED"], "…with exactly the edges the table allows from READY");
     eq(payload.lifecycle.canBeReady, null, "…and null readiness when none was supplied (no invented verdict)");
     eq(
-      L.lifecyclePayload({}, { readiness: R({ videoUrl: "https://v" }) }).lifecycle.canBeReady,
+      L.lifecyclePayload({}, { readiness: R({ ...FULL }) }).lifecycle.canBeReady,
       true,
       "…passing the readiness verdict through when the caller supplies one"
     );

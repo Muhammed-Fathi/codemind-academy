@@ -576,7 +576,11 @@ async function main() {
     eq(r.status, 200, "Q06: includeReadiness 200");
     const la = r.json.lessons.find((l) => l.id === LA.id);
     eq(la.readiness.canBeReady, false, "Q06: LA not ready before staging");
-    eq(la.readiness.blocking, ["VIDEO_MISSING"], "Q06: only VIDEO_MISSING blocks LA");
+    eq(
+      la.readiness.blocking,
+      ["VIDEO_MISSING", "PDF_MISSING"],
+      "Q06: PHASE D — every requirement not yet staged blocks LA (video + material)"
+    );
     eq(la.readiness.publication, null, "Q06: no publication yet");
   }
   {
@@ -698,7 +702,7 @@ async function main() {
     );
     eq(r.json.sessionVideos, [], "Q13: no videos yet");
     eq(r.json.materials, [], "Q13: no materials yet");
-    eq(r.json.readiness.blocking, ["VIDEO_MISSING"], "Q13: readiness agrees");
+    eq(r.json.readiness.blocking, ["VIDEO_MISSING", "PDF_MISSING"], "Q13: readiness agrees (Phase D: video + material still missing)");
     eq(r.json.publication, null, "Q13: no publication");
     const missing = await GET(R.lessonById, "http://t/api/admin/lessons/nope", {
       id: "nope",
@@ -711,8 +715,8 @@ async function main() {
     });
     eq(
       [...r.json.readiness.blocking].sort(),
-      ["HOMEWORK_INSTRUCTIONS_EMPTY", "QUIZ_EMPTY", "VIDEO_MISSING"].sort(),
-      "Q15: empty quiz + missing instructions block"
+      ["HOMEWORK_INSTRUCTIONS_EMPTY", "PDF_MISSING", "QUIZ_EMPTY", "VIDEO_MISSING"].sort(),
+      "Q15: empty quiz + missing instructions (+ Phase D gaps) block"
     );
   }
   {
@@ -991,7 +995,7 @@ async function main() {
       codes,
       {
         VIDEO: "VIDEO_OK",
-        PDF: "PDF_PRESENT_NOT_REQUIRED",
+        PDF: "PDF_OK",
         QUIZ: "QUIZ_OK",
         HOMEWORK: "HOMEWORK_OK",
       },
@@ -1042,8 +1046,8 @@ async function main() {
     eq(r.json.code, "READINESS_BLOCKED", "Q27: exact code");
     eq(
       [...r.json.readiness.blocking].sort(),
-      ["HOMEWORK_INSTRUCTIONS_EMPTY", "QUIZ_EMPTY", "VIDEO_MISSING"].sort(),
-      "Q27: refusal names every blocker"
+      ["HOMEWORK_INSTRUCTIONS_EMPTY", "PDF_MISSING", "QUIZ_EMPTY", "VIDEO_MISSING"].sort(),
+      "Q27: refusal names every blocker (Phase D: material included)"
     );
     const row = await client.lesson.findUnique({ where: { id: LE.id } });
     eq(row.status, "DRAFT", "Q27: failed ceremony writes nothing");

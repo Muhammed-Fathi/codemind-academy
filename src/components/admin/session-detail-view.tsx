@@ -242,7 +242,12 @@ export function SessionDetailView({
               {tr("admin.386")}
             </Button>
           )}
-          {isReady && !archived && (
+          {/* Phase D — the Open control is offered for DRAFT and READY alike:
+              the NORMAL path is still server-enforced (READY first, readiness
+              complete), but the dialog is also where the admin reaches the
+              explicit, audited emergency override when readiness is blocked.
+              A PUBLISHED session shows Unpublish instead. */}
+          {(isDraft || isReady) && !archived && (
             <Button size="sm" onClick={() => setOpenOpen(true)}>
               <Rocket className="w-3.5 h-3.5 me-1.5" />
               {tr("admin.389")}
