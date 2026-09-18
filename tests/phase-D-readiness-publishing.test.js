@@ -951,11 +951,46 @@ section("6. Normal MARK READY is rejected when ANY requirement is missing");
     pinned(markReadyRoute, /requireRole\("ADMIN"\)/, "12.9 mark-ready stays ADMIN-only");
     absent(markReadyRoute, /override/i, "12.10 mark-ready has no override input");
     // Teacher / student / parent surfaces must not reach the ceremonies at all.
-    const teacherRoutes = execSync(
-      "grep -rl 'openLessonWithOverride\\|openLesson\\|transitionLesson' src/app/api/teacher src/app/api/students src/app/api/parents src/app/api/lessons src/app/api/quizzes src/app/api/materials 2>/dev/null || true",
-      { cwd: REPO, encoding: "utf8" }
-    ).trim();
-    eq(teacherRoutes, "", "12.11 no teacher/student/parent route references the publishing ceremonies");
+    // Pure-Node recursive scan (no grep/shell): portable across Windows, Linux
+    // and macOS. Semantics preserved exactly: any file under these API surfaces
+    // whose SOURCE mentions any ceremony entry point is a violation. Missing
+    // directories are skipped silently (the old "2>/dev/null || true" guard).
+    const CEREMONY_SURFACE_DIRS = [
+      "src/app/api/teacher",
+      "src/app/api/students",
+      "src/app/api/parents",
+      "src/app/api/lessons",
+      "src/app/api/quizzes",
+      "src/app/api/materials",
+    ];
+    const walkFiles = (dir, out = []) => {
+      let entries;
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return out; // directory absent -> nothing to scan
+      }
+      for (const entry of entries) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) walkFiles(full, out);
+        else if (entry.isFile()) out.push(full);
+      }
+      return out;
+    };
+    const CEREMONY_PATTERN = /openLessonWithOverride|openLesson|transitionLesson/;
+    const offendingRoutes = [];
+    for (const surface of CEREMONY_SURFACE_DIRS) {
+      for (const file of walkFiles(path.join(REPO, surface))) {
+        if (CEREMONY_PATTERN.test(fs.readFileSync(file, "utf8"))) {
+          offendingRoutes.push(path.relative(REPO, file).split(path.sep).join("/"));
+        }
+      }
+    }
+    eq(
+      offendingRoutes.join("\n"),
+      "",
+      "12.11 no teacher/student/parent route references the publishing ceremonies"
+    );
     // requireRole contract: any role NOT listed gets a 403-style refusal.
     const apiSrc = read("src/lib/api.ts");
     pinned(apiSrc, /export async function requireRole\(\.\.\.roles: Role\[\]\)/, "12.12 requireRole denies every role it does not list");
