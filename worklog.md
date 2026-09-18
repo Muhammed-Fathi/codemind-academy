@@ -2301,3 +2301,65 @@ Verification (this sandbox, offline):
 
 No PR, no merge, no schema/migration/seed change, no data rewrite, no Phase
 D/F/H work.
+
+## Task ID 22 — Phase C QA fix: Unit summary counts (course-tree representation)
+
+**Defect (manual QA):** a Unit visibly containing canonical Lesson 1-1 had a
+summary reading "0 Topics · 1 Lessons" (reported as Topics·1/Lessons 0) — the
+summary contradicted the rows under it. The old line rendered
+`{unit.topics.length} Topics · {unitLessons(unit).length} Lessons`
+unconditionally, in hardcoded English, in the ONLY renderer
+(`src/components/course/student-course.tsx`, byte-identical on base fb3c2d3).
+
+**Root cause (traced, not guessed):**
+1. `/api/courses/[slug]` sends no unit-level counts — full arrays only:
+   `unit.lessons` (canonical, viewer-filtered) and `unit.topics[].lessons`
+   (legacy rows; the API already drops topics whose visible lesson list is
+   empty, and the flat builder never lists a unit-linked lesson twice).
+2. The client counted Topics = legacy topic CONTAINERS and rendered that
+   count even when zero, while Lessons = canonical + surviving legacy rows.
+3. Verdict: not reversed, not stale — the Lessons counter was already
+   consistent with the rendered rows; the defect was the unconditional
+   zero Topics segment (semantically legacy-only) presented for official
+   canonical curriculum.
+
+**Fix (representation/counting only):**
+- NEW `src/lib/unit-counts.ts` — `countUnitContent(unit)`: pure counter
+  (no db, no viewer, no progression/readiness coupling): canonical +
+  legacyTopics (only containers with ≥1 visible row) + legacyLessons +
+  total + kind ("empty" | "canonical" | "legacy" | "mixed").
+- `student-course.tsx` — `UnitCountSummary` renders: nothing for empty;
+  localized «الدروس: {p1}»/course.240 for canonical units;
+  «المواضيع: {p1} · الدروس: {p2}»/course.241 when a real legacy chain
+  exists. The old line + `unitLessons` helper removed.
+- `i18n-dict-2026.ts` — course.240/241 (AR + EN; colon form keeps Arabic
+  grammatical for 1/2/3+ without plural branching).
+- Docs §5.1 + QA checklist item 11; files-changed updated.
+
+**Tests:** Phase C suite extended with section V (behavioral, against the
+compiled counter + the REAL `translate`): V1 canonical 1/0 →
+lessonCount=1, topicCount=0 + Arabic-first copy; V2 multi-canonical exact
+count; V3 legacy chain counts; V4 mixed not swapped/duplicated; V5 counted
+total == exact visible rows (unique ids, row-less topics dropped);
+V6 zero segments impossible + no progression/readiness coupling
+(counter imports nothing) + component/dict pins.
+
+**Verification:** phaseC 166/0 (was 128/0); required reruns
+phase16 / session-progression / curriculum-reconciliation-phase11 all
+0-failed; wider battery (phaseA, phaseB, phase19, parent-isolation,
+phase26b, auth-invariants, phase12/13/14, session-quiz, quiz-analytics)
+0-failed; full offline sweep 62/62 suites GREEN; `tsc --noEmit` PASS;
+eslint: only the 1 pre-existing set-state-in-effect error in
+student-course.tsx (byte-identical on base); `npm run build:postgres`
+EXIT 0 (75/75 static pages, no migrations); SQLite client re-generated
+after the build. No schema/migration/seed/data change, no progression or
+readiness change, no Phase C aggregation semantic change.
+
+**Sandbox note:** node_modules + /tmp were wiped between sessions and
+binaries.prisma.sh is blocked; the engines mirror was reconstructed at
+/tmp/prisma-mirror.cjs (port 39378). Contract decoded from the CLI source:
+fetch `<file>` + `<file>.gz.sha256` (= sha256 of the wire bytes) +
+`<file>.sha256` (= sha256 of the gunzipped bytes), file must be a valid
+gzip stream; PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING does not bypass the
+CLI-side check. Placeholder engines are sufficient for generate/build
+(types only; suites shim @/lib/db).

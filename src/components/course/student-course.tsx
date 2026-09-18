@@ -16,6 +16,10 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { useApp } from "@/lib/store";
+// Phase C representation fix — the ONE unit-summary counter (pure, shared
+// with the Phase C suite): canonical Lessons vs legacy Topics, with zero
+// segments impossible by construction.
+import { countUnitContent } from "@/lib/unit-counts";
 import { toast } from "sonner";
 import {
   Accordion,
@@ -106,9 +110,35 @@ type UnitItem = {
   topics: TopicItem[];
 };
 
-/** Every session of a unit, in the order the progression engine enforces. */
-function unitLessons(unit: UnitItem): LessonItem[] {
-  return [...unit.lessons, ...unit.topics.flatMap((t) => t.lessons)];
+/**
+ * Phase C representation fix — the Unit summary counts. The OLD summary
+ * rendered `{unit.topics.length} Topics · {unitLessons(unit).length} Lessons`
+ * unconditionally and in hardcoded English, so a purely canonical unit (the
+ * official Course → Part → Unit → Lesson chain) advertised a meaningless
+ * "0 Topics" beside its visibly rendered Lesson 1-1 — the QA defect. The
+ * counts now come from `countUnitContent` (src/lib/unit-counts.ts), which
+ * derives them from the SAME arrays the accordion below renders:
+ *
+ *   * "empty"                     → no summary line at all (a zero segment
+ *                                   can never render);
+ *   * canonical-only units        → the localized Lessons count (course.240);
+ *   * real legacy Topic chains    → "Topics · Lessons" (course.241) — both
+ *                                   segments backed by ≥ 1 visible row.
+ *
+ * A canonical Lesson is never counted as a legacy Topic, and the Lessons
+ * number always equals the exact rows rendered under the Unit.
+ */
+function UnitCountSummary({ unit }: { unit: UnitItem }) {
+  const tr = useT();
+  const c = countUnitContent(unit);
+  if (c.total === 0) return null;
+  return (
+    <div className="text-[11px] text-muted-foreground">
+      {c.legacyTopics > 0
+        ? tr("course.241", { p1: c.legacyTopics, p2: c.total })
+        : tr("course.240", { p1: c.total })}
+    </div>
+  );
 }
 
 type PartItem = {
@@ -369,10 +399,7 @@ export function StudentCourseView() {
                               <div className="text-sm font-semibold truncate">
                                 {pickAuto(unit.titleAr, unit.title)}
                               </div>
-                              <div className="text-[11px] text-muted-foreground">
-                                {unit.topics.length} Topics ·{" "}
-                                {unitLessons(unit).length} Lessons
-                              </div>
+                              <UnitCountSummary unit={unit} />
                             </div>
                           </div>
                         </AccordionTrigger>

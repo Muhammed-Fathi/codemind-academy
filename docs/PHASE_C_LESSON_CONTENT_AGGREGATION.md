@@ -137,6 +137,30 @@ quiz / homework), matching the lesson page accents (primary/amber), with
 no titles. Chips read `lesson.content` (the serialized authority output);
 the legacy boolean flags remain a defensive fallback only.
 
+### 5.1 Unit summary counts (QA representation fix)
+
+The Unit header's summary line used to render
+`{unit.topics.length} Topics · {unitLessons(unit).length} Lessons`
+**unconditionally** in hardcoded English — a purely canonical unit (the
+official `Course → Part → Unit → Lesson` chain) therefore advertised a
+meaningless "0 Topics" beside its visibly rendered Lesson 1-1, and the pair
+read as a contradiction. The line now derives from
+`countUnitContent` (`src/lib/unit-counts.ts`, a PURE counter over the exact
+arrays the accordion renders):
+
+* canonical Lessons report their **exact** count — never 0 while rows render;
+* a canonical Lesson is **never** counted as a legacy Topic;
+* the Topics segment renders only when a REAL legacy chain (≥ 1 visible row)
+  exists — `Topics: {p1} · Lessons: {p2}` (course.241);
+* otherwise the summary is `Lessons: {p1}` (course.240) — Arabic-first,
+  colon-form so the Arabic stays grammatical for every count;
+* a zero segment can never render (row-less topics are dropped; an empty
+  unit renders no summary at all).
+
+No data, progression, readiness, publication or Phase C aggregation semantics
+changed — this is a representation/counting fix only (suite section V).
+
+
 ## 6. Continue Learning
 
 The dashboard card renders the same four chips from
@@ -195,7 +219,8 @@ lock-independent, Phase 16) with every protected field redacted.
 
 **Added**
 * `src/lib/lesson-content.ts` — the authority.
-* `tests/lesson-content-aggregation-phaseC.test.js` — the Phase C suite (A–U).
+* `src/lib/unit-counts.ts` — the pure Unit-summary counter (representation fix).
+* `tests/lesson-content-aggregation-phaseC.test.js` — the Phase C suite (A–V).
 * `docs/PHASE_C_LESSON_CONTENT_AGGREGATION.md` — this document.
 
 **Modified**
@@ -203,9 +228,11 @@ lock-independent, Phase 16) with every protected field redacted.
 * `src/app/api/lessons/[id]/route.ts` — `content` in the lesson payload.
 * `src/app/api/students/me/dashboard/route.ts` — `continueLesson.content`.
 * `src/components/course/student-lesson.tsx` — workspace order + empty states.
-* `src/components/course/student-course.tsx` — indicator chips.
+* `src/components/course/student-course.tsx` — indicator chips + the Unit
+  summary counts (§5.1, via `countUnitContent`).
 * `src/components/student/student-dashboard.tsx` — Continue Learning chips.
-* `src/lib/i18n-dict-2026.ts` — keys course.230–course.239.
+* `src/lib/i18n-dict-2026.ts` — keys course.230–course.239, plus the Unit
+  summary labels course.240/241 (representation fix).
 * `tests/session-progression.test.js`,
   `tests/student-locked-curriculum-phase16.test.js`,
   `tests/student-session-media-alignment-phaseB.test.js` — source-pin
@@ -244,6 +271,11 @@ enrolled in the same course group; admin uploads audience-specific content.
    overflow; RTL intact in both locales.
 10. **Continue Learning card** — chips agree with the tree for the same
     lesson; switching locale toggles tooltips/labels only.
+11. **Unit summary (representation fix)** — open a course whose unit holds
+    only canonical Lessons: the Unit header reads «الدروس: N» / "Lessons: N"
+    with the EXACT lesson count (never "0 Topics"), and the number equals the
+    visible rows. A unit with a real legacy Topic chain reads
+    «المواضيع: T · الدروس: L» with both numbers matching the rendered rows.
 
 ## 12. Known limitations / deferred
 

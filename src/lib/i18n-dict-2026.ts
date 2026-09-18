@@ -1705,6 +1705,24 @@ export const DICT_2026: Record<string, DictEntry> = {
     ar: "هذا الجزء موجود لكنه غير متاح لحسابك حاليًا",
     en: "This part exists but is not available to your account yet.",
   },
+  // Phase C representation fix — the course-tree Unit summary counts. The OLD
+  // summary rendered "{n} Topics · {m} Lessons" unconditionally in hardcoded
+  // English: a purely canonical unit (Course → Part → Unit → Lesson) showed a
+  // meaningless "0 Topics" beside its visible Lesson 1-1. Counts now derive
+  // from the same arrays the tree renders (src/lib/unit-counts.ts) and a zero
+  // segment never renders. A canonical Lesson is never counted as a Topic;
+  // the Topics segment appears only when a REAL legacy Topic chain (≥ 1
+  // visible row) exists under the unit. The colon form keeps the Arabic
+  // grammatical for every count (1 درس / درسان / 3+ دروس) without plural
+  // branching.
+  "course.240": {
+    ar: "الدروس: {p1}",
+    en: "Lessons: {p1}",
+  },
+  "course.241": {
+    ar: "المواضيع: {p1} · الدروس: {p2}",
+    en: "Topics: {p1} · Lessons: {p2}",
+  },
 
   // ---------- Mock Exam: RANDOM/FIXED pool & manual Question Bank ----------
   // A published exam whose eligible pool is empty is a configuration problem

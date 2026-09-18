@@ -33,6 +33,10 @@
 //   S. Continue Learning carries the consistent content summary
 //   T. no progression rules changed (engine source pins + behavioral lock)
 //   U. no readiness rules changed (lifecycle module untouched)
+//   V. unit summary counts — a Unit's canonical Lessons report their exact
+//      count (never 0 while rows render), a canonical Lesson is never
+//      counted as a legacy Topic, real legacy chains keep correct Topics ·
+//      Lessons counts, and a zero segment can never render (QA fix)
 //
 // What is REAL here: the compiled shipped route handlers AND the shipped
 // authority module, the SQLite database built from the real migration SQL,
@@ -127,6 +131,8 @@ const REAL_CODE_MODULES = [
   "src/lib/api.ts",
   // the Phase C authority under test
   "src/lib/lesson-content.ts",
+  // the Phase C unit-summary counter (pure, tree representation fix)
+  "src/lib/unit-counts.ts",
   // route handlers under test
   "src/app/api/courses/[slug]/route.ts",
   "src/app/api/lessons/[id]/route.ts",
@@ -250,6 +256,8 @@ Module._resolveFilename = function (request, ...rest) {
 };
 const route = (p) => require(path.join(OUT, "src/app/api", p));
 const authority = require(path.join(EMIT, "lib/lesson-content.js"));
+const unitCounts = require(path.join(EMIT, "lib/unit-counts.js"));
+const i18n = require(path.join(EMIT, "lib/i18n-core.js"));
 const R = {
   course: route("courses/[slug]/route.js"),
   lesson: route("lessons/[id]/route.js"),
@@ -878,6 +886,131 @@ test("Phase C: lesson content aggregation", async () => {
       "UI: the workspace renders Videos → Materials → Quiz → Homework");
     ok(!lessonView.includes("course.076") && !lessonView.includes("course.080"),
       "UI: the legacy lesson empty-state keys are superseded by the approved copy");
+  }
+
+  // ===========================================================================
+  // V. Unit summary counts — the course-tree representation fix.
+  //
+  // Defect: the Unit summary rendered "{topics} Topics · {lessons} Lessons"
+  // unconditionally in hardcoded English, so a purely canonical unit (the
+  // official Course → Part → Unit → Lesson chain) advertised a meaningless
+  // "0 Topics" beside its visibly rendered Lesson 1-1 — a summary that
+  // contradicts the rows under it. The counts now derive from the shared
+  // pure counter the component renders (src/lib/unit-counts.ts), from the
+  // SAME arrays the accordion renders.
+  // ===========================================================================
+  {
+    const countUnitContent = unitCounts.countUnitContent;
+
+    // (V1) One canonical Lesson + zero legacy Topics → lessonCount = 1,
+    //      topicCount = 0, Lessons-only localized copy.
+    {
+      const c = countUnitContent({ lessons: [{ id: "c1" }], topics: [] });
+      eq(c.canonical, 1, "V1: 1 canonical lesson counts as canonical");
+      eq(c.legacyTopics, 0, "V1: topicCount = 0 (no legacy chain exists)");
+      eq(c.legacyLessons, 0, "V1: legacyLessons = 0");
+      eq(c.total, 1, "V1: lessonCount = 1 — never 0 while the lesson renders");
+      eq(c.kind, "canonical", "V1: canonical-only units use the Lessons-only summary");
+      eq(i18n.translate("ar", "course.240", { p1: c.total }), "الدروس: 1",
+        "V1: Arabic-first copy for the canonical unit summary");
+      eq(i18n.translate("en", "course.240", { p1: c.total }), "Lessons: 1",
+        "V1: English copy for the canonical unit summary");
+    }
+
+    // (V2) Multiple canonical lessons → the exact count.
+    {
+      const c = countUnitContent({
+        lessons: [{ id: "c1" }, { id: "c2" }, { id: "c3" }],
+        topics: [],
+      });
+      eq(c.total, 3, "V2: 3 canonical lessons report exactly 3");
+      eq(c.canonical, 3, "V2: all three count as canonical");
+      eq(c.kind, "canonical", "V2: multi-canonical stays Lessons-only");
+    }
+
+    // (V3) Legacy Topic-chain unit → the legacy counts remain correct.
+    {
+      const c = countUnitContent({
+        lessons: [],
+        topics: [{ id: "t1", lessons: [{ id: "l1" }, { id: "l2" }] }],
+      });
+      eq(c.kind, "legacy", "V3: a real legacy chain keeps the Topics summary");
+      eq(c.legacyTopics, 1, "V3: the legacy topic container is counted");
+      eq(c.legacyLessons, 2, "V3: the legacy lessons are counted under their topic");
+      eq(c.total, 2, "V3: total = the visible legacy rows");
+      eq(i18n.translate("ar", "course.241", { p1: c.legacyTopics, p2: c.total }),
+        "المواضيع: 1 · الدروس: 2",
+        "V3: Arabic copy for the legacy Topics · Lessons summary");
+    }
+
+    // (V4) Mixed legacy + canonical → counts are neither swapped nor duplicated.
+    {
+      const c = countUnitContent({
+        lessons: [{ id: "c1" }, { id: "c2" }],
+        topics: [{ id: "t1", lessons: [{ id: "l1" }, { id: "l2" }] }],
+      });
+      eq(c.canonical, 2, "V4: canonical lessons stay canonical in a mixed unit");
+      eq(c.legacyTopics, 1, "V4: legacy topics stay legacy in a mixed unit");
+      eq(c.legacyLessons, 2, "V4: legacy lessons stay legacy in a mixed unit");
+      eq(c.total, 4, "V4: mixed total = 2 canonical + 2 legacy (no duplication)");
+      eq(c.kind, "mixed", "V4: mixed units use the Topics · Lessons summary");
+      ok(c.canonical !== c.legacyTopics, "V4: the canonical and topic counters are distinct numbers");
+    }
+
+    // (V5) Visible rows and displayed counts cannot contradict: the counted
+    //      total equals the EXACT rendered row set (same arrays, unique ids,
+    //      row-less topics never counted — the API drops them).
+    {
+      const unit = {
+        lessons: [{ id: "c1" }, { id: "c2" }],
+        topics: [
+          { id: "t1", lessons: [{ id: "l1" }, { id: "l2" }] },
+          { id: "t2", lessons: [] },
+        ],
+      };
+      const c = countUnitContent(unit);
+      const visibleRows = [
+        ...unit.lessons,
+        ...unit.topics.filter((t) => t.lessons.length > 0).flatMap((t) => t.lessons),
+      ];
+      // counted from the SAME arrays the accordion renders
+      eq(c.total, visibleRows.length, "V5: the Lessons number equals the exact visible row count");
+      eq(new Set(visibleRows.map((r) => r.id)).size, c.total, "V5: every visible row counted once — no double counting");
+      eq(c.legacyTopics, 1, "V5: a row-less topic is never counted (no zero-backed segment)");
+      eq(c.canonical + c.legacyLessons, c.total, "V5: canonical + legacy partitions the total exactly");
+    }
+
+    // (V6) No progression / readiness behavior change: the counter is pure
+    //      presentation logic over rows that ALREADY carry the viewer's
+    //      lifecycle/archive/track filters.
+    {
+      for (const [name, c] of Object.entries({
+        canonical: countUnitContent({ lessons: [{ id: "c1" }], topics: [] }),
+        legacy: countUnitContent({ lessons: [], topics: [{ id: "t1", lessons: [{ id: "l1" }] }] }),
+        mixed: countUnitContent({ lessons: [{ id: "c1" }], topics: [{ id: "t1", lessons: [{ id: "l1" }] }] }),
+      })) {
+        const printed = c.legacyTopics > 0 ? [c.legacyTopics, c.total] : [c.total];
+        ok(printed.every((n) => n > 0), `V6: a ${name} unit never renders a zero segment`);
+      }
+      const empty = countUnitContent({ lessons: [], topics: [] });
+      eq(empty.total, 0, "V6: an empty unit reports total 0");
+      eq(empty.kind, "empty", "V6: an empty unit is kind 'empty' → the component renders NO summary");
+      const counterSrc = read("src/lib/unit-counts.ts");
+      ok(!/(?:^|\n)import |require\(/.test(counterSrc),
+        "V6: the counter imports nothing — no db, viewer, progression or readiness coupling");
+      ok(!/lessonProgress|VIDEO_COMPLETION_THRESHOLD|canAccessLesson|getUnlockedLessonIds/.test(counterSrc),
+        "V6: the counter references no progression/readiness symbol");
+      ok(!/\bdb\s*\./.test(counterSrc), "V6: the counter never touches the database");
+    }
+
+    // The component itself derives its summary from the shared counter; the
+    // old unconditional hardcoded line is gone.
+    const treeView = read("src/components/course/student-course.tsx");
+    ok(/countUnitContent\(unit\)/.test(treeView), "V: the component counts through the shared counter");
+    ok(!/\}\s*Topics\s*·\{" "\}/.test(treeView), "V: the old unconditional '{n} Topics ·' JSX is gone");
+    ok(!/function unitLessons/.test(treeView), "V: the old ad-hoc flat counter is superseded");
+    ok(/course\.240/.test(treeView) && /course\.241/.test(treeView), "V: the summary labels are localized (course.240/241)");
+    ok(/c\.total === 0\) return null/.test(treeView), "V: an empty unit renders no summary line");
   }
 
   // ===========================================================================
