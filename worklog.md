@@ -2203,3 +2203,163 @@ Verification (this sandbox, offline):
 
 No PR, no merge, no Phase C, no Live Sessions / Notifications / progression /
 publishing-UI changes.
+
+---
+Task ID: 21
+Agent: Arena Agent Mode
+Task: Phase C — Curriculum Aggregation / Unified Lesson Content. ONE coherent
+academic-content aggregation model: the Lesson as the single academic
+workspace with a consistent content summary shared by every student-facing
+curriculum surface.
+
+Discovery (live code, not the audit):
+- The course tree (GET /api/courses/[slug]) derived hasQuiz/hasAssignment from
+  RAW lesson.quizzes/lesson.homeworks rows WITHOUT the viewer's track filter —
+  a SHARED lesson with only a LANGUAGE quiz showed a "Quiz" badge to an ARABIC
+  student while the lesson page (which filters) said "no quiz". It also
+  carried its own private SessionVideo presence query (Phase B) next to the
+  Phase 14 material descriptors.
+- The lesson page (GET /api/lessons/[id]) already track-filtered its lists.
+- The dashboard exposed only the legacy Lesson.videoUrl on continueLesson.
+
+Changes:
+- NEW src/lib/lesson-content.ts — the ONE server-side Lesson Content Summary
+  authority. buildLessonContentSummaries (batched; ONE SessionVideo query)
+  + buildLessonContentSummary (pure) + toLessonContentPayload. States
+  ABSENT | AVAILABLE | LOCKED per component (video / material / quiz /
+  homework) + natural counts. Reuses eligibleTrackScopes / videoTrackFilter
+  (Phase 12) and buildMaterialDescriptors (Phase 14) and the Phase A/B
+  batch+publication video rule. It NEVER reads progress, never computes
+  unlock, never imports session-progress — it is not a second progression
+  engine. LOCKED is defined for the UI but NO producer emits it today (no
+  existing child-component rule fires below an accessible lesson; a
+  track-ineligible row is hidden, not locked — the documented non-oracle
+  policy). Legacy fallbacks documented: Lesson.videoUrl counts as at most one
+  video when no modern row is visible; Lesson.pdfUrl stays inside the Phase 14
+  descriptor rule; parent/staff video preview behaviour retained.
+- courses/[slug] route: badges (hasVideo/hasPdf/materialCount/hasQuiz/
+  hasAssignment) + a serialized `content` block now derive from the authority;
+  the inline SessionVideo query and the raw quiz/homework counts are gone;
+  quizzes/homeworks includes select trackScope. Locked-lesson redaction and
+  skeleton-badge contracts untouched.
+- lessons/[id] route: `content` in the payload, computed AFTER canAccessLesson
+  in the student's own audience (schoolType + batch via the same lazy
+  syncStudentBatch reconcile the video list uses).
+- students/me/dashboard route: continueLesson.content from the same authority
+  (legacy videoUrl field retained — pinned by phase19).
+- student-lesson.tsx: ONE workspace order — Videos → Summary → Materials →
+  Quiz → Homework → Mark complete → Requirements → prev/next (sidebar keeps
+  tip + notes). Materials section always renders with the approved empty state
+  course.230 "لا توجد ملفات متاحة لهذه الحصة حاليًا"; quiz/homework empty
+  states moved to the approved copy course.231/232; Arabic-first section
+  titles course.233/235/236; defensive LOCKED rendering course.239.
+- student-course.tsx: tree badges are now four compact icon chips (video /
+  material ×N / quiz / homework) with localized aria-label + title, reading
+  lesson.content; legacy flags kept as a defensive fallback.
+- student-dashboard.tsx: Continue Learning card renders the same chips from
+  continueLesson.content.
+- i18n-dict-2026.ts: course.230–course.239 (approved empty-state copy + titles
+  + chip labels), AR+EN.
+- tests/lesson-content-aggregation-phaseC.test.js — NEW suite (128 assertions,
+  A–U): modern-only/legacy video, SHARED-lesson audience isolation both ways,
+  multi-video counts, material presence/inactive/asset-less/other-track
+  filtering, quiz/homework ABSENT-vs-AVAILABLE, full + empty lessons, locked
+  lesson (403 + skeleton + redaction), cross-course 403, cross-track
+  isolation, archived/DRAFT non-oracle 404s, tree/lesson/dashboard one-author
+  ity, engine + lifecycle source pins (progression & readiness untouched).
+- tests/session-progression.test.js, tests/student-locked-curriculum-phase16
+  .test.js, tests/student-session-media-alignment-phaseB.test.js: source-pin
+  SUPERSESSIONS (documented in place; contract intent preserved).
+- tests/parent-analytics-alignment-phase19.test.js: mock gains empty batch /
+  sessionVideo tables (same accommodation Phase B made in the
+  parent-dashboard-isolation mock; students carry batchId null → NO_BATCH, no
+  write).
+- docs/PHASE_C_LESSON_CONTENT_AGGREGATION.md — full contract, matrix, legacy
+  documentation, manual QA checklist.
+
+NOT changed: Prisma schema, migrations, seeds, session-progress.ts,
+session-lifecycle.ts, session-materials.ts, track-scope.ts, quiz/homework
+attempt/grading flows, readiness/OPEN rules, 95% semantics, Phase D/F/H items.
+
+Verification (this sandbox, offline):
+- Phase C suite: 128/0. All ten required regressions 0-failed: phaseB,
+  phaseA, phase16, session-progression, authorization-invariants,
+  track-architecture-phase12, session-lifecycle-phase13,
+  session-materials-phase14, parent-dashboard-isolation, phase26b-student-flow
+  (+ session-quiz, quiz-analytics, teacher-workflow-phase18,
+  admin-publishing-phase15, curriculum-reconciliation-phase11,
+  session-media-publishing-audit, session-notifications-phase17,
+  parent-analytics-alignment-phase19 176/0). Full offline .test.js sweep:
+  green.
+- npx tsc --noEmit — PASS. npm run build:postgres — PASS (no migrations run;
+  NOTE: it regenerates the PostgreSQL Prisma client — local SQLite dev needs
+  `npx prisma generate` afterwards). ESLint: no NEW errors (the 5
+  react-hooks/set-state-in-effect errors in the three touched components are
+  byte-identical pre-existing on the base commit).
+- Sandbox note: binaries.prisma.sh is blocked here; a local engine mirror was
+  used for `prisma generate` only (types). Repo code is unaffected.
+
+No PR, no merge, no schema/migration/seed change, no data rewrite, no Phase
+D/F/H work.
+
+## Task ID 22 — Phase C QA fix: Unit summary counts (course-tree representation)
+
+**Defect (manual QA):** a Unit visibly containing canonical Lesson 1-1 had a
+summary reading "0 Topics · 1 Lessons" (reported as Topics·1/Lessons 0) — the
+summary contradicted the rows under it. The old line rendered
+`{unit.topics.length} Topics · {unitLessons(unit).length} Lessons`
+unconditionally, in hardcoded English, in the ONLY renderer
+(`src/components/course/student-course.tsx`, byte-identical on base fb3c2d3).
+
+**Root cause (traced, not guessed):**
+1. `/api/courses/[slug]` sends no unit-level counts — full arrays only:
+   `unit.lessons` (canonical, viewer-filtered) and `unit.topics[].lessons`
+   (legacy rows; the API already drops topics whose visible lesson list is
+   empty, and the flat builder never lists a unit-linked lesson twice).
+2. The client counted Topics = legacy topic CONTAINERS and rendered that
+   count even when zero, while Lessons = canonical + surviving legacy rows.
+3. Verdict: not reversed, not stale — the Lessons counter was already
+   consistent with the rendered rows; the defect was the unconditional
+   zero Topics segment (semantically legacy-only) presented for official
+   canonical curriculum.
+
+**Fix (representation/counting only):**
+- NEW `src/lib/unit-counts.ts` — `countUnitContent(unit)`: pure counter
+  (no db, no viewer, no progression/readiness coupling): canonical +
+  legacyTopics (only containers with ≥1 visible row) + legacyLessons +
+  total + kind ("empty" | "canonical" | "legacy" | "mixed").
+- `student-course.tsx` — `UnitCountSummary` renders: nothing for empty;
+  localized «الدروس: {p1}»/course.240 for canonical units;
+  «المواضيع: {p1} · الدروس: {p2}»/course.241 when a real legacy chain
+  exists. The old line + `unitLessons` helper removed.
+- `i18n-dict-2026.ts` — course.240/241 (AR + EN; colon form keeps Arabic
+  grammatical for 1/2/3+ without plural branching).
+- Docs §5.1 + QA checklist item 11; files-changed updated.
+
+**Tests:** Phase C suite extended with section V (behavioral, against the
+compiled counter + the REAL `translate`): V1 canonical 1/0 →
+lessonCount=1, topicCount=0 + Arabic-first copy; V2 multi-canonical exact
+count; V3 legacy chain counts; V4 mixed not swapped/duplicated; V5 counted
+total == exact visible rows (unique ids, row-less topics dropped);
+V6 zero segments impossible + no progression/readiness coupling
+(counter imports nothing) + component/dict pins.
+
+**Verification:** phaseC 166/0 (was 128/0); required reruns
+phase16 / session-progression / curriculum-reconciliation-phase11 all
+0-failed; wider battery (phaseA, phaseB, phase19, parent-isolation,
+phase26b, auth-invariants, phase12/13/14, session-quiz, quiz-analytics)
+0-failed; full offline sweep 62/62 suites GREEN; `tsc --noEmit` PASS;
+eslint: only the 1 pre-existing set-state-in-effect error in
+student-course.tsx (byte-identical on base); `npm run build:postgres`
+EXIT 0 (75/75 static pages, no migrations); SQLite client re-generated
+after the build. No schema/migration/seed/data change, no progression or
+readiness change, no Phase C aggregation semantic change.
+
+**Sandbox note:** node_modules + /tmp were wiped between sessions and
+binaries.prisma.sh is blocked; the engines mirror was reconstructed at
+/tmp/prisma-mirror.cjs (port 39378). Contract decoded from the CLI source:
+fetch `<file>` + `<file>.gz.sha256` (= sha256 of the wire bytes) +
+`<file>.sha256` (= sha256 of the gunzipped bytes), file must be a valid
+gzip stream; PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING does not bypass the
+CLI-side check. Placeholder engines are sufficient for generate/build
+(types only; suites shim @/lib/db).

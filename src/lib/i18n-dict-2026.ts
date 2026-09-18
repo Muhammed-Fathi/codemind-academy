@@ -1658,6 +1658,71 @@ export const DICT_2026: Record<string, DictEntry> = {
     ar: "مش قادرين نيجي بفيديوهات الحصة دلوقتي. جرّب تاني.",
     en: "We could not load this session's videos right now. Please try again.",
   },
+  // ---------- Phase C: unified Lesson content workspace ----------
+  // The approved empty-state copy for absent components (lightweight, one
+  // line, never a broken control) + the Arabic-first section titles of the
+  // reordered lesson workspace (Videos → Materials → Quiz → Homework).
+  "course.230": {
+    ar: "لا توجد ملفات متاحة لهذه الحصة حاليًا",
+    en: "No files are available for this session right now.",
+  },
+  "course.231": {
+    ar: "لا يوجد اختبار لهذه الحصة حاليًا",
+    en: "No quiz for this session right now.",
+  },
+  "course.232": {
+    ar: "لا يوجد واجب لهذه الحصة حاليًا",
+    en: "No homework for this session right now.",
+  },
+  "course.233": {
+    ar: "ملفات الحصة",
+    en: "Session materials",
+  },
+  "course.234": {
+    ar: "ملفات ومراجع مسموح بحفظها أو فتحها من هذه الحصة",
+    en: "Files and references you can download or open from this session",
+  },
+  "course.235": {
+    ar: "اختبار الحصة",
+    en: "Session quiz",
+  },
+  "course.236": {
+    ar: "واجب الحصة",
+    en: "Session homework",
+  },
+  "course.237": {
+    ar: "اختبار",
+    en: "Quiz",
+  },
+  "course.238": {
+    ar: "واجب",
+    en: "Homework",
+  },
+  // Defensive LOCKED rendering (an existing rule may gate a component for the
+  // viewer); no current producer emits it — the copy exists so the state is
+  // never shown as raw developer terminology if a future phase produces it.
+  "course.239": {
+    ar: "هذا الجزء موجود لكنه غير متاح لحسابك حاليًا",
+    en: "This part exists but is not available to your account yet.",
+  },
+  // Phase C representation fix — the course-tree Unit summary counts. The OLD
+  // summary rendered "{n} Topics · {m} Lessons" unconditionally in hardcoded
+  // English: a purely canonical unit (Course → Part → Unit → Lesson) showed a
+  // meaningless "0 Topics" beside its visible Lesson 1-1. Counts now derive
+  // from the same arrays the tree renders (src/lib/unit-counts.ts) and a zero
+  // segment never renders. A canonical Lesson is never counted as a Topic;
+  // the Topics segment appears only when a REAL legacy Topic chain (≥ 1
+  // visible row) exists under the unit. The colon form keeps the Arabic
+  // grammatical for every count (1 درس / درسان / 3+ دروس) without plural
+  // branching.
+  "course.240": {
+    ar: "الدروس: {p1}",
+    en: "Lessons: {p1}",
+  },
+  "course.241": {
+    ar: "المواضيع: {p1} · الدروس: {p2}",
+    en: "Topics: {p1} · Lessons: {p2}",
+  },
 
   // ---------- Mock Exam: RANDOM/FIXED pool & manual Question Bank ----------
   // A published exam whose eligible pool is empty is a configuration problem

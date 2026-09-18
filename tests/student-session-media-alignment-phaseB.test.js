@@ -896,8 +896,14 @@ test("Phase B: student session media alignment", async () => {
   ok(/\.\.\.videoTrackFilter\(enrollment\.schoolType\)/.test(videosRoute), "R4: the track gate is preserved");
   ok(/\{ lesson: LESSON_STUDENT_STATUS_FILTER \}/.test(videosRoute), "R5: linked lessons must be PUBLISHED");
   const courseRoute = read("src/app/api/courses/[slug]/route.ts");
-  ok(/hasVideo: !!lesson\.videoUrl \|\| videoLessonIds\.has\(lesson\.id\),/.test(courseRoute), "R6: tree badge = legacy OR modern");
+  // PHASE C SUPERSESSION (the badge contract is preserved): the tree's video
+  // badge moved into the shared Lesson Content Summary authority
+  // (src/lib/lesson-content.ts) — the SAME legacy-OR-modern rule, still
+  // lock-independent, now emitted by ONE module the lesson page and the
+  // dashboard also call. The route reads the precomputed count.
+  ok(/hasVideo: \(content\?\.video\.count \?\? 0\) > 0,/.test(courseRoute), "R6: tree badge = legacy OR modern (via the Phase C shared authority)");
   ok(!/hasVideo: locked/.test(courseRoute), "R6: the badge is never lock-gated");
+  ok(/videoTrackFilter\(/.test(read("src/lib/lesson-content.ts")), "R6: the authority still applies the Phase B batch/track video rule");
   const lessonView = read("src/components/course/student-lesson.tsx");
   ok(/session-videos\?lessonId=\$\{encodeURIComponent\(lessonId\)\}/.test(lessonView), "R7: the lesson page loads through the narrowed authorized list");
   ok(/setActiveId\(v\.id\)/.test(lessonView), "R7: playlist selection swaps the main player in place");

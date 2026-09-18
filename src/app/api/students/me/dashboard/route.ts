@@ -4,7 +4,14 @@ import { db } from "@/lib/db";
 import { ok, err, requireUser, getStudentProfile } from "@/lib/api";
 import { trackScopeWhere } from "@/lib/track-scope";
 import { LESSON_STUDENT_STATUS_FILTER } from "@/lib/session-lifecycle";
-import { getStudentSchoolType } from "@/lib/enrollment";
+import { getStudentSchoolType, syncStudentBatch } from "@/lib/enrollment";
+// Phase C — the ONE Lesson Content Summary authority: the Continue Learning
+// card describes its lesson's content through the same aggregation as the
+// course tree and the lesson page.
+import {
+  buildLessonContentSummaries,
+  toLessonContentPayload,
+} from "@/lib/lesson-content";
 import {
   EXCLUDE_ARCHIVED_LESSON,
   getUnlockedLessonIds,
@@ -114,6 +121,55 @@ export async function GET(_req: NextRequest) {
     firstIncomplete ||
     lessons.find((l) => isOpen(l.id)) ||
     null;
+
+  // ----- Phase C: Continue Learning content summary (the shared authority) -----
+  // continueLesson is always an UNLOCKED session (the guard above), so the
+  // lesson gate is already satisfied; the summary itself aggregates in the
+  // student's own audience (school type + batch — the same lazy-reconcile
+  // rule the session-video list uses) from ONE targeted load of the lesson's
+  // content rows. Same authority, same numbers, as the course tree badges
+  // and the lesson workspace. The legacy `videoUrl` field below stays a
+  // documented compatibility surface (its behavioral pins predate Phase C).
+  let continueLessonContent: Awaited<
+    ReturnType<typeof toLessonContentPayload>
+  > = null;
+  if (continueLesson) {
+    const contentRows = await db.lesson.findUnique({
+      where: { id: continueLesson.id },
+      select: {
+        id: true,
+        videoUrl: true,
+        pdfUrl: true,
+        quizzes: { select: { id: true, trackScope: true } },
+        homeworks: { select: { id: true, trackScope: true } },
+        materials: {
+          where: { isActive: true },
+          select: {
+            id: true,
+            title: true,
+            kind: true,
+            trackScope: true,
+            isActive: true,
+            mediaAssetId: true,
+            media: { select: { mimeType: true, sizeBytes: true } },
+          },
+        },
+      },
+    });
+    if (contentRows) {
+      const summaries = await buildLessonContentSummaries({
+        lessons: [contentRows],
+        viewer: {
+          role: "STUDENT",
+          schoolType: await getStudentSchoolType(student.id),
+          batchId: student.batchId || (await syncStudentBatch(student.id)),
+        },
+      });
+      continueLessonContent = toLessonContentPayload(
+        summaries.get(continueLesson.id) ?? null
+      );
+    }
+  }
 
   // ----- Next live session -----
   const nextSession = student.groupId
@@ -359,6 +415,10 @@ export async function GET(_req: NextRequest) {
           // continueLesson is always an unlocked session now; the guard is
           // belt-and-braces so a future refactor cannot re-leak a media URL.
           videoUrl: isOpen(continueLesson.id) ? continueLesson.videoUrl : null,
+          // Phase C — content summary from the shared authority (audience-
+          // isolated states + counts). Aligned with the course tree and the
+          // lesson workspace; replaces no progression data.
+          content: continueLessonContent,
           courseSlug: continuePart?.course?.slug ?? null,
         }
       : null,
