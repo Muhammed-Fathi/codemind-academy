@@ -12,7 +12,8 @@ name: PG17 trusted catalog references (pre-26D + POST-26D full chain)
 #   Job 2 — pg17-full-chain-phase26d-reference (POST-26D, the mission)
 #     Fresh PG17 + the REAL Prisma engine applies EXACTLY the current
 #     PostgreSQL migration chain from prisma/postgres/migrations
-#     (0_init + 20260915180000_phase26d_quiz_attempt_architecture), proving:
+#     (0_init + 20260915180000_phase26d_quiz_attempt_architecture +
+#      20260919120000_phase_f_live_session_lifecycle), proving:
 #       * migrations apply cleanly from empty,
 #       * `prisma migrate status` is clean ("Database schema is up to date!"),
 #       * a second `prisma migrate deploy` is a no-op
@@ -69,6 +70,46 @@ name: PG17 trusted catalog references (pre-26D + POST-26D full chain)
 #   ONCE MERGED, the proof is permanently maintained on main and runs on every
 #   arena/** push and on every PR to main.
 #   Read-only, disposable PostgreSQL only — no production system is touched.
+#
+# PHASE F — WORKFLOW UPDATE REQUIRED BY THE PHASE F MIGRATION (2026-09-19).
+#   The PostgreSQL chain now holds THREE migrations:
+#     0_init
+#     20260915180000_phase26d_quiz_attempt_architecture
+#     20260919120000_phase_f_live_session_lifecycle   <- PHASE F, NEW
+#
+#   WHY THIS FILE MUST CHANGE (verification only — no production access):
+#     * the PRE-26D job assembles its 0_init-only bundle by copying
+#       prisma/postgres/migrations and deleting the later directories, then
+#       asserting that EXACTLY ONE directory (0_init) is left. With the Phase F
+#       directory present it would find two and FAIL;
+#     * the POST-26D validator asserted a two-row ledger, so the real three-row
+#       chain would FAIL it;
+#     * the Phase F SQL was not byte-pinned and none of its catalog objects
+#       were asserted, so CI did not protect Phase F at all.
+#
+#   WHAT THIS UPDATE CHANGES (all assertions stay at full strength):
+#     * new byte-frozen pin PHASE_F_SQL_SHA256 + `sha256sum -c` before apply;
+#     * the pre-26D bundle now removes BOTH later migration directories (the
+#       "exactly one directory = 0_init" assertions are untouched), and the
+#       pre-26D reference validator additionally proves the bundle carries NO
+#       Phase F object, so the pre-state is genuinely pre-Phase-F;
+#     * the full-chain deploy log must mention the Phase F migration; the
+#       ledger must be exactly the three migrations, in order, each applied
+#       once; and the Phase F tables, enum labels, columns, indexes and
+#       constraints are asserted BY NAME;
+#     * the full chain must match the measured catalog size exactly:
+#         585 columns / 94 enum values / 185 indexes /
+#         185 primary+unique+foreign-key constraints
+#       (the read-only inspector excludes _prisma_migrations in every section,
+#       so these counts are the real schema, not the ledger table. The constraint
+#       count is the p/u/f SUBSET because the raw pg_constraint total is
+#       PostgreSQL-major dependent: PG18 additionally stores NOT NULL as
+#       contype 'n', PG17 — the CI service container and the production target —
+#       keeps NOT NULL on pg_attribute.)
+#
+#   Artifact, job and file names keep their historical "phase26d" labels: the
+#   captured JSON is a cumulative FULL-CHAIN reference and renaming it would
+#   break the maintainer's documented read-only comparison command.
 
 on:
   push:
@@ -81,6 +122,7 @@ env:
   # Byte-frozen provenance pins (also enforced by tests/migration-providers.test.js).
   INIT_SQL_SHA256: c7f5d3fa76931d02e48c5cd2c4bfdb972c0f25e528e3c0c116736d3729cefa80
   PHASE26D_SQL_SHA256: 2c1bdde167f7dfff9b79a61f116da3dbd93b13c6aa27825404a79312ec7be104
+  PHASE_F_SQL_SHA256: 186f921f184b21bafc5c65ffa514bd526dd614f21227a4afd2462ca5d971d388
 
   # Inline verification scripts, carried as env values (block scalars) and piped
   # into node. This keeps the change strictly workflow-only while avoiding the
@@ -138,6 +180,17 @@ env:
     assert(!ref.catalog.tables.some(t => t.name === 'QuizRetryGrant'), 'pre-26D: no Phase26D tables');
     assert(!ref.catalog.columns.some(x => x.table_name === 'Quiz' && x.column_name === 'quizMode'),
       'pre-26D: no Phase26D Quiz blueprint columns');
+    // Phase F must be absent too: the bundle really is the pre-Phase-F state.
+    for (const name of ['AttendanceCorrection', 'AbsenceReview', 'AbsenceReasonSubmission', 'AbsenceHold']) {
+      assert(!ref.catalog.tables.some(t => t.name === name), 'pre-26D: no Phase F table ' + name);
+    }
+    for (const [table, column] of [['Notification', 'dedupeKey'], ['Notification', 'sessionId'],
+                                   ['LiveSession', 'attendanceFinalizedAt'], ['Attendance', 'markedAt']]) {
+      assert(!ref.catalog.columns.some(x => x.table_name === table && x.column_name === column),
+        'pre-26D: no Phase F column ' + table + '.' + column);
+    }
+    assert(!ref.catalog.enums.some(e => e.name === 'AbsenceReviewStatus' || e.name === 'AbsenceHoldStatus'),
+      'pre-26D: no Phase F enums');
     console.log('PG17_0_INIT_REFERENCE_VALID');
 
   # The trusted POST-26D reference must be the full PG migration chain on PG17.
@@ -152,6 +205,9 @@ env:
     assert.equal(
       ref.repositoryMigrationChecksums['prisma/postgres/migrations/20260915180000_phase26d_quiz_attempt_architecture'],
       process.env.PHASE26D_SQL_SHA256, 'repository Phase26D SHA-256 pinned');
+    assert.equal(
+      ref.repositoryMigrationChecksums['prisma/postgres/migrations/20260919120000_phase_f_live_session_lifecycle'],
+      process.env.PHASE_F_SQL_SHA256, 'repository Phase F SHA-256 pinned');
     for (const s of ['tables', 'columns', 'enums', 'constraints', 'indexes']) {
       assert(Array.isArray(ref.catalog[s]) && ref.catalog[s].length > 0, 'catalog section ' + s);
     }
@@ -199,12 +255,113 @@ env:
                         'QuizRetryGrant_grantedByUserId_idx']) {
       assert(idx(name), 'index ' + name + ' exists');
     }
+    // ---- PHASE F objects -------------------------------------------------
+    // Phase F tables (absence review, holds, reason submissions, corrections).
+    for (const name of ['AttendanceCorrection', 'AbsenceReview', 'AbsenceReasonSubmission', 'AbsenceHold']) {
+      assert(ref.catalog.tables.some(t => t.name === name), 'Phase F table ' + name + ' exists');
+    }
+    // Phase F enum labels, in enum order (appended labels must land last).
+    assert.deepEqual(ref.catalog.enums.find(e => e.name === 'AbsenceReviewStatus').values,
+      ['PENDING_REASON', 'PENDING_REVIEW', 'EXCUSED', 'UNEXCUSED', 'NO_ACTION_REQUIRED'],
+      'exact AbsenceReviewStatus labels');
+    assert.deepEqual(ref.catalog.enums.find(e => e.name === 'AbsenceHoldStatus').values,
+      ['ACTIVE', 'RESOLVED'], 'exact AbsenceHoldStatus labels');
+    for (const label of ['ABSENCE_FINALIZED', 'ABSENCE_REASON_SUBMITTED', 'ABSENCE_EXCUSED',
+                         'ABSENCE_UNEXCUSED', 'ABSENCE_REMINDER']) {
+      assert(ref.catalog.enums.find(e => e.name === 'NotificationType').values.includes(label),
+        'Phase F NotificationType label ' + label + ' present');
+    }
+    // Phase F columns added to the pre-existing tables.
+    for (const [table, column] of [
+      ['Attendance', 'markedAt'], ['Attendance', 'markedByUserId'], ['Attendance', 'updatedAt'],
+      ['LiveSession', 'createdByUserId'], ['LiveSession', 'updatedAt'], ['LiveSession', 'conductedAt'],
+      ['LiveSession', 'endedAt'], ['LiveSession', 'originalStartAt'], ['LiveSession', 'rescheduleCount'],
+      ['LiveSession', 'lastRescheduledAt'], ['LiveSession', 'rescheduledByUserId'], ['LiveSession', 'cancelReason'],
+      ['LiveSession', 'cancelledAt'], ['LiveSession', 'cancelledByUserId'], ['LiveSession', 'statusChangedAt'],
+      ['LiveSession', 'statusChangedByUserId'], ['LiveSession', 'substituteTeacherId'],
+      ['LiveSession', 'substituteAssignedAt'], ['LiveSession', 'substituteAssignedByUserId'],
+      ['LiveSession', 'attendanceFinalizedAt'], ['LiveSession', 'attendanceFinalizedByUserId'],
+      ['Notification', 'sessionId'], ['Notification', 'dedupeKey'],
+    ]) {
+      assert(col(table, column), 'Phase F column ' + table + '.' + column + ' exists');
+    }
+    // Phase F keys and foreign keys (dedupe/absence uniqueness is a DATABASE rule).
+    for (const name of ['AbsenceReview_attendanceId_key',
+                        'AbsenceHold_absenceReviewId_key',
+                        'Notification_userId_dedupeKey_key',
+                        'AbsenceReview_attendanceId_fkey',
+                        'AbsenceReview_groupId_fkey',
+                        'AbsenceReview_sessionId_fkey',
+                        'AbsenceReview_studentId_fkey',
+                        'AbsenceHold_absenceReviewId_fkey',
+                        'AbsenceHold_studentId_fkey',
+                        'AbsenceReasonSubmission_absenceReviewId_fkey',
+                        'AttendanceCorrection_attendanceId_fkey',
+                        'AttendanceCorrection_sessionId_fkey']) {
+      assert(con(name), 'Phase F constraint ' + name + ' exists');
+    }
+    // Phase F indexes (incl. the long-missing Attendance.sessionId index).
+    for (const name of ['AbsenceReview_attendanceId_key',
+                        'AbsenceReview_groupId_idx',
+                        'AbsenceReview_sessionId_idx',
+                        'AbsenceReview_status_idx',
+                        'AbsenceReview_studentId_status_idx',
+                        'AbsenceHold_absenceReviewId_key',
+                        'AbsenceHold_sessionId_idx',
+                        'AbsenceHold_studentId_status_idx',
+                        'AbsenceReasonSubmission_absenceReviewId_createdAt_idx',
+                        'AttendanceCorrection_attendanceId_idx',
+                        'AttendanceCorrection_sessionId_idx',
+                        'Attendance_sessionId_idx',
+                        'LiveSession_status_startAt_idx',
+                        'LiveSession_substituteTeacherId_idx',
+                        'LiveSession_teacherId_startAt_idx',
+                        'Notification_sessionId_idx',
+                        'Notification_userId_dedupeKey_key']) {
+      assert(idx(name), 'Phase F index ' + name + ' exists');
+    }
     // Catalog health.
     assert(ref.catalog.indexes.every(i => i.indisvalid && i.indisready), 'no invalid indexes');
     assert(ref.catalog.constraints.every(k => k.convalidated), 'no unvalidated constraints');
+    // ---- FULL-CHAIN CATALOG SIZE (measured, exact (engine-stable)) --------
+    // The read-only inspector excludes _prisma_migrations from every section,
+    // so these counts describe the schema itself, not the ledger table.
+    //
+    // columns / enum values / indexes are identical on every supported
+    // PostgreSQL major, so they are asserted RAW.
+    const enumValues = ref.catalog.enums.reduce((n, e) => n + e.values.length, 0);
+    const size = 'columns=' + ref.catalog.columns.length + ' enumValues=' + enumValues +
+      ' indexes=' + ref.catalog.indexes.length + ' con(p+u+f)=' +
+      ref.catalog.constraints.filter(k => ['p', 'u', 'f'].includes(k.contype)).length +
+      ' con(total)=' + ref.catalog.constraints.length;
+    assert.equal(ref.catalog.columns.length, 585, 'full chain must have 585 columns — ' + size);
+    assert.equal(enumValues, 94, 'full chain must have 94 enum values — ' + size);
+    assert.equal(ref.catalog.indexes.length, 185, 'full chain must have 185 indexes — ' + size);
+    //
+    // Constraints are asserted through their TYPED subset (p = primary key,
+    // u = unique, f = foreign key), never through the raw pg_constraint total,
+    // because the raw total is PostgreSQL-MAJOR DEPENDENT:
+    //   * PostgreSQL 18 stores column NOT NULL specifications in pg_constraint
+    //     as contype 'n' (PostgreSQL 18.0 release notes, "Store column NOT NULL
+    //     specifications in pg_constraint"), which adds 408 rows for this schema
+    //     (raw total 593 = 408 n + 60 p + 38 u + 87 f);
+    //   * PostgreSQL 17 — the CI service container, matching the production
+    //     target — keeps NOT NULL on the relation in pg_attribute instead
+    //     ("Not-null constraints on relations are represented in the pg_attribute
+    //     catalog, not here", PG17 docs 51.13), so pg_constraint carries only
+    //     p/u/f for this schema (raw total 185).
+    // The p/u/f subset is the same on both majors and is exactly the constraint
+    // set the migrations create, so 185 is the stable contract. NOTHING is
+    // weakened by this: every Phase F constraint is additionally asserted BY
+    // NAME above, the reference is still verified `convalidated` end to end,
+    // and the self-comparison and full section shape checks are unchanged.
+    const typedConstraints = ref.catalog.constraints.filter(k => ['p', 'u', 'f'].includes(k.contype));
+    assert.equal(typedConstraints.length, 185,
+      'full chain must have 185 primary/unique/foreign-key constraints — ' + size);
     // Ledger proof: the real engine applied EXACTLY the PG chain, cleanly.
     assert.deepEqual(ref.ledger.map(r => r.migration_name),
-      ['0_init', '20260915180000_phase26d_quiz_attempt_architecture'],
+      ['0_init', '20260915180000_phase26d_quiz_attempt_architecture',
+       '20260919120000_phase_f_live_session_lifecycle'],
       'ledger is exactly the PostgreSQL chain, in order (never the SQLite names)');
     for (const r of ref.ledger) {
       assert(r.finished_at, r.migration_name + ' finished');
@@ -271,7 +428,12 @@ jobs:
           cp prisma/postgres/schema.prisma "$BUNDLE/schema.prisma"
           cmp prisma/postgres/schema.prisma "$BUNDLE/schema.prisma"
           cp -r prisma/postgres/migrations "$BUNDLE/migrations"
+          # Remove EVERY post-0_init migration directory, so the bundle is
+          # exactly the pre-26D state even as the chain grows (Phase 26D, Phase F).
           rm -rf "$BUNDLE/migrations/20260915180000_phase26d_quiz_attempt_architecture"
+          rm -rf "$BUNDLE/migrations/20260919120000_phase_f_live_session_lifecycle"
+          [ ! -d "$BUNDLE/migrations/20260915180000_phase26d_quiz_attempt_architecture" ]
+          [ ! -d "$BUNDLE/migrations/20260919120000_phase_f_live_session_lifecycle" ]
           echo "$INIT_SQL_SHA256  $BUNDLE/migrations/0_init/migration.sql" | sha256sum -c -
           grep -q 'provider = "postgresql"' "$BUNDLE/migrations/migration_lock.toml"
           echo "Bundle migrations directory contains:"
@@ -364,11 +526,12 @@ jobs:
       - name: Safety guard — disposable localhost target only
         run: printf '%s' "$SAFETY_GUARD_JS" | node
 
-      # Pin BOTH migration SQL files before anything is applied.
+      # Pin EVERY migration SQL file of the chain before anything is applied.
       - name: Pin the repository migration checksums
         run: |
           echo "$INIT_SQL_SHA256  prisma/postgres/migrations/0_init/migration.sql" | sha256sum -c -
           echo "$PHASE26D_SQL_SHA256  prisma/postgres/migrations/20260915180000_phase26d_quiz_attempt_architecture/migration.sql" | sha256sum -c -
+          echo "$PHASE_F_SQL_SHA256  prisma/postgres/migrations/20260919120000_phase_f_live_session_lifecycle/migration.sql" | sha256sum -c -
           echo "PostgreSQL migration chain to apply (exactly this directory, in order):"
           ls prisma/postgres/migrations
 
@@ -378,6 +541,7 @@ jobs:
           npx prisma migrate deploy --schema "$PG_SCHEMA" 2>&1 | tee full-chain-deploy.log
           grep -q "0_init" full-chain-deploy.log
           grep -q "20260915180000_phase26d_quiz_attempt_architecture" full-chain-deploy.log
+          grep -q "20260919120000_phase_f_live_session_lifecycle" full-chain-deploy.log
           echo "Full chain applied cleanly from a fresh PostgreSQL 17 database."
 
       - name: Prove migrate status is clean

@@ -8,6 +8,16 @@
 //   video:<id>      → the batch recordings view (`student-session-videos`)
 //   quiz:<id>       → the quiz runner (`student-quiz`)
 //   homework:<id>   → the homework list, scrolled to the item (`student-homework`)
+//   live:<id>       → the live-sessions view, focused on one LiveSession
+//                     (`student-sessions`) — Phase F
+//   absence:<id>    → the absence-case view, focused on one case
+//                     (`student-absences`) — Phase F
+//
+// Phase F note: `live:` and `absence:` land on STUDENT views. A teacher or
+// parent who receives such a link is served by the notifications panel's
+// role check (`isViewForRole`), which offers navigation only when the target
+// view is legal for the reader; the structured session/absence actions come
+// from the payload fields, not from the link.
 //
 // A deep link is NAVIGATION, never authorization. Resolving one only decides
 // which (view, navParam) pair the shell opens; every view then fetches through
@@ -19,7 +29,7 @@
 // THE RULES THIS MODULE OWNS
 // ==========================
 //  1. PARSING IS STRICT AND FAILS CLOSED. The kind must be exactly one of the
-//     four lowercase kinds, and the id must be 1–64 URL-safe characters
+//     listed lowercase kinds, and the id must be 1–64 URL-safe characters
 //     (`[A-Za-z0-9_-]`, the cuid alphabet plus `-`/`_`). Anything else —
 //     unknown kinds, empty ids, slashes, dots, spaces, query strings,
 //     non-strings, oversized input — yields `null`, never a best-effort guess.
@@ -37,12 +47,14 @@
 //     (`src/lib/store.ts`). They are not imported as a type on purpose (see
 //     rule 2); the suite pins each value against the store source instead.
 
-/** The four deep-linkable resource kinds. Declaration order is stable. */
+/** The deep-linkable resource kinds. Declaration order is stable. */
 export const DEEP_LINK_KINDS = [
   "lesson",
   "video",
   "quiz",
   "homework",
+  "live",
+  "absence",
 ] as const;
 
 export type DeepLinkKind = (typeof DEEP_LINK_KINDS)[number];
@@ -68,7 +80,43 @@ export const DEEP_LINK_VIEWS: Record<DeepLinkKind, string> = {
   video: "student-session-videos",
   quiz: "student-quiz",
   homework: "student-homework",
+  live: "student-sessions",
+  absence: "student-absences",
 };
+
+/**
+ * Phase F — the SAME kind can land on a different view per role, because the
+ * live-session and absence surfaces are role-specific (`live:` opens the
+ * student's schedule for a student, the live workspace for a teacher and the
+ * live console for an admin). `DEEP_LINK_VIEWS` keeps the historical
+ * student-first mapping so existing callers and tests are untouched;
+ * `resolveDeepLinkForRole` returns the role's view when one is declared, and
+ * falls back to the student view otherwise (the notifications panel then
+ * applies `isViewForRole`, so an illegal target still offers no navigation).
+ */
+export const DEEP_LINK_VIEWS_BY_ROLE: Partial<Record<DeepLinkKind, Record<string, string>>> = {
+  live: {
+    STUDENT: "student-sessions",
+    TEACHER: "teacher-live-sessions",
+    ADMIN: "admin-live-sessions",
+  },
+  absence: {
+    STUDENT: "student-absences",
+    PARENT: "parent-absences",
+    ADMIN: "admin-live-sessions",
+  },
+};
+
+/** Parse + map with a role-aware target (Phase F). Falls back to the default. */
+export function resolveDeepLinkForRole(
+  raw: unknown,
+  role: string | null | undefined
+): DeepLinkTarget | null {
+  const link = parseDeepLink(raw);
+  if (!link) return null;
+  const byRole = role ? DEEP_LINK_VIEWS_BY_ROLE[link.kind]?.[role] : undefined;
+  return { view: byRole ?? DEEP_LINK_VIEWS[link.kind], navParam: link.id };
+}
 
 /**
  * Resource ids are cuids in practice; the pattern additionally allows `-`
@@ -96,7 +144,9 @@ export function parseDeepLink(raw: unknown): DeepLink | null {
     kind !== "lesson" &&
     kind !== "video" &&
     kind !== "quiz" &&
-    kind !== "homework"
+    kind !== "homework" &&
+    kind !== "live" &&
+    kind !== "absence"
   ) {
     return null;
   }

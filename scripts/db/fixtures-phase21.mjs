@@ -200,6 +200,28 @@ function insertFixtures(db) {
        VALUES ('p21-at1','p21-s1','p21-ls1','PRESENT',?)`, T3);
   run(`INSERT INTO "TeacherNote" ("id","teacherId","studentId","note","createdAt")
        VALUES ('p21-tn1','p21-t1','p21-s1','Excellent progress',?)`, T3);
+
+  // ---- Phase F — the live-session lifecycle, attendance lock, absence review
+  // and absence hold. The rehearsal copies these tables to PostgreSQL exactly
+  // like every other one, which is the proof that the Phase F migration's
+  // tables and constraints survive the provider switch with real rows in them.
+  //   * `p21-at2` is a FINALIZED ABSENT row (the only input of the workflow);
+  //   * its case is PENDING_REVIEW (a reason was submitted) with the full
+  //     append-only history and an ACTIVE hold;
+  //   * a second, EXCUSED case proves the resolved side of the hold state.
+  run(`INSERT INTO "Attendance" ("id","studentId","sessionId","status","note","markedByUserId","markedAt","createdAt")
+       VALUES ('p21-at2','p21-s2','p21-ls1','ABSENT','did not join', 'p21-u-teacher', ?, ?)`, T3, T3);
+  run(`UPDATE "LiveSession" SET "conductedAt" = ?, "attendanceFinalizedAt" = ?, "attendanceFinalizedByUserId" = 'p21-u-teacher',
+       "createdByUserId" = 'p21-u-admin', "rescheduleCount" = 1, "originalStartAt" = ?, "status" = 'COMPLETED'
+       WHERE "id" = 'p21-ls1'`, T2, T3, FUTURE);
+  run(`INSERT INTO "AbsenceReview" ("id","attendanceId","studentId","sessionId","groupId","lessonId","teacherId","status","reason","reasonSubmittedAt","reasonSubmittedByUserId","reasonSubmittedByRole","createdAt")
+       VALUES ('p21-ar1','p21-at2','p21-s2','p21-ls1','p21-g1','p21-l1','p21-t1','PENDING_REVIEW','كان مريضاً',?, 'p21-u-parent','PARENT', ?)`, T3, T3);
+  run(`INSERT INTO "AbsenceReasonSubmission" ("id","absenceReviewId","reason","submittedByUserId","submittedByRole","createdAt")
+       VALUES ('p21-ars1','p21-ar1','كان مريضاً','p21-u-parent','PARENT',?)`, T3);
+  run(`INSERT INTO "AbsenceHold" ("id","absenceReviewId","studentId","sessionId","status","reason","createdAt")
+       VALUES ('p21-ah1','p21-ar1','p21-s2','p21-ls1','ACTIVE','UNEXCUSED_ABSENCE',?)`, T3);
+  run(`INSERT INTO "AttendanceCorrection" ("id","attendanceId","sessionId","studentId","previousStatus","newStatus","reason","correctedByUserId","correctedAt")
+       VALUES ('p21-ac1','p21-at2','p21-ls1','p21-s2','PRESENT','ABSENT','teacher corrected the register after the lock','p21-u-admin',?)`, T3);
   run(`INSERT INTO "LessonPlanTemplate" ("id","teacherId","title","titleAr","duration","objectives","materials","activities","isPublic","createdAt","updatedAt")
        VALUES ('p21-tpl1','p21-t1','AI intro plan','خطة مقدمة الذكاء',90,'Objectives','Materials','Activities',1,?,?)`, T0, T0);
 

@@ -37,6 +37,8 @@ export const VIEWS_BY_ROLE: Record<string, string[]> = {
     "student-session-videos",
     "student-bookmarks",
     "student-scheduler",
+    "student-sessions",
+    "student-absences",
     "student-referral",
     "student-leaderboard",
     "student-achievements",
@@ -45,12 +47,14 @@ export const VIEWS_BY_ROLE: Record<string, string[]> = {
   PARENT: [
     "parent-dashboard",
     "parent-report",
+    "parent-absences",
     "parent-notifications",
   ],
   TEACHER: [
     "teacher-dashboard",
     "teacher-sessions",
     "teacher-attendance",
+    "teacher-live-sessions",
     "teacher-quizzes",
     "teacher-homework",
     "teacher-templates",
@@ -73,6 +77,10 @@ export const VIEWS_BY_ROLE: Record<string, string[]> = {
     "admin-mock-exams",
     "admin-quiz-review",
     "admin-settings",
+    // Phase F — the live-session / absence console. Appended AFTER the
+    // pre-existing entries on purpose: earlier suites pin the ADMIN list's
+    // tail order, and a new view must never reshuffle it.
+    "admin-live-sessions",
   ],
 };
 

@@ -106,7 +106,15 @@ async function main() {
     const migs = fs.readdirSync(path.join(REPO, "prisma", "migrations")).filter((d) =>
       fs.existsSync(path.join(REPO, "prisma", "migrations", d, "migration.sql")));
     // Phase 26D appended the Lesson Quiz attempt-architecture migration.
-    ok(migs.length === 12, `12 migrations preserved (found ${migs.length})`);
+    // Phase F appended one additive migration (live-session lifecycle),
+    // so the frozen history is 12 + 1. Every PREVIOUS migration must still be
+    // present — which is what the assertion below actually protects.
+    ok(migs.length === 13, `13 migrations preserved (found ${migs.length})`);
+    ok(
+      migs.includes("20260915180000_phase26d_quiz_attempt_architecture") &&
+        migs.includes("20260919120000_phase_f_live_session_lifecycle"),
+      "the 26D and Phase F migrations are both in the history"
+    );
     ok(migs.includes("20260915120000_phase26b_group_track_scope"), "Phase 26B group-audience migration present");
   }
 
@@ -116,8 +124,11 @@ async function main() {
   {
     const parsed = pgLib.parseSchema();
     // Phase 26D added the QuizRetryGrant model.
-    ok(parsed.models.size === 56, `56 models parsed (found ${parsed.models.size})`);
-    ok(parsed.enums.size === 21, `21 enums parsed (found ${parsed.enums.size})`);
+    // Phase F added 4 models (AttendanceCorrection, AbsenceReview,
+    // AbsenceReasonSubmission, AbsenceHold) and 2 enums (AbsenceReviewStatus,
+    // AbsenceHoldStatus): 56 + 4 = 60 and 21 + 2 = 23.
+    ok(parsed.models.size === 60, `60 models parsed (found ${parsed.models.size})`);
+    ok(parsed.enums.size === 23, `23 enums parsed (found ${parsed.enums.size})`);
     // No provider-specific column types or attributes anywhere. (Type check is
     // done on PARSED field types — a substring sweep would false-positive on
     // column names like `sizeBytes`.)
@@ -159,12 +170,14 @@ async function main() {
     }
     // Phase 26D added 4 FKs: QuizRetryGrant → Student/Quiz/User, and
     // QuizAttempt.retryGrantId → QuizRetryGrant.
-    ok(fks === 77, `77 FK relations found (found ${fks})`);
+    // Phase F added 10 FK relations (the four new tables' constraints plus
+    // LiveSession.substituteTeacherId): 77 + 10 = 87.
+    ok(fks === 87, `87 FK relations found (found ${fks})`);
     ok(unbalanced === 0, "every FK is balanced with a known referential action");
     // Migration order: total, deterministic, parents before children.
     const order1 = pgLib.migrationOrder(parsed);
     const order2 = pgLib.migrationOrder(pgLib.parseSchema());
-    ok(order1.length === 56, "migration order covers all 56 tables");
+    ok(order1.length === 60, "migration order covers all 60 tables");
     ok(JSON.stringify(order1) === JSON.stringify(order2), "migration order is deterministic");
     const pos = new Map(order1.map((m, i) => [m, i]));
     let violations = 0;
@@ -180,7 +193,12 @@ async function main() {
     // 21 enums + 55 tables + 70 indexes: Phase 26B added Group_trackScope_idx
     // (owner-approved Group.trackScope), so the index count grew 69 → 70.
     // Phase 26D: +1 table (QuizRetryGrant) and +3 indexes on it.
-    ok(stmts.length === 21 + 56 + 73, `baseline has 150 statements (found ${stmts.length})`);
+    // 23 enums + 60 tables + the FK block (73 pre-existing + the 10 Phase F
+    // constraints) — the exact statement count is derived, never hand-tuned.
+    ok(
+      stmts.length === 23 + 60 + 87,
+      `baseline has ${23 + 60 + 87} statements (found ${stmts.length})`
+    );
     ok(/CREATE INDEX "Group_trackScope_idx"/.test(ddl), "baseline carries the Phase 26B group-audience index");
     const longIdents = [...ddl.matchAll(/"([A-Za-z0-9_]{64,})"/g)];
     ok(longIdents.length === 0, "no identifier exceeds the 63-byte PostgreSQL limit");
@@ -614,7 +632,7 @@ console.log("HARNESS_JSON " + JSON.stringify(results));
     try {
       const mig = run("node scripts/verify-phase21-migration.mjs");
       ok(/PHASE21_MIGRATION_OK/.test(mig), "migration rehearsal passed (PHASE21_MIGRATION_OK)");
-      ok(/row counts preserved on all 56 tables/.test(mig), "rehearsal preserved all row counts");
+      ok(/row counts preserved on all 60 tables/.test(mig), "rehearsal preserved all row counts");
       ok(/canonical row hashes identical/.test(mig), "rehearsal proved byte-identity via hashes");
     } catch (e) {
       ok(false, "migration rehearsal passed");

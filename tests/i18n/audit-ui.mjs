@@ -50,17 +50,24 @@ const VIEWS = {
     "student-scheduler", "student-referral", "student-progress",
     "student-leaderboard", "student-achievements", "student-certificate",
     "student-homework", "student-notifications",
+    // Phase F — the live-session lifecycle surfaces.
+    "student-sessions", "student-absences",
   ],
-  parent: ["parent-dashboard", "parent-report"],
+  parent: ["parent-dashboard", "parent-report", "parent-absences"],
   teacher: [
     "teacher-dashboard", "teacher-attendance", "teacher-quizzes",
     "teacher-homework", "teacher-templates", "teacher-analytics",
+    // Phase F — scheduling, roster, attendance, finalize.
+    "teacher-live-sessions",
   ],
   admin: [
     "admin-overview", "admin-students", "admin-teachers", "admin-groups",
     "admin-courses", "admin-question-bank", "admin-payments",
     "admin-subscriptions", "admin-coupons", "admin-notifications",
     "admin-settings",
+    // Phase F — the live-operations console (kept LAST: the admin navigation
+    // order is pinned by the Phase 15 suite).
+    "admin-live-sessions",
   ],
 };
 

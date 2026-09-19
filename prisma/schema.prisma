@@ -63,6 +63,9 @@ model Student {
   notes             LessonNote[]
   lessonProgress    LessonProgress[]
   parentLinks       ParentStudentLink[]
+  /// Phase F — administrative absence cases + their holds (see AbsenceReview).
+  absenceReviews    AbsenceReview[]
+  absenceHolds      AbsenceHold[]
   quizAttempts      QuizAttempt[]
   /// Phase 26D — Admin-issued retry permissions targeting this student.
   retryGrants       QuizRetryGrant[]
@@ -124,6 +127,9 @@ model Teacher {
   groups       Group[]
   templates    LessonPlanTemplate[]
   sessions     LiveSession[]
+  /// Phase F — sessions where this teacher is the SUBSTITUTE (session-scoped
+  /// authority only; never group/course ownership).
+  substituteSessions LiveSession[] @relation("LiveSessionSubstitute")
   user         User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   teacherNotes TeacherNote[]
 }
@@ -414,6 +420,8 @@ model Group {
   course    Course        @relation(fields: [courseId], references: [id])
   sessions  LiveSession[]
   students  Student[]
+  /// Phase F — the group's absence-review cases (operational queues).
+  absenceReviews AbsenceReview[]
 
   @@index([courseId])
   @@index([trackScope])
@@ -441,6 +449,31 @@ model Material {
   @@index([lessonId, trackScope, isActive])
 }
 
+/// LiveSession — a SCHEDULED LIVE MEETING of an academic Lesson for a Group.
+///
+/// Phase F makes this the authoritative live-teaching event of the platform.
+/// It stays a SEPARATE model from `Lesson` on purpose and that is not
+/// negotiable: `Lesson` (Course → Part → Unit → Lesson) is the academic
+/// content unit with its own lifecycle (`LessonStatus`), readiness contract
+/// and per-student progression; a `LiveSession` is the calendar event that
+/// teachers and admins schedule against it. One Lesson has many LiveSessions
+/// (original + make-up/rescheduled), and a LiveSession may carry no Lesson at
+/// all (a legacy/extra class), so they must never be merged.
+///
+/// LIFECYCLE (no new enum — the existing `SessionStatus` covers it):
+///   SCHEDULED → LIVE → COMPLETED, or SCHEDULED/LIVE → CANCELLED.
+///   RESCHEDULED is deliberately NOT a status: a rescheduled session is still
+///   a SCHEDULED session, and "it was rescheduled" is an EVENT recorded by
+///   `rescheduleCount` / `lastRescheduledAt` / `originalStartAt` plus the
+///   AuditLog. Adding a RESCHEDULED status would make the state machine
+///   ambiguous (is a rescheduled session live? cancellable? attendance-able?)
+///   and would force every reader to treat two states as one.
+///
+/// END TIME is DERIVED, never stored: `endsAt = startAt + duration` minutes
+/// (`sessionEndsAt()` in src/lib/live-session-policy.ts). The platform already
+/// schedules with (startAt, duration) pairs and every consumer must agree on
+/// one arithmetic, so a second stored end timestamp would be a second source
+/// of truth for the attendance lock and the join window.
 model LiveSession {
   id           String        @id @default(cuid())
   groupId      String
@@ -455,15 +488,76 @@ model LiveSession {
   recordingUrl String?
   status       SessionStatus @default(SCHEDULED)
   createdAt    DateTime      @default(now())
+  /// Phase F — who created the event. A plain column, NOT a relation:
+  /// deleting a user must never rewrite session history (same policy as
+  /// `SessionPublication.publishedByUserId`).
+  createdByUserId String?
+  /// Phase F — the last lifecycle flip (SCHEDULED→LIVE→COMPLETED/CANCELLED).
+  statusChangedAt       DateTime?
+  statusChangedByUserId String?
+  /// Phase F — the "the class actually happened" indicator teachers set when
+  /// they START the live period. NULL = the teacher never started it, which is
+  /// what feeds the TEACHER_NO_SHOW_REVIEW queue (Phase F never invents
+  /// student absences from a missing teacher action).
+  conductedAt DateTime?
+  /// Phase F — explicit end of the live period marked by the teacher. It is
+  /// OPERATIONAL INFORMATION ONLY: it never shortens the attendance window
+  /// (which is derived from the schedule, so every role computes the same
+  /// lock instant) and it never deletes attendance.
+  endedAt DateTime?
+  /// Phase F — cancellation ceremony.
+  cancelledAt       DateTime?
+  cancelledByUserId String?
+  cancelReason      String?
+  /// Phase F — reschedule ceremony. `originalStartAt` keeps the FIRST
+  /// scheduled instant forever (never overwritten by a second reschedule) so
+  /// the history of the event survives; `rescheduleCount` counts ceremonies.
+  rescheduleCount      Int       @default(0)
+  lastRescheduledAt    DateTime?
+  rescheduledByUserId  String?
+  originalStartAt      DateTime?
+  /// Phase F — SUBSTITUTE TEACHER, session-scoped ONLY. Assigning a
+  /// substitute never touches `Group.teacherId`/`Course`/`Teacher.groups`:
+  /// the substitute holds authority for THIS LiveSession (view, join, start,
+  /// take attendance within the window) and nothing else.
+  substituteTeacherId       String?
+  substituteAssignedAt      DateTime?
+  substituteAssignedByUserId String?
+  /// Phase F — the attendance lock. Non-NULL means the teacher finalized the
+  /// register: attendance is immutable to Teachers from then on, and the
+  /// finalized ABSENT rows are the ONLY input to the absence-review workflow.
+  attendanceFinalizedAt       DateTime?
+  attendanceFinalizedByUserId String?
+  /// Phase F — last material change to the event (metadata/link/timing).
+  updatedAt DateTime? @updatedAt
   attendance   Attendance[]
+  attendanceCorrections AttendanceCorrection[]
+  absenceReviews AbsenceReview[]
   lesson       Lesson?       @relation(fields: [lessonId], references: [id])
   teacher      Teacher?      @relation(fields: [teacherId], references: [id])
+  substituteTeacher Teacher? @relation("LiveSessionSubstitute", fields: [substituteTeacherId], references: [id], onDelete: SetNull)
   group        Group         @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
   @@index([groupId])
   @@index([startAt])
+  @@index([teacherId, startAt])
+  @@index([substituteTeacherId])
+  @@index([status, startAt])
 }
 
+/// Attendance — ONE row per (student × LiveSession): the attendance FACT.
+///
+/// Phase F rules encoded here:
+///   * ABSENCE OF A ROW = UNMARKED. It is NOT `ABSENT` and never will be
+///     silently converted: a teacher who forgets to finish the register does
+///     not punish anybody (`UNMARKED ≠ ABSENT`).
+///   * `AttendanceStatus` is the FACT (PRESENT/LATE/ABSENT/EXCUSED, the enum
+///     already shipped). The ADMINISTRATIVE interpretation of a confirmed
+///     absence (excused/unexcused/pending) lives in `AbsenceReview` — the two
+///     concepts are deliberately separate tables.
+///   * `markedByUserId`/`markedAt`/`updatedAt` record who last wrote the row
+///     inside the attendance window; corrections after the lock are recorded
+///     in `AttendanceCorrection` (never by rewriting history silently).
 model Attendance {
   id        String           @id @default(cuid())
   studentId String
@@ -471,11 +565,137 @@ model Attendance {
   status    AttendanceStatus @default(PRESENT)
   note      String?
   createdAt DateTime         @default(now())
+  /// Phase F — who last marked this row and when (inside the open window).
+  markedByUserId String?
+  markedAt       DateTime?
+  updatedAt      DateTime? @updatedAt
   session   LiveSession      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   student   Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  corrections AttendanceCorrection[]
+  /// Phase F — the administrative case opened from THIS absent row (1:1).
+  absenceReview AbsenceReview?
 
   @@unique([studentId, sessionId])
   @@index([studentId])
+  @@index([sessionId])
+}
+
+/// AttendanceCorrection — the ADMIN-only correction of a LOCKED attendance
+/// row, with the full before/after state, a mandatory reason, the correcting
+/// admin and the timestamp. Append-only: no UPDATE, no DELETE route exists,
+/// and every row is mirrored into the platform `AuditLog`.
+model AttendanceCorrection {
+  id                String           @id @default(cuid())
+  attendanceId      String
+  sessionId         String
+  studentId         String
+  previousStatus    AttendanceStatus
+  newStatus         AttendanceStatus
+  reason            String
+  correctedByUserId String
+  correctedAt       DateTime         @default(now())
+  attendance Attendance  @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+  session    LiveSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([attendanceId])
+  @@index([sessionId])
+}
+
+/// AbsenceReview — the ADMINISTRATIVE case opened from a FINALIZED absence.
+///
+/// Phase F's separation of concerns in one table:
+///   attendance fact     = `Attendance.status = ABSENT` (locked, immutable)
+///   administrative view = this row (PENDING_REASON → PENDING_REVIEW →
+///                         EXCUSED | UNEXCUSED, plus NO_ACTION_REQUIRED)
+///
+/// A case is created ONLY from finalized/locked attendance (never from a
+/// temporary ABSENT click while the register is still editable), and exactly
+/// once per attendance row (`attendanceId` is UNIQUE — the database-level
+/// idempotency key of the whole workflow).
+model AbsenceReview {
+  id           String              @id @default(cuid())
+  attendanceId String              @unique
+  studentId    String
+  sessionId    String
+  groupId      String
+  /// Denormalized curriculum reference (plain column, no relation): which
+  /// academic Lesson the missed LiveSession belonged to at case-creation
+  /// time. Phase H consumes it for catch-up access; a later re-link of the
+  /// LiveSession must not rewrite open cases.
+  lessonId     String?
+  teacherId    String?
+  status       AbsenceReviewStatus @default(PENDING_REASON)
+  /// The CURRENT reason text (mirror of the newest submission — the full
+  /// history is in `AbsenceReasonSubmission`, nothing is ever overwritten).
+  reason              String?
+  reasonSubmittedAt   DateTime?
+  reasonSubmittedByUserId String?
+  reasonSubmittedByRole   String?
+  decidedByUserId String?
+  decidedAt       DateTime?
+  decisionNote    String?
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime? @updatedAt
+  attendance Attendance @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+  student    Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  session    LiveSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  group      Group      @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  submissions AbsenceReasonSubmission[]
+  hold        AbsenceHold?
+
+  @@index([status])
+  @@index([studentId, status])
+  @@index([sessionId])
+  @@index([groupId])
+}
+
+/// AbsenceReasonSubmission — append-only history of reason submissions for a
+/// case. A student AND a linked parent may submit (both recorded with their
+/// own user id and role); a replacement never destroys the previous text.
+model AbsenceReasonSubmission {
+  id              String   @id @default(cuid())
+  absenceReviewId String
+  reason          String
+  submittedByUserId String
+  /// STUDENT | PARENT | ADMIN (the `Role` vocabulary of the platform).
+  submittedByRole String
+  createdAt       DateTime @default(now())
+  absenceReview AbsenceReview @relation(fields: [absenceReviewId], references: [id], onDelete: Cascade)
+
+  @@index([absenceReviewId, createdAt])
+}
+
+/// AbsenceHold — the authoritative Phase F OUTPUT consumed by Phase H.
+///
+/// Phase F creates/updates/resolves it, exposes it to authorized readers,
+/// notifies and audits it. Phase F NEVER enforces it (no progression gate, no
+/// content lock, no link block): that is Phase H's job.
+///
+///   UNEXCUSED absence → ACTIVE hold  (Phase H will block next-Lesson /
+///                                    next-LiveSession-link / recordings and
+///                                    grant catch-up access)
+///   EXCUSED absence   → RESOLVED hold (administrative review closed; Phase H
+///                                    still routes the student through the
+///                                    missed session's own academic
+///                                    requirements before progression — an
+///                                    administrative approval is NOT academic
+///                                    completion)
+model AbsenceHold {
+  id              String            @id @default(cuid())
+  absenceReviewId String            @unique
+  studentId       String
+  sessionId       String
+  status          AbsenceHoldStatus @default(ACTIVE)
+  reason          String?
+  createdAt       DateTime          @default(now())
+  resolvedAt      DateTime?
+  resolvedByUserId String?
+  resolution      String?
+  absenceReview AbsenceReview @relation(fields: [absenceReviewId], references: [id], onDelete: Cascade)
+  student       Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([studentId, status])
+  @@index([sessionId])
 }
 
 model Quiz {
@@ -853,10 +1073,29 @@ model Notification {
   message   String
   isRead    Boolean          @default(false)
   link      String?
+  /// Phase F — STRUCTURED SESSION PAYLOAD. When set, this notification is
+  /// about a specific LiveSession and the UI renders the session actions
+  /// (Join / Copy link) instead of a plain-text blob. It is a plain column
+  /// (no relation): notifications are delivery history and must survive a
+  /// session deletion, and the join URL itself is NEVER stored here — the
+  /// client resolves it through the authorized
+  /// `GET /api/live-sessions/[id]/join` endpoint, so an ineligible reader can
+  /// never obtain a meeting link from their own notification row.
+  sessionId String?
+  /// Phase F — DETERMINISTIC IDEMPOTENCY KEY, unique per (user, key).
+  /// Every Phase F emitter computes it from the EVENT IDENTITY (event type +
+  /// subject id + the material revision of what changed), so a retried
+  /// request, a double-submitted form or a re-run fan-out can never produce a
+  /// second row for the same user. NULL (every pre-Phase-F row, and every
+  /// notification that does not need idempotency) is exempt: SQLite and
+  /// PostgreSQL both treat NULLs as distinct in a unique index.
+  dedupeKey String?
   createdAt DateTime         @default(now())
   user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@unique([userId, dedupeKey])
   @@index([userId, isRead])
+  @@index([sessionId])
 }
 
 model AuditLog {
@@ -1451,4 +1690,44 @@ enum NotificationType {
   ANNOUNCEMENT
   PAYMENT_APPROVED
   PAYMENT_REJECTED
+  /// Phase F — the live-session event family. SESSION_LINK is the STRUCTURED
+  /// one (it carries `Notification.sessionId` and renders Join / Copy link);
+  /// the other three are lifecycle events of the same event object.
+  SESSION_SCHEDULED
+  SESSION_LINK
+  SESSION_RESCHEDULED
+  SESSION_CANCELLED
+  /// Phase F — the absence-review family (students, parents, admins).
+  ABSENCE_FINALIZED
+  ABSENCE_REASON_SUBMITTED
+  ABSENCE_EXCUSED
+  ABSENCE_UNEXCUSED
+  /// Phase F — the "still no reason" reminder (idempotent per case per day).
+  ABSENCE_REMINDER
+}
+
+/// Phase F — the ADMINISTRATIVE state machine of an absence case. Separate
+/// from `AttendanceStatus` on purpose: the attendance FACT is always ABSENT;
+/// this is what the academy decided to do about it.
+///
+///   PENDING_REASON     nobody (student or parent) has submitted a reason yet
+///   PENDING_REVIEW     a reason exists; an admin must decide
+///   EXCUSED            admin accepted the absence (no hold; Phase H still
+///                      requires the missed session's academic completion)
+///   UNEXCUSED          admin refused it (an ACTIVE AbsenceHold is created)
+///   NO_ACTION_REQUIRED the case was withdrawn/superseded without a decision
+///                      (e.g. the attendance row was corrected by an admin
+///                      after the fact — never silently relabelled EXCUSED)
+enum AbsenceReviewStatus {
+  PENDING_REASON
+  PENDING_REVIEW
+  EXCUSED
+  UNEXCUSED
+  NO_ACTION_REQUIRED
+}
+
+/// Phase F — the hold state Phase H consumes. See `AbsenceHold`.
+enum AbsenceHoldStatus {
+  ACTIVE
+  RESOLVED
 }

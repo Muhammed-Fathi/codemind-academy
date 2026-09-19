@@ -17,7 +17,10 @@ import {
   type ParentSubscriptionPayload,
 } from "@/lib/parent-subscription";
 import { NotificationPreferences } from "@/components/shared/notification-preferences";
-import { NotificationsPanel } from "@/components/shared/notifications-panel";
+import {
+  NotificationsPanel,
+  NOTIFICATIONS_CHANGED_EVENT,
+} from "@/components/shared/notifications-panel";
 import { ParentAnalyticsView } from "@/components/parent/analytics-view";
 import { WeeklyReportView } from "@/components/parent/weekly-report";
 
@@ -79,6 +82,7 @@ import {
   RefreshCw,
   Bell,
   ChevronLeft,
+  Settings2,
 } from "lucide-react";
 
 // ---------- Types (match GET /api/parents/me/dashboard payload) ----------
@@ -269,6 +273,28 @@ export function ParentDashboard() {
   const tr = useT();
   const locale = useLocale();
   const view = useApp((s) => s.view);
+  // Finding 11 — the entry point navigates to the SHARED notifications panel
+  // and shows how much is unread, refreshed the same way the shell bell is
+  // (mount + the `cm:notifications-changed` event; no extra polling loop).
+  const goToView = useApp((s) => s.setView);
+  const [parentUnread, setParentUnread] = React.useState(0);
+  React.useEffect(() => {
+    let alive = true;
+    const refresh = () => {
+      fetch("/api/notifications/unread-count")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (alive) setParentUnread(Number(d?.count) || 0);
+        })
+        .catch(() => {});
+    };
+    refresh();
+    window.addEventListener(NOTIFICATIONS_CHANGED_EVENT, refresh);
+    return () => {
+      alive = false;
+      window.removeEventListener(NOTIFICATIONS_CHANGED_EVENT, refresh);
+    };
+  }, [view]);
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["parent-dashboard"],
     queryFn: async () => {
@@ -390,7 +416,7 @@ export function ParentDashboard() {
             onClick={() => setShowAnalytics(true)}
           >
             <TrendingUp className="w-4 h-4 ms-2" />
-            Analytics
+            {tr("parent.action.analytics")}
           </Button>
           <Button
             variant="outline"
@@ -399,7 +425,7 @@ export function ParentDashboard() {
             className="border-primary/30 text-primary hover:bg-primary/5"
           >
             <CalendarDays className="w-4 h-4 ms-2" />
-            Weekly Report
+            {tr("parent.action.weekly")}
           </Button>
           <Button
             variant="outline"
@@ -407,15 +433,41 @@ export function ParentDashboard() {
             onClick={() => setShowReport(true)}
           >
             <Download className="w-4 h-4 ms-2" />
-            Monthly Report
+            {tr("parent.action.monthly")}
           </Button>
+          {/* Finding 11 — the Parent's notification ENTRY: a clean bell + label
+              that opens the SHARED notifications panel (no Parent-only system),
+              carrying a live unread badge. Previously the bell icon opened
+              notification PREFERENCES, so the control looked like the
+              notifications surface but was a settings dialog. */}
           <Button
             variant="outline"
             size="sm"
-            onClick={() => setShowPrefs(true)}
+            onClick={() => goToView("parent-notifications" as never)}
+            className="relative"
+            aria-label={tr("parent.action.notifications")}
           >
             <Bell className="w-4 h-4 ms-2" />
-            {tr("parent.053")}</Button>
+            {tr("parent.action.notifications")}
+            {parentUnread > 0 ? (
+              <Badge
+                variant="destructive"
+                className="ms-2 h-5 min-w-5 px-1.5 text-[10px] font-bold"
+              >
+                {parentUnread > 9 ? "9+" : parentUnread}
+              </Badge>
+            ) : null}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowPrefs(true)}
+            aria-label={tr("parent.action.prefs")}
+            title={tr("parent.action.prefs")}
+          >
+            <Settings2 className="w-4 h-4 ms-2" />
+            {tr("parent.action.prefs")}
+          </Button>
           <LinkStudentButton />
         </div>
       </motion.div>
