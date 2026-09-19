@@ -308,13 +308,20 @@ const fakeDb = {
   quiz: {
     findUnique: ({ where }) => {
       const lessonId = Object.keys(QUIZZES).find((l) => QUIZZES[l] === where.id);
-      return lessonId ? { id: where.id, lessonId, trackScope: "SHARED" } : null;
+      // Phase G — the gate now refuses anything not PUBLISHED, so the fixture
+      // models the live default explicitly (overridable per id for the DRAFT
+      // gate tests below).
+      return lessonId
+        ? { id: where.id, lessonId, trackScope: "SHARED", status: state.quizStatus?.[where.id] ?? "PUBLISHED" }
+        : null;
     },
   },
   homework: {
     findUnique: ({ where }) => {
       const lessonId = Object.keys(HOMEWORKS).find((l) => HOMEWORKS[l] === where.id);
-      return lessonId ? { id: where.id, lessonId, trackScope: "SHARED" } : null;
+      return lessonId
+        ? { id: where.id, lessonId, trackScope: "SHARED", status: state.homeworkStatus?.[where.id] ?? "PUBLISHED" }
+        : null;
     },
   },
 };
@@ -429,6 +436,25 @@ async function main() {
   q = await SP.canAccessQuiz("S1", "Q3");
   ok(q.allowed === false, "quiz of a session two steps ahead is denied");
   ok((await SP.canAccessQuiz("S1", "UNKNOWN")).reason === "LESSON_NOT_FOUND", "unknown quiz -> LESSON_NOT_FOUND");
+
+  // Phase G — the DRAFT gate: an authoring-only assessment is the same
+  // non-oracle answer as a nonexistent one (LESSON_NOT_FOUND -> 404), and a
+  // CLOSED assignment stays reachable (closing stops submissions, not sight).
+  state.quizStatus = { Q1: "DRAFT" };
+  ok((await SP.canAccessQuiz("S1", "Q1")).reason === "LESSON_NOT_FOUND", "Phase G: DRAFT quiz is refused like a nonexistent one");
+  state.quizStatus = {};
+  state.homeworkStatus = { H1: "DRAFT", H2: "CLOSED" };
+  ok((await SP.canAccessHomework("S1", "H1")).reason === "LESSON_NOT_FOUND", "Phase G: DRAFT homework is refused like a nonexistent one");
+  state.homeworkStatus = { H2: "CLOSED" };
+  ok((await SP.canAccessHomework("S1", "H2")).allowed === false, "Phase G: CLOSED homework keeps its progression verdict (locked here)");
+  state.lessonProgress.L1 = { videoPercent: 100, videoCompleted: true, isCompleted: true };
+  state.submittedHomeworks.add("H1");
+  state.attemptedQuizzes.add("Q1");
+  ok((await SP.canAccessHomework("S1", "H2")).allowed === true, "Phase G: CLOSED homework stays accessible once its session is open");
+  state.homeworkStatus = {};
+  state.lessonProgress = {};
+  state.submittedHomeworks.clear();
+  state.attemptedQuizzes.clear();
 
   let h = await SP.canAccessHomework("S1", "H1");
   ok(h.allowed === true, "assignment of an unlocked session is allowed");

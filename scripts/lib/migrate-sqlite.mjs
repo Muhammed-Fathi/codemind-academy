@@ -221,6 +221,9 @@ const BASE_SKIP_COLUMNS = {
     "maxAttempts",
     "shuffleOptions",
     "difficultyPlan",
+    // Phase G — lifecycle, added by 20260919180000_phase_g_quiz_homework_workflow.
+    "status",
+    "publishedAt",
   ],
   // Phase 26D — frozen question snapshot on the attempt's answer rows.
   QuizAnswer: [
@@ -237,7 +240,21 @@ const BASE_SKIP_COLUMNS = {
   ],
   ExamAttempt: ["schoolType", "mockExamId"],
   ExamQuestion: ["schoolType"],
-  Homework: ["trackScope"],
+  Homework: [
+    "trackScope",
+    // Phase G — lifecycle + teacher attachment, added by
+    // 20260919180000_phase_g_quiz_homework_workflow.
+    "status",
+    "publishedAt",
+    "attachmentId",
+  ],
+  HomeworkSubmission: [
+    // Phase G — student file + grader identity, added by
+    // 20260919180000_phase_g_quiz_homework_workflow.
+    "attachmentId",
+    "gradedById",
+    "gradedAt",
+  ],
   Payment: [
     "senderPhone",
     "requestedGroupId",

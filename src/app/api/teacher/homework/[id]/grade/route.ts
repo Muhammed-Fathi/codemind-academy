@@ -2,6 +2,15 @@
 //   body: { studentId, grade: number, feedback: string }
 //   Updates the HomeworkSubmission for that homework + student, sets
 //   status=GRADED. Returns the updated submission.
+//
+// Phase G hardening:
+//   * `0 ≤ grade ≤ maxMarks` enforced SERVER-SIDE (previously 0..100, which
+//     let a grade exceed the assignment's own ceiling);
+//   * grader identity + instant recorded (`gradedById` / `gradedAt`);
+//   * DRAFT assignments cannot be graded (they do not exist for students, so
+//     there is nothing a student could have submitted against them);
+//   * first grade audited HOMEWORK_GRADED, every re-grade HOMEWORK_REGRADED
+//     (with old/new values), so the grade history is attributable.
 import { getServerT } from "@/lib/i18n-server";
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
@@ -30,12 +39,15 @@ export async function PATCH(
   const body = await req.json().catch(() => ({}));
   const studentId = String(body.studentId || "");
   const gradeNum = Number(body.grade);
-  const feedback = body.feedback ? String(body.feedback) : null;
+  const feedback =
+    body.feedback === undefined || body.feedback === null
+      ? null
+      : String(body.feedback).trim() || null;
+  if (feedback && feedback.length > 4000) return err(tApi("api.234"), 400);
 
   if (!studentId) return err(tApi("api.168"), 400);
-  if (Number.isNaN(gradeNum)) return err(tApi("api.169"), 400);
-  if (gradeNum < 0 || gradeNum > 100)
-    return err(tApi("api.170"), 400);
+  if (!Number.isInteger(gradeNum) || Number.isNaN(gradeNum))
+    return err(tApi("api.169"), 400);
 
   // Verify the homework belongs to one of the teacher's courses.
   //
@@ -55,6 +67,15 @@ export async function PATCH(
   if (!placement || !teacherCourseIds.includes(placement.courseId)) {
     return err(tApi("api.172"), 403);
   }
+
+  // Phase G — the grade is bounded by the assignment's OWN ceiling, not a
+  // global 0..100: an 18 on a 10-mark assignment is a corrupt record.
+  if (gradeNum < 0 || gradeNum > hw.maxMarks)
+    return err(tApi("api.170", { p1: hw.maxMarks }), 400);
+
+  // Phase G — a DRAFT assignment is invisible to students; nothing could have
+  // been submitted against it, so grading one is refused (publish first).
+  if (hw.status === "DRAFT") return err(tApi("api.356"), 409);
 
   // Phase 26D FIX — validate the STUDENT before writing anything.
   //
@@ -82,6 +103,13 @@ export async function PATCH(
     where: { homeworkId_studentId: { homeworkId, studentId } },
   });
 
+  // Phase G — late/on-time survives grading: it is derived from the preserved
+  // `submittedAt` vs the assignment deadline (the stored status becomes
+  // GRADED; the lateness FACT is never lost).
+  const gradedAt = new Date();
+  const effectiveSubmittedAt = existing?.submittedAt || gradedAt;
+  const wasLate = effectiveSubmittedAt > hw.deadline;
+
   let updated;
   if (existing) {
     updated = await db.homeworkSubmission.update({
@@ -90,7 +118,11 @@ export async function PATCH(
         grade: gradeNum,
         feedback,
         status: "GRADED",
-        submittedAt: existing.submittedAt || new Date(),
+        submittedAt: effectiveSubmittedAt,
+        // Phase G — grader identity (re-grade overwrites: the LAST grader is
+        // the attributable one; the audit trail keeps the full history).
+        gradedById: user.id,
+        gradedAt,
       },
       include: {
         student: {
@@ -107,7 +139,9 @@ export async function PATCH(
         grade: gradeNum,
         feedback,
         status: "GRADED",
-        submittedAt: new Date(),
+        submittedAt: effectiveSubmittedAt,
+        gradedById: user.id,
+        gradedAt,
       },
       include: {
         student: {
@@ -116,6 +150,29 @@ export async function PATCH(
       },
     });
   }
+
+  // Phase G — grading is an IMPORTANT action: first grade vs re-grade are
+  // audited distinctly, with the old/new values, so a changed verdict is
+  // attributable. Best-effort: an audit failure never fails the grade write.
+  const regrade = existing?.grade !== null && existing?.grade !== undefined;
+  await db.auditLog
+    .create({
+      data: {
+        userId: user.id,
+        action: regrade ? "HOMEWORK_REGRADED" : "HOMEWORK_GRADED",
+        entity: "HomeworkSubmission",
+        entityId: updated.id,
+        details: JSON.stringify({
+          homeworkId,
+          studentId,
+          previousGrade: existing?.grade ?? null,
+          grade: gradeNum,
+          previousStatus: existing?.status ?? null,
+          late: wasLate,
+        }),
+      },
+    })
+    .catch(() => {});
 
   // Send QUIZ_RESULT-style notification to the student's user
   const student = await db.student.findUnique({
@@ -148,6 +205,9 @@ export async function PATCH(
       grade: updated.grade,
       feedback: updated.feedback,
       status: updated.status,
+      // Phase G — lateness fact + grader identity alongside the verdict.
+      late: wasLate,
+      gradedAt: updated.gradedAt,
       submittedAt: updated.submittedAt,
       student: {
         id: updated.student.id,

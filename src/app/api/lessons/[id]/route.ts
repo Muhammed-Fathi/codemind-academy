@@ -127,6 +127,17 @@ export async function GET(
   });
   if (!lesson) return err("Lesson not found", 404);
 
+  // Phase G — DRAFT quizzes/homework are authoring-only: for students and
+  // parents they must not appear in the lesson's lists at all (a title, a
+  // deadline or an id in the response would leak something that cannot be
+  // opened). Staff keeps the full lists for preview/authoring. Filtering HERE
+  // covers every downstream consumer of these arrays (payload lists, the
+  // attempted-set lookup, the content summary input).
+  if (contentViewer.role !== "STAFF") {
+    lesson.quizzes = lesson.quizzes.filter((q) => q.status !== "DRAFT");
+    lesson.homeworks = lesson.homeworks.filter((h) => h.status !== "DRAFT");
+  }
+
   // Canonical chain first; legacy topic chain as fallback.
   const chainPart = lesson.unit?.part ?? lesson.topic?.unit.part ?? null;
   const chainUnit = lesson.unit ?? lesson.topic?.unit ?? null;

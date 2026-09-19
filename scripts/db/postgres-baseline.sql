@@ -311,8 +311,12 @@ CREATE TABLE "Homework" (
   "deadline" TIMESTAMPTZ(3) NOT NULL,
   "maxMarks" INTEGER NOT NULL DEFAULT 10,
   "createdAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "status" TEXT NOT NULL DEFAULT 'PUBLISHED',
+  "publishedAt" TIMESTAMPTZ(3),
+  "attachmentId" TEXT,
   CONSTRAINT "Homework_pkey" PRIMARY KEY ("id"),
-  CONSTRAINT "Homework_lessonId_fkey" FOREIGN KEY ("lessonId") REFERENCES "Lesson" ("id") ON UPDATE CASCADE ON DELETE CASCADE
+  CONSTRAINT "Homework_lessonId_fkey" FOREIGN KEY ("lessonId") REFERENCES "Lesson" ("id") ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT "Homework_attachmentId_fkey" FOREIGN KEY ("attachmentId") REFERENCES "MediaAsset" ("id") ON UPDATE CASCADE ON DELETE SET NULL
 );
 
 CREATE TABLE "Material" (
@@ -341,6 +345,8 @@ CREATE TABLE "Quiz" (
   "passMark" INTEGER NOT NULL DEFAULT 60,
   "timeLimit" INTEGER,
   "order" INTEGER NOT NULL DEFAULT 0,
+  "status" TEXT NOT NULL DEFAULT 'PUBLISHED',
+  "publishedAt" TIMESTAMPTZ(3),
   "quizMode" TEXT NOT NULL DEFAULT 'FIXED',
   "questionCount" INTEGER,
   "maxAttempts" INTEGER NOT NULL DEFAULT 1,
@@ -734,10 +740,15 @@ CREATE TABLE "HomeworkSubmission" (
   "grade" INTEGER,
   "feedback" TEXT,
   "status" "HomeworkStatus" NOT NULL DEFAULT 'PENDING',
+  "attachmentId" TEXT,
+  "gradedById" TEXT,
+  "gradedAt" TIMESTAMPTZ(3),
   CONSTRAINT "HomeworkSubmission_pkey" PRIMARY KEY ("id"),
   CONSTRAINT "HomeworkSubmission_homeworkId_studentId_key" UNIQUE ("homeworkId", "studentId"),
   CONSTRAINT "HomeworkSubmission_studentId_fkey" FOREIGN KEY ("studentId") REFERENCES "Student" ("id") ON UPDATE CASCADE ON DELETE CASCADE,
-  CONSTRAINT "HomeworkSubmission_homeworkId_fkey" FOREIGN KEY ("homeworkId") REFERENCES "Homework" ("id") ON UPDATE CASCADE ON DELETE CASCADE
+  CONSTRAINT "HomeworkSubmission_homeworkId_fkey" FOREIGN KEY ("homeworkId") REFERENCES "Homework" ("id") ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT "HomeworkSubmission_attachmentId_fkey" FOREIGN KEY ("attachmentId") REFERENCES "MediaAsset" ("id") ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT "HomeworkSubmission_gradedById_fkey" FOREIGN KEY ("gradedById") REFERENCES "User" ("id") ON UPDATE CASCADE ON DELETE SET NULL
 );
 
 CREATE TABLE "LessonBookmark" (

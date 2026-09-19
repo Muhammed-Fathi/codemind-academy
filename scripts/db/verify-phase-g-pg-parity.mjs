@@ -1,14 +1,16 @@
-// CodeMind Academy — Phase F: provider-parity proof for the Phase F migration.
+// CodeMind Academy — Phase G: provider-parity proof for the FULL PG chain
+// (the canonical parity verifier from Phase G onward).
 //
-//   node scripts/db/verify-phase-f-pg-parity.mjs
+//   node scripts/db/verify-phase-g-pg-parity.mjs
 //
-// EXIT: 0 + PHASE_F_PG_CATALOG_IDENTICAL_OK, else 1 with the differing objects.
+// EXIT: 0 + PHASE_G_PG_CATALOG_IDENTICAL_OK, else 1 with the differing objects.
 //
 // WHAT IT PROVES (catalog = source of truth, not the migration text)
 //   The PostgreSQL database produced by
 //       prisma/postgres/migrations/0_init
 //     + 20260915180000_phase26d_quiz_attempt_architecture
 //     + 20260919120000_phase_f_live_session_lifecycle
+//     + 20260919180000_phase_g_quiz_homework_workflow
 //   is catalog-identical — every column (+ type, nullability, default), every
 //   enum value in order, every index and every constraint — to the database
 //   produced by the generated baseline `scripts/db/postgres-baseline.sql`,
@@ -29,7 +31,7 @@
 //     Windows `TMPDIR` is normally unset (Windows uses `TEMP`/`TMP`) and the
 //     old `process.env.TMPDIR || "/tmp"` fallback resolved to `\tmp` on the
 //     current drive, which does not exist: `ENOENT … mkdtemp
-//     '\tmp\cm-pf-parity-XXXXXX'`. `os.tmpdir()` is the platform-independent
+//     '\tmp\cm-pg-parity-XXXXXX'`. `os.tmpdir()` is the platform-independent
 //     API and reads `TMPDIR`/`TEMP`/`TMP` as appropriate.
 //   * Every path is composed with `path.join` (never string-concatenated with
 //     a `/`), so no Unix separator is assumed.
@@ -75,7 +77,7 @@ const scratchDirs = [];
 
 /** A pristine PostgreSQL engine on a private directory under os.tmpdir(). */
 async function fresh() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "cm-pf-parity-"));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "cm-pg-parity-"));
   scratchDirs.push(root);
   const pg = new PGlite(path.join(root, "pgdata"));
   await pg.waitReady;
@@ -117,7 +119,7 @@ for (const key of ["cols", "enums", "idx", "cons"]) {
   for (const e of extra.slice(0, 8)) console.log("  + extra:  ", e);
   bad += missing.length + extra.length;
 }
-console.log(bad === 0 ? "PHASE_F_PG_CATALOG_IDENTICAL_OK" : `PHASE_F_PG_CATALOG_DIFF=${bad}`);
+console.log(bad === 0 ? "PHASE_G_PG_CATALOG_IDENTICAL_OK" : `PHASE_G_PG_CATALOG_DIFF=${bad}`);
 process.exitCode = bad === 0 ? 0 : 1;
 
 // Best-effort scratch cleanup: never allowed to change the verdict (on Windows

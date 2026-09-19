@@ -136,7 +136,9 @@ const MODULES = [
   "src/app/api/notifications/route.ts",
   "src/app/api/notifications/unread-count/route.ts",
   "src/app/api/teacher/quizzes/route.ts",
+  "src/app/api/teacher/quizzes/[id]/publish/route.ts",
   "src/app/api/teacher/homework/route.ts",
+  "src/app/api/teacher/homework/[id]/publish/route.ts",
   "src/app/api/admin/payments/route.ts",
   "src/app/api/admin/payments/[id]/approve/route.ts",
   "src/app/api/admin/payments/[id]/reject/route.ts",
@@ -358,8 +360,10 @@ const ROUTES = [
   ["GET", /^\/api\/notifications\/unread-count$/, () => route("notifications/unread-count/route.js").GET],
   ["GET", /^\/api\/teacher\/quizzes$/, () => route("teacher/quizzes/route.js").GET],
   ["POST", /^\/api\/teacher\/quizzes$/, () => route("teacher/quizzes/route.js").POST],
+  ["POST", /^\/api\/teacher\/quizzes\/([^/]+)\/publish$/, () => route("teacher/quizzes/[id]/publish/route.js").POST, (m) => ({ id: m[1] })],
   ["GET", /^\/api\/teacher\/homework$/, () => route("teacher/homework/route.js").GET],
   ["POST", /^\/api\/teacher\/homework$/, () => route("teacher/homework/route.js").POST],
+  ["POST", /^\/api\/teacher\/homework\/([^/]+)\/publish$/, () => route("teacher/homework/[id]/publish/route.js").POST, (m) => ({ id: m[1] })],
   ["GET", /^\/api\/admin\/payments$/, () => route("admin/payments/route.js").GET],
   ["POST", /^\/api\/admin\/payments\/([^/]+)\/approve$/, () => route("admin/payments/[id]/approve/route.js").POST, (m) => ({ id: m[1] })],
   ["POST", /^\/api\/admin\/payments\/([^/]+)\/reject$/, () => route("admin/payments/[id]/reject/route.js").POST, (m) => ({ id: m[1] })],
@@ -915,6 +919,10 @@ const teacherQuiz = await call("POST", "/api/teacher/quizzes", {
 ok(teacherQuiz.status === 200, "teacher creates a lesson quiz through the REAL API (authority proof)", JSON.stringify(teacherQuiz.json).slice(0, 250));
 const quizId = teacherQuiz.json?.quiz?.id;
 ok(Boolean(quizId), "quiz id returned");
+// Phase G — new quizzes are DRAFT until explicitly published; students only
+// ever see PUBLISHED ones, so the lifecycle step is part of the flow now.
+const pubQuiz = await call("POST", `/api/teacher/quizzes/${quizId}/publish`, { body: {}, cookie: TEACHER_COOKIE });
+ok(pubQuiz.status === 200, "teacher publishes the quiz (Phase G lifecycle)", JSON.stringify(pubQuiz.json).slice(0, 200));
 
 const teacherHw = await call("POST", "/api/teacher/homework", {
   body: {
@@ -929,6 +937,10 @@ const teacherHw = await call("POST", "/api/teacher/homework", {
   cookie: TEACHER_COOKIE,
 });
 ok(teacherHw.status === 200, "teacher creates homework through the REAL API (authority proof)", JSON.stringify(teacherHw.json).slice(0, 250));
+const createdHwId = teacherHw.json?.homework?.id;
+ok(Boolean(createdHwId), "homework id returned");
+const pubHw = await call("POST", `/api/teacher/homework/${createdHwId}/publish`, { body: {}, cookie: TEACHER_COOKIE });
+ok(pubHw.status === 200, "teacher publishes the homework (Phase G lifecycle)", JSON.stringify(pubHw.json).slice(0, 200));
 
 // A teacher must NOT author against a lesson outside their courses.
 const teacherForeign = await call("POST", "/api/teacher/quizzes", {
@@ -1199,6 +1211,8 @@ const gateQuiz = await call("POST", "/api/teacher/quizzes", {
 });
 ok(gateQuiz.status === 200, "gate quiz created on lesson 3");
 const gateQuizId = gateQuiz.json?.quiz?.id;
+const pubGate = await call("POST", `/api/teacher/quizzes/${gateQuizId}/publish`, { body: {}, cookie: TEACHER_COOKIE });
+ok(pubGate.status === 200, "gate quiz published (Phase G lifecycle)");
 const lesson3Open = await call("GET", `/api/lessons/${L3}`, { cookie: AR });
 eq(lesson3Open.status, 200, "lesson 3 open (lesson 2 auto-completed by design)");
 const lesson4Locked = await call("GET", `/api/lessons/${L4}`, { cookie: AR });

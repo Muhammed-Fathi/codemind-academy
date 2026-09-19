@@ -31,6 +31,7 @@ import {
   parseDeadline,
   teacherCourseIds,
 } from "@/lib/teacher-content";
+import { homeworkAttachmentPayload } from "@/lib/homework-lifecycle";
 
 export async function GET(req: NextRequest) {
   const user = await requireUser();
@@ -62,6 +63,10 @@ export async function GET(req: NextRequest) {
         where: { lessonId: { in: lessonIds } },
         orderBy: [{ deadline: "asc" }, { id: "asc" }],
         include: {
+          // Phase G — the teacher's assignment file (private MediaAsset).
+          attachment: {
+            select: { id: true, mimeType: true, sizeBytes: true, originalName: true },
+          },
           lesson: {
             select: {
               id: true,
@@ -115,6 +120,11 @@ export async function GET(req: NextRequest) {
                   user: { select: { name: true, email: true, avatarUrl: true } },
                 },
               },
+              // Phase G — the student's submitted file (private MediaAsset).
+              attachment: {
+                select: { id: true, mimeType: true, sizeBytes: true, originalName: true },
+              },
+              gradedBy: { select: { id: true, name: true } },
             },
           },
         },
@@ -131,6 +141,12 @@ export async function GET(req: NextRequest) {
     ).length;
     const graded = hw.submissions.filter((s) => s.status === "GRADED").length;
     const pending = hw.submissions.filter((s) => s.status === "PENDING").length;
+    // Phase G — late visibility: a submission is late when its stored status
+    // is LATE (accepted after the deadline; never silently on-time).
+    const late = hw.submissions.filter((s) => s.status === "LATE").length;
+    const ungraded = hw.submissions.filter(
+      (s) => s.status === "SUBMITTED" || s.status === "LATE"
+    ).length;
     // Canonical chain first; legacy topic chain as fallback.
     const hwUnit = hw.lesson?.unit ?? hw.lesson?.topic?.unit ?? null;
     const hwPart = hwUnit?.part ?? null;
@@ -145,9 +161,14 @@ export async function GET(req: NextRequest) {
       maxMarks: hw.maxMarks,
       trackScope: hw.trackScope,
       createdAt: hw.createdAt,
+      // Phase G lifecycle — the UI labels مسودة / منشور / مغلق from this.
+      status: hw.status,
+      publishedAt: hw.publishedAt,
       // How many of the submissions already carry a grade — the UI uses it to
       // disable a destructive edit instead of discovering it from a 409.
       gradedCount: graded,
+      // Phase G — the teacher's assignment file, if attached.
+      attachment: homeworkAttachmentPayload(hw.attachment),
       lesson: hw.lesson
         ? {
             id: hw.lesson.id,
@@ -176,16 +197,24 @@ export async function GET(req: NextRequest) {
         submitted,
         graded,
         pending,
+        // Phase G — operational counts: late + still-awaiting-grade.
+        late,
+        ungraded,
         totalSubmissions: hw.submissions.length,
       },
       submissions: hw.submissions.map((s) => ({
         id: s.id,
         status: s.status,
+        // Phase G — explicit boolean so the UI never parses the enum itself.
+        late: s.status === "LATE",
         content: s.content,
         fileUrl: s.fileUrl,
+        attachment: homeworkAttachmentPayload(s.attachment),
         submittedAt: s.submittedAt,
         grade: s.grade,
         feedback: s.feedback,
+        gradedAt: s.gradedAt,
+        gradedBy: s.gradedBy ? { id: s.gradedBy.id, name: s.gradedBy.name } : null,
         student: {
           id: s.student.id,
           name: s.student.user.name,
@@ -296,6 +325,10 @@ export async function POST(req: NextRequest) {
       deadline,
       maxMarks: maxMarksRaw,
       trackScope: scope.scope,
+      // Phase G — new assignments start as DRAFTS: invisible to students until
+      // the teacher publishes them (server-authoritative, audited). The column
+      // default stays PUBLISHED only so pre-Phase-G rows keep their behaviour.
+      status: "DRAFT",
     },
   });
 
@@ -310,6 +343,10 @@ export async function POST(req: NextRequest) {
       maxMarks: created.maxMarks,
       trackScope: created.trackScope,
       createdAt: created.createdAt,
+      // Phase G lifecycle (DRAFT until published).
+      status: created.status,
+      publishedAt: created.publishedAt,
+      attachment: null,
       /** True when the scope came from the lesson rather than the request. */
       trackScopeInherited: scope.inherited,
       lesson: {

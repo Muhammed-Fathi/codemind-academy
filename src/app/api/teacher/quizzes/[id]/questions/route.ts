@@ -17,6 +17,15 @@
 //   * an ARCHIVED lesson takes no NEW content (api.242) — management of what
 //     exists stays possible through PATCH/DELETE on the question itself.
 //
+// PHASE G LOCK — once the first attempt exists, appending is REFUSED too:
+// a new question joins the eligible pool and changes every FUTURE paper
+// (BLUEPRINT draws, FIXED sets alike), which is exactly the blueprint drift
+// the post-attempt immutability forbids. The sanctioned alternative is quiz
+// DUPLICATE. The check runs inside a transaction that takes the shared quiz
+// lock FIRST — the same lock `POST /api/quizzes/[id]/start` holds while
+// freezing an attempt — so an append can never slip in between "no attempts
+// yet" and "attempt frozen".
+//
 // AUTHORIZATION: TEACHER role → quiz → lesson → course, CANONICAL chain first,
 // course must be one of the teacher's own (never a body-supplied id).
 
@@ -36,6 +45,7 @@ import {
   validateQuestionDraft,
   type ChainLesson,
 } from "@/lib/teacher-content";
+import { acquireQuizDestructiveLock } from "@/lib/db-serialization";
 
 export async function POST(
   req: NextRequest,
@@ -87,20 +97,36 @@ export async function POST(
     ? resolveQuestionSchoolType(undefined, quiz.trackScope)
     : v.schoolType;
 
-  const created = await db.question.create({
-    data: {
-      quizId: id,
-      type: v.type,
-      prompt: v.prompt,
-      promptAr: v.promptAr,
-      options: JSON.stringify(v.options),
-      answer: v.answer,
-      explanation: v.explanation,
-      difficulty: v.difficulty,
-      marks: v.marks,
-      schoolType,
-    },
-  });
+  // Phase G — race-safe attempt gate: lock FIRST, then count attempts, then
+  // append. `POST /api/quizzes/[id]/start` takes the same lock before it
+  // freezes an attempt, so the two operations are totally ordered.
+  let created;
+  try {
+    created = await db.$transaction(async (tx) => {
+      await acquireQuizDestructiveLock(tx, id);
+      const attempts = await tx.quizAttempt.count({ where: { quizId: id } });
+      if (attempts > 0) throw new QuizLockedError();
+      return tx.question.create({
+        data: {
+          quizId: id,
+          type: v.type,
+          prompt: v.prompt,
+          promptAr: v.promptAr,
+          options: JSON.stringify(v.options),
+          answer: v.answer,
+          explanation: v.explanation,
+          difficulty: v.difficulty,
+          marks: v.marks,
+          schoolType,
+        },
+      });
+    });
+  } catch (e) {
+    if (e instanceof QuizLockedError) {
+      return err(tApi("api.245"), 409);
+    }
+    throw e;
+  }
 
   return ok({
     question: questionPayload(created),
@@ -117,4 +143,13 @@ export async function POST(
     /** Total questions now in the quiz (bounded by QUESTIONS_PER_QUIZ_MAX). */
     questionCount: existing + 1,
   });
+}
+
+/** Thrown from inside the append transaction when the quiz already has
+ * attempts — the outer catch maps it to the localized 409. */
+class QuizLockedError extends Error {
+  constructor() {
+    super("quiz blueprint locked after first attempt");
+    this.name = "QuizLockedError";
+  }
 }

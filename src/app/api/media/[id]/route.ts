@@ -14,6 +14,13 @@
 //   * Session videos  -> admin/teacher, or a student of the owning batch when
 //                        the video is published.
 //   * Quiz evidence   -> ADMIN only (sensitive personal data).
+//   * Phase G homework ATTACHMENTS (the teacher's assignment file) -> the
+//     teacher of the owning course chain, admin, or a student who may access
+//     the homework (unlocked session + track + non-DRAFT, via the SAME
+//     `canAccessHomework` gate the homework routes use).
+//   * Phase G homework SUBMISSIONS (a student's solution file) -> the owning
+//     student, the teacher of the owning course chain, or admin. Never a
+//     peer, never a parent — a solution file is personal work product.
 // Supports HTTP Range so videos can seek. Bytes are STREAMED through the
 // storage abstraction's ranged read — a large video is never buffered whole.
 
@@ -28,7 +35,92 @@ import {
 } from "@/lib/media";
 import { logSecurityEvent } from "@/lib/security";
 import { normalizeSchoolType } from "@/lib/school-type";
-import { canAccessLesson } from "@/lib/session-progress";
+import { canAccessHomework, canAccessLesson } from "@/lib/session-progress";
+import { getTeacherProfile } from "@/lib/api";
+import {
+  LESSON_PLACEMENT_SELECT,
+  lessonPlacement,
+  teacherCourseIds,
+  type ChainLesson,
+} from "@/lib/teacher-content";
+
+/**
+ * Phase G — authorization for a MediaAsset linked to homework.
+ * Returns a refusal Response, or `null` when the caller may read the bytes.
+ *
+ * ATTACHMENT (the teacher's assignment file):
+ *   ADMIN always; TEACHER of the owning course chain; STUDENT only through
+ *   `canAccessHomework` (enrollment + unlocked session + track + non-DRAFT) —
+ *   the exact same gate the homework list uses, so a file can never be
+ *   readable while its assignment is not.
+ *
+ * SUBMISSION (a student's solution file):
+ *   ADMIN always; the OWNING student; TEACHER of the owning course chain.
+ *   Nobody else — peers and parents never read another student's work.
+ */
+async function authorizeHomeworkMediaAccess(
+  asset: {
+    homeworkAttachments: Array<{
+      id: string;
+      status: string;
+      lesson: unknown;
+    }>;
+    homeworkSubmissions: Array<{
+      id: string;
+      student: { userId: string | null };
+      homework: { id: string; status: string; lesson: unknown };
+    }>;
+  },
+  user: { id: string; role: string }
+): Promise<Response | null> {
+  if (user.role === "ADMIN") return null;
+
+  /** Does this teacher own the course chain of a homework's lesson? */
+  const teacherOwnsChain = async (lesson: unknown): Promise<boolean> => {
+    if (user.role !== "TEACHER") return false;
+    const teacher = await getTeacherProfile(user.id);
+    if (!teacher) return false;
+    const placement = lessonPlacement(lesson as ChainLesson | null);
+    return !!placement && teacherCourseIds(teacher).includes(placement.courseId);
+  };
+
+  if (asset.homeworkAttachments.length > 0) {
+    if (user.role === "TEACHER") {
+      for (const hw of asset.homeworkAttachments) {
+        if (await teacherOwnsChain(hw.lesson)) return null;
+      }
+      return err("Forbidden", 403);
+    }
+    if (user.role === "STUDENT") {
+      const student = await db.student.findUnique({
+        where: { userId: user.id },
+        select: { id: true },
+      });
+      if (!student) return err("Forbidden", 403);
+      for (const hw of asset.homeworkAttachments) {
+        const access = await canAccessHomework(student.id, hw.id);
+        if (access.allowed) return null;
+      }
+      return err("Forbidden", 403);
+    }
+    return err("Forbidden", 403);
+  }
+
+  // Submission file: owner student, or teacher of the chain, or admin (above).
+  if (user.role === "STUDENT") {
+    const owns = asset.homeworkSubmissions.some(
+      (s) => s.student.userId === user.id
+    );
+    return owns ? null : err("Forbidden", 403);
+  }
+  if (user.role === "TEACHER") {
+    for (const s of asset.homeworkSubmissions) {
+      if (await teacherOwnsChain(s.homework.lesson)) return null;
+    }
+    return err("Forbidden", 403);
+  }
+  return err("Forbidden", 403);
+}
 
 export async function GET(
   req: NextRequest,
@@ -57,6 +149,29 @@ export async function GET(
       // reach them through this route; the authorized path is
       // GET /api/materials/[id] (full 10-check contract).
       materials: { select: { id: true } },
+      // Phase G — homework linkage, with just enough chain to authorize:
+      // the homework's lesson placement (course gate) and, for submissions,
+      // the owning student's userId.
+      homeworkAttachments: {
+        select: {
+          id: true,
+          status: true,
+          lesson: { select: LESSON_PLACEMENT_SELECT },
+        },
+      },
+      homeworkSubmissions: {
+        select: {
+          id: true,
+          student: { select: { userId: true } },
+          homework: {
+            select: {
+              id: true,
+              status: true,
+              lesson: { select: LESSON_PLACEMENT_SELECT },
+            },
+          },
+        },
+      },
     },
   });
   if (!asset) return err("Not found", 404);
@@ -74,7 +189,14 @@ export async function GET(
 
   // ---- Authorization -------------------------------------------------------
   const isQuizEvidence = asset.quizEvidence.length > 0;
-  const isDocumentMaterial = asset.materials.length > 0 || asset.kind === "DOCUMENT";
+  const isHomeworkFile =
+    asset.homeworkAttachments.length > 0 || asset.homeworkSubmissions.length > 0;
+  // A homework file is stored with kind=DOCUMENT, so it must be matched BEFORE
+  // the generic document-material branch — otherwise the teacher's attachment
+  // and every student submission would be admin-only and the whole Phase G file
+  // workflow would be unreadable by its owners.
+  const isDocumentMaterial =
+    !isHomeworkFile && (asset.materials.length > 0 || asset.kind === "DOCUMENT");
   if (isQuizEvidence) {
     // Quiz camera evidence is strictly admin-only.
     if (user.role !== "ADMIN") return err("Forbidden", 403);
@@ -83,6 +205,10 @@ export async function GET(
       type: "QUIZ_EVIDENCE_ACCESSED",
       detail: `mediaAssetId=${asset.id}`,
     });
+  } else if (isHomeworkFile) {
+    // Phase G — attachment/submission authorization (see the helper above).
+    const refusal = await authorizeHomeworkMediaAccess(asset, user);
+    if (refusal) return refusal;
   } else if (isDocumentMaterial) {
     // Phase 14: session PDFs are served ONLY via /api/materials/[id]. Guessing
     // a MediaAsset id must not bypass the material-level 10-check contract.

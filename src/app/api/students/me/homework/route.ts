@@ -10,22 +10,51 @@ import { getServerT } from "@/lib/i18n-server";
 import { getStudentSchoolType } from "@/lib/enrollment";
 import { trackScopeWhere } from "@/lib/track-scope";
 import { LESSON_STUDENT_STATUS_FILTER } from "@/lib/session-lifecycle";
+import { homeworkAttachmentPayload } from "@/lib/homework-lifecycle";
+import { validateHomeworkFile } from "@/lib/homework-files";
+import {
+  activeMediaStorageValue,
+  makeStorageKey,
+  sanitizeOriginalFilename,
+  writePrivateFile,
+} from "@/lib/media";
+import { assertVolumeQuota } from "@/lib/storage-quotas";
+import { extFromHomeworkFileMime } from "@/lib/homework-files";
 
 /** Longest accepted free-text answer. Generous, but not an upload channel. */
 const MAX_ANSWER_CHARS = 4000;
 
-function publicSubmission(sub: {
-  status: string;
-  grade: number | null;
-  feedback: string | null;
-  submittedAt: Date | null;
-} | null) {
+function publicSubmission(
+  sub: {
+    status: string;
+    grade: number | null;
+    feedback: string | null;
+    submittedAt: Date | null;
+    gradedAt: Date | null;
+    attachment: {
+      id: string;
+      mimeType: string | null;
+      sizeBytes: number | null;
+      originalName: string | null;
+    } | null;
+  } | null,
+  deadline: Date | null
+) {
   if (!sub) return null;
+  // Phase G — the lateness FACT is preserved through grading: derived from
+  // the actual submission timestamp vs the original deadline, independent of
+  // the stored status (which becomes GRADED once the teacher grades it).
+  const late =
+    sub.status === "LATE" ||
+    (!!sub.submittedAt && !!deadline && sub.submittedAt > deadline);
   return {
     status: sub.status,
+    late,
     grade: sub.grade,
     feedback: sub.feedback,
     submittedAt: sub.submittedAt,
+    gradedAt: sub.gradedAt,
+    attachment: homeworkAttachmentPayload(sub.attachment),
   };
 }
 
@@ -35,6 +64,10 @@ function publicSubmission(sub: {
 // Only assignments belonging to sessions the student has UNLOCKED are returned:
 // the title, the instructions and the deadline of a future session's assignment
 // are protected content, not a to-do item.
+//
+// Phase G lifecycle: only PUBLISHED and CLOSED assignments are real to a
+// student. A DRAFT does not exist here (404-equivalent: filtered out); a
+// CLOSED one stays historically visible (read-only) with its grades.
 export async function GET(_req: NextRequest) {
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
@@ -62,6 +95,9 @@ export async function GET(_req: NextRequest) {
   const homeworks = await db.homework.findMany({
     where: {
       lessonId: { in: [...unlocked] },
+      // Phase G — DRAFT assignments are invisible to students; PUBLISHED and
+      // CLOSED are the only student-real states.
+      status: { in: ["PUBLISHED", "CLOSED"] },
       // Phase 13: the lifecycle clause is not redundant bookkeeping — it is
       // what keeps this list correct if `unlocked` is ever widened, and it is
       // the same predicate the engine that produced `unlocked` uses.
@@ -70,13 +106,24 @@ export async function GET(_req: NextRequest) {
     },
     include: {
       lesson: { select: { id: true, titleAr: true, title: true } },
-      submissions: { where: { studentId: s.id } },
+      attachment: {
+        select: { id: true, mimeType: true, sizeBytes: true, originalName: true },
+      },
+      submissions: {
+        where: { studentId: s.id },
+        include: {
+          attachment: {
+            select: { id: true, mimeType: true, sizeBytes: true, originalName: true },
+          },
+        },
+      },
     },
     orderBy: { deadline: "asc" },
   });
 
   const items = homeworks.map((h) => {
-    const sub = h.submissions[0];
+    const sub = h.submissions[0] ?? null;
+    const now = new Date();
     return {
       id: h.id,
       title: h.titleAr || h.title,
@@ -85,7 +132,15 @@ export async function GET(_req: NextRequest) {
       maxMarks: h.maxMarks,
       lessonId: h.lesson.id,
       lessonTitle: h.lesson.titleAr || h.lesson.title,
-      submission: publicSubmission(sub),
+      // Phase G lifecycle — the UI derives the operational state from these:
+      // open for submission (PUBLISHED, deadline future), late window
+      // (PUBLISHED, deadline past), closed (CLOSED, read-only).
+      status: h.status,
+      closed: h.status === "CLOSED",
+      deadlinePassed: now > h.deadline,
+      // The teacher's assignment file (downloadable through /api/media/[id]).
+      attachment: homeworkAttachmentPayload(h.attachment),
+      submission: publicSubmission(sub, h.deadline),
     };
   });
 
@@ -93,19 +148,17 @@ export async function GET(_req: NextRequest) {
 }
 
 // POST /api/students/me/homework
-// Body: { homeworkId: string, content: string }
+// Body (JSON): { homeworkId, content?, attachmentId? }
+//      (multipart, local-dev fallback): homeworkId, content?, file
 //
 // Submits (or re-submits) the student's OWN answer for an assignment.
-//
-// Why this exists: the progression rule requires an assignment to be submitted
-// before the next session unlocks, but nothing in the product could ever write
-// a HomeworkSubmission for a student — the only writer was the teacher grading
-// route. Any lesson carrying an assignment was therefore permanently locked.
 //
 // Rules:
 //   * the studentId always comes from the session, never from the body, so
 //     nobody can submit on somebody else's behalf;
-//   * the assignment must belong to a session the student has unlocked;
+//   * the assignment must belong to a session the student has unlocked AND be
+//     PUBLISHED (Phase G: CLOSED refuses new submissions, DRAFT is a 404);
+//   * content and/or a submitted file — at least one is required;
 //   * submitting sets SUBMITTED (or LATE past the deadline) — grading stays
 //     teacher-only, this route never assigns a grade;
 //   * an already-GRADED assignment is immutable, so a grade cannot be reset by
@@ -121,12 +174,30 @@ export async function POST(req: NextRequest) {
   const s = await getStudentProfile(user.id);
   if (!s) return err("Student profile not found", 404);
 
-  const body = await req.json().catch(() => ({}));
-  const homeworkId = String(body.homeworkId || "").trim();
-  if (!homeworkId) return err(tApi("api.221"), 400);
+  const contentType = req.headers.get("content-type") || "";
+  let homeworkId = "";
+  let content = "";
+  let attachmentId: string | null = null;
+  let uploadedFile: File | null = null;
 
-  const content = typeof body.content === "string" ? body.content.trim() : "";
-  if (!content) return err(tApi("api.222"), 400);
+  if (contentType.includes("multipart/form-data")) {
+    const form = await req.formData();
+    homeworkId = String(form.get("homeworkId") || "").trim();
+    content = typeof form.get("content") === "string" ? String(form.get("content")).trim() : "";
+    const f = form.get("file");
+    if (f && typeof f !== "string") uploadedFile = f as File;
+  } else {
+    const body = await req.json().catch(() => ({}));
+    homeworkId = String(body.homeworkId || "").trim();
+    content = typeof body.content === "string" ? body.content.trim() : "";
+    attachmentId =
+      body.attachmentId === null || body.attachmentId === undefined
+        ? null
+        : String(body.attachmentId).trim() || null;
+  }
+
+  if (!homeworkId) return err(tApi("api.221"), 400);
+  if (!content && !attachmentId && !uploadedFile) return err(tApi("api.222"), 400);
   if (content.length > MAX_ANSWER_CHARS)
     return err(tApi("api.223", { p1: MAX_ANSWER_CHARS }), 413);
 
@@ -136,17 +207,80 @@ export async function POST(req: NextRequest) {
 
   const homework = await db.homework.findUnique({
     where: { id: homeworkId },
-    select: { id: true, title: true, titleAr: true, deadline: true, maxMarks: true },
+    select: {
+      id: true,
+      title: true,
+      titleAr: true,
+      deadline: true,
+      maxMarks: true,
+      status: true,
+      lesson: { select: { status: true, curriculumStatus: true } },
+    },
   });
-  if (!homework) return err("Homework not found", 404);
+  // Phase G — a DRAFT assignment does not exist for students (uniform 404).
+  if (!homework || homework.status === "DRAFT")
+    return err("Homework not found", 404);
+  if (homework.status === "CLOSED") return err(tApi("api.357"), 409);
 
   const existing = await db.homeworkSubmission.findUnique({
     where: { homeworkId_studentId: { homeworkId, studentId: s.id } },
-    select: { id: true, status: true },
+    select: { id: true, status: true, attachmentId: true },
   });
   if (existing?.status === "GRADED") return err(tApi("api.224"), 409);
 
+  // ---- resolve the submitted file (exactly ONE of the two channels) -------
+  let fileAssetId: string | null = attachmentId;
+  if (uploadedFile) {
+    if (attachmentId) return err(tApi("api.222"), 400);
+    // Local-development fallback: the buffered multipart path (the presigned
+    // flow answers PRESIGNED_UNSUPPORTED when MEDIA_BACKEND=local, and the
+    // client drops to this route — same pattern as the lesson PDFs).
+    const buf = Buffer.from(await uploadedFile.arrayBuffer());
+    const originalName = sanitizeOriginalFilename(uploadedFile.name, "submission.bin");
+    const check = validateHomeworkFile({
+      role: "STUDENT_SUBMISSION",
+      buffer: buf,
+      claimedMime: uploadedFile.type || null,
+      originalName,
+    });
+    if (!check.ok) return err(tApi("api.358"), 400);
+    const quota = await assertVolumeQuota(check.sizeBytes);
+    if (!quota.ok) return err(tApi("api.359"), 413);
+    const ext = extFromHomeworkFileMime("STUDENT_SUBMISSION", check.mimeType) ?? check.extension;
+    const key = makeStorageKey("homework-submissions", ext);
+    await writePrivateFile(key, buf);
+    const asset = await db.mediaAsset.create({
+      data: {
+        kind: "DOCUMENT",
+        storage: activeMediaStorageValue(),
+        storageKey: key,
+        mimeType: check.mimeType,
+        sizeBytes: check.sizeBytes,
+        originalName: check.originalName,
+        isPrivate: true,
+        createdById: user.id,
+      },
+    });
+    fileAssetId = asset.id;
+  } else if (attachmentId) {
+    // Presigned channel: the asset was created by the student's own upload
+    // completion. Re-verify ownership + shape before trusting the id — a
+    // foreign asset id must never become someone else's submission file.
+    const asset = await db.mediaAsset.findUnique({
+      where: { id: attachmentId },
+      include: { homeworkSubmissions: { select: { id: true, studentId: true } } },
+    });
+    const admissible =
+      !!asset &&
+      asset.kind === "DOCUMENT" &&
+      asset.isPrivate === true &&
+      asset.createdById === user.id &&
+      asset.homeworkSubmissions.every((sub) => sub.studentId === s.id);
+    if (!admissible) return err(tApi("api.355"), 400);
+  }
+
   const now = new Date();
+  // Phase G late policy — accepted after the deadline, explicitly LATE.
   const status = now > homework.deadline ? "LATE" : "SUBMITTED";
 
   // Upsert on the (homeworkId, studentId) unique pair: two parallel submits
@@ -156,22 +290,34 @@ export async function POST(req: NextRequest) {
     create: {
       homeworkId,
       studentId: s.id,
-      content,
+      content: content || null,
+      attachmentId: fileAssetId,
       submittedAt: now,
       status,
     },
     update: {
-      content,
+      content: content || null,
+      // A re-submission REPLACES the file (the previous asset row stays in
+      // storage history; the pointer moves) and clears the previous verdict —
+      // the teacher re-grades.
+      attachmentId: fileAssetId !== null ? fileAssetId : existing?.attachmentId ?? null,
       submittedAt: now,
       status,
-      // A re-submission clears the previous verdict; the teacher re-grades.
       grade: null,
       feedback: null,
+      gradedById: null,
+      gradedAt: null,
+    },
+    include: {
+      attachment: {
+        select: { id: true, mimeType: true, sizeBytes: true, originalName: true },
+      },
     },
   });
 
   return ok({
     message: tApi("api.225"),
-    submission: publicSubmission(submission),
+    late: status === "LATE",
+    submission: publicSubmission(submission, homework.deadline),
   });
 }

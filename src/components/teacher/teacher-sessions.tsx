@@ -146,6 +146,8 @@ type QuizRow = {
   order: number;
   questionCount: number;
   attemptsCount: number;
+  status?: string;
+  publishedAt?: string | null;
 };
 
 type HomeworkRow = {
@@ -161,6 +163,8 @@ type HomeworkRow = {
   createdAt: string;
   submissionsCount: number;
   gradedCount: number;
+  status?: string;
+  publishedAt?: string | null;
 };
 
 type Workspace = {
@@ -195,6 +199,18 @@ const shortDate = (iso: string) => {
 };
 
 /** localize-with-fallback for labels that are plain, dict-keyed copy. */
+function lifecycleLabel(status: string | undefined, homework = false): string {
+  if (status === "DRAFT") return "مسودة";
+  if (status === "CLOSED") return "مغلق";
+  return homework ? "منشور" : "منشور";
+}
+
+function lifecycleTone(status: string | undefined): string {
+  if (status === "DRAFT") return "border-amber-500/30 text-amber-700 dark:text-amber-300";
+  if (status === "CLOSED") return "border-slate-500/30 text-slate-700 dark:text-slate-300";
+  return "border-emerald-500/30 text-emerald-700 dark:text-emerald-300";
+}
+
 function indicatorTone(state: string): string {
   if (state === "OK") {
     return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
@@ -934,6 +950,16 @@ function QuizzesCard({ ws, refresh }: { ws: Workspace; refresh: () => void }) {
   const [editQuiz, setEditQuiz] = React.useState<QuizRow | null>(null);
   const [deleteQuiz, setDeleteQuiz] = React.useState<QuizRow | null>(null);
 
+  const publish = useMutation({
+    mutationFn: async (id: string) => {
+      const r = await fetch(`/api/teacher/quizzes/${encodeURIComponent(id)}/publish`, { method: "POST" });
+      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || "تعذر النشر"); }
+      return r.json();
+    },
+    onSuccess: () => { toast.success("تم نشر الاختبار"); refresh(); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const del = useMutation({
     mutationFn: async (id: string) => {
       const r = await fetch(`/api/teacher/quizzes/${encodeURIComponent(id)}`, {
@@ -978,6 +1004,9 @@ function QuizzesCard({ ws, refresh }: { ws: Workspace; refresh: () => void }) {
             <li key={q.id} className="rounded-lg border p-2.5 text-xs space-y-1.5">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="min-w-0 truncate font-medium">{q.title}</span>
+                <Badge variant="outline" className={`text-[10px] ${lifecycleTone(q.status)}`}>
+                  {lifecycleLabel(q.status)}
+                </Badge>
                 <TrackScopeBadge scope={q.trackScope} />
                 <span className="text-muted-foreground">
                   {tr("teacher.267")}: {q.passMark}٪
@@ -1011,6 +1040,11 @@ function QuizzesCard({ ws, refresh }: { ws: Workspace; refresh: () => void }) {
                   </Badge>
                 )}
                 <span className="ms-auto flex items-center gap-1">
+                  {q.status === "DRAFT" && q.questionCount > 0 && (
+                    <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => publish.mutate(q.id)} disabled={publish.isPending}>
+                      نشر
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     size="sm"

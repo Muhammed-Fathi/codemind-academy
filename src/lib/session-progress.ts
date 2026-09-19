@@ -330,8 +330,15 @@ export async function getCourseSessionProgress(
     },
     select: {
       ...LESSON_CHAIN_SELECT,
-      quizzes: { select: { id: true } },
-      homeworks: { select: { id: true } },
+      // Phase G — DRAFT assessments are authoring-only: they are NOT session
+      // requirements (a student can never complete something they cannot see,
+      // so counting one would deadlock the sequence). CLOSED homework stays a
+      // requirement on purpose: closing stops NEW submissions, it does not
+      // erase the obligation of students who have not submitted yet. This is a
+      // visibility-consistency filter — progression SEMANTICS are unchanged
+      // (Phase H owns any future unlock redesign).
+      quizzes: { where: { status: { not: "DRAFT" } }, select: { id: true } },
+      homeworks: { where: { status: { not: "DRAFT" } }, select: { id: true } },
     },
   }) as unknown as Array<LessonChain & { quizzes: { id: string }[]; homeworks: { id: string }[] }>
   const lessons = orderCourseLessons(found, courseId) as Array<LessonChain & { quizzes: { id: string }[]; homeworks: { id: string }[] }>;
@@ -601,9 +608,13 @@ export async function canAccessQuiz(
 ): Promise<ResourceAccess> {
   const quiz = await db.quiz.findUnique({
     where: { id: quizId },
-    select: { lessonId: true, trackScope: true },
+    select: { lessonId: true, trackScope: true, status: true },
   });
-  if (!quiz) return { allowed: false, reason: "LESSON_NOT_FOUND" };
+  // Phase G — a DRAFT quiz does not exist for students: the same non-oracle
+  // answer as a nonexistent id, so probing reveals nothing.
+  if (!quiz || quiz.status !== "PUBLISHED") {
+    return { allowed: false, reason: "LESSON_NOT_FOUND" };
+  }
   return gateTrackedResource(studentId, quiz.lessonId, quiz.trackScope);
 }
 
@@ -614,9 +625,14 @@ export async function canAccessHomework(
 ): Promise<ResourceAccess> {
   const homework = await db.homework.findUnique({
     where: { id: homeworkId },
-    select: { lessonId: true, trackScope: true },
+    select: { lessonId: true, trackScope: true, status: true },
   });
-  if (!homework) return { allowed: false, reason: "LESSON_NOT_FOUND" };
+  // Phase G — DRAFT homework is invisible to students (see canAccessQuiz).
+  // CLOSED stays ACCESSIBLE: students must still see a closed assignment,
+  // their submission and its grade — closing only stops NEW submissions.
+  if (!homework || homework.status === "DRAFT") {
+    return { allowed: false, reason: "LESSON_NOT_FOUND" };
+  }
   return gateTrackedResource(studentId, homework.lessonId, homework.trackScope);
 }
 

@@ -105,9 +105,15 @@ export async function POST(
       difficultyPlan: true,
       shuffleOptions: true,
       maxAttempts: true,
+      // Phase G lifecycle gate.
+      status: true,
     },
   });
   if (!quiz) return err("Quiz not found", 404);
+
+  // Phase G — a DRAFT quiz cannot be started: identical 404 to a nonexistent
+  // id so its existence never leaks. Only a PUBLISHED quiz accepts attempts.
+  if (quiz.status !== "PUBLISHED") return err("Quiz not found", 404);
 
   // Backend authorization: a quiz belonging to a locked session cannot be
   // opened, so no attempt row is ever created for content the student has not
