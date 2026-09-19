@@ -19,7 +19,7 @@
 // Run: node tests/session-quiz.test.js
 
 /* eslint-disable @typescript-eslint/no-require-imports -- plain-node test runner, same as the other suites */
-const { execSync } = require("child_process");
+const { execFileSync } = require("child_process");
 const fs = require("fs");
 const { Module } = require("module");
 const os = require("os");
@@ -77,15 +77,28 @@ fs.writeFileSync(
 // unrelated parts of the graph are tolerated here (`bun run typecheck` is the
 // real gate); what matters is that the JS we are about to exercise was emitted.
 try {
-  execSync(
-    `${process.execPath} ${path.join(__dirname, "..", "node_modules/typescript/lib/tsc.js")} -p ${path.join(OUT, "tsconfig.json")}`,
+  execFileSync(
+    process.execPath,
+    [path.join(__dirname, "..", "node_modules/typescript/lib/tsc.js"), "-p", path.join(OUT, "tsconfig.json")],
     { cwd: REPO, stdio: "pipe" }
   );
 } catch {
   /* fall through: check the emitted files instead */
 }
-if (!fs.existsSync(path.join(OUT, "session-quiz.js"))) {
-  throw new Error("tsc did not emit session-quiz.js");
+function findEmittedJs(root, fileName) {
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    const full = path.join(root, entry.name);
+    if (entry.isFile() && entry.name === fileName) return full;
+    if (entry.isDirectory()) {
+      const found = findEmittedJs(full, fileName);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+const SESSION_QUIZ_JS = findEmittedJs(OUT, "session-quiz.js");
+if (!SESSION_QUIZ_JS) {
+  throw new Error("tsc did not emit session-quiz.js anywhere under the temp output directory");
 }
 
 // Fake @prisma/client types are compile-time only; at runtime the compiled
@@ -209,8 +222,8 @@ Module._resolveFilename = function (request, ...args) {
   // resolve it to the sibling compiled output in the temp dir.
   const m = /^@\/lib\/([\w-]+)$/.exec(request);
   if (m) {
-    const compiled = path.join(OUT, `${m[1]}.js`);
-    if (fs.existsSync(compiled)) return compiled;
+    const compiled = findEmittedJs(OUT, `${m[1]}.js`);
+    if (compiled) return compiled;
   }
   return originalResolve.call(this, request, ...args);
 };
@@ -224,9 +237,8 @@ const loadServiceWith = (fakeDb) => {
   );
   globalThis.__CM_P5_FAKE_DB__ = fakeDb;
   delete require.cache[FAKE_DB_PATH];
-  const svcPath = path.join(OUT, "session-quiz.js");
-  delete require.cache[svcPath];
-  return require(svcPath);
+  delete require.cache[SESSION_QUIZ_JS];
+  return require(SESSION_QUIZ_JS);
 };
 
 (async () => {

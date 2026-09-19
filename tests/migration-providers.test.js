@@ -76,7 +76,17 @@ function ok(cond, label, extra) {
   }
 }
 const read = (p) => fs.readFileSync(p, "utf8");
-const sha256 = (p) => crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex");
+// Migration files are governed by .gitattributes (LF). Older Windows
+// worktrees may nevertheless contain CRLF after checkout; canonicalize only
+// CRLF transport bytes so the frozen SQL checksum remains portable. Any other
+// content change still fails the checksum contract.
+const sha256 = (p) => {
+  const bytes = fs.readFileSync(p);
+  const canonical = bytes.includes(0x0d)
+    ? Buffer.from(bytes.toString("utf8").replace(/\r\n/g, "\n"), "utf8")
+    : bytes;
+  return crypto.createHash("sha256").update(canonical).digest("hex");
+};
 /** SQL text with -- comments removed (for scanning CODE, not prose). */
 const stripSqlComments = (sql) => sql.split("\n").filter((l) => !l.trim().startsWith("--")).join("\n");
 const listMigrationDirs = (dir) =>
