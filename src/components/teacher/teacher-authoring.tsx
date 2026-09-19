@@ -152,6 +152,7 @@ export type HomeworkRecord = {
   maxMarks: number;
   trackScope: string;
   gradedCount?: number;
+  status?: string;
   lessonId?: string;
 };
 
@@ -592,6 +593,9 @@ export function HomeworkDialog({
   const [deadline, setDeadline] = React.useState(toLocalInput(homework?.deadline));
   const [maxMarks, setMaxMarks] = React.useState(homework?.maxMarks ?? 10);
   const [trackScope, setTrackScope] = React.useState("");
+  const [attachmentFile, setAttachmentFile] = React.useState<File | null>(null);
+  const [attachmentBusy, setAttachmentBusy] = React.useState(false);
+  const [attachmentMessage, setAttachmentMessage] = React.useState<string | null>(null);
 
   // Phase 18 — no re-seed effect: the dashboard mounts a fresh dialog per target
   // (`key={homework?.id ?? "new"}`), so editing a different homework remounts
@@ -628,7 +632,9 @@ export function HomeworkDialog({
       }
       return r.json();
     },
-    onSuccess: () => {
+    onSuccess: async (data: { homework?: { id?: string } }) => {
+      const id = homework?.id ?? data.homework?.id;
+      if (id && attachmentFile) await uploadAttachment(id, attachmentFile);
       toast.success(tr("teacher.187"));
       queryClient.invalidateQueries({ queryKey: ["teacher-homework"] });
       onChanged?.();
@@ -636,6 +642,18 @@ export function HomeworkDialog({
     },
     onError: (e: Error) => toast.error(e.message || tr("teacher.030")),
   });
+
+  const uploadAttachment = async (homeworkId: string, file: File) => {
+    setAttachmentBusy(true); setAttachmentMessage(null);
+    try {
+      const form = new FormData(); form.set("file", file);
+      const r = await fetch(`/api/teacher/homework/${encodeURIComponent(homeworkId)}/attachment`, { method: "POST", body: form });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error || "تعذر رفع المرفق");
+      setAttachmentMessage(`تم رفع ${data.attachment?.name || file.name}`);
+    } catch (e) { setAttachmentMessage(e instanceof Error ? e.message : "تعذر رفع المرفق"); }
+    finally { setAttachmentBusy(false); }
+  };
 
   const submit = () => {
     if (!editing && !lessonId) return toast.error(tr("teacher.188"));
@@ -701,6 +719,13 @@ export function HomeworkDialog({
             <DeadlineField value={deadline} onChange={setDeadline} />
           </div>
 
+          <div className="rounded-lg border border-dashed p-3 space-y-2">
+            <Label className="text-xs text-muted-foreground">مرفق الواجب (PDF، DOCX، PPTX، ZIP — حتى 25MB)</Label>
+            <Input type="file" accept=".pdf,.docx,.pptx,.zip" onChange={(e) => setAttachmentFile(e.target.files?.[0] ?? null)} disabled={attachmentBusy || (editing && homework?.status === "CLOSED")} />
+            {attachmentFile && <p className="text-xs text-muted-foreground truncate">{attachmentFile.name} · {(attachmentFile.size / 1024 / 1024).toFixed(2)} MB</p>}
+            {attachmentMessage && <p className="text-xs text-emerald-700">{attachmentMessage}</p>}
+          </div>
+
           <div className="grid sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">{tr("teacher.186")}</Label>
@@ -722,7 +747,9 @@ export function HomeworkDialog({
             </div>
           </div>
 
-          {selectedLesson && !editing && <LessonMeta lesson={selectedLesson} />}
+          {/* The lesson picker is the single source of lesson context. Avoid
+              rendering a second lesson summary here (especially in the
+              session workspace, where the surrounding card already names it). */}
         </div>
 
         <DialogFooter>
