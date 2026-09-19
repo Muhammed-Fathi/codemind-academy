@@ -363,6 +363,9 @@ export type TeacherSessionWorkspace = {
     createdAt: Date | string;
     submissionsCount: number;
     gradedCount: number;
+    status: string;
+    publishedAt: Date | string | null;
+    attachment: { id: string; originalName: string | null; mimeType: string | null; sizeBytes: number | null } | null;
   }>;
   /** The full Phase D snapshot — the same payload the admin route serves. */
   readiness: LessonReadiness;
@@ -450,6 +453,9 @@ export async function loadTeacherSessionWorkspace(params: {
         maxMarks: true,
         trackScope: true,
         createdAt: true,
+        status: true,
+        publishedAt: true,
+        attachment: { select: { id: true, originalName: true, mimeType: true, sizeBytes: true } },
         submissions: { select: { status: true } },
       },
     }),
@@ -555,6 +561,9 @@ export async function loadTeacherSessionWorkspace(params: {
         createdAt: h.createdAt,
         submissionsCount: h.submissions.length,
         gradedCount: h.submissions.filter((s) => s.status === "GRADED").length,
+        status: h.status,
+        publishedAt: h.publishedAt,
+        attachment: h.attachment,
       })),
       readiness,
     },

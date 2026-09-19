@@ -1647,6 +1647,16 @@ function HomeworkCard({ ws, refresh }: { ws: Workspace; refresh: () => void }) {
   const [editing, setEditing] = React.useState<HomeworkRecord | null>(null);
   const [deleting, setDeleting] = React.useState<HomeworkRow | null>(null);
 
+  const transition = useMutation({
+    mutationFn: async ({ id, action }: { id: string; action: "publish" | "close" }) => {
+      const r = await fetch(`/api/teacher/homework/${encodeURIComponent(id)}/${action}`, { method: "POST" });
+      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || "تعذر تحديث حالة الواجب"); }
+      return r.json();
+    },
+    onSuccess: (_data, vars) => { toast.success(vars.action === "publish" ? "تم نشر الواجب" : "تم إغلاق الواجب"); refresh(); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const del = useMutation({
     mutationFn: async (id: string) => {
       const r = await fetch(`/api/teacher/homework/${encodeURIComponent(id)}`, {
@@ -1731,6 +1741,9 @@ function HomeworkCard({ ws, refresh }: { ws: Workspace; refresh: () => void }) {
             <li key={h.id} className="rounded-lg border p-2.5 text-xs space-y-1.5">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="min-w-0 truncate font-medium">{h.title}</span>
+                <Badge variant="outline" className={`text-[10px] ${lifecycleTone(h.status)}`}>
+                  {lifecycleLabel(h.status, true)}
+                </Badge>
                 <TrackScopeBadge scope={h.trackScope} />
                 {!h.instructions?.trim() && (
                   <Badge
@@ -1758,6 +1771,8 @@ function HomeworkCard({ ws, refresh }: { ws: Workspace; refresh: () => void }) {
                   </Badge>
                 )}
                 <span className="ms-auto flex items-center gap-1">
+                  {h.status === "DRAFT" && <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => transition.mutate({ id: h.id, action: "publish" })} disabled={transition.isPending}>نشر الواجب</Button>}
+                  {h.status === "PUBLISHED" && <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => transition.mutate({ id: h.id, action: "close" })} disabled={transition.isPending}>إغلاق الواجب</Button>}
                   <Button
                     variant="ghost"
                     size="sm"
