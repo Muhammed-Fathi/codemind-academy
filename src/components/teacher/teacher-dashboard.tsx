@@ -354,6 +354,7 @@ type HomeworkSubmission = {
   status: string;
   content: string | null;
   fileUrl: string | null;
+  attachment?: { id: string; originalName: string | null; mimeType: string | null; sizeBytes: number | null } | null;
   submittedAt: string | null;
   grade: number | null;
   feedback: string | null;
@@ -2917,6 +2918,7 @@ function SubmissionRow({
         <div className="text-[10px] text-muted-foreground">
           {sub.submittedAt ? timeAgo(sub.submittedAt) : tr("teacher.127")}
         </div>
+        {sub.attachment ? <a className="text-[10px] text-primary underline truncate block" href={`/api/media/${sub.attachment.id}`} target="_blank" rel="noreferrer">{sub.attachment.originalName || "تحميل ملف التسليم"}</a> : <span className="text-[10px] text-muted-foreground">لا يوجد ملف</span>}
       </div>
       <Badge
         variant="secondary"
