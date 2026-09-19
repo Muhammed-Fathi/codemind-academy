@@ -232,6 +232,8 @@ type ActivityItem = {
   studentName: string;
   time: string;
   kind: "good" | "neutral" | "warn";
+  attemptId?: string;
+  quizId?: string;
 };
 
 type DashboardPayload = {
@@ -949,8 +951,9 @@ function ActivityRow({ item }: { item: ActivityItem }) {
     "quiz-attempt": Trophy,
   } as const;
   const Icon = IconMap[item.type];
-  return (
+  const content = (
     <div className="flex items-start gap-3 p-2.5 rounded-lg hover:bg-muted/40 transition-colors">
+
       <div
         className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${colorMap[item.kind]}`}
       >
@@ -967,6 +970,9 @@ function ActivityRow({ item }: { item: ActivityItem }) {
       </div>
     </div>
   );
+  return item.type === "quiz-attempt" && item.quizId ? (
+    <a href={`/teacher/sessions?quizId=${encodeURIComponent(item.quizId)}&attemptId=${encodeURIComponent(item.attemptId || "")}`} className="block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">{content}</a>
+  ) : content;
 }
 
 function OverviewSkeleton() {
