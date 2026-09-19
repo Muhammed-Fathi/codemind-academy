@@ -30,7 +30,7 @@
 // Run: node tests/phase-f-live-sessions.test.js
 
 /* eslint-disable @typescript-eslint/no-require-imports -- plain-node test runner, like the other suites */
-const { execSync } = require("child_process");
+const { execFileSync } = require("child_process");
 const fs = require("fs");
 const Module = require("module");
 const os = require("os");
@@ -77,8 +77,20 @@ fs.writeFileSync(
     ],
   })
 );
+// PORTABILITY (Windows / Linux / CI / sandbox). The compiler is invoked as
+// `node <typescript>/bin/tsc` with an ARGUMENT ARRAY — no shell is involved, so
+// a temp path containing a space (the normal Windows case:
+// `C:\Users\John Doe\AppData\Local\Temp`) cannot break the command line, and no
+// `npx`/`npx.cmd` shell resolution is required. The previous form
+//   execSync(`npx tsc -p ${path.join(OUT, "tsconfig.json")}`)
+// interpolated an UNQUOTED path into a shell string and silently degraded into
+// the misleading "tsc did not emit the Phase F policy modules" error below.
+const TSC_JS = path.join(REPO, "node_modules", "typescript", "bin", "tsc");
 try {
-  execSync(`npx tsc -p ${path.join(OUT, "tsconfig.json")}`, { cwd: REPO, stdio: "pipe" });
+  execFileSync(process.execPath, [TSC_JS, "-p", path.join(OUT, "tsconfig.json")], {
+    cwd: REPO,
+    stdio: "pipe",
+  });
 } catch {
   /* type errors elsewhere in the graph are not this suite's business */
 }

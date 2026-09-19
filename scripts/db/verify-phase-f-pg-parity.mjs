@@ -24,6 +24,25 @@
 //   instead of a constraint, an appended enum value landing in the wrong
 //   order). This script closes that gap without a database server.
 //
+// PORTABILITY (Windows / Linux / CI / sandbox — identical behaviour)
+//   * The scratch directory comes from `os.tmpdir()`, NOT from `TMPDIR`. On
+//     Windows `TMPDIR` is normally unset (Windows uses `TEMP`/`TMP`) and the
+//     old `process.env.TMPDIR || "/tmp"` fallback resolved to `\tmp` on the
+//     current drive, which does not exist: `ENOENT … mkdtemp
+//     '\tmp\cm-pf-parity-XXXXXX'`. `os.tmpdir()` is the platform-independent
+//     API and reads `TMPDIR`/`TEMP`/`TMP` as appropriate.
+//   * Every path is composed with `path.join` (never string-concatenated with
+//     a `/`), so no Unix separator is assumed.
+//   * No shell is invoked anywhere: this file has no `child_process` import,
+//     no `grep`/`sed`/`bash` dependency and no shell-only syntax.
+//   * The exit status is set with `process.exitCode` instead of
+//     `process.exit()`: on Windows, `process.exit()` can truncate stdout that
+//     is still being flushed into a pipe, which would swallow the verdict
+//     line CI greps for. `process.exitCode` lets Node drain and exit on its
+//     own.
+//   * Scratch directories are removed afterwards, best-effort (a Windows
+//     handle may still be held open; cleanup never affects the verdict).
+//
 // NOTE (pre-existing finding, fixed additively in Phase F)
 //   `Attendance` has declared `@@index([sessionId])` since Phase 13, but the
 //   frozen PostgreSQL baseline (0_init) never created it. Phase F adds it with
@@ -32,6 +51,7 @@
 //   nothing else.
 
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import { splitSqlStatements, BASELINE_SQL_PATH, REPO } from "./pg-lib.mjs";
@@ -45,9 +65,14 @@ const CHAIN = [
 const read = (p) => fs.readFileSync(p, "utf8");
 const stmts = (p) => splitSqlStatements(read(p));
 
+/** Every scratch directory this run created (for best-effort cleanup). */
+const scratchDirs = [];
+
+/** A pristine PostgreSQL engine on a private directory under os.tmpdir(). */
 async function fresh() {
-  const dir = fs.mkdtempSync(path.join(process.env.TMPDIR || "/tmp", "cm-pf-parity-"));
-  const pg = new PGlite(dir);
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "cm-pf-parity-"));
+  scratchDirs.push(root);
+  const pg = new PGlite(path.join(root, "pgdata"));
   await pg.waitReady;
   return pg;
 }
@@ -69,10 +94,12 @@ async function snap(pg) {
 const A = await fresh();
 for (const s of stmts(BASELINE_SQL_PATH)) await A.query(s);
 const baseline = await snap(A);
+await A.close();
 
 const B = await fresh();
 for (const name of CHAIN) for (const s of stmts(path.join(PG_MIG, name, "migration.sql"))) await B.query(s);
 const chain = await snap(B);
+await B.close();
 
 let bad = 0;
 for (const key of ["cols", "enums", "idx", "cons"]) {
@@ -86,4 +113,14 @@ for (const key of ["cols", "enums", "idx", "cons"]) {
   bad += missing.length + extra.length;
 }
 console.log(bad === 0 ? "PHASE_F_PG_CATALOG_IDENTICAL_OK" : `PHASE_F_PG_CATALOG_DIFF=${bad}`);
-process.exit(bad === 0 ? 0 : 1);
+process.exitCode = bad === 0 ? 0 : 1;
+
+// Best-effort scratch cleanup: never allowed to change the verdict (on Windows
+// a directory handle can still be held briefly after close()).
+for (const dir of scratchDirs) {
+  try {
+    fs.rmSync(dir, { recursive: true, force: true });
+  } catch {
+    /* leave the scratch directory behind rather than fail the verification */
+  }
+}
