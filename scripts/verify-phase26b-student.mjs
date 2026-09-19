@@ -1476,8 +1476,26 @@ for (const dir of ["app/api", "lib"]) {
   };
   walk(path.join(srcRoot, dir));
 }
+// A file that merely NAMES the type is not a SENDER, so the guard is applied to
+// dispatch capability, not to the string alone. `lib/notification-labels.ts`
+// (Phase F manual-QA Finding 8) is the single display-label map for the WHOLE
+// NotificationType enum — it exists so no surface renders a raw enum — and it
+// contains no dispatch call. It is exempted explicitly (never by pattern) and
+// the exemption is re-proved here: the moment that module starts dispatching,
+// the Section 31 answer below is wrong and this check must fail again.
+const DISPATCH_CALL =
+  /notification\.create|notification\.createMany|createNotification|createManyNotifications|notifyUsers?\s*\(|sendNotification/;
+const labelMap = path.join(srcRoot, "lib", "notification-labels.ts");
+const labelMapIsPresentationOnly =
+  !fs.existsSync(labelMap) || !DISPATCH_CALL.test(fs.readFileSync(labelMap, "utf8"));
 ok(
-  expirySenders.every((f) => f.endsWith("notify.ts") || f.includes("admin")),
+  labelMapIsPresentationOnly &&
+    expirySenders.every(
+      (f) =>
+        f.endsWith("notify.ts") ||
+        f.includes("admin") ||
+        (f === labelMap && labelMapIsPresentationOnly)
+    ),
   "no AUTOMATIC expiry-notification sender exists (only prefs mapping + admin broadcast) — Section 31 answer",
   expirySenders.join(",")
 );
