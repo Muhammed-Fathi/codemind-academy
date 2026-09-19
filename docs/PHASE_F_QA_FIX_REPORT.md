@@ -325,4 +325,85 @@ untouched.
 * `verify-phase-f-pg-parity.mjs` → `PHASE_F_PG_CATALOG_IDENTICAL_OK`.
 * No schema or migration change; no Neon/production migration; no PR.
 
-**READY FOR FINAL LOCAL RE-VERIFICATION**
+# Final UI-polish round (Switch control only)
+
+Scope: the shared `Switch` visual appearance inside the Parent notification
+preferences. No notification behaviour, state or persistence was touched.
+
+## Root cause
+
+`src/components/ui/switch.tsx` placed the knob with the LOGICAL flex start of
+the track and then moved it with a PHYSICAL positive transform:
+
+```
+data-[state=checked]:translate-x-[calc(100%-2px)]   /* physical: always +x */
+```
+
+The app renders `<html dir="rtl">`, so the flex main-start of the track is its
+RIGHT edge and the knob rests on the right. A positive `translate-x` therefore
+pushed the checked knob a further ~14 px to the right — i.e. out of the pill —
+which is exactly the reported "detached / stuck outside the control" circle.
+This is the same logical/physical mix that the repo already documented as the
+dialog-offset root cause (`src/components/ui/dialog.tsx`).
+
+The colour was the second half of the report: the knob used
+`bg-background dark:data-[state=checked]:bg-primary-foreground`, and
+`--primary-foreground` is `oklch(0.16 0.012 175)` in dark mode — a near-BLACK
+disc sitting on the green track. In light mode the knob was `--background`
+(near-white) on a `--input` (oklch 0.93) track, so OFF was washed out.
+
+The old geometry was also fractional (`h-[1.15rem]`, `w-8`,
+`translate-x-[calc(100%-2px)]`), which left ~0.2 px of clearance and made the
+knob's travel depend on a calc tied to the knob's own width instead of the
+track's.
+
+## Fix (shared component — one implementation for every surface)
+
+* Track: `h-5 w-9` (20 × 36 px) with a 2 px transparent border → padding box
+  16 × 32 px; `data-[state=checked]:bg-primary` (green) vs
+  `data-[state=unchecked]:bg-input` (neutral gray); `transition-colors
+  duration-200`; state-specific hover (`primary/90`, `muted-foreground/25`);
+  unchanged focus ring (`focus-visible:ring-[3px] ring-ring/50` +
+  `focus-visible:border-ring`) and disabled treatment.
+* Knob: `absolute top-1/2 start-0.5 size-4 -translate-y-1/2` — a 16 px disc
+  inset 2 px from the padding box on every side, always `bg-white` in BOTH
+  themes (`shadow-sm ring-1 ring-black/10` for definition).
+* Travel is LOGICAL only: `data-[state=checked]:start-[calc(100%-1.125rem)]`
+  (= 32 − 18 = 14 px, leaving the same 2 px inset on the far side), animated
+  with `transition-[inset-inline-start] duration-200 ease-out`. There is no
+  physical horizontal transform left in the component, so the knob cannot
+  escape the track in either direction.
+* Accessibility/state untouched: the shared component still spreads
+  `{...props}`, keeps `data-slot="switch"` / `data-slot="switch-thumb"`, and
+  Radix still emits `role="switch"`, `aria-checked` and `data-state`.
+
+## Verification
+
+* Phase F suite: **421 passed / 0 failed** (was 405). New §I assertions 85–86
+  render the Parent row through `react-dom/server` in BOTH states and assert the
+  emitted switch DOM (`role`/`aria-checked`/`data-state`, distinct ON/OFF track
+  classes, always-light knob, logical travel, no `translate-x`). New §J
+  assertions 87–92b pin the source contract: the knob/track bounds arithmetic,
+  logical-only travel, ON≠OFF tracks, the theme-independent light knob, the
+  preserved Radix props/slots/focus ring, ONE shared implementation consumed by
+  the Parent preferences, and the hover/transition polish.
+* Mutation check: reverting `switch.tsx` to the previous account fails 7 of the
+  new assertions (86, 87, 88, 88c, 89b, 92, 92b), so the coverage really does
+  catch the reported defect instead of merely describing the new code.
+* Tailwind compile probe (temporary, removed): all 16 utilities used by the
+  component are emitted, including `inset-inline-start: calc(100% - 1.125rem)`
+  and `transition-property: inset-inline-start`.
+* Parent regressions: `parent-dashboard-isolation` 112/0,
+  `parent-monthly-report` 67/0, `parent-analytics-alignment-phase19` 176/0,
+  `phase26e-parent-full-flow` 380/0 + `PHASE26E_TEST_OK`,
+  `security-hardening-phase20` 193/0.
+* `session-notifications-phase17` 319/2 — the same pre-existing §K fingerprint
+  as on clean `1bda6d1` (unrelated to this UI change).
+* `tsc --noEmit` exit 0. `npm run build:postgres` succeeded; the local SQLite
+  Prisma client was restored afterwards (`npm run db:generate`, v6.19.3).
+* `verify-phase-f-pg-parity.mjs` → `cons: baseline=593 chain=593 missing=0
+  extra=0` + `PHASE_F_PG_CATALOG_IDENTICAL_OK`.
+* No schema/migration change, no Neon/production migration, no PR.
+
+**READY FOR FINAL VISUAL CHECK**
+

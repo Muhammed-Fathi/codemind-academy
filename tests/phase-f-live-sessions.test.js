@@ -1,6 +1,6 @@
 // CodeMind Academy — Phase F LIVE SESSION LIFECYCLE test suite.
 //
-//   84 numbered cases across nine sections:
+//   92 numbered cases across ten sections (421 assertions incl. sub-cases):
 //     §A 1–7    scheduling authority and validation
 //     §B 8–12   the Session Link and the student surface
 //     §C 13–24  the attendance register, the window and THE LOCK
@@ -10,8 +10,12 @@
 //     §G 49–66  the Manual-QA fix round (start window, canonical Lesson,
 //               join-window copy, finalize reason, notification labels/scroll,
 //               Parent report i18n + PDF export, Parent notification entry)
-//     §H 67–78  the final re-test round (scroll VIEWPORT binding, structured
+//     §H 67–79  the final re-test round (scroll VIEWPORT binding, structured
 //               preference rows, descriptive export file name + title restore)
+//     §I 80–86  RUNTIME render of the Parent preference row (both switch states)
+//     §J 87–92  the final UI-polish round on the SHARED Switch (logical knob
+//               travel, distinct ON/OFF tracks, always-light knob, preserved
+//               Radix a11y/state, one shared implementation)
 //
 // THREE LAYERS, all offline (no network, no dev server):
 //   1. BEHAVIOURAL — `src/lib/live-session-policy.ts` and
@@ -1522,7 +1526,7 @@ section("H. Final re-test round: scroll viewport, preference rows, export name (
 
 
 // ===========================================================================
-section("I. Final re-test round: RUNTIME render of the preference row (80-84)");
+section("I. Final re-test round: RUNTIME render of the preference row (80-86)");
 // ===========================================================================
 
 // 80-84. The requirement is about the RENDERED structure, so the row is
@@ -1533,6 +1537,7 @@ section("I. Final re-test round: RUNTIME render of the preference row (80-84)");
 {
   const ROW_OUT = path.join(REPO, `.cm-phasef-row-${process.pid}`);
   let rendered = null;
+  let renderedOff = null;
   let renderError = null;
   try {
     fs.mkdirSync(ROW_OUT, { recursive: true });
@@ -1590,6 +1595,15 @@ section("I. Final re-test round: RUNTIME render of the preference row (80-84)");
           onToggle: () => {},
         })
       );
+      renderedOff = renderToStaticMarkup(
+        React.createElement(PreferenceRow, {
+          icon: icons.Bell,
+          title: "تم قبول العذر",
+          description: "قرار الإدارة على العذر",
+          checked: false,
+          onToggle: () => {},
+        })
+      );
     } finally {
       Module._resolveFilename = rowResolve;
     }
@@ -1601,6 +1615,7 @@ section("I. Final re-test round: RUNTIME render of the preference row (80-84)");
 
   ok(!renderError, `80. the preference row renders without throwing (${renderError ? String(renderError).slice(0, 160) : "ok"})`);
   const html = rendered || "";
+  const htmlOff = renderedOff || "";
   ok(html.startsWith("<div") && html.endsWith("</div>"), "81. the row is ONE top-level element (its slots cannot be split apart)");
   ok(
     html.includes("<svg") && html.includes("تم قبول العذر") && html.includes("قرار الإدارة على العذر") && html.includes('data-slot="switch"'),
@@ -1616,6 +1631,165 @@ section("I. Final re-test round: RUNTIME render of the preference row (80-84)");
       new RegExp(`id="\\1"`).test(html) === false &&
       html.includes(`id="${(html.match(/data-slot="switch"[^>]*aria-labelledby="([^"]+)"/) || [])[1]}"`),
     "84. the rendered switch is associated with its own title element (accessibility)"
+  );
+
+  // 85-86. The SWITCH the Parent row actually renders (shared
+  // `@/components/ui/switch`), asserted on the emitted DOM of both states —
+  // not on the source text. This is the runtime half of §J.
+  const tagOf = (markup, slot) => (markup.match(new RegExp(`<[a-z]+[^>]*data-slot="${slot}"[^>]*>`)) || [])[0] || "";
+  const trackOn = tagOf(html, "switch");
+  const trackOff = tagOf(htmlOff, "switch");
+  const knobOn = tagOf(html, "switch-thumb");
+  const knobOff = tagOf(htmlOff, "switch-thumb");
+  ok(
+    /role="switch"/.test(trackOn) &&
+      /aria-checked="true"/.test(trackOn) &&
+      /data-state="checked"/.test(trackOn) &&
+      /role="switch"/.test(trackOff) &&
+      /aria-checked="false"/.test(trackOff) &&
+      /data-state="unchecked"/.test(trackOff),
+    "85. the rendered switch keeps role=switch + aria-checked + data-state in BOTH states (accessibility and state logic preserved)"
+  );
+  ok(
+    trackOn.includes("data-[state=checked]:bg-primary") &&
+      trackOn.includes("data-[state=unchecked]:bg-input") &&
+      knobOn.includes("bg-white") &&
+      knobOff.includes("bg-white") &&
+      knobOn.includes("start-0.5") &&
+      knobOn.includes("data-[state=checked]:start-[calc(100%-1.125rem)]") &&
+      !/translate-x/.test(trackOn + trackOff + knobOn + knobOff),
+    "86. the rendered Parent switch carries the polish contract (distinct ON/OFF tracks, always-light knob, logical travel, no physical translate-x)"
+  );
+}
+
+// ---------------------------------------------------------------------------
+section("J. Final UI polish: the shared Switch control (87-92)");
+// ---------------------------------------------------------------------------
+
+// The knob used to escape the track: it was laid out with the LOGICAL flex
+// start and then moved by a PHYSICAL positive `translate-x`, so under the
+// app's `dir="rtl"` document the checked knob was pushed FURTHER right — out of
+// the pill (the reported "detached" circle). It was also painted with
+// `dark:data-[state=checked]:bg-primary-foreground`, and `--primary-foreground`
+// is a near-black oklch(0.16 …) in dark mode — the reported black circle on the
+// green track. The fix must keep the knob inside the track BY CONSTRUCTION, in
+// both directions, in both themes.
+{
+  const sw = read("src/components/ui/switch.tsx");
+  // Comment-stripped code, so prose that mentions `translate-x` / `rtl:` in the
+  // rationale above the component can neither satisfy nor fail an assertion.
+  const swCode = sw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  // The class contract is split across several string literals joined by `cn()`,
+  // so the whole literal set of each element is collected, not just the first.
+  const literals = (part) =>
+    (part.match(/"[^"]*"/g) || [])
+      .map((q) => q.slice(1, -1))
+      .join(" ");
+  const track = literals(swCode.slice(swCode.indexOf("<SwitchPrimitive.Root"), swCode.indexOf("<SwitchPrimitive.Thumb")));
+  const knob = literals(swCode.slice(swCode.indexOf("<SwitchPrimitive.Thumb")));
+
+  // 87. Bounds arithmetic taken from the class contract itself: the knob fits
+  //     inside the track vertically, sits inside the border at rest, and its
+  //     ON position leaves exactly the same inset on the far side.
+  const num = (s, re) => {
+    const m = s.match(re);
+    return m ? Number(m[1]) : NaN;
+  };
+  const trackH = num(track, /\bh-(\d+)\b/) * 4; // h-5  → 20px
+  const trackW = num(track, /\bw-(\d+)\b/) * 4; // w-9  → 36px
+  const border = num(track, /\bborder-(\d+)\b/); // border-2
+  const knobPx = num(knob, /\bsize-(\d+)\b/) * 4; // size-4 → 16px
+  const inset = num(knob, /\bstart-(\d+(?:\.\d+)?)\b/) * 4; // start-0.5 → 2px
+  const travelInset = num(knob, /calc\(100% ?- ?([\d.]+)rem\)/) * 16; // 1.125rem → 18px
+  const paddingBox = trackW - 2 * border;
+  const travel = paddingBox - travelInset;
+  ok(
+    [trackH, trackW, border, knobPx, inset, travelInset].every(Number.isFinite) &&
+      border >= 1 &&
+      knobPx <= trackH - 2 * border &&
+      inset >= border &&
+      travelInset === knobPx + inset &&
+      travel > 0 &&
+      paddingBox - travel - knobPx === inset,
+    `87. the knob stays inside the track by construction (track ${trackW}×${trackH}, padding box ${paddingBox}, knob ${knobPx}, inset ${inset}, travel ${travel})`
+  );
+
+  // 88. The travel is LOGICAL ONLY. A physical horizontal transform is what
+  //     pushed the knob out of the pill under `dir="rtl"`.
+  ok(
+    /start-0\.5/.test(knob) &&
+      /data-\[state=checked\]:start-\[calc\(100%-1\.125rem\)\]/.test(knob) &&
+      !/translate-x|(^|\s)-?(left|right)-/.test(knob),
+    "88. the knob moves on the logical `inset-inline-start` only (no physical translate-x / left / right offset to escape the track under RTL)"
+  );
+  ok(!/translate-x|(^|\s)-?(left|right)-/.test(track), "88b. the track itself carries no direction-dependent offset or transform");
+  ok(
+    /start-0\.5/.test(knob) && !/\brtl:/.test(swCode),
+    "88c. RTL correctness does not depend on variant source order (no rtl: override needed)"
+  );
+
+  // 89. ON and OFF must be distinguishable, and the knob must be light in both
+  //     themes.
+  ok(
+    /data-\[state=checked\]:bg-primary\b/.test(track) && /data-\[state=unchecked\]:bg-input\b/.test(track),
+    "89. ON and OFF use distinct track styles (emerald vs neutral gray)"
+  );
+  ok(
+    /\bbg-white\b/.test(knob) && !/bg-background|bg-foreground|bg-primary-foreground/.test(knob),
+    "89b. the knob is a light/white disc in BOTH themes — no dark-mode near-black knob on the green track"
+  );
+
+  // 90. Accessibility, state attributes and behaviour are untouched.
+  ok(swCode.includes("{...props}"), "90. the shared Switch still forwards every Radix prop (checked / onCheckedChange / aria-*)");
+  ok(
+    swCode.includes('data-slot="switch"') && swCode.includes('data-slot="switch-thumb"'),
+    "90b. the track/knob data-slots are unchanged"
+  );
+  ok(
+    /focus-visible:ring-\[3px\]/.test(track) &&
+      /focus-visible:border-ring/.test(track) &&
+      /disabled:cursor-not-allowed disabled:opacity-50/.test(track),
+    "90c. a visible focus ring and the disabled treatment are still declared"
+  );
+  ok(!/onCheckedChange=|checked=/.test(swCode), "90d. the component holds no state of its own — toggle behaviour is untouched");
+
+  // 91. One shared implementation, consumed by the Parent preferences.
+  const switchFiles = [];
+  (function walk(dir) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(p);
+      else if (/^switch\.(tsx|ts|jsx|js)$/.test(entry.name)) switchFiles.push(path.relative(REPO, p).replace(/\\/g, "/"));
+    }
+  })(path.join(REPO, "src"));
+  const consumers = [];
+  (function walkConsumers(dir) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, entry.name);
+      if (entry.isDirectory()) walkConsumers(p);
+      else if (/\.(tsx|ts)$/.test(entry.name) && fs.readFileSync(p, "utf8").includes("components/ui/switch")) {
+        consumers.push(path.relative(REPO, p).replace(/\\/g, "/"));
+      }
+    }
+  })(path.join(REPO, "src"));
+  ok(
+    switchFiles.length === 1 && switchFiles[0] === "src/components/ui/switch.tsx",
+    `91. exactly ONE Switch implementation exists (${switchFiles.join(", ")}) — no Parent-only replacement`
+  );
+  ok(
+    consumers.includes("src/components/shared/notification-preferences.tsx"),
+    `91b. the Parent notification preferences consume the shared Switch (consumers: ${consumers.join(", ")})`
+  );
+
+  // 92. Hover + smooth transition (the polish the report asked for).
+  ok(
+    /hover:data-\[state=checked\]:bg-primary\/90/.test(track) &&
+      /hover:data-\[state=unchecked\]:bg-muted-foreground\/25/.test(track),
+    "92. hover feedback is state-specific (green track lightens, neutral track deepens — correct in both themes)"
+  );
+  ok(
+    /transition-\[inset-inline-start\]/.test(knob) && /duration-200/.test(knob) && /ease-out/.test(knob),
+    "92b. the knob slides smoothly (200ms ease-out) instead of jumping"
   );
 }
 
