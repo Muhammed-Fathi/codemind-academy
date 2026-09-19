@@ -10,6 +10,11 @@ import { CodeMindLogo } from "@/components/logo";
 import { brand } from "@/lib/brand";
 import { toast } from "sonner";
 import {
+  reportExportFileName,
+  reportPeriodFrom,
+  withPrintTitle,
+} from "@/lib/report-export";
+import {
   describeParentSubscription,
   type ParentSubscriptionPayload,
 } from "@/lib/parent-subscription";
@@ -31,6 +36,12 @@ type ReportData = {
   courseName: string;
   groupName: string;
   reportMonth: string;
+  /**
+   * The report PERIOD as an ISO instant (the month the report covers).
+   * `reportMonth` is a localized display string and cannot be parsed back
+   * ("سبتمبر ٢٠٢٦" → Invalid Date), so the export file name uses this.
+   */
+  periodAt: string;
   generatedAt: string;
   // stats
   courseProgress: { completed: number; total: number; pct: number };
@@ -71,6 +82,9 @@ export function buildReportData(child: any, locale: "ar" | "en" = "ar"): ReportD
     courseName,
     groupName: child.group?.name || "—",
     reportMonth: monthName,
+    // The period is captured WITH the data (not at render time), so reopening
+    // the same report later cannot rename it.
+    periodAt: new Date().toISOString(),
     generatedAt: new Date().toLocaleDateString(dtLocale),
     courseProgress: child.courseProgress || { completed: 0, total: 0, pct: 0 },
     attendance: child.attendance || { pct: 0, present: 0, total: 0 },
@@ -168,11 +182,23 @@ export function MonthlyReportContent({
   // untouched, so server rendering still emits the complete report markup.
   const [printMounted, setPrintMounted] = React.useState(false);
   React.useEffect(() => setPrintMounted(true), []);
+  // Final round — the export FILE NAME. The browser names a "Save as PDF"
+  // download after `document.title`, so the report title is set for the
+  // duration of the print and restored afterwards (no persistent side effect).
+  // The period comes from the REPORT, so the name is deterministic and the
+  // weekly/monthly types can never be swapped.
+  const exportFileName = data
+    ? reportExportFileName({
+        kind: "MONTHLY",
+        period: reportPeriodFrom(data),
+        locale: locale === "ar" ? "ar" : "en",
+      })
+    : "";
   const handlePrint = () => {
     // The printable copy is already in the DOM (portaled into <body>) and the
     // print stylesheet hides every other body child: this prints what is on
     // screen — RTL layout, colors, every section, nothing clipped.
-    window.print();
+    withPrintTitle(exportFileName, () => window.print());
   };
 
   if (!data) {

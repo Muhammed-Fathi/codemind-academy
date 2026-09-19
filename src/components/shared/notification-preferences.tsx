@@ -46,6 +46,65 @@ type Prefs = {
   quietHoursEnd: string | null;
 };
 
+/**
+ * Manual-QA fix (final round) — ONE structured preference row.
+ *
+ * WHY THIS EXISTS
+ * ===============
+ * The rows were three sibling flex items inside a `motion.div`. Any break in
+ * that chain (a partial render, a re-render that drops the row wrapper, or a
+ * motion transform) leaves the switches as a detached green column next to
+ * label-less space — exactly the reported "green toggle fragments" symptom.
+ *
+ * The row is now a single anchor element that OWNS its three slots
+ * (icon / label+description / switch), so the switch can never be laid out
+ * away from its own text. The whole row is also a click target: the switch is
+ * `aria-labelledby` its title and toggling is possible from the row itself.
+ * The label column is `min-w-0` so long Arabic copy wraps instead of squeezing
+ * the switch out of the row.
+ */
+export function PreferenceRow({
+  icon: Icon,
+  title,
+  description,
+  checked,
+  onToggle,
+  enabled,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  description: string;
+  checked: boolean;
+  onToggle: () => void;
+  enabled?: boolean;
+}) {
+  const titleId = React.useId();
+  const on = enabled === undefined ? checked : checked && enabled;
+  return (
+    <div className="flex items-center gap-3 p-3 rounded-lg hover:bg-muted/40 transition-colors group">
+      <div
+        className={`grid place-items-center w-9 h-9 rounded-lg shrink-0 transition-colors ${
+          on ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
+        }`}
+      >
+        <Icon className="w-4 h-4" />
+      </div>
+      <div className="flex-1 min-w-0 text-start">
+        <div id={titleId} className="text-sm font-semibold">
+          {title}
+        </div>
+        <div className="text-xs text-muted-foreground">{description}</div>
+      </div>
+      <Switch
+        checked={checked}
+        onCheckedChange={onToggle}
+        aria-labelledby={titleId}
+        className="shrink-0"
+      />
+    </div>
+  );
+}
+
 const PREF_CONFIG: {
   key: keyof Prefs;
   label: string;
@@ -135,7 +194,7 @@ export function NotificationPreferences() {
                 <Bell className="w-6 h-6" />
               </div>
               <div>
-                <h2 className="text-lg font-bold">Notification Preferences</h2>
+                <h2 className="text-lg font-bold">{t("notif.prefs.title")}</h2>
                 <p className="text-xs text-muted-foreground">
                     {t("shared.023")}</p>
               </div>
@@ -163,20 +222,13 @@ export function NotificationPreferences() {
                 initial={{ opacity: 0, x: 10 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: 0.05 * i }}
-                className="flex items-center gap-3 p-3 rounded-lg hover:bg-muted/40 transition-colors group"
               >
-                <div className={`grid place-items-center w-9 h-9 rounded-lg shrink-0 transition-colors ${
-                  prefs[p.key] ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
-                }`}>
-                  <p.icon className="w-4 h-4" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold">{t(p.label)}</div>
-                  <div className="text-xs text-muted-foreground">{t(p.desc)}</div>
-                </div>
-                <Switch
+                <PreferenceRow
+                  icon={p.icon}
+                  title={t(p.label)}
+                  description={t(p.desc)}
                   checked={prefs[p.key] as boolean}
-                  onCheckedChange={() => toggle(p.key)}
+                  onToggle={() => toggle(p.key)}
                 />
               </motion.div>
             ))}
@@ -197,37 +249,20 @@ export function NotificationPreferences() {
               {t("shared.027")}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-1">
-            <div className="flex items-center gap-3 p-3 rounded-lg hover:bg-muted/40 transition-colors">
-              <div className={`grid place-items-center w-9 h-9 rounded-lg shrink-0 ${
-                prefs.pushEnabled ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
-              }`}>
-                <Smartphone className="w-4 h-4" />
-              </div>
-              <div className="flex-1">
-                <div className="text-sm font-semibold">Push Notifications</div>
-                <div className="text-xs text-muted-foreground">{t("shared.028")}</div>
-              </div>
-              <Switch
-                checked={prefs.pushEnabled}
-                onCheckedChange={() => toggle("pushEnabled")}
-              />
-            </div>
-            <div className="flex items-center gap-3 p-3 rounded-lg hover:bg-muted/40 transition-colors">
-              <div className={`grid place-items-center w-9 h-9 rounded-lg shrink-0 ${
-                prefs.emailEnabled ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
-              }`}>
-                <Mail className="w-4 h-4" />
-              </div>
-              <div className="flex-1">
-                <div className="text-sm font-semibold">Email</div>
-                <div className="text-xs text-muted-foreground">
-                  {t("shared.029")}</div>
-              </div>
-              <Switch
-                checked={prefs.emailEnabled}
-                onCheckedChange={() => toggle("emailEnabled")}
-              />
-            </div>
+            <PreferenceRow
+              icon={Smartphone}
+              title={t("shared.040")}
+              description={t("shared.028")}
+              checked={prefs.pushEnabled}
+              onToggle={() => toggle("pushEnabled")}
+            />
+            <PreferenceRow
+              icon={Mail}
+              title={t("shared.041")}
+              description={t("shared.029")}
+              checked={prefs.emailEnabled}
+              onToggle={() => toggle("emailEnabled")}
+            />
           </CardContent>
         </Card>
       </motion.div>

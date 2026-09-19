@@ -2248,6 +2248,11 @@ export const DICT_2026: Record<string, DictEntry> = {
   // of the enum is mapped (see NOTIFICATION_TYPE_LABEL_KEYS), plus a generic
   // fallback so an unknown value can never leak either.
   // ---------------------------------------------------------------------
+  // Final round — the preferences surface used an English-only heading and two
+  // hardcoded English channel labels inside an Arabic-first dashboard.
+  "notif.prefs.title": { ar: "إعدادات الإشعارات", en: "Notification preferences" },
+  "shared.040": { ar: "إشعارات المتصفح", en: "Push notifications" },
+  "shared.041": { ar: "البريد الإلكتروني", en: "Email" },
   "notif.type.generic": { ar: "إشعار", en: "Notification" },
   "notif.type.newLesson": { ar: "درس جديد", en: "New lesson" },
   "notif.type.newQuiz": { ar: "اختبار جديد", en: "New quiz" },

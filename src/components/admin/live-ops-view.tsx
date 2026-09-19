@@ -368,7 +368,7 @@ export function AdminLiveOpsView() {
 
             {/* Bug-T rule: the table scrolls inside a bounded box, so the page
                 (and the dialogs above it) never clips the last row. */}
-            <ScrollArea className="max-h-[min(56dvh,calc(100dvh-24rem))] min-h-0 overscroll-contain">
+            <ScrollArea className="min-h-0" viewportClassName="max-h-[min(56dvh,calc(100dvh-24rem))] min-h-0 overscroll-contain">
               <div className="pb-1 pe-1">
                 <Table>
                   <TableHeader>
@@ -540,7 +540,7 @@ export function AdminLiveOpsView() {
             {data.pendingAbsences.length === 0 ? (
               <p className="text-sm text-muted-foreground py-8 text-center">{t("admin.live.empty")}</p>
             ) : (
-              <ScrollArea className="max-h-[min(56dvh,calc(100dvh-26rem))] min-h-0 overscroll-contain">
+              <ScrollArea className="min-h-0" viewportClassName="max-h-[min(56dvh,calc(100dvh-26rem))] min-h-0 overscroll-contain">
                 <ul className="pb-1 pe-1 space-y-2">
                   {data.pendingAbsences.map((item) => (
                     <AbsenceReviewRow

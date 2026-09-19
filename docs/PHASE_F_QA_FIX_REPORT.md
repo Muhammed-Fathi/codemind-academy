@@ -214,4 +214,115 @@ the repository** at `/home/user/phase-f-workflow-ci.patch` and must be applied b
 a workflow-capable identity. Migration verification was not downgraded: local
 PostgreSQL parity is green.
 
-**READY FOR LOCAL RE-VERIFICATION**
+---
+
+# Final re-test round (focused, 3 findings)
+
+The first fix round was re-verified locally. Three findings remained; this round
+addresses only those.
+
+## F1′ — the notification list STILL did not scroll internally
+
+*Root cause (deeper than the first attempt)*: the fix moved the height bound to
+the `ScrollArea` **Root**, and Radix's Root is `position: relative;
+overflow: hidden` with an **auto** height. Its Viewport renders as
+`size-full` → `height: 100%`, and a percentage height against an `auto` parent
+computes to `auto`, so the viewport grew to its content. The result was a Root
+that *clamped and clipped* while the viewport itself never became a scroll
+container: the list looked cut off, no scrollbar appeared, and the rows below
+the fold were unreachable. (Adding `overflow-y-auto` to that Root would only
+have created a second, invisible scroller around a still-unbounded viewport —
+the trap the brief warned about.)
+
+*Exact fix*: a bound must sit on the element that actually scrolls — a capped
+box whose content overflows **is** scrollable. The shared
+`src/components/ui/scroll-area.tsx` now takes a `viewportClassName` prop for
+exactly that, documents the rule, and every affected surface passes its bound
+there while the Root keeps only layout classes:
+
+```tsx
+<ScrollArea
+  className="min-h-0"
+  viewportClassName="max-h-[min(52dvh,calc(100dvh-22rem))] min-h-0 overscroll-contain"
+>
+```
+
+Applied to: the Admin "All Notifications" list (the reported surface), the
+Admin "Recent notifications" list, the shared `NotificationsPanel` used by
+Student/Teacher/Parent, both Admin live-ops lists, and both Teacher workspace
+registers. Three additional inert bounds in the same Admin notifications
+screens were found by the new assertion and fixed the same way, so the defect
+class is gone from every notification/live-ops surface rather than only the one
+that was reported. `viewportClassName="… overscroll-contain"` keeps the page
+from stealing the scroll once the list ends, and the inner `pb-1 pe-1` keeps the
+last row clear of the scrollbar.
+
+## F2′ — the Parent notification preferences looked broken
+
+*Root cause*: the preference rows were three sibling flex items emitted by a
+`motion.div`. The switch was a separate top-level flex child of the row, so any
+break in that chain (a partially-rendered/re-rendered subtree, a motion
+transform) leaves the switches as a detached column of green toggles beside
+label-less space — the reported symptom. Two channel labels were also hardcoded
+English ("Push Notifications", "Email") and the header was English-only in an
+Arabic-first dashboard.
+
+*Exact fix*: one exported `PreferenceRow` primitive now OWNS all four slots —
+icon, title, description, switch — so the switch cannot be laid out away from
+its own text; its text column is `min-w-0` (long Arabic copy wraps instead of
+pushing the switch out), the switch is `shrink-0` and `aria-labelledby` its own
+title (accessible hit target + focus/hover states from the shared components).
+All three preference groups render through it, so exactly ONE `<Switch>` render
+site exists on the surface. The header and both channel labels are localized
+(`notif.prefs.title`, `shared.040`, `shared.041`). The shared
+`NotificationPreferences` component, its shared endpoint and the Parent
+dashboard's use of it are unchanged — no Parent-only notification system.
+
+## F3′ — the exported PDF had a generic file name
+
+*Root cause*: the browser names a "Save as PDF" download after
+`document.title`, which was the app's own title, so every export landed as
+`CodeMind Academy.pdf`. The print dialog cannot be handed a name
+programmatically; setting `document.title` around the print is the supported
+route.
+
+*Exact fix*: new pure module `src/lib/report-export.ts` owns the naming rule and
+the title swap:
+
+* `CodeMind Academy - Monthly Report - September 2026` (English)
+* `CodeMind Academy - تقرير شهر سبتمبر 2026` (Arabic — Arabic month name with
+  Latin digits, matching the product's own "سبتمبر 2026" wording; joined as one
+  phrase rather than adding a separator before the month)
+* the period comes from the report DOCUMENT (`periodAt`, added alongside the
+  unparseable localized `reportMonth`), so the name is deterministic and
+  reopening the report later cannot rename it;
+* file-name-invalid characters are sanitized, an unusable date degrades to the
+  type-based name (never "Invalid Date"), and the name carries no student
+  identifier;
+* the report declares `kind: "MONTHLY"`, so a weekly export can never be named
+  monthly;
+* `withPrintTitle()` sets the title for the duration of `window.print()` and
+  restores it in a `finally` — verified to restore even when the print call
+  throws, so no persistent page-title side effect.
+
+The fixed print/content implementation (portal, colors, page breaks) is
+untouched.
+
+## Final-round verification
+
+* Phase F suite: **405 passed / 0 failed** (was 336). New §H (67–79) and §I
+  (80–84) cover the viewport binding, the structured row, the export name and
+  the title restore; §I actually RENDERS `PreferenceRow` through
+  `react-dom/server` and asserts the emitted DOM (one top-level element, icon →
+  text → switch, switch wired to its own title) rather than only grepping.
+* Regression battery: **31 green / 3 red**; the three reds are the unchanged
+  pre-existing fingerprint (re-proved on a clean `1bda6d1` worktree:
+  `session-notifications-phase17` 319/2 §K, `final-integration-phase22`
+  `ENOENT …/backups`, `phase26c-admin-full-flow` 81 pass / 5 fail
+  `ADMIN-17-real-b…f`).
+* `tsc --noEmit` exit 0; `npm run build:postgres` succeeded (SQLite Prisma client
+  restored afterwards via `npm run db:generate`).
+* `verify-phase-f-pg-parity.mjs` → `PHASE_F_PG_CATALOG_IDENTICAL_OK`.
+* No schema or migration change; no Neon/production migration; no PR.
+
+**READY FOR FINAL LOCAL RE-VERIFICATION**

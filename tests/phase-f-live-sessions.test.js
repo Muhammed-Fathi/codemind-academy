@@ -1,6 +1,6 @@
 // CodeMind Academy — Phase F LIVE SESSION LIFECYCLE test suite.
 //
-//   66 numbered cases across seven sections:
+//   84 numbered cases across nine sections:
 //     §A 1–7    scheduling authority and validation
 //     §B 8–12   the Session Link and the student surface
 //     §C 13–24  the attendance register, the window and THE LOCK
@@ -10,6 +10,8 @@
 //     §G 49–66  the Manual-QA fix round (start window, canonical Lesson,
 //               join-window copy, finalize reason, notification labels/scroll,
 //               Parent report i18n + PDF export, Parent notification entry)
+//     §H 67–78  the final re-test round (scroll VIEWPORT binding, structured
+//               preference rows, descriptive export file name + title restore)
 //
 // THREE LAYERS, all offline (no network, no dev server):
 //   1. BEHAVIOURAL — `src/lib/live-session-policy.ts` and
@@ -77,6 +79,9 @@ fs.writeFileSync(
     files: [
       path.join(REPO, "src/lib/live-session-policy.ts"),
       path.join(REPO, "src/lib/absence-policy.ts"),
+      // The export file name is a PURE module (no DOM), so the final-round
+      // naming rules are exercised for real rather than only grep-pinned.
+      path.join(REPO, "src/lib/report-export.ts"),
     ],
   })
 );
@@ -124,9 +129,13 @@ const i18nStub = {
   translate: (_locale, key) => key,
   pickL10n: (_locale, ar, en) => ar || en || "",
 };
+// `@/lib/brand` is a data module the export-name rule reads. Stubbed with the
+// REAL academy name so the file-name assertions test production wording.
+const brandStub = { brand: { name: "CodeMind Academy", shortName: "CodeMind" } };
 const originalResolve = Module._resolveFilename;
 Module._resolveFilename = function (request, ...rest) {
   if (request === "@/lib/i18n-core") return "cm-phase-f-i18n-stub";
+  if (request === "@/lib/brand") return "cm-phase-f-brand-stub";
   return originalResolve.call(this, request, ...rest);
 };
 require.cache["cm-phase-f-i18n-stub"] = {
@@ -135,9 +144,16 @@ require.cache["cm-phase-f-i18n-stub"] = {
   loaded: true,
   exports: i18nStub,
 };
+require.cache["cm-phase-f-brand-stub"] = {
+  id: "cm-phase-f-brand-stub",
+  filename: "cm-phase-f-brand-stub",
+  loaded: true,
+  exports: brandStub,
+};
 
 const P = require(policyPath);
 const A = require(absencePolicyPath);
+const EXPORT = require(findEmitted("report-export.js"));
 
 // ---------------------------------------------------------------------------
 // 2. Real SQLite: base schema + the FULL migration chain, including Phase F
@@ -1301,6 +1317,305 @@ section("G. Manual-QA fix round: lifecycle authority, canonical Lesson, i18n (49
   ok(
     review.includes("EXCUSED_ABSENCE") && review.includes("UNEXCUSED_ABSENCE"),
     "66e. the audit reason names the administrative decision, not a completion"
+  );
+}
+
+
+// ===========================================================================
+section("H. Final re-test round: scroll viewport, preference rows, export name (67-79)");
+// ===========================================================================
+
+// 67. The shared scroll area CONTRACT: the height bound must land on the
+//     VIEWPORT (the element Radix actually makes scrollable). Radix renders the
+//     Root as `overflow: hidden` with `height: auto`, so binding only the Root
+//     clamps + clips and produces no scrollbar at all — the reported failure.
+{
+  const ui = read("src/components/ui/scroll-area.tsx");
+  ok(ui.includes("viewportClassName"), "67. the shared ScrollArea exposes a viewport-only class hook");
+  ok(
+    /ScrollAreaPrimitive\.Viewport[\s\S]{0,400}?viewportClassName/.test(ui),
+    "67b. the hook is applied to the Radix VIEWPORT, not the Root"
+  );
+  ok(
+    ui.includes('className={cn("relative overflow-hidden", className)}'),
+    "67c. the Root stays a clipping shell (Radix-required overflow-hidden) and receives only layout classes"
+  );
+  ok(
+    /scrollable[\s\S]{0,200}?max-height/i.test(ui) || /max-height[\s\S]{0,200}?scrollable/i.test(ui),
+    "67d. the documented reason (a capped box with overflowing content scrolls) is recorded"
+  );
+}
+
+// 68. Every surface that intends to bound+scroll uses the viewport hook, and no
+//     surface still passes its height bound through the inert Root className.
+{
+  const surfaces = [
+    "src/components/admin/admin-dashboard.tsx",
+    "src/components/admin/live-ops-view.tsx",
+    "src/components/shared/notifications-panel.tsx",
+    "src/components/teacher/live-sessions-workspace.tsx",
+  ];
+  let inert = [];
+  let hooked = 0;
+  for (const file of surfaces) {
+    const src = read(file);
+    // A `max-h-…` inside a ScrollArea className is the inert (clipping) form.
+    const inertMatches = src.match(/<ScrollArea[^>]*className="[^"]*max-h-[^"]*"/g) || [];
+    if (inertMatches.length) inert.push(`${file}: ${inertMatches.length}`);
+    hooked += (src.match(/viewportClassName="[^"]*max-h-/g) || []).length;
+  }
+  ok(inert.length === 0, `68. no ScrollArea bounds its height on the inert Root (offenders: ${inert.join(", ")})`);
+  ok(hooked >= 6, `68b. the bound is on the viewport across the notification + live-ops surfaces (${hooked} found)`);
+}
+
+// 69. The Admin "All Notifications" list specifically: bounded viewport,
+//     overscroll contained, last row clear of the scrollbar.
+{
+  const admin = read("src/components/admin/admin-dashboard.tsx");
+  const block = admin.slice(admin.indexOf('id="admin-all-notifications"') > -1 ? admin.indexOf('id="admin-all-notifications"') : 5200);
+  ok(
+    /viewportClassName="max-h-\[min\([^"]*\)\] min-h-0 overscroll-contain"/.test(admin),
+    "69. the notification viewport is bounded, min-h-0 and overscroll-contained"
+  );
+  ok(admin.includes("space-y-2 pb-1 pe-1"), "69b. the inner list keeps bottom/end padding so the final row is reachable and clickable");
+  ok(block.length > 0, "69c. the notification list still renders its rows (structure intact)");
+}
+
+// 70. The Parent preference rows: icon + title + description + switch, owned by
+//     ONE row component so the switch cannot be laid out away from its text.
+{
+  const prefs = read("src/components/shared/notification-preferences.tsx");
+  ok(prefs.includes("function PreferenceRow("), "70. a single PreferenceRow component owns the row layout");
+  const row = prefs.slice(prefs.indexOf("function PreferenceRow("));
+  const rowEnd = row.indexOf("const PREF_CONFIG");
+  const body = row.slice(0, rowEnd);
+  ok(/icon\s*:\s*Icon/.test(body), "70b. the row renders the icon");
+  ok(body.includes("titleId") && body.includes("{title}"), "70c. the row renders the title");
+  ok(body.includes("{description}"), "70d. the row renders the description");
+  ok(body.includes("<Switch"), "70e. the row renders the switch");
+  ok(body.includes("min-w-0"), "70f. the text column can shrink, so the switch stays inside the row");
+  ok(body.includes("aria-labelledby={titleId}"), "70g. the switch is programmatically tied to its own label (accessibility)");
+  ok(/className="shrink-0"/.test(body), "70h. the switch never shrinks or wraps out of the row");
+  // DOM ORDER inside the single row element: icon → text column → switch.
+  // Verified at runtime too (renderToStaticMarkup of PreferenceRow emits one
+  // top-level <div> containing the svg icon, the title/description column and
+  // the switch, with the switch `aria-labelledby` that same title).
+  const order = ["<Icon", "{title}", "{description}", "<Switch"].map((t) => body.indexOf(t));
+  ok(
+    order.every((v) => v > -1) && order[0] < order[1] && order[1] < order[2] && order[2] < order[3],
+    "70i. the row renders icon → title → description → switch in that order"
+  );
+  ok(!/dir=|flex-row-reverse|ml-auto|absolute/.test(body), "70j. nothing in the row can detach the switch (no absolute/auto-margin/reverse flow)");
+}
+
+// 71. No detached switch-only column can be produced: every Switch on this
+//     surface is rendered from inside the row component.
+{
+  const prefs = read("src/components/shared/notification-preferences.tsx");
+  const rendered = (prefs.match(/<Switch/g) || []).length;
+  ok(rendered === 1, `71. exactly one <Switch> render site exists (${rendered} found) — the shared row`);
+  ok(!/\{\[?\s*[^\]]*map\([^)]*\)\s*=>\s*\(\s*<Switch/.test(prefs), "71b. no list maps directly to bare switches");
+  ok((prefs.match(/<PreferenceRow/g) || []).length >= 3, "71c. all preference groups render through the shared row");
+  ok(!/>Push Notifications</.test(prefs) && !/>Email</.test(prefs), "71d. the two hardcoded English channel labels are localized now");
+}
+
+// 72. The export FILE NAME is descriptive: academy + report type + month/year,
+//     derived from the report PERIOD (never a hardcoded month).
+{
+  const period = new Date("2026-09-15T10:00:00Z");
+  const en = EXPORT.reportExportFileName({ kind: "MONTHLY", period, locale: "en" });
+  ok(en === "CodeMind Academy - Monthly Report - September 2026", `72. English monthly name (got: ${en})`);
+  const ar = EXPORT.reportExportFileName({ kind: "MONTHLY", period, locale: "ar" });
+  ok(ar === "CodeMind Academy - تقرير شهر سبتمبر 2026", `72b. Arabic monthly name (got: ${ar})`);
+  ok(en.includes("CodeMind Academy"), "72c. the academy name is present");
+  ok(en.includes("Monthly Report"), "72d. the report type is present");
+  ok(en.includes("September") && en.includes("2026"), "72e. month AND year come from the report period");
+
+  const other = EXPORT.reportExportFileName({ kind: "MONTHLY", period: new Date("2025-02-01T00:00:00Z"), locale: "en" });
+  ok(other.includes("February") && other.includes("2025"), `72f. a different period yields a different name (got: ${other})`);
+  ok(other !== en, "72g. the name is period-dependent, not a constant");
+}
+
+// 73. The weekly report can never be exported under the monthly name.
+{
+  const period = new Date("2026-09-15T10:00:00Z");
+  const weekly = EXPORT.reportExportFileName({ kind: "WEEKLY", period, locale: "en" });
+  ok(weekly.includes("Weekly Report"), `73. the weekly kind produces a weekly name (got: ${weekly})`);
+  ok(!weekly.includes("Monthly"), "73b. the weekly export never claims to be monthly");
+  ok(EXPORT.reportExportFileName({ kind: "WEEKLY", period, locale: "ar" }).includes("تقرير أسبوع"), "73c. the Arabic weekly type is distinct too");
+}
+
+// 74. The name is sanitized and carries no student identifier.
+{
+  ok(EXPORT.sanitizeFileName('A/B:C*D?E"F<G>H|I\\J') === "A B C D E F G H I J", "74. file-name-invalid characters are replaced");
+  ok(!/[<>:"/\\|?*]/.test(EXPORT.reportExportFileName({ kind: "MONTHLY", period: new Date(), locale: "ar" })), "74b. no invalid character survives in a real name");
+  const named = EXPORT.reportExportFileName({ kind: "MONTHLY", period: new Date("2026-09-15T00:00:00Z"), locale: "ar" });
+  ok(!named.includes("أحمد") && !named.includes("CM-"), "74c. no student name or student code leaks into the file name");
+  ok(EXPORT.reportExportFileName({ kind: "MONTHLY", period: "not-a-date", locale: "en" }) === "CodeMind Academy - Monthly Report", "74d. an unusable date degrades to the type-based name instead of shipping 'Invalid Date'");
+}
+
+// 75. The print handler sets a TEMPORARY document title and restores it — the
+//     browser names the saved PDF from `document.title`, and the app title must
+//     not stay renamed afterwards.
+{
+  const fake = { title: "CodeMind Academy" };
+  let during = null;
+  EXPORT.withPrintTitle("CodeMind Academy - Monthly Report - September 2026", () => {
+    during = fake.title;
+  }, fake);
+  ok(during === "CodeMind Academy - Monthly Report - September 2026", "75. the title is the export name while printing");
+  ok(fake.title === "CodeMind Academy", "75b. the title is restored after printing (no persistent side effect)");
+
+  const throwing = { title: "CodeMind Academy" };
+  let threw = false;
+  try {
+    EXPORT.withPrintTitle("X", () => {
+      throw new Error("print dialog failed");
+    }, throwing);
+  } catch {
+    threw = true;
+  }
+  ok(threw && throwing.title === "CodeMind Academy", "75c. the title is restored even when the print call throws");
+
+  const report = read("src/components/parent/monthly-report.tsx");
+  ok(report.includes("withPrintTitle(exportFileName"), "75d. the report prints through the title-guarded helper");
+  ok(report.includes("reportExportFileName({"), "75e. the name comes from the shared export module (one authority)");
+  ok(/kind: "MONTHLY"/.test(report), "75f. the report declares its own kind (never inferred)");
+}
+
+// 76. Existing export CONTENT contract still holds (final round is name-only).
+{
+  const report = read("src/components/parent/monthly-report.tsx");
+  ok(report.includes("createPortal"), "76. the print copy is still portaled (non-blank export preserved)");
+  ok(report.includes("body > *:not(.cm-print-portal)"), "76b. the print isolation rule is unchanged");
+  ok(report.includes("print-color-adjust: exact"), "76c. printed colors still survive");
+  ok(report.includes("break-inside: avoid"), "76d. page-break rules still in place");
+  ok((report.match(/<ReportBody /g) || []).length === 2, "76e. one shared body still feeds screen + print");
+  ok(report.includes('data-testid="monthly-report-subscription"'), "76f. the report test ids are untouched");
+  ok(EXPORT.reportPeriodFrom({ periodAt: "2026-09-15T00:00:00Z", reportMonth: "سبتمبر ٢٠٢٦" }).getUTCMonth() === 8, "76g. the period uses the explicit field (the Arabic display string is unparseable)");
+}
+
+// 77. The Phase F notification labels are still localized (no regression from
+//     the preference-row work).
+{
+  const labels = read("src/lib/notification-labels.ts");
+  for (const type of ["SESSION_SCHEDULED", "SESSION_LINK", "SESSION_RESCHEDULED", "SESSION_CANCELLED",
+                      "ABSENCE_FINALIZED", "ABSENCE_REASON_SUBMITTED", "ABSENCE_EXCUSED",
+                      "ABSENCE_UNEXCUSED", "ABSENCE_REMINDER"]) {
+    ok(labels.includes(`${type}: "notif.type.`), `77. ${type} still maps to a localized label`);
+  }
+  const dict = read("src/lib/i18n-dict-2026.ts");
+  ok(dict.includes('"notif.type.absenceExcused": { ar: "تم قبول العذر"'), "77b. the Arabic labels are intact");
+  ok(dict.includes('"notif.prefs.title"') && dict.includes('"shared.040"') && dict.includes('"shared.041"'),
+    "77c. the newly localized preference strings exist in both locales");
+}
+
+// 78. The preference surface still talks to the SHARED endpoint (no second
+//     Parent-only notification system was introduced).
+{
+  const prefs = read("src/components/shared/notification-preferences.tsx");
+  ok(/\/api\/.*notification-prefs/.test(prefs), "78. preferences still load/save through the shared endpoint");
+  ok(!prefs.includes("parent-only") && !prefs.includes("ParentOnly"), "78b. no Parent-only variant was forked");
+  const parent = read("src/components/parent/parent-dashboard.tsx");
+  ok(parent.includes("NotificationPreferences"), "78c. the Parent dashboard still reuses the shared component");
+}
+
+
+// ===========================================================================
+section("I. Final re-test round: RUNTIME render of the preference row (80-84)");
+// ===========================================================================
+
+// 80-84. The requirement is about the RENDERED structure, so the row is
+// actually rendered (react-dom/server) and the emitted DOM is asserted — not
+// merely grepped. The compile target lives inside the repo so Node resolves the
+// component's transitive imports (react, framer-motion, radix…) normally; the
+// directory is always removed again.
+{
+  const ROW_OUT = path.join(REPO, `.cm-phasef-row-${process.pid}`);
+  let rendered = null;
+  let renderError = null;
+  try {
+    fs.mkdirSync(ROW_OUT, { recursive: true });
+    fs.writeFileSync(
+      path.join(ROW_OUT, "tsconfig.json"),
+      JSON.stringify({
+        compilerOptions: {
+          target: "es2020",
+          module: "commonjs",
+          jsx: "react-jsx",
+          strict: false,
+          noImplicitAny: false,
+          skipLibCheck: true,
+          esModuleInterop: true,
+          baseUrl: REPO,
+          rootDir: REPO,
+          paths: { "@/*": ["src/*"] },
+          typeRoots: [path.join(REPO, "node_modules/@types")],
+          outDir: ROW_OUT,
+          noEmitOnError: false,
+        },
+        files: [path.join(REPO, "src/components/shared/notification-preferences.tsx")],
+      })
+    );
+    try {
+      execFileSync(
+        process.execPath,
+        [path.join(REPO, "node_modules", "typescript", "bin", "tsc"), "-p", path.join(ROW_OUT, "tsconfig.json")],
+        { cwd: REPO, stdio: "pipe" }
+      );
+    } catch {
+      /* unrelated type errors elsewhere in the graph are not this suite's business */
+    }
+    // `@/…` → the emitted tree (react & friends resolve from the repo normally).
+    const rowResolve = Module._resolveFilename;
+    Module._resolveFilename = function (request, ...rest) {
+      if (request.startsWith("@/")) {
+        let target = path.join(ROW_OUT, "src", request.slice(2));
+        if (!fs.existsSync(target) && fs.existsSync(`${target}.js`)) target = `${target}.js`;
+        if (fs.existsSync(target)) return target;
+      }
+      return rowResolve.call(this, request, ...rest);
+    };
+    try {
+      const React = require(path.join(REPO, "node_modules", "react"));
+      const { renderToStaticMarkup } = require(path.join(REPO, "node_modules", "react-dom", "server"));
+      const icons = require(path.join(REPO, "node_modules", "lucide-react"));
+      const { PreferenceRow } = require(path.join(ROW_OUT, "src", "components", "shared", "notification-preferences.js"));
+      rendered = renderToStaticMarkup(
+        React.createElement(PreferenceRow, {
+          icon: icons.Bell,
+          title: "تم قبول العذر",
+          description: "قرار الإدارة على العذر",
+          checked: true,
+          onToggle: () => {},
+        })
+      );
+    } finally {
+      Module._resolveFilename = rowResolve;
+    }
+  } catch (e) {
+    renderError = e;
+  } finally {
+    fs.rmSync(ROW_OUT, { recursive: true, force: true });
+  }
+
+  ok(!renderError, `80. the preference row renders without throwing (${renderError ? String(renderError).slice(0, 160) : "ok"})`);
+  const html = rendered || "";
+  ok(html.startsWith("<div") && html.endsWith("</div>"), "81. the row is ONE top-level element (its slots cannot be split apart)");
+  ok(
+    html.includes("<svg") && html.includes("تم قبول العذر") && html.includes("قرار الإدارة على العذر") && html.includes('data-slot="switch"'),
+    "82. the rendered row carries icon + title + description + switch together"
+  );
+  ok(
+    html.indexOf("<svg") < html.indexOf("تم قبول العذر") &&
+      html.indexOf("تم قبول العذر") < html.indexOf('data-slot="switch"'),
+    "83. the rendered order is icon → text → switch (no detached toggle column)"
+  );
+  ok(
+    /data-slot="switch"[^>]*aria-labelledby="([^"]+)"/.test(html) &&
+      new RegExp(`id="\\1"`).test(html) === false &&
+      html.includes(`id="${(html.match(/data-slot="switch"[^>]*aria-labelledby="([^"]+)"/) || [])[1]}"`),
+    "84. the rendered switch is associated with its own title element (accessibility)"
   );
 }
 

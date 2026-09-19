@@ -229,7 +229,7 @@ export function TeacherLiveSessionsWorkspace() {
         <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4 items-start">
           <Card className="glass">
             <CardContent className="p-2">
-              <ScrollArea className="max-h-[min(60dvh,calc(100dvh-18rem))] overscroll-contain">
+              <ScrollArea className="min-h-0" viewportClassName="max-h-[min(60dvh,calc(100dvh-18rem))] overscroll-contain">
                 <ul className="pb-1 space-y-1">
                   {sessions.map((s) => (
                     <li key={s.id}>
@@ -619,7 +619,7 @@ function SessionDetail({
           {roster.length === 0 ? (
             <p className="text-sm text-muted-foreground py-6 text-center">{t("teacher.live.noStudents")}</p>
           ) : (
-            <ScrollArea className="max-h-[min(52dvh,calc(100dvh-24rem))] min-h-0 overscroll-contain">
+            <ScrollArea className="min-h-0" viewportClassName="max-h-[min(52dvh,calc(100dvh-24rem))] min-h-0 overscroll-contain">
               <ul className="pb-1 space-y-1">
                 {filtered.map((row) => {
                   const status = statusFor(row);

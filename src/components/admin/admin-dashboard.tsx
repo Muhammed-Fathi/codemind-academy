@@ -502,7 +502,7 @@ function OverviewView() {
           {data.upcomingSessions.length === 0 ? (
             <EmptyBlock message={tr("admin.009")} />
           ) : (
-            <ScrollArea className="max-h-96">
+            <ScrollArea className="min-h-0" viewportClassName="max-h-96 overscroll-contain">
               <div className="space-y-2">
                 {data.upcomingSessions.map((s) => (
                   <div
@@ -2377,7 +2377,7 @@ function CoursesView() {
           {treeLoading ? (
             <LoadingBlock rows={4} />
           ) : tree ? (
-            <ScrollArea className="max-h-[60vh] pe-2">
+            <ScrollArea className="min-h-0" viewportClassName="max-h-[60vh] overscroll-contain pe-2">
               <div className="space-y-3">
                 {tree.parts.map((p) => (
                   <details key={p.id} className="rounded-lg border" open>
@@ -2968,7 +2968,7 @@ function QuestionBankView() {
         ) : !data || data.questions.length === 0 ? (
           <EmptyBlock message={tr("admin.178")} />
         ) : (
-          <ScrollArea className="max-h-[60vh]">
+          <ScrollArea className="min-h-0" viewportClassName="max-h-[60vh] overscroll-contain">
             <div className="space-y-2">
               {data.questions.map((q) => {
                 const options = (() => {
@@ -4547,7 +4547,10 @@ function NotificationsView() {
             ) : !data || data.notifications.length === 0 ? (
               <EmptyBlock message={tr("admin.256")} />
             ) : (
-              <ScrollArea className="max-h-[min(52dvh,calc(100dvh-22rem))] min-h-0 overscroll-contain">
+              <ScrollArea
+                className="min-h-0"
+                viewportClassName="max-h-[min(52dvh,calc(100dvh-22rem))] min-h-0 overscroll-contain"
+              >
                 {/* `pb-1` guarantees the last row's bottom edge is reachable
                     even with the Radix corner/scrollbar overlay. */}
                 <div className="space-y-2 pb-1 pe-1">
@@ -5245,7 +5248,7 @@ function NotificationCenterStats() {
           {data.notifications.length === 0 ? (
             <EmptyBlock message={tr("admin.306")} />
           ) : (
-            <ScrollArea className="max-h-[min(52dvh,calc(100dvh-22rem))] min-h-0 overscroll-contain">
+            <ScrollArea className="min-h-0" viewportClassName="max-h-[min(52dvh,calc(100dvh-22rem))] min-h-0 overscroll-contain">
               <div className="space-y-2 pb-1 pe-1">
                 {data.notifications.map((n: any) => (
                   <div

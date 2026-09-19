@@ -280,7 +280,7 @@ export function NotificationsPanel({
               *     so the LAST row's action button is fully reachable and is
               *     never cut by the scrollbar/corner of the Radix root.
               */
-            <ScrollArea className="max-h-[min(60dvh,calc(100dvh-15rem))] min-h-0 overscroll-contain">
+            <ScrollArea className="min-h-0" viewportClassName="max-h-[min(60dvh,calc(100dvh-15rem))] min-h-0 overscroll-contain">
               <ul className="pb-1">
                 {items.map((n) => {
                   const targetView = targetViewFor(n);
