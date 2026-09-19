@@ -963,7 +963,7 @@ function QuizzesCard({ ws, refresh }: { ws: Workspace; refresh: () => void }) {
 
   const duplicate = useMutation({
     mutationFn: async (id: string) => { const r = await fetch(`/api/teacher/quizzes/${encodeURIComponent(id)}/duplicate`, { method: "POST" }); if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "تعذر نسخ الاختبار"); return r.json(); },
-    onSuccess: () => { toast.success("تم إنشاء نسخة جديدة كمسودة"); refresh(); }, onError: (e: Error) => toast.error(e.message),
+    onSuccess: (data: any) => { const title = data?.quiz?.titleAr || data?.quiz?.title || "الاختبار"; toast.success(`تم إنشاء نسخة جديدة كمسودة: ${title}`); refresh(); }, onError: (e: Error) => toast.error(e.message),
   });
   const preview = (id: string) => setPreviewQuizId(id);
 
