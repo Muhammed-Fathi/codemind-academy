@@ -1382,11 +1382,15 @@ function HomeworkView() {
                           {t("student.182")}<ChevronLeft className="w-3.5 h-3.5 flip-rtl" />
                         </Button>
                       )}
-                      {!isGraded && (
-                        <HomeworkSubmitForm
-                          homeworkId={h.id}
-                          onSubmitted={reload}
-                        />
+                      {sub && (isSubmitted || isLate || isGraded) ? (
+                        <div className="w-full rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-1 text-xs">
+                          <div className="font-semibold text-primary">تم التسليم</div>
+                          <div className="text-muted-foreground">{sub.submittedAt ? new Intl.DateTimeFormat("ar-EG", { dateStyle: "medium", timeStyle: "short" }).format(new Date(sub.submittedAt)) : ""} · {isLate ? "متأخر" : "في الميعاد"}</div>
+                          {sub.attachment && <a className="text-primary underline block truncate" href={`/api/media/${sub.attachment.id}`} target="_blank" rel="noreferrer">{sub.attachment.originalName || "تحميل ملف التسليم"}</a>}
+                          {!isGraded && <div className="text-muted-foreground">مستني التصحيح</div>}
+                        </div>
+                      ) : !isGraded && (
+                        <HomeworkSubmitForm homeworkId={h.id} onSubmitted={reload} />
                       )}
                     </li>
                   );

@@ -159,11 +159,11 @@ function timeAgo(d: string | Date) {
   const diff = Date.now() - t;
   const m = Math.floor(diff / 60000);
   if (m < 1) return translate(curLocale(), "teacher.001");
-  if (m < 60) return translate(curLocale(), "teacher.002");
+  if (m < 60) return translate(curLocale(), "teacher.002", { p1: m });
   const h = Math.floor(m / 60);
-  if (h < 24) return translate(curLocale(), "teacher.003");
+  if (h < 24) return translate(curLocale(), "teacher.003", { p1: h });
   const days = Math.floor(h / 24);
-  if (days < 7) return translate(curLocale(), "teacher.004");
+  if (days < 7) return translate(curLocale(), "teacher.004", { p1: days });
   return arDateShortFmt().format(new Date(d));
 }
 
@@ -376,6 +376,8 @@ type HomeworkListItem = {
   deadline: string;
   maxMarks: number;
   createdAt: string;
+  status: "DRAFT" | "PUBLISHED" | "CLOSED";
+  attachment?: { id: string; originalName: string | null; mimeType: string | null; sizeBytes: number | null } | null;
   /** Phase 18 — the assignment's own eligibility + edit guards. */
   trackScope: string;
   gradedCount?: number;
@@ -2625,6 +2627,8 @@ function HomeworkView() {
                 maxMarks: authoring.homework.maxMarks,
                 trackScope: authoring.homework.trackScope,
                 gradedCount: authoring.homework.gradedCount ?? 0,
+                attachment: authoring.homework.attachment ?? null,
+                status: authoring.homework.status,
                 lessonId: authoring.homework.lesson?.id ?? "",
               }
             : null
@@ -2780,6 +2784,7 @@ function HomeworkCard({
           </p>
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
             <TrackScopeBadge scope={hw.trackScope || "SHARED"} />
+            <Badge variant="outline" className={hw.status === "DRAFT" ? "text-amber-700" : hw.status === "CLOSED" ? "text-muted-foreground" : "text-emerald-700"}>{hw.status === "DRAFT" ? "مسودة" : hw.status === "CLOSED" ? "مغلق" : "منشور"}</Badge>
             {hw.lesson?.curriculumStatus === "ARCHIVED" ? (
               <CurriculumBadge value="ARCHIVED" />
             ) : hw.lesson?.status ? (
