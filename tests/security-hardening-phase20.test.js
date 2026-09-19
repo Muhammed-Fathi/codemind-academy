@@ -75,9 +75,9 @@ const Csp = require(path.join(OUT, "src", "lib", "content-security-policy.js"));
 section("1. Rate-limit policy (behavioural)");
 // ---------------------------------------------------------------------------
 {
-  // Phase 20 addendum adds a seventh key (`teacherApply`) for the public
+  // Phase 20 addendum adds a eighth key (`teacherApply`) for the public
   // teacher-application surface — still driven by the same shared limiter.
-  ok(RateLimit.RATE_LIMIT_KEYS.length === 7, "seven limiter keys are defined (incl. teacherApply)");
+  ok(RateLimit.RATE_LIMIT_KEYS.length === 8, "seven limiter keys are defined (incl. teacherApply)");
   for (const key of RateLimit.RATE_LIMIT_KEYS) {
     const cfg = RateLimit.DEFAULT_RATE_LIMITS[key];
     ok(
