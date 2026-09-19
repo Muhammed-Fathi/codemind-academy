@@ -44,6 +44,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Calendar } from "@/components/ui/calendar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Tooltip,
   TooltipContent,
@@ -55,8 +61,9 @@ import {
   StatusBadge,
   TrackScopeBadge,
 } from "@/components/admin/session-workflow-shared";
-import { useT } from "@/lib/i18n";
-import { Plus, Save, Trash2, RefreshCw } from "lucide-react";
+import { useT, useLocale } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
+import { Plus, Save, Trash2, RefreshCw, CalendarDays, Clock, X } from "lucide-react";
 
 // ---------------------------------------------------------------------------
 // Types — mirrors of the Phase 18 API payloads
@@ -380,6 +387,165 @@ function toLocalInput(iso: string | null | undefined): string {
   )}:${pad(d.getMinutes())}`;
 }
 
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
+/**
+ * DeadlineField — Phase E (manual-QA fix): a READABLE homework deadline.
+ *
+ * The previous single native `datetime-local` input was squeezed into a
+ * 3-column grid: its value clipped and the chosen time was unreadable,
+ * especially in Arabic-first RTL. The field is now split into the design
+ * system's own `Calendar` (inside a `Popover`, keyboard-accessible) for the
+ * date and a clear native `time` input for the clock, with an explicit
+ * selected-value summary under the controls (e.g. "٢٢ سبتمبر ٢٠٢٦ — ١:٣٠ ص").
+ *
+ * STORAGE/PAYLOAD SEMANTICS ARE UNCHANGED: the state value stays the exact
+ * "YYYY-MM-DDTHH:mm" wall-clock string the old `datetime-local` input
+ * produced, so `new Date(deadline).toISOString()` keeps the identical
+ * payload behaviour and timezone handling (browser-local wall time ↔ ISO).
+ * Clearing stays possible and yields the empty string, exactly as before.
+ */
+function DeadlineField({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const tr = useT();
+  const locale = useLocale();
+  const intlLocale = locale === "en" ? "en-GB" : "ar-EG";
+  const [open, setOpen] = React.useState(false);
+
+  const [datePart = "", timePart = ""] = value.split("T");
+  const selected = React.useMemo(() => {
+    if (!datePart) return undefined;
+    const [y, m, d] = datePart.split("-").map(Number);
+    if (!y || !m || !d) return undefined;
+    return new Date(y, m - 1, d);
+  }, [datePart]);
+
+  const emit = (date: string, time: string) => {
+    onChange(date && time ? `${date}T${time}` : "");
+  };
+
+  const pickDate = (d: Date | undefined) => {
+    if (!d) return; // outside-day toggle/escape — keep the previous selection
+    emit(
+      `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`,
+      timePart || "23:59" // a date without a clock defaults to END OF DAY
+    );
+    setOpen(false);
+  };
+
+  const pickTime = (time: string) => {
+    if (!time) return;
+    if (!datePart) {
+      // A clock with no date defaults to TODAY so the pair is always a
+      // complete, well-formed wall-clock value (never a half-deadline).
+      const n = new Date();
+      return emit(
+        `${n.getFullYear()}-${pad2(n.getMonth() + 1)}-${pad2(n.getDate())}`,
+        time
+      );
+    }
+    emit(datePart, time);
+  };
+
+  const summary = React.useMemo(() => {
+    if (!datePart || !timePart) return "";
+    const [y, m, d] = datePart.split("-").map(Number);
+    const [hh, mi] = timePart.split(":").map(Number);
+    if (!y || !m || !d || Number.isNaN(hh) || Number.isNaN(mi)) return "";
+    const when = new Date(y, m - 1, d, hh, mi);
+    if (Number.isNaN(when.getTime())) return "";
+    const day = new Intl.DateTimeFormat(intlLocale, {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    }).format(when);
+    const clock = new Intl.DateTimeFormat(intlLocale, {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    }).format(when);
+    return `${day} — ${clock}`;
+  }, [datePart, timePart, intlLocale]);
+
+  const triggerFmt = new Intl.DateTimeFormat(intlLocale, {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-stretch gap-2">
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              className={cn(
+                "h-9 min-w-52 flex-1 sm:flex-none sm:min-w-64 justify-start gap-2 font-normal",
+                !datePart && "text-muted-foreground"
+              )}
+              aria-haspopup="dialog"
+            >
+              <CalendarDays className="h-4 w-4 opacity-70 shrink-0" />
+              <span className="truncate">
+                {selected ? triggerFmt.format(selected) : tr("teacher.303")}
+              </span>
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-0" align="start" side="bottom" sideOffset={4}>
+            <Calendar
+              mode="single"
+              selected={selected}
+              defaultMonth={selected}
+              onSelect={pickDate}
+              initialFocus
+            />
+          </PopoverContent>
+        </Popover>
+
+        <div className="relative">
+          <Clock className="pointer-events-none absolute start-2.5 top-1/2 h-4 w-4 -translate-y-1/2 opacity-70" />
+          <Input
+            type="time"
+            dir="ltr"
+            value={timePart}
+            onChange={(e) => pickTime(e.target.value)}
+            className="h-9 w-full sm:w-[9.75rem] ps-8"
+            aria-label={tr("teacher.305")}
+          />
+        </div>
+
+        {value !== "" && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9 text-muted-foreground"
+            onClick={() => onChange("")}
+            aria-label={tr("teacher.308")}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        )}
+      </div>
+      <p
+        className={cn(
+          "text-xs leading-5",
+          value ? "font-medium text-foreground" : "text-muted-foreground"
+        )}
+      >
+        {value && summary ? `${tr("teacher.309")}: ${summary}` : tr("teacher.310")}
+      </p>
+    </div>
+  );
+}
+
 /**
  * Create (no `homework`) or edit one assignment.
  *
@@ -395,18 +561,29 @@ export function HomeworkDialog({
   lessons,
   lessonsLoading,
   homework = null,
+  onChanged,
+  fixedLessonId,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   lessons: TeacherLesson[];
   lessonsLoading: boolean;
   homework?: HomeworkRecord | null;
+  /** Phase E — an embedder (the session workspace) that must refresh its own
+      aggregate query after a successful create/edit. Optional and additive:
+      the legacy dashboard embed leaves it unset and behaviour is unchanged. */
+  onChanged?: () => void;
+  /** Phase E — when creating from inside ONE lesson's workspace the target
+      lesson is already known; seed it so the dialog opens attached to the
+      session it was launched from (the picker still only lists that lesson,
+      so the target can never drift). Ignored in edit mode. */
+  fixedLessonId?: string;
 }) {
   const tr = useT();
   const queryClient = useQueryClient();
   const editing = !!homework;
 
-  const [lessonId, setLessonId] = React.useState(homework?.lessonId ?? "");
+  const [lessonId, setLessonId] = React.useState(homework?.lessonId ?? fixedLessonId ?? "");
   const [title, setTitle] = React.useState(homework?.title ?? "");
   const [titleAr, setTitleAr] = React.useState(homework?.titleAr ?? "");
   const [instructions, setInstructions] = React.useState(
@@ -454,6 +631,7 @@ export function HomeworkDialog({
     onSuccess: () => {
       toast.success(tr("teacher.187"));
       queryClient.invalidateQueries({ queryKey: ["teacher-homework"] });
+      onChanged?.();
       onOpenChange(false);
     },
     onError: (e: Error) => toast.error(e.message || tr("teacher.030")),
@@ -469,7 +647,7 @@ export function HomeworkDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{editing ? tr("teacher.183") : tr("teacher.182")}</DialogTitle>
           <DialogDescription>
@@ -516,15 +694,14 @@ export function HomeworkDialog({
             />
           </div>
 
-          <div className="grid sm:grid-cols-3 gap-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">{tr("teacher.185")}</Label>
-              <Input
-                type="datetime-local"
-                value={deadline}
-                onChange={(e) => setDeadline(e.target.value)}
-              />
-            </div>
+          {/* Deadline gets a full row: Calendar + time + summary need the
+              width, and nothing about the dialog must ever clip in RTL. */}
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">{tr("teacher.185")}</Label>
+            <DeadlineField value={deadline} onChange={setDeadline} />
+          </div>
+
+          <div className="grid sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">{tr("teacher.186")}</Label>
               <Input
@@ -558,7 +735,7 @@ export function HomeworkDialog({
             ) : (
               <>
                 <Save className="w-4 h-4 ms-2" />
-                {tr("teacher.089")}
+                {editing ? tr("teacher.307") : tr("teacher.306")}
               </>
             )}
           </Button>
@@ -599,11 +776,14 @@ export function QuestionManagerDialog({
   quizTitle,
   open,
   onOpenChange,
+  onChanged,
 }: {
   quizId: string;
   quizTitle: string;
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  /** Phase E — embedder-provided refresh hook (the session workspace). */
+  onChanged?: () => void;
 }) {
   const tr = useT();
   const queryClient = useQueryClient();
@@ -626,6 +806,7 @@ export function QuestionManagerDialog({
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["teacher-quiz-detail", quizId] });
     queryClient.invalidateQueries({ queryKey: ["teacher-quizzes"] });
+    onChanged?.();
   };
 
   const deleteMutation = useMutation({

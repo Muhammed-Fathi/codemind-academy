@@ -177,7 +177,7 @@ export type FinalizeLessonPdfResult =
     }
   | {
       ok: false;
-      code: "INVALID_TRACK_SCOPE" | "ALREADY_LINKED";
+      code: "INVALID_TRACK_SCOPE" | "ALREADY_LINKED" | "FOREIGN_ACTIVE";
       message: string;
     };
 
@@ -398,6 +398,22 @@ export async function finalizeLessonPdfMaterial(
      * that performs the row writes. See `FinalizeLessonPdfSerializeGate`.
      */
     serialize?: (tx: any) => Promise<FinalizeLessonPdfSerializeGate>;
+    /**
+     * Phase E — teacher "manage-own" finalization. When set (teacher flows
+     * only), the finalization is ownership-scoped instead of role-scoped:
+     *   * an ACTIVE Material of the same (lesson × trackScope) whose
+     *     `MediaAsset.createdById` is NOT this user — including `null`
+     *     (unproven ⇒ foreign, fail closed) — makes the whole finalize fail
+     *     with `FOREIGN_ACTIVE` BEFORE any change, exactly like the teacher
+     *     buffered path (`teacherUploadLessonPdfMaterial`); and
+     *   * the prior-active deactivation touches ONLY rows this actor
+     *     provably owns (createdById = userId).
+     * The ownership partition is re-evaluated INSIDE the transaction (not
+     * from the advisory read captured outside), so an admin upload that
+     * lands between init and completion is never silently replaced.
+     * Unset ⇒ the Phase 14/23 semantics are unchanged byte-for-byte.
+     */
+    manageOwn?: { userId: string };
   }
 ): Promise<FinalizeLessonPdfResult> {
   // The caller-supplied `storageKey` is ALWAYS server-generated — either the
@@ -411,6 +427,8 @@ export async function finalizeLessonPdfMaterial(
     `${input.lesson.title} PDF`;
 
   // Capture prior active materials so we can deactivate + maybe clean up.
+  // (`media.createdById` rides along so a manage-own finalization can
+  // partition; the extra join does not change the classic path's semantics.)
   const prior = await client.material.findMany({
     where: {
       lessonId: input.lesson.id,
@@ -418,7 +436,11 @@ export async function finalizeLessonPdfMaterial(
       isActive: true,
       kind: "ADMIN_UPLOADED",
     },
-    select: { id: true, mediaAssetId: true },
+    select: {
+      id: true,
+      mediaAssetId: true,
+      media: { select: { createdById: true } },
+    },
   });
 
   const apply = async (
@@ -429,6 +451,7 @@ export async function finalizeLessonPdfMaterial(
           asset: { id: string };
           material: { id: string; title: string };
         };
+        deactivatedRefs: { materialId: string; mediaAssetId: string | null }[];
       }
     | { gate: FinalizeLessonPdfResult }
   > => {
@@ -442,9 +465,57 @@ export async function finalizeLessonPdfMaterial(
       const gate = await options.serialize(tx);
       if (!gate.proceed) return { gate: gate.outcome };
     }
-    if (prior.length > 0) {
+
+    // Which prior actives this finalize may deactivate. Classic path: all of
+    // them (the admin replace rule). Manage-own path (Phase E, teacher):
+    // re-partition INSIDE the tx — a foreign active (createdById ≠ this
+    // user, null included) fails closed with FOREIGN_ACTIVE and nothing
+    // changes; only own-provably-owned rows are deactivated.
+    let deactivateIds: string[] = prior.map((p) => p.id);
+    let cleanupRefs: { materialId: string; mediaAssetId: string | null }[] =
+      prior.map((p) => ({ materialId: p.id, mediaAssetId: p.mediaAssetId }));
+    if (options?.manageOwn) {
+      const mine = options.manageOwn.userId;
+      const inTx = await tx.material.findMany({
+        where: {
+          lessonId: input.lesson.id,
+          trackScope: input.trackScope,
+          isActive: true,
+          kind: "ADMIN_UPLOADED",
+        },
+        select: {
+          id: true,
+          mediaAssetId: true,
+          media: { select: { createdById: true } },
+        },
+      });
+      const foreign = inTx.filter(
+        (m: { media?: { createdById?: string | null } | null }) =>
+          !m.media?.createdById || m.media.createdById !== mine
+      );
+      if (foreign.length > 0) {
+        return {
+          gate: {
+            ok: false,
+            code: "FOREIGN_ACTIVE",
+            message:
+              "An active material for this track is managed by the admin and cannot be replaced by a teacher upload",
+          } as FinalizeLessonPdfResult,
+        };
+      }
+      deactivateIds = inTx.map(
+        (m: { id: string; mediaAssetId: string | null }) => m.id
+      );
+      cleanupRefs = inTx.map(
+        (m: { id: string; mediaAssetId: string | null }) => ({
+          materialId: m.id,
+          mediaAssetId: m.mediaAssetId,
+        })
+      );
+    }
+    if (deactivateIds.length > 0) {
       await tx.material.updateMany({
-        where: { id: { in: prior.map((p) => p.id) } },
+        where: { id: { in: deactivateIds } },
         data: { isActive: false },
       });
     }
@@ -479,7 +550,19 @@ export async function finalizeLessonPdfMaterial(
       },
     });
 
-    return { created: { asset, material } };
+    return {
+      created: { asset, material },
+      // Only the rows THIS finalize actually deactivated (manage-own ⊆ all).
+      deactivatedRefs: deactivateIds
+        .map(
+          (id) =>
+            cleanupRefs.find((r) => r.materialId === id) ?? {
+              materialId: id,
+              mediaAssetId: null,
+            }
+        )
+        .map(({ materialId, mediaAssetId }) => ({ materialId, mediaAssetId })),
+    };
   };
 
   let created: Awaited<ReturnType<typeof apply>>;
@@ -493,13 +576,16 @@ export async function finalizeLessonPdfMaterial(
   // refcount cleanup below must NOT run.
   if ("gate" in created) return created.gate;
   const { asset: createdAsset } = created.created;
+  // What this finalize ACTUALLY deactivated (for the classic path this is
+  // exactly `prior`; for manage-own it is the tx-re-validated own subset).
+  const deactivatedRefs = created.deactivatedRefs;
 
   // Reference-counted cleanup: detach deactivated materials from their prior
   // assets, then delete any asset that nothing else still references. An asset
   // still pointed at by another active Material (or a SessionVideo / evidence
   // row) is retained — never delete shared bytes.
   const cleanedUpAssets = await releaseDetachedAssets(
-    prior
+    deactivatedRefs
       .map((p) => p.mediaAssetId)
       .filter((id): id is string => !!id && id !== createdAsset.id),
     client
@@ -520,8 +606,8 @@ export async function finalizeLessonPdfMaterial(
       sizeBytes,
       originalName,
     },
-    replaced: prior.map((p) => ({
-      materialId: p.id,
+    replaced: deactivatedRefs.map((p) => ({
+      materialId: p.materialId,
       mediaAssetId: p.mediaAssetId,
     })),
     cleanedUpAssets,
@@ -649,6 +735,15 @@ export async function uploadLessonPdfMaterial(
       // flow's concurrency concerns.
       throw new Error(
         "finalizeLessonPdfMaterial reported ALREADY_LINKED without a concurrency gate"
+      );
+    }
+    if (finalized.code === "FOREIGN_ACTIVE") {
+      // UNREACHABLE here for the same reason: the buffered caller never
+      // passes `manageOwn`, so the ownership partition never runs (only the
+      // Phase E teacher presigned completion sets it). The teacher's own
+      // buffered service enforces this gate itself earlier.
+      throw new Error(
+        "finalizeLessonPdfMaterial reported FOREIGN_ACTIVE without manage-own scope"
       );
     }
     return { ok: false, code: finalized.code, message: finalized.message };

@@ -27,6 +27,7 @@ export type ViewKey =
   | "parent-report"
   | "parent-notifications"
   | "teacher-dashboard"
+  | "teacher-sessions"
   | "teacher-attendance"
   | "teacher-quizzes"
   | "teacher-homework"

@@ -406,6 +406,8 @@ export const UPLOAD_ERROR_STATUS = {
   DB_UNAVAILABLE: 503,
   /** Replay of a token whose key is already linked, but differently. */
   ALREADY_LINKED: 409,
+  /** Phase E — manage-own completion found a foreign active material. */
+  FOREIGN_ACTIVE: 409,
 } as const;
 
 export type UploadErrorCode = keyof typeof UPLOAD_ERROR_STATUS;
@@ -921,6 +923,17 @@ export type PresignedUploadCompleteInput = {
   /** NOT TRUSTED for identity (Phase A) — see `batchId`. */
   lessonId?: unknown;
   trackScope?: unknown;
+  /**
+   * Phase E — teacher manage-own LESSON_PDF completion. When set, the shared
+   * finalizer runs its ownership-scoped variant: a foreign/unproven ACTIVE
+   * material of the same (lesson × trackScope) fails closed FOREIGN_ACTIVE
+   * (409) and deactivation touches only rows this user provably owns. The
+   * Phase 23 admin completion passes nothing here and keeps its exact old
+   * semantics. Set ONLY by a route that has itself authorized the actor's
+   * ownership of `payload.lessonId` — this is NOT authorization, it is the
+   * manage-own row scope applied after authorization.
+   */
+  manageOwn?: { userId: string };
 };
 
 export type PresignedUploadCompleteResult =
@@ -1360,6 +1373,10 @@ export async function completePresignedUpload(
           }
           return { proceed: true };
         },
+        // Phase E — teacher manage-own completion: ownership-scoped replace,
+        // FOREIGN_ACTIVE refusal evaluated inside the same transaction. The
+        // admin route passes no manageOwn, so its finalization is unchanged.
+        ...(input.manageOwn ? { manageOwn: input.manageOwn } : {}),
       }
     );
     if (!finalized.ok) {

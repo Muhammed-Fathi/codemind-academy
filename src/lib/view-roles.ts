@@ -49,6 +49,7 @@ export const VIEWS_BY_ROLE: Record<string, string[]> = {
   ],
   TEACHER: [
     "teacher-dashboard",
+    "teacher-sessions",
     "teacher-attendance",
     "teacher-quizzes",
     "teacher-homework",

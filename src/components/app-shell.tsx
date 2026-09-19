@@ -24,6 +24,7 @@ import { KodgyAssistant } from "@/components/kodgy/kodgy-assistant";
 import { StudentDashboard } from "@/components/student/student-dashboard";
 import { ParentDashboard } from "@/components/parent/parent-dashboard";
 import { TeacherDashboard } from "@/components/teacher/teacher-dashboard";
+import { TeacherSessions } from "@/components/teacher/teacher-sessions";
 import { AdminDashboard } from "@/components/admin/admin-dashboard";
 // SHARED role → view whitelist (single definition, also used by the
 // notifications panel): stale/illegal persisted views redirect safely
@@ -237,6 +238,12 @@ function renderView(view: string, role?: string | null) {
     case "teacher-analytics":
     case "teacher-notifications":
       return <TeacherDashboard />;
+    // Phase E — the teacher Session workspace (sessions list + per-lesson
+    // workspace). Kept OUT of TeacherDashboard so the legacy tabs are
+    // byte-for-byte untouched, and so the Phase 18 pins over that file stay
+    // exactly as written.
+    case "teacher-sessions":
+      return <TeacherSessions />;
     // All admin-* views route to the AdminDashboard shell
     case "admin-overview":
     case "admin-students":
