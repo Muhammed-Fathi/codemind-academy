@@ -894,6 +894,7 @@ export function QuestionManagerDialog({
                 onEdit={() => setEditingId(editingId === q.id ? null : q.id)}
                 onDelete={() => deleteMutation.mutate(q.id)}
                 deleting={deleteMutation.isPending}
+                locked={!!detail.data?.attempts.total}
                 onSaved={() => {
                   setEditingId(null);
                   invalidate();
@@ -904,7 +905,7 @@ export function QuestionManagerDialog({
         )}
 
         <DialogFooter className="flex-row justify-between gap-2 sm:justify-between">
-          <Button variant="outline" onClick={() => setAdding((v) => !v)}>
+          <Button variant="outline" disabled={!!detail.data?.attempts.total} onClick={() => setAdding((v) => !v)}>
             <Plus className="w-4 h-4 ms-1.5" />
             {tr("teacher.202")}
           </Button>
@@ -935,6 +936,7 @@ function QuestionRow({
   onEdit,
   onDelete,
   deleting,
+  locked,
   onSaved,
 }: {
   index: number;
@@ -943,6 +945,7 @@ function QuestionRow({
   onEdit: () => void;
   onDelete: () => void;
   deleting: boolean;
+  locked?: boolean;
   onSaved: () => void;
 }) {
   const tr = useT();
@@ -984,7 +987,7 @@ function QuestionRow({
           )}
         </div>
         <div className="flex items-center gap-1 shrink-0">
-          <Button variant="ghost" size="sm" className="text-xs" onClick={onEdit}>
+          <Button variant="ghost" size="sm" className="text-xs" disabled={locked} onClick={onEdit}>
             {tr("teacher.194")}
           </Button>
           {question.canDelete ? (
