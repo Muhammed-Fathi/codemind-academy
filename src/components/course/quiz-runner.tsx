@@ -127,6 +127,7 @@ export function QuizRunner() {
     async (allow: boolean) => {
       if (!navParam) return;
       setStartingAttempt(true);
+      let requiredDenied = false;
       try {
         if (allow && navigator.mediaDevices?.getUserMedia) {
           const stream = await navigator.mediaDevices.getUserMedia({ video: true });
@@ -166,9 +167,16 @@ export function QuizRunner() {
         // Any other failed attempt-open must not block the student from taking
         // the quiz; it only means no evidence can be linked.
       } catch {
-        /* ignore — quiz still runs */
+        if (allow && quiz?.quiz.cameraPolicy === "REQUIRED") {
+          requiredDenied = true;
+          setError("لا يمكن بدء الاختبار قبل السماح بالكاميرا. تحقق من صلاحيات المتصفح ثم حاول مرة أخرى.");
+          setCameraAllowed(null);
+          setStartingAttempt(false);
+          return;
+        }
+        /* Optional camera failures do not block the quiz. */
       } finally {
-        setCameraAllowed(allow);
+        if (!requiredDenied) setCameraAllowed(allow);
         setStartingAttempt(false);
       }
     },
