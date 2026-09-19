@@ -482,6 +482,15 @@ export const DICT_2026: Record<string, DictEntry> = {
   },
   "teacher.302": { ar: "مُقيَّم", en: "graded" },
 
+  // ---- Homework dialog — manual-QA fix: readable deadline + own copy ----
+  "teacher.303": { ar: "اختار التاريخ", en: "Pick a date" },
+  "teacher.305": { ar: "الوقت", en: "Time" },
+  "teacher.306": { ar: "إنشاء الواجب", en: "Create homework" },
+  "teacher.307": { ar: "حفظ التعديلات", en: "Save changes" },
+  "teacher.308": { ar: "مسح الميعاد", en: "Clear deadline" },
+  "teacher.309": { ar: "الميعاد المحدد", en: "Selected deadline" },
+  "teacher.310": { ar: "اختار التاريخ والوقت", en: "Pick the date and time" },
+
 
   // ---------------- Phase 10: Kodgy AI Assistant ----------------
   // Chrome strings only. Kodgy's scripted answer CONTENT lives in

@@ -23,6 +23,10 @@
 //       forged/replayed/cross-scope intent tokens refused) + the shared
 //       finalize's manage-own partition matrix over a fake presigning backend
 //       (foreign-active refusal vs permitted own-replace; idempotent replay)
+//     → homework dialog manual-QA source contract: readable date/time deadline
+//       UI (design-system Calendar + Popover + native time input + locale
+//       summary), Homework-specific save copy, edit hydration, IDENTICAL
+//       create/edit ISO payload semantics, and untouched Quiz/API surfaces
 //
 // What is REAL here: the migration SQL, the schema, the compiled route
 // handlers, the manage-own gates, the readiness recomputation, the media
@@ -1429,6 +1433,105 @@ async function main() {
     delete process.env.MEDIA_BACKEND;
   } else {
     process.env.MEDIA_BACKEND = prevMediaBackend;
+  }
+
+  // ---------------------------------------------------------------------------
+  // M. Homework dialog — manual-QA source contract (readable deadline + own copy)
+  //
+  // Two dialogue defects were reported by manual QA on the Phase E workspace:
+  // (i) the deadline `datetime-local` input was clipped inside the 3-column
+  //     grid and unreadable, and (ii) the save button showing the QUIZ copy
+  //     "احفظ الـQuiz" (teacher.089). The fix introduces a DeadlineField that
+  //     composes the design system's Calendar + Popover with a native time
+  //     input while preserving the EXACT stored value/payload semantics.
+  // ---------------------------------------------------------------------------
+  {
+    const { execFileSync: git } = require("child_process");
+    const readF = (rel) => fs.readFileSync(path.join(REPO, rel), "utf8");
+    const authoring = readF("src/components/teacher/teacher-authoring.tsx");
+    const dict2026 = readF("src/lib/i18n-dict-2026.ts");
+    // The HomeworkDialog body spans from its declaration to the next
+    // component declaration after its DialogContent close (question manager).
+    const hwDialogIdx = authoring.indexOf("export function HomeworkDialog");
+    const qmDialogIdx = authoring.indexOf("export function QuestionManagerDialog");
+    const hwDialog = authoring.slice(hwDialogIdx, qmDialogIdx);
+    ok(hwDialogIdx > 0 && qmDialogIdx > hwDialogIdx, "M0: HomeworkDialog region isolated in teacher-authoring.tsx");
+
+    // M1 — no Quiz wording inside the Homework dialog: the Quiz save copy
+    // (teacher.089) must not appear anywhere in the HomeworkDialog region and
+    // the create/edit buttons are Homework-specific dict keys gated on editing.
+    ok(!hwDialog.includes('tr("teacher.089")'), "M1a: Homework dialog no longer uses the Quiz save copy (teacher.089)");
+    ok(
+      hwDialog.includes('editing ? tr("teacher.307") : tr("teacher.306")'),
+      "M1b: Homework save button = create/edit Homework copy gated on `editing`"
+    );
+    ok(
+      dict2026.includes('"teacher.306": { ar: "إنشاء الواجب"') &&
+        dict2026.includes('"teacher.307": { ar: "حفظ التعديلات"'),
+      "M1c: teacher.306 (create) + teacher.307 (edit) Homework copy exist in the 2026 dict"
+    );
+
+    // M2 — separate, readable date/time UI: the clipped datetime-local input is
+    // gone from the authoring surface; a DeadlineField composes the design
+    // system's Calendar inside a Popover with an explicit type=time input and
+    // a locale-formatted summary (Intl.DateTimeFormat via useLocale).
+    ok(!authoring.includes('type="datetime-local"'), "M2a: clipped datetime-local input removed from teacher authoring");
+    ok(
+      authoring.includes("function DeadlineField") &&
+        authoring.includes('from "@/components/ui/calendar"') &&
+        authoring.includes('from "@/components/ui/popover"'),
+      "M2b: DeadlineField composes the design-system Calendar + Popover (no parallel date system)"
+    );
+    ok(
+      authoring.includes('type="time"'),
+      "M2c: the clock is a separate native time input"
+    );
+    ok(
+      authoring.includes("Intl.DateTimeFormat") && authoring.includes("useLocale"),
+      "M2d: Arabic/English summary is locale-formatted (Intl.DateTimeFormat + useLocale)"
+    );
+
+    // M3 — edit hydration: state is seeded from the saved deadline and the
+    // DeadlineField both displays and edits that single source of truth.
+    ok(
+      authoring.includes("toLocalInput(homework?.deadline)") &&
+        hwDialog.includes("<DeadlineField value={deadline} onChange={setDeadline} />"),
+      "M3: edit mode hydrates the saved deadline through toLocalInput into DeadlineField"
+    );
+
+    // M4/M5 — payload shape is IDENTICAL for create (POST) and edit (PATCH):
+    // the single mutationFn still sends `new Date(deadline).toISOString()`.
+    ok(
+      hwDialog.includes("deadline: deadline ? new Date(deadline).toISOString() : \"\""),
+      "M4: homework payload still serializes deadline via new Date(...).toISOString()"
+    );
+    ok(
+      hwDialog.includes('"/api/teacher/homework"') &&
+        hwDialog.includes("`/api/teacher/homework/${homework!.id}`") &&
+        hwDialog.includes('editing\n        ? `/api/teacher/homework/${homework!.id}`') &&
+        hwDialog.includes('method: editing ? "PATCH" : "POST",'),
+      "M5: same payload feeds both POST (create) and PATCH (edit) endpoints"
+    );
+
+    // M6 — Homework API semantics untouched (create + edit + delete routes are
+    // byte-identical to the committed Phase E handoff).
+    let apiClean = true;
+    try {
+      git("git", ["diff", "--exit-code", "HEAD", "--",
+        "src/app/api/teacher/homework/route.ts",
+        "src/app/api/teacher/homework/[id]/route.ts",
+      ], { cwd: REPO, stdio: "pipe" });
+    } catch { apiClean = false; }
+    ok(apiClean, "M6: teacher homework API routes are byte-identical to HEAD (semantics unchanged)");
+
+    // M7 — the Quiz dialog/legacy teacher dashboard was NOT touched by this fix.
+    let quizClean = true;
+    try {
+      git("git", ["diff", "--exit-code", "HEAD", "--",
+        "src/components/teacher/teacher-dashboard.tsx",
+      ], { cwd: REPO, stdio: "pipe" });
+    } catch { quizClean = false; }
+    ok(quizClean, "M7: legacy Quiz dialog (teacher-dashboard.tsx) untouched by the Homework fix");
   }
 
   // ---- summary --------------------------------------------------------------
