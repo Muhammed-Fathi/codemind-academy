@@ -126,6 +126,7 @@ export async function createNotificationIfAllowed(params: {
   title: string;
   message: string;
   link?: string | null;
+  dedupeKey?: string | null;
 }): Promise<boolean> {
   const { userId, type, title, message, link } = params;
 
@@ -150,6 +151,7 @@ export async function createNotificationIfAllowed(params: {
       title,
       message,
       link: link || null,
+      dedupeKey: params.dedupeKey || null,
     },
   });
   return true;

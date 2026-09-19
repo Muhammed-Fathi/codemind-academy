@@ -11,6 +11,7 @@ import {
   type SubmittedAnswer,
 } from "@/lib/session-quiz";
 import { getStudentSchoolType } from "@/lib/enrollment";
+import { createNotificationIfAllowed } from "@/lib/notify";
 
 // POST /api/quizzes/[id]/submit
 // Body: { answers: { questionId, selected }[] }
@@ -67,7 +68,7 @@ export async function POST(
   const tApi = await getServerT();
   const quiz = await db.quiz.findUnique({
     where: { id },
-    select: { id: true, passMark: true, timeLimit: true },
+    select: { id: true, title: true, titleAr: true, passMark: true, timeLimit: true },
   });
   if (!quiz) return err("Quiz not found", 404);
 
@@ -247,6 +248,20 @@ export async function POST(
   });
 
   const submittedLimit = timeLimitState(open.startedAt, quiz.timeLimit);
+
+  // One terminal notification emission point. The dedupe key is the immutable
+  // attempt id, so retries/replays cannot create a second result notification.
+  const studentUser = await db.student.findUnique({ where: { id: s.id }, select: { userId: true } });
+  if (studentUser) {
+    await createNotificationIfAllowed({
+      userId: studentUser.userId,
+      type: "QUIZ_RESULT",
+      title: `نتيجة الاختبار: ${quiz.titleAr || quiz.title}`,
+      message: `${percentage}% — ${passed ? "ناجح" : "لم ينجح"} (${score}/${totalMarks})`,
+      link: `quiz:${id}`,
+      dedupeKey: `quiz-result:${attempt.id}`,
+    }).catch(() => {});
+  }
 
   return ok({
     attemptId: attempt.id,

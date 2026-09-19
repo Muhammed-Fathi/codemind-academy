@@ -950,6 +950,7 @@ function QuizzesCard({ ws, refresh }: { ws: Workspace; refresh: () => void }) {
   const [editQuiz, setEditQuiz] = React.useState<QuizRow | null>(null);
   const [deleteQuiz, setDeleteQuiz] = React.useState<QuizRow | null>(null);
   const [previewQuizId, setPreviewQuizId] = React.useState<string | null>(null);
+  const [attemptsQuizId, setAttemptsQuizId] = React.useState<string | null>(null);
 
   const publish = useMutation({
     mutationFn: async (id: string) => {
@@ -1049,6 +1050,7 @@ function QuizzesCard({ ws, refresh }: { ws: Workspace; refresh: () => void }) {
                 <span className="ms-auto flex items-center gap-1">
                   <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => preview(q.id)}>معاينة</Button>
                   {q.attemptsCount > 0 && <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => duplicate.mutate(q.id)} disabled={duplicate.isPending}>نسخ الاختبار</Button>}
+                  {q.attemptsCount > 0 && <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => setAttemptsQuizId(q.id)}>عرض المحاولات</Button>}
                   {q.status === "DRAFT" && q.questionCount > 0 && (
                     <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => publish.mutate(q.id)} disabled={publish.isPending}>
                       نشر
@@ -1087,6 +1089,7 @@ function QuizzesCard({ ws, refresh }: { ws: Workspace; refresh: () => void }) {
         </ul>
       )}
 
+      <QuizAttemptsDialog id={attemptsQuizId} open={!!attemptsQuizId} onOpenChange={(v) => !v && setAttemptsQuizId(null)} />
       <QuizPreviewDialog id={previewQuizId} open={!!previewQuizId} onOpenChange={(v) => !v && setPreviewQuizId(null)} />
 
       {/* Create (metadata + at least one question — the API contract) */}
@@ -1133,6 +1136,12 @@ function QuizzesCard({ ws, refresh }: { ws: Workspace; refresh: () => void }) {
       />
     </SectionCard>
   );
+}
+
+function QuizAttemptsDialog({ id, open, onOpenChange }: { id: string | null; open: boolean; onOpenChange: (v: boolean) => void }) {
+  const [data, setData] = React.useState<any>(null); const [error, setError] = React.useState<string | null>(null);
+  React.useEffect(() => { if (!open || !id) return; let live=true; setData(null); setError(null); fetch(`/api/teacher/quizzes/${encodeURIComponent(id)}/attempts`).then(async r => { const b=await r.json(); if(!r.ok) throw new Error(b.error||"تعذر تحميل النتائج"); return b; }).then(b=>live&&setData(b)).catch(e=>live&&setError(e.message)); return ()=>{live=false}; },[id,open]);
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-w-3xl max-h-[88vh] overflow-y-auto" dir="rtl"><DialogHeader><DialogTitle>نتائج الطلاب</DialogTitle></DialogHeader>{!data&&!error&&<div className="py-10 text-center text-muted-foreground">جارٍ التحميل…</div>}{error&&<p className="text-destructive">{error}</p>}{data&&(!data.attempts?.length?<p className="py-8 text-center text-muted-foreground">لا توجد محاولات بعد</p>:<div className="space-y-2">{data.attempts.map((a:any,i:number)=><div key={a.id||i} className="rounded border p-3 flex flex-wrap gap-3 items-center"><strong>{a.student?.name || "طالب"}</strong><span>المحاولة {a.attemptNumber}</span><span>{a.score ?? 0}/{a.totalMarks ?? 0}</span><span>{a.percentage ?? 0}%</span><Badge variant="outline">{a.passed ? "ناجح" : "غير ناجح"}</Badge><span className="text-muted-foreground text-xs">{a.finishedAt ? new Date(a.finishedAt).toLocaleString("ar-EG") : "مفتوحة"}</span></div>)}</div>)}<DialogFooter><Button variant="outline" onClick={()=>onOpenChange(false)}>إغلاق</Button></DialogFooter></DialogContent></Dialog>;
 }
 
 function QuizPreviewDialog({ id, open, onOpenChange }: { id: string | null; open: boolean; onOpenChange: (v: boolean) => void }) {
