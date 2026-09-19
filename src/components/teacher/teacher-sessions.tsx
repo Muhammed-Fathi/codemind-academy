@@ -949,6 +949,7 @@ function QuizzesCard({ ws, refresh }: { ws: Workspace; refresh: () => void }) {
   const [manageQuiz, setManageQuiz] = React.useState<QuizRow | null>(null);
   const [editQuiz, setEditQuiz] = React.useState<QuizRow | null>(null);
   const [deleteQuiz, setDeleteQuiz] = React.useState<QuizRow | null>(null);
+  const [previewQuizId, setPreviewQuizId] = React.useState<string | null>(null);
 
   const publish = useMutation({
     mutationFn: async (id: string) => {
@@ -964,12 +965,7 @@ function QuizzesCard({ ws, refresh }: { ws: Workspace; refresh: () => void }) {
     mutationFn: async (id: string) => { const r = await fetch(`/api/teacher/quizzes/${encodeURIComponent(id)}/duplicate`, { method: "POST" }); if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "تعذر نسخ الاختبار"); return r.json(); },
     onSuccess: () => { toast.success("تم إنشاء نسخة جديدة كمسودة"); refresh(); }, onError: (e: Error) => toast.error(e.message),
   });
-  const preview = async (id: string) => {
-    const r = await fetch(`/api/teacher/quizzes/${encodeURIComponent(id)}/preview`);
-    if (!r.ok) return toast.error((await r.json().catch(() => ({}))).error || "تعذر فتح المعاينة");
-    const data = await r.json();
-    toast.success(`المعاينة جاهزة: ${data.preview?.questions?.length ?? data.questions?.length ?? 0} سؤال`);
-  };
+  const preview = (id: string) => setPreviewQuizId(id);
 
   const del = useMutation({
     mutationFn: async (id: string) => {
@@ -1091,6 +1087,8 @@ function QuizzesCard({ ws, refresh }: { ws: Workspace; refresh: () => void }) {
         </ul>
       )}
 
+      <QuizPreviewDialog id={previewQuizId} open={!!previewQuizId} onOpenChange={(v) => !v && setPreviewQuizId(null)} />
+
       {/* Create (metadata + at least one question — the API contract) */}
       <QuizCreateDialog
         open={createOpen}
@@ -1135,6 +1133,31 @@ function QuizzesCard({ ws, refresh }: { ws: Workspace; refresh: () => void }) {
       />
     </SectionCard>
   );
+}
+
+function QuizPreviewDialog({ id, open, onOpenChange }: { id: string | null; open: boolean; onOpenChange: (v: boolean) => void }) {
+  const [data, setData] = React.useState<any>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    if (!open || !id) return;
+    let alive = true; setData(null); setError(null);
+    fetch(`/api/teacher/quizzes/${encodeURIComponent(id)}/preview`)
+      .then(async (r) => { const body = await r.json(); if (!r.ok) throw new Error(body.error || "تعذر فتح المعاينة"); return body.preview; })
+      .then((v) => alive && setData(v)).catch((e) => alive && setError(e.message));
+    return () => { alive = false; };
+  }, [id, open]);
+  return <Dialog open={open} onOpenChange={onOpenChange}>
+    <DialogContent className="max-w-3xl max-h-[88vh] overflow-y-auto" dir="rtl">
+      <DialogHeader><DialogTitle>معاينة الاختبار</DialogTitle><DialogDescription>معاينة مدرسية لا تنشئ محاولة للطالب</DialogDescription></DialogHeader>
+      {!data && !error && <div className="py-12 text-center text-muted-foreground">جارٍ تحميل المعاينة…</div>}
+      {error && <div className="rounded border border-destructive/30 p-4 text-destructive">{error}</div>}
+      {data && <div className="space-y-4">
+        <div className="rounded-lg border p-4 space-y-2"><h3 className="font-semibold">{data.quiz.title}</h3><p className="text-sm text-muted-foreground">{data.quiz.description || "لا يوجد وصف"}</p><div className="flex flex-wrap gap-2 text-xs"><Badge variant="outline">{data.quiz.status === "DRAFT" ? "مسودة" : "منشور"}</Badge><Badge variant="outline">درجة النجاح: {data.quiz.passMark}</Badge><Badge variant="outline">المدة: {data.quiz.timeLimit ?? "بدون حد"}</Badge><Badge variant="outline">الأسئلة: {data.quiz.questionCount}</Badge><Badge variant="outline">الدرجة الكلية: {data.quiz.totalMarks}</Badge></div></div>
+        {data.questions?.length === 0 ? <div className="p-8 text-center text-muted-foreground">لا توجد أسئلة للمعاينة</div> : data.questions.map((q: any, i: number) => <div key={q.id || i} className="rounded-lg border p-4 space-y-2"><div className="flex justify-between text-xs text-muted-foreground"><span>سؤال {i + 1} · {q.type === "MCQ" ? "اختيار من متعدد" : q.type === "TRUE_FALSE" ? "صح أو خطأ" : "سؤال"}</span><span>{q.marks} درجة · {q.difficulty === "EASY" ? "سهل" : q.difficulty === "HARD" ? "صعب" : "متوسط"}</span></div><p className="font-medium">{q.promptAr || q.prompt}</p><div className="grid gap-2 sm:grid-cols-2">{(Array.isArray(q.options) ? q.options : []).map((o: string, j: number) => <div key={j} className={`rounded border p-2 ${String(q.answer) === String(j) ? "border-emerald-500 bg-emerald-500/10" : ""}`}>{o}</div>)}</div></div>)}
+      </div>}
+      <DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>إغلاق</Button></DialogFooter>
+    </DialogContent>
+  </Dialog>;
 }
 
 // ------------------------------------------------------------
