@@ -261,6 +261,33 @@ export async function POST(
       link: `quiz:${id}`,
       dedupeKey: `quiz-result:${attempt.id}`,
     }).catch(() => {});
+
+    // Teacher recipients are derived exclusively from the quiz lesson's
+    // Course -> Group -> Teacher ownership chain. No client teacher id is
+    // accepted, and the attempt id makes replay delivery idempotent.
+    const lesson = await db.lesson.findUnique({
+      where: { id: (await db.quiz.findUnique({ where: { id }, select: { lessonId: true } }))?.lessonId ?? "" },
+      select: {
+        unit: { select: { part: { select: { courseId: true } } } },
+        topic: { select: { unit: { select: { part: { select: { courseId: true } } } } } },
+      },
+    });
+    const courseId = lesson?.unit?.part?.courseId ?? lesson?.topic?.unit?.part?.courseId;
+    if (courseId) {
+      const teachers = await db.teacher.findMany({
+        where: { groups: { some: { courseId, teacherId: { not: null }, isActive: true } } },
+        select: { userId: true },
+      });
+      const studentName = (await db.user.findUnique({ where: { id: studentUser.userId }, select: { name: true } }))?.name || "طالب";
+      await Promise.all(teachers.map((teacher) => createNotificationIfAllowed({
+        userId: teacher.userId,
+        type: "QUIZ_RESULT",
+        title: "إكمال اختبار",
+        message: `${studentName} أنهى اختبار ${quiz.titleAr || quiz.title} وحصل على ${percentage}% (${passed ? "ناجح" : "لم ينجح"}).`,
+        link: `quiz:${id}`,
+        dedupeKey: `quiz-completed:${attempt.id}:teacher:${teacher.userId}`,
+      }).catch(() => {})));
+    }
   }
 
   return ok({
