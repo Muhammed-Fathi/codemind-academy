@@ -174,7 +174,9 @@ export function StudentCourseView() {
   const tr = useT();
   const setView = useApp((s) => s.setView);
   const navParam = useApp((s) => s.navParam);
+  const courseSlug = useApp((s) => s.courseSlug);
   const setNavParam = useApp((s) => s.setNavParam);
+  const setCourseSlug = useApp((s) => s.setCourseSlug);
 
   const [data, setData] = React.useState<CourseData | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -204,7 +206,8 @@ export function StudentCourseView() {
       .then((current) => {
         const authoritativeSlug = current?.course?.slug;
         if (!authoritativeSlug) throw new Error("empty");
-        if (navParam !== authoritativeSlug) {
+        if (courseSlug !== authoritativeSlug) {
+          setCourseSlug(authoritativeSlug);
           setNavParam(authoritativeSlug);
           return;
         }
@@ -223,7 +226,7 @@ export function StudentCourseView() {
         setLoading(false);
       });
     return;
-  }, [navParam, tr, setNavParam]);
+  }, [navParam, courseSlug, tr, setNavParam, setCourseSlug]);
 
   React.useEffect(() => {
     reload();

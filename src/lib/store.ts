@@ -69,6 +69,14 @@ type AppState = {
   setView: (v: ViewKey) => void;
   navParam: string | null;
   setNavParam: (p: string | null) => void;
+  courseSlug: string | null;
+  lessonId: string | null;
+  quizId: string | null;
+  homeworkId: string | null;
+  setCourseSlug: (p: string | null) => void;
+  setLessonId: (p: string | null) => void;
+  setQuizId: (p: string | null) => void;
+  setHomeworkId: (p: string | null) => void;
 
   // session
   user: SessionUser | null;
@@ -94,6 +102,14 @@ export const useApp = create<AppState>()(
       setView: (view) => set({ view, navParam: null }),
       navParam: null,
       setNavParam: (navParam) => set({ navParam }),
+      courseSlug: null,
+      lessonId: null,
+      quizId: null,
+      homeworkId: null,
+      setCourseSlug: (courseSlug) => set({ courseSlug }),
+      setLessonId: (lessonId) => set({ lessonId }),
+      setQuizId: (quizId) => set({ quizId }),
+      setHomeworkId: (homeworkId) => set({ homeworkId }),
 
       user: null,
       setUser: (user) => set({ user }),

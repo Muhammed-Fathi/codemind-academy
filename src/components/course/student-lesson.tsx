@@ -148,7 +148,10 @@ export function StudentLessonView() {
   const locale = useLocale();
   const setView = useApp((s) => s.setView);
   const setNavParam = useApp((s) => s.setNavParam);
+  const setLessonId = useApp((s) => s.setLessonId);
+  const setQuizId = useApp((s) => s.setQuizId);
   const navParam = useApp((s) => s.navParam);
+  const lessonId = useApp((s) => s.lessonId);
 
   const [data, setData] = React.useState<LessonView | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -633,6 +636,7 @@ export function StudentLessonView() {
                           className="w-full"
                           onClick={() => {
                             setView("student-quiz");
+                            setQuizId(q.id);
                             setNavParam(q.id);
                           }}
                         >

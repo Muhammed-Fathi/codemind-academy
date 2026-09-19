@@ -104,6 +104,8 @@ export function QuizRunner() {
   const setView = useApp((s) => s.setView);
   const setNavParam = useApp((s) => s.setNavParam);
   const navParam = useApp((s) => s.navParam);
+  const quizId = useApp((s) => s.quizId);
+  const activeQuizId = quizId ?? navParam;
 
   const [quiz, setQuiz] = React.useState<QuizData | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -135,7 +137,7 @@ export function QuizRunner() {
         } else if (allow) {
           throw new Error("CAMERA_UNAVAILABLE");
         }
-        const r = await fetch(`/api/quizzes/${encodeURIComponent(navParam)}/start`, {
+        const r = await fetch(`/api/quizzes/${encodeURIComponent(activeQuizId || "")}/start`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ cameraStatus: allow ? "NOT_REQUESTED" : "DECLINED" }),
@@ -148,7 +150,7 @@ export function QuizRunner() {
         // blueprint quiz, larger) set than the one the student is graded on.
         if (r.ok && d.attemptId) {
           setAttemptId(d.attemptId);
-          const fresh = await fetch(`/api/quizzes/${encodeURIComponent(navParam)}`);
+          const fresh = await fetch(`/api/quizzes/${encodeURIComponent(activeQuizId || "")}`);
           if (fresh.ok) {
             const fd = await fresh.json();
             setQuiz(fd);
@@ -191,7 +193,7 @@ export function QuizRunner() {
     }
     setLoading(true);
     setError(null);
-    fetch(`/api/quizzes/${encodeURIComponent(navParam)}`)
+    fetch(`/api/quizzes/${encodeURIComponent(activeQuizId || "")}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error("fail"))))
       .then((d) => {
         setQuiz(d);
@@ -346,7 +348,7 @@ export function QuizRunner() {
       {cameraAllowed && attemptId && navParam && (
         <div className="flex justify-end">
           <QuizCameraMonitor
-            quizId={navParam}
+            quizId={activeQuizId}
             attemptId={attemptId}
             enabled
           />

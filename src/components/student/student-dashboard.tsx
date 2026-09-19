@@ -307,6 +307,7 @@ function DashboardHome({
 
   const openLesson = (lessonId: string) => {
     setView("student-lesson");
+    useApp.getState().setLessonId(lessonId);
     setNavParam(lessonId);
   };
 
