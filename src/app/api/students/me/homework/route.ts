@@ -11,6 +11,7 @@ import { getStudentSchoolType } from "@/lib/enrollment";
 import { trackScopeWhere } from "@/lib/track-scope";
 import { LESSON_STUDENT_STATUS_FILTER } from "@/lib/session-lifecycle";
 import { homeworkAttachmentPayload } from "@/lib/homework-lifecycle";
+import { STUDENT_HOMEWORK_LIST_FILTER } from "@/lib/student-visibility";
 import { validateHomeworkFile } from "@/lib/homework-files";
 import {
   activeMediaStorageValue,
@@ -97,7 +98,7 @@ export async function GET(_req: NextRequest) {
       lessonId: { in: [...unlocked] },
       // Phase G — DRAFT assignments are invisible to students; PUBLISHED and
       // CLOSED are the only student-real states.
-      status: { in: ["PUBLISHED", "CLOSED"] },
+      status: { in: [...STUDENT_HOMEWORK_LIST_FILTER.status.in] },
       // Phase 13: the lifecycle clause is not redundant bookkeeping — it is
       // what keeps this list correct if `unlocked` is ever widened, and it is
       // the same predicate the engine that produced `unlocked` uses.

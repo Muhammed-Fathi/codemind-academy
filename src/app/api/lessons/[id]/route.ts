@@ -16,6 +16,7 @@ import {
   isParentLessonPreviewAllowed,
 } from "@/lib/parent-access";
 import { LESSON_STUDENT_STATUS_FILTER } from "@/lib/session-lifecycle";
+import { filterStudentLessonRows } from "@/lib/student-visibility";
 import {
   eligibleTrackScopes,
   trackScopeInWhere,
@@ -134,8 +135,8 @@ export async function GET(
   // covers every downstream consumer of these arrays (payload lists, the
   // attempted-set lookup, the content summary input).
   if (contentViewer.role !== "STAFF") {
-    lesson.quizzes = lesson.quizzes.filter((q) => q.status !== "DRAFT");
-    lesson.homeworks = lesson.homeworks.filter((h) => h.status !== "DRAFT");
+    lesson.quizzes = filterStudentLessonRows(lesson.quizzes);
+    lesson.homeworks = filterStudentLessonRows(lesson.homeworks);
   }
 
   // Canonical chain first; legacy topic chain as fallback.
