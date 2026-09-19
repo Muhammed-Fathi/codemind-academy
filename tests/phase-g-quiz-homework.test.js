@@ -45,7 +45,7 @@ ok(sp.includes('status !== "PUBLISHED"'),'26 quiz access requires published');
 ok(sp.includes('status === "DRAFT"'),'27 homework draft gate');
 ok(content.includes('rowLifecycleVisible'),'28 shared visibility authority');
 ok(content.includes('STAFF'),'29 staff sees drafts');
-ok(read("src/app/api/lessons/[id]/route.ts").includes('status !== "DRAFT"'),'30 lesson payload hides drafts');
+ok(read("src/app/api/lessons/[id]/route.ts").includes('filterStudentLessonRows'),'30 lesson payload hides drafts');
 ok(read("src/app/api/quizzes/[id]/start/route.ts").includes('PUBLISHED'),'31 start route hides drafts');
 // 32-37 lock/race safety
 ok(qpatch.includes('acquireQuizDestructiveLock'),'32 patch acquires lock');
