@@ -397,10 +397,28 @@ async function catalogSnapshot(query) {
      JOIN pg_namespace n ON n.oid = t.typnamespace
      WHERE n.nspname='public' ORDER BY t.typname, e.enumsortorder`
   )).rows;
+  // Columns are compared by NAME + TYPE + NULLABILITY + DEFAULT — deliberately
+  // NOT by `ordinal_position`.
+  //
+  // PostgreSQL column order is not part of the provider contract. Every
+  // migration adds a field with `ALTER TABLE … ADD COLUMN`, which always appends,
+  // while `scripts/db/postgres-baseline.sql` is generated from the Prisma data
+  // model and therefore emits fields in MODEL order. A field declared in the
+  // middle of a model is mid-table in the baseline and last in a migrated
+  // database — the same schema, two physical layouts. (Phase F hit exactly this:
+  // `Notification.sessionId` / `dedupeKey` sit before `createdAt` in the model,
+  // but migrations append them after it.)
+  //
+  // The substantive attributes below are the ones the PostgreSQL parity verifier
+  // compares (scripts/db/verify-phase-f-pg-parity.mjs), and they are strictly
+  // more informative than the old position-only check: a wrong type, a dropped
+  // NOT NULL or a changed default still fails. Everything whose order IS
+  // semantic — enum labels, constraint definitions, index definitions — is still
+  // compared verbatim and in order.
   snap.columns = (await query(
-    `SELECT table_name, column_name, ordinal_position FROM information_schema.columns
+    `SELECT table_name, column_name, udt_name, is_nullable, column_default FROM information_schema.columns
      WHERE table_schema='public' AND table_name <> '_prisma_migrations'
-     ORDER BY table_name, ordinal_position`
+     ORDER BY table_name, column_name`
   )).rows;
   snap.constraints = (await query(
     `SELECT conname, pg_get_constraintdef(oid, true) AS def FROM pg_constraint
@@ -471,6 +489,34 @@ async function buildNeonSimulation(query) {
 // Part B — real PostgreSQL (disposable), SQL-level
 // ---------------------------------------------------------------------------
 
+/** Apply ONE PostgreSQL migration directory through the caller's query handle. */
+async function applyPgMigration(query, name) {
+  for (const stmt of splitSqlStatements(read(path.join(PG_MIGRATIONS, name, "migration.sql")))) {
+    await query(stmt);
+  }
+}
+
+/**
+ * Apply the PostgreSQL chain in ledger order.
+ *
+ * Nothing here hardcodes a migration name — the chain is whatever
+ * `prisma/postgres/migrations` holds right now. `after` lets a step prove an
+ * INTERMEDIATE state without knowing the future: the failed-Neon recovery applies
+ * the 26D edition alone and then everything after it. This is what keeps the
+ * convergence proof complete as the chain grows; before, the chain was applied
+ * as two hand-written names and the convergence assertion silently stopped
+ * covering every migration added later.
+ */
+async function applyPgChain(query, { after = null } = {}) {
+  const applied = [];
+  for (const name of listMigrationDirs(PG_MIGRATIONS)) {
+    if (after !== null && name <= after) continue;
+    await applyPgMigration(query, name);
+    applied.push(name);
+  }
+  return applied;
+}
+
 async function partB() {
   const failuresAtStart = failures.length;
   console.log("\n== B. Real PostgreSQL (SQL-level) ==");
@@ -484,20 +530,19 @@ async function partB() {
   const baselineSnap = await catalogSnapshot(query);
 
   // B2 — the PG migrations directory alone must converge to the same catalog.
+  //      The WHOLE chain is applied, in ledger order (never a hand-written list).
   await resetPublicSchema(query);
-  for (const name of listMigrationDirs(PG_MIGRATIONS)) {
-    for (const stmt of splitSqlStatements(read(path.join(PG_MIGRATIONS, name, "migration.sql")))) {
-      await query(stmt);
-    }
-  }
+  const chainApplied = await applyPgChain(query);
   const migrationsSnap = await catalogSnapshot(query);
   const diffs = catalogDiff(migrationsSnap, baselineSnap);
   ok(diffs.length === 0,
-    `0_init + Phase 26D on real PostgreSQL == postgres-baseline.sql catalog (${baselineSnap.columns.length} columns, ${baselineSnap.constraints.length} constraints, ${baselineSnap.indexes.length} indexes)`,
+    `the complete PostgreSQL chain (${chainApplied.join(" + ")}) == postgres-baseline.sql catalog (${baselineSnap.columns.length} columns, ${baselineSnap.constraints.length} constraints, ${baselineSnap.indexes.length} indexes)`,
     diffs.slice(0, 6).join(" | "));
 
-  // B3 — representative pre-26D PostgreSQL state (the failed-Neon shape):
-  //      the Phase 26D SQL must apply cleanly on top of it.
+  // B3 — representative pre-26D PostgreSQL state (the failed-Neon shape): the
+  //      Phase 26D SQL must apply cleanly on top of it, and then EVERY migration
+  //      that follows it (today Phase F, tomorrow whatever lands next) must take
+  //      the database to the current baseline.
   await buildNeonSimulation(query);
   {
     const before = await query(`SELECT to_regclass('public."QuizRetryGrant"') AS t`);
@@ -506,13 +551,18 @@ async function partB() {
     ok(ledger.rows.filter((r) => !r.done && !r.rb).length === 1, "simulated ledger carries exactly one FAILED row (Phase 26D)");
     ok(ledger.rows.filter((r) => r.done).length === 11, "simulated ledger carries the 11 baselined rows");
   }
-  for (const stmt of splitSqlStatements(read(path.join(PG_MIGRATIONS, MIG_26D, "migration.sql")))) {
-    await query(stmt);
-  }
+  //      Stage 1: the recovery step itself, asserted on its own.
+  await applyPgMigration(query, MIG_26D);
+  ok((await query(`SELECT to_regclass('public."QuizRetryGrant"') AS t`)).rows[0].t !== null, "QuizRetryGrant exists after the 26D PG migration");
+  //      Stage 2: every migration AFTER the recovery step, in ledger order and
+  //      discovered from the directory — so the convergence proof can never
+  //      again be left behind by a migration it does not know about.
+  const laterMigrations = await applyPgChain(query, { after: MIG_26D });
   const recoveredSnap = await catalogSnapshot(query);
   const diffs2 = catalogDiff(recoveredSnap, baselineSnap);
-  ok(diffs2.length === 0, "applying the PG Phase 26D edition on the pre-26D state converges to the baseline catalog", diffs2.slice(0, 6).join(" | "));
-  ok((await query(`SELECT to_regclass('public."QuizRetryGrant"') AS t`)).rows[0].t !== null, "QuizRetryGrant exists after the 26D PG migration");
+  ok(diffs2.length === 0,
+    `applying the remaining PostgreSQL chain after the recovery step (${laterMigrations.length ? laterMigrations.join(" + ") : "none"}) on the pre-26D state converges to the baseline catalog`,
+    diffs2.slice(0, 6).join(" | "));
 
   // B4 — the read-only checker must bless the simulated pre-recovery state.
   await buildNeonSimulation(query);
