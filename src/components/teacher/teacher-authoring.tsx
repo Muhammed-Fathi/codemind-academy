@@ -153,6 +153,7 @@ export type HomeworkRecord = {
   trackScope: string;
   gradedCount?: number;
   status?: string;
+  attachment?: { id: string; originalName: string | null; mimeType: string | null; sizeBytes: number | null } | null;
   lessonId?: string;
 };
 
@@ -655,6 +656,17 @@ export function HomeworkDialog({
     finally { setAttachmentBusy(false); }
   };
 
+  const removeAttachment = async () => {
+    if (!homework?.id || !homework.attachment) return;
+    setAttachmentBusy(true); setAttachmentMessage(null);
+    try {
+      const r = await fetch(`/api/teacher/homework/${encodeURIComponent(homework.id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ attachmentId: null }) });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "تعذر إزالة المرفق");
+      setAttachmentMessage("تمت إزالة المرفق"); onChanged?.();
+    } catch (e) { setAttachmentMessage(e instanceof Error ? e.message : "تعذر إزالة المرفق"); }
+    finally { setAttachmentBusy(false); }
+  };
+
   const submit = () => {
     if (!editing && !lessonId) return toast.error(tr("teacher.188"));
     if (!title.trim()) return toast.error(tr("teacher.189"));
@@ -722,6 +734,7 @@ export function HomeworkDialog({
           <div className="rounded-lg border border-dashed p-3 space-y-2">
             <Label className="text-xs text-muted-foreground">مرفق الواجب (PDF، DOCX، PPTX، ZIP — حتى 25MB)</Label>
             <Input type="file" accept=".pdf,.docx,.pptx,.zip" onChange={(e) => setAttachmentFile(e.target.files?.[0] ?? null)} disabled={attachmentBusy || (editing && homework?.status === "CLOSED")} />
+            {homework?.attachment && <div className="flex items-center gap-2 text-xs"><a className="underline text-primary truncate" href={`/api/media/${homework.attachment.id}`} target="_blank" rel="noreferrer">{homework.attachment.originalName || "تحميل المرفق"}</a><span className="text-muted-foreground">{homework.attachment.mimeType || ""} · {homework.attachment.sizeBytes ? `${(homework.attachment.sizeBytes / 1024 / 1024).toFixed(2)} MB` : ""}</span><Button type="button" variant="ghost" size="sm" disabled={attachmentBusy || homework.status === "CLOSED"} onClick={removeAttachment}>إزالة المرفق</Button></div>}
             {attachmentFile && <p className="text-xs text-muted-foreground truncate">{attachmentFile.name} · {(attachmentFile.size / 1024 / 1024).toFixed(2)} MB</p>}
             {attachmentMessage && <p className="text-xs text-emerald-700">{attachmentMessage}</p>}
           </div>
