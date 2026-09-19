@@ -181,7 +181,15 @@ async function main() {
     { kind: "lesson", id: "cm123abc" },
     "A5: surrounding whitespace is trimmed"
   );
-  eq(DL.DEEP_LINK_KINDS.slice().sort(), ["homework", "lesson", "quiz", "video"], "A6: exactly the four kinds exist");
+  // Phase F added the two live-session kinds (`live:<sessionId>` and
+  // `absence:<caseId>`), so the closed set is now six. The guarantee this case
+  // pins is unchanged: the set is CLOSED and every member is listed exactly
+  // once — an unknown kind still fails closed in A7.
+  eq(
+    DL.DEEP_LINK_KINDS.slice().sort(),
+    ["absence", "homework", "lesson", "live", "quiz", "video"],
+    "A6: exactly the six kinds exist (Phase F added live/absence)"
+  );
 
   section("B. parseDeepLink — everything else is null (fail closed)");
 
@@ -537,7 +545,15 @@ async function main() {
   // unchanged: Open only for well-formed, role-legal links, navigation
   // through the shared resolver, localized button.
   const panel = read("src/components/shared/notifications-panel.tsx");
-  pinned(panel, /resolveDeepLink\(n\.link\)/, "I1: notifications render Open only for well-formed links");
+  // Phase F: the panel resolves the link WITH the reader's role, because the
+  // same `live:`/`absence:` link has a different legal landing view per role
+  // (student schedule, teacher workspace, admin console, parent absences). The
+  // contract is unchanged: only a well-formed AND role-legal link renders Open.
+  pinned(
+    panel,
+    /resolveDeepLinkForRole\(n\.link, user\.role\)/,
+    "I1: notifications render Open only for well-formed, role-legal links"
+  );
   pinned(panel, /navigateDeepLink\(n\.link, useApp\.getState\(\)\)/, "I2: Open navigates through the shared resolver");
   pinned(panel, /notif\.open/, "I3: the Open button is localized");
   const dash = read("src/components/student/student-dashboard.tsx");

@@ -222,7 +222,14 @@ async function main() {
   section("A. notification-links: valid mints, total rejection corpus");
   // ==========================================================================
   ok(NL.sessionPublicationLink("abc123") === "lesson:abc123", "A: session link mints lesson:<id>");
-  eq([...(NL.DEEP_LINK_KINDS ?? [])].sort(), ["homework", "lesson", "quiz", "video"], "A: the validated scheme is exactly the four kinds");
+  // Phase F added `live:` and `absence:` (the live-session lifecycle), so the
+  // CLOSED set is six kinds. The guarantee is unchanged: every kind is listed
+  // exactly once and anything else still fails closed below.
+  eq(
+    [...(NL.DEEP_LINK_KINDS ?? [])].sort(),
+    ["absence", "homework", "lesson", "live", "quiz", "video"],
+    "A: the validated scheme is exactly the six kinds (four + Phase F live/absence)"
+  );
   ok(NL.mintNotificationLink("quiz", "Q9") === "quiz:Q9", "A: quiz link mints");
   ok(NL.mintNotificationLink("video", "V-1_x") === "video:V-1_x", "A: id alphabet - _ kept");
   ok(NL.mintNotificationLink("homework", "h1") === "homework:h1", "A: homework link mints");
@@ -642,7 +649,15 @@ async function main() {
   //     (stale / legacy / ineligible rows fail safe to informational).
   const panelSrc = read("src/components/shared/notifications-panel.tsx");
   pinned(panelSrc, /navigateDeepLink\(n\.link, useApp\.getState\(\)\)/, "H: the notification centre drives the Phase 16 deep link on click");
-  pinned(panelSrc, /resolveDeepLink\(n\.link\)/, "H: Open button only renders for a parseable link (stale/ineligible rows fail safe)");
+  // Phase F: resolution is role-aware (the same `live:` link is legal for a
+  // student, a teacher and an admin, each on its own view). The behaviour this
+  // case protects is unchanged — only a parseable AND role-legal link renders
+  // Open; every other row stays informational.
+  pinned(
+    panelSrc,
+    /resolveDeepLinkForRole\(n\.link, user\.role\)/,
+    "H: Open button only renders for a parseable, role-legal link (stale/ineligible rows fail safe)"
+  );
   pinned(panelSrc, /isViewForRole\(target\.view, user\.role\)/, "H: deep link must ALSO be legal for the current role before it offers navigation");
   const dashSrc = read("src/components/student/student-dashboard.tsx");
   pinned(dashSrc, /NotificationsPanel/, "H: the student surface consumes the shared notification panel (one definition, not a copy)");

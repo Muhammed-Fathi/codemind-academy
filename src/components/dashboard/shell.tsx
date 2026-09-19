@@ -55,6 +55,7 @@ import {
   CalendarDays,
   Library,
   ClipboardList,
+  CalendarClock,
   Server,
   FileQuestion,
   Home,
@@ -77,6 +78,8 @@ const NAV_BY_ROLE: Record<string, NavItem[]> = {
     { key: "student-exam", label: "shell.028", icon: Timer },
     { key: "student-bookmarks", label: "shell.029", icon: Bookmark },
     { key: "student-scheduler", label: "shell.030", icon: CalendarDays },
+    { key: "student-sessions", label: "shell.f1", icon: Presentation },
+    { key: "student-absences", label: "shell.f2", icon: ClipboardList },
     { key: "student-referral", label: "shell.031", icon: Gift },
     { key: "student-progress", label: "shell.002", icon: Trophy },
     { key: "student-leaderboard", label: "shell.032", icon: Crown },
@@ -88,12 +91,14 @@ const NAV_BY_ROLE: Record<string, NavItem[]> = {
   PARENT: [
     { key: "parent-dashboard", label: "shell.027", icon: LayoutDashboard },
     { key: "parent-report", label: "shell.006", icon: FileText },
+    { key: "parent-absences", label: "shell.f2", icon: ClipboardList },
     { key: "parent-notifications", label: "shell.005", icon: Bell },
   ],
   TEACHER: [
     { key: "teacher-dashboard", label: "shell.027", icon: LayoutDashboard },
     { key: "teacher-sessions", label: "shell.043", icon: Presentation },
     { key: "teacher-attendance", label: "shell.034", icon: CalendarDays },
+    { key: "teacher-live-sessions", label: "shell.f3", icon: Video },
     { key: "teacher-quizzes", label: "shell.035", icon: Trophy },
     { key: "teacher-homework", label: "shell.004", icon: ClipboardList },
     { key: "teacher-notifications", label: "shell.005", icon: Bell },
@@ -114,6 +119,7 @@ const NAV_BY_ROLE: Record<string, NavItem[]> = {
     { key: "admin-coupons", label: "shell.013", icon: Ticket },
     { key: "admin-notifications", label: "shell.005", icon: Bell },
     { key: "admin-settings", label: "shell.015", icon: Settings },
+    { key: "admin-live-sessions", label: "shell.f4", icon: CalendarClock },
   ],
 };
 

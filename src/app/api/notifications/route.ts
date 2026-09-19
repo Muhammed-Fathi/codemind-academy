@@ -9,6 +9,21 @@ export async function GET() {
     where: { userId: user.id },
     orderBy: { createdAt: "desc" },
     take: 50,
+    // Phase F — `sessionId` is the STRUCTURED part of a session
+    // notification: the client renders the Join / Copy-link actions for it and
+    // resolves the URL through the authorized join endpoint. The meeting URL
+    // itself is never part of a notification (neither stored nor returned).
+    // `dedupeKey` is intentionally NOT returned: it is delivery bookkeeping.
+    select: {
+      id: true,
+      type: true,
+      title: true,
+      message: true,
+      isRead: true,
+      link: true,
+      sessionId: true,
+      createdAt: true,
+    },
   });
   return ok({ notifications });
 }

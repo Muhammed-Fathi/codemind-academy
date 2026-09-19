@@ -20,9 +20,16 @@ async function main() {
   ok(mig.includes("senderPhone") && mig.includes("requestedGroupId") && mig.includes("requestedPlanId") && mig.includes("rejectionReason") && mig.includes("reviewedAt") && mig.includes("reviewedByUserId"), "migration has all 6 ledger columns");
   ok(mig.includes("Payment_status_createdAt_idx") && mig.includes("Payment_subscriptionId_status_idx"), "migration has 2 indexes");
   const migs = fs.readdirSync(path.join(REPO,"prisma/migrations")).filter(d=> fs.existsSync(path.join(REPO,"prisma/migrations",d,"migration.sql"))).sort();
-  ok(migs.length === 12, `12 migrations total (found ${migs.length}) — Phase 26B added the group-audience migration, Phase 26D the quiz attempt-architecture migration`);
+  ok(migs.length === 13, `13 migrations total (found ${migs.length}) — Phase 26B added the group-audience migration, Phase 26D the quiz attempt-architecture migration, Phase F the live-session lifecycle`);
   ok(migs[9]==="20260914120000_payment_lifecycle_redesign", "ledger migration still applies after its predecessors");
-  ok(migs[migs.length-1]==="20260915180000_phase26d_quiz_attempt_architecture", "Phase 26D quiz attempt-architecture migration sorts last (forward-only)");
+  // The PR4 gate protects the LEDGER ORDER of its own era, not the tail of the
+  // repository forever: Phase F (live sessions) legitimately sorts after 26D.
+  ok(
+    migs.indexOf("20260915180000_phase26d_quiz_attempt_architecture") ===
+      migs.indexOf("20260919120000_phase_f_live_session_lifecycle") - 1,
+    "Phase 26D quiz attempt-architecture migration still sorts directly before Phase F (forward-only history)"
+  );
+  ok(migs[migs.length-1]==="20260919120000_phase_f_live_session_lifecycle", "Phase F live-session migration sorts last");
   ok(migs.includes("20260915120000_phase26b_group_track_scope"), "the Phase 26B group-audience migration is still present and in order");
   // no new migration beyond PR1 for PR4
   ok(!exists("prisma/migrations/20260915000000_phase25_pr4") && !exists("prisma/migrations/20260914130000_phase25_pr4"), "no PR4 migration file (PR4 is operational, not schema)");
@@ -120,7 +127,15 @@ async function main() {
   ok(eCashCount >=1, "eCash in brand");
 
   section("9. Migration count pin");
-  ok(migs.length === 12, "migration count still 12 (nothing added since the Phase 26D quiz attempt-architecture migration)");
+  // The PR4 gate's intent is "no UNAUTHORIZED schema change since 26D". Phase F
+  // (live-session lifecycle) is authorized and additive, so the pin moves by
+  // exactly one and the PR4-relevant files are asserted unchanged below.
+  ok(migs.length === 13, "migration count is 13 (Phase 26D + the authorized additive Phase F live-session migration)");
+  ok(
+    migs[migs.length - 1] === "20260919120000_phase_f_live_session_lifecycle" &&
+      fs.readFileSync(path.join(REPO, "prisma/migrations", migs[migs.length - 1], "migration.sql"), "utf8").includes("CREATE TABLE \"AbsenceReview\""),
+    "the only new migration is the additive Phase F live-session lifecycle"
+  );
 
   section("10. Operational safety — secret handling and migration drift");
   {

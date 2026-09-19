@@ -117,7 +117,29 @@ const BASE_SKIP_COLUMNS = {
     "rejectionReason",
     "reviewedAt",
     "reviewedByUserId",
+  ],  // Phase F — added by 20260919120000_phase_f_live_session_lifecycle.
+  LiveSession: [
+    "createdByUserId",
+    "statusChangedAt",
+    "statusChangedByUserId",
+    "conductedAt",
+    "endedAt",
+    "cancelledAt",
+    "cancelledByUserId",
+    "cancelReason",
+    "rescheduleCount",
+    "lastRescheduledAt",
+    "rescheduledByUserId",
+    "originalStartAt",
+    "substituteTeacherId",
+    "substituteAssignedAt",
+    "substituteAssignedByUserId",
+    "attendanceFinalizedAt",
+    "attendanceFinalizedByUserId",
+    "updatedAt",
   ],
+  Attendance: ["markedByUserId", "markedAt", "updatedAt"],
+  Notification: ["sessionId", "dedupeKey"],
 };
 
 const BASE_SKIP_TABLES = new Set([
@@ -140,6 +162,10 @@ const BASE_SKIP_TABLES = new Set([
   "TeacherActivationToken",
   // Phase 26D — created by its own migration.
   "QuizRetryGrant",
+  "AttendanceCorrection",
+  "AbsenceReview",
+  "AbsenceReasonSubmission",
+  "AbsenceHold",
 ]);
 
 function parsePrismaModels(schemaPath = SCHEMA) {

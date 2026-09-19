@@ -4544,8 +4544,10 @@ function NotificationsView() {
             ) : !data || data.notifications.length === 0 ? (
               <EmptyBlock message={tr("admin.256")} />
             ) : (
-              <ScrollArea className="max-h-[60vh]">
-                <div className="space-y-2">
+              <ScrollArea className="max-h-[min(52dvh,calc(100dvh-22rem))] min-h-0 overscroll-contain">
+                {/* `pb-1` guarantees the last row's bottom edge is reachable
+                    even with the Radix corner/scrollbar overlay. */}
+                <div className="space-y-2 pb-1 pe-1">
                   {data.notifications.map((n) => (
                     <div key={n.id} className="rounded-lg border p-3">
                       <div className="flex items-start justify-between gap-2">

@@ -33,7 +33,8 @@
 import * as React from "react";
 import { useT } from "@/lib/i18n";
 import { useApp } from "@/lib/store";
-import { navigateDeepLink, resolveDeepLink } from "@/lib/deep-link";
+import { navigateDeepLink, resolveDeepLinkForRole } from "@/lib/deep-link";
+import { SessionLinkActions } from "@/components/shared/session-link-actions";
 import { isViewForRole } from "@/lib/view-roles";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -65,8 +66,20 @@ type NotifItem = {
   message: string;
   isRead: boolean;
   link: string | null;
+  /** Phase F — the STRUCTURED session payload. When set, the row renders the
+   *  Join / Copy-link actions, resolved server-side and only inside the join
+   *  window (the meeting URL is never carried in the notification itself). */
+  sessionId?: string | null;
   createdAt: string;
 };
+
+/** Phase F session events that carry the join/copy actions. */
+const SESSION_LINK_TYPES = new Set([
+  "SESSION_LINK",
+  "SESSION_SCHEDULED",
+  "SESSION_RESCHEDULED",
+  "SESSION_CANCELLED",
+]);
 
 function relativeTime(dateStr: string, t: (k: string, p?: Record<string, unknown>) => string): string {
   const d = new Date(dateStr).getTime();
@@ -160,7 +173,10 @@ export function NotificationsPanel({
    */
   const targetViewFor = (n: NotifItem): string | null => {
     if (!user) return null;
-    const target = resolveDeepLink(n.link);
+    // Phase F: `live:` / `absence:` resolve per ROLE (student schedule,
+    // teacher workspace, admin console, parent absences). Any other kind keeps
+    // the historical student-first mapping.
+    const target = resolveDeepLinkForRole(n.link, user.role);
     if (!target) return null;
     return isViewForRole(target.view, user.role) ? target.view : null;
   };
@@ -240,8 +256,32 @@ export function NotificationsPanel({
               </p>
             </div>
           ) : (
-            <ScrollArea className="max-h-[70vh] overflow-y-auto">
-              <ul>
+            /*
+              BUG T — "All Notifications" vertical overflow.
+              *
+              * The previous wrapper bounded ONLY the Radix root
+              * (`max-h-[70vh] overflow-y-auto`). The root is `overflow-hidden`
+              * (see ui/scroll-area.tsx) and the real scroller is the inner
+              * Viewport, so the class was inert: with more rows than fitted,
+              * the list was clipped, the bottom rows' actions were
+              * unreachable, and the wheel scrolled the PAGE behind the panel
+              * instead (the reported symptom).
+              *
+              * The fix is the house pattern already used by
+              * session-open-dialog.tsx:
+              *   * a height that is bounded by the VIEWPORT, not by a magic
+              *     percentage — `min(60dvh, calc(100dvh - 15rem))` keeps the
+              *     header, the bell and the page chrome visible, so the list
+              *     can never be taller than the screen (no clipped bottom, on
+              *     a laptop or a short desktop window);
+              *   * `overscroll-contain`, so reaching the end of the list does
+              *     not trap or hijack the page scroll (no body-scroll trap);
+              *   * `min-h-0` in the flex chain and bottom padding on the list,
+              *     so the LAST row's action button is fully reachable and is
+              *     never cut by the scrollbar/corner of the Radix root.
+              */
+            <ScrollArea className="max-h-[min(60dvh,calc(100dvh-15rem))] min-h-0 overscroll-contain">
+              <ul className="pb-1">
                 {items.map((n) => {
                   const targetView = targetViewFor(n);
                   return (
@@ -286,6 +326,19 @@ export function NotificationsPanel({
                           {relativeTime(n.createdAt, t)}
                         </div>
                       </button>
+                      {/* Phase F — a session notification is STRUCTURED, not a
+                          text blob: the student gets the real join/copy
+                          actions, gated server-side by the join window. */}
+                      {n.sessionId && SESSION_LINK_TYPES.has(n.type) && (
+                        <div className="shrink-0 self-center">
+                          <SessionLinkActions
+                            sessionId={n.sessionId}
+                            status={n.type === "SESSION_CANCELLED" ? "CANCELLED" : "SCHEDULED"}
+                            state={{ allowed: false, denialCode: null }}
+                            size="compact"
+                          />
+                        </div>
+                      )}
                       {targetView && (
                         <Button
                           variant="ghost"

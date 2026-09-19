@@ -30,7 +30,9 @@ CREATE TYPE "ExamType" AS ENUM ('UNIT', 'MONTHLY', 'MOCK', 'FINAL');
 CREATE TYPE "SubscriptionStatus" AS ENUM ('PENDING', 'ACTIVE', 'EXPIRED', 'CANCELLED');
 CREATE TYPE "PaymentMethod" AS ENUM ('INSTAPAY', 'VODAFONE_CASH', 'ETISALAT_CASH');
 CREATE TYPE "PaymentStatus" AS ENUM ('PENDING', 'APPROVED', 'REJECTED', 'EXPIRED');
-CREATE TYPE "NotificationType" AS ENUM ('NEW_LESSON', 'NEW_QUIZ', 'QUIZ_RESULT', 'NEW_HOMEWORK', 'HOMEWORK_DEADLINE', 'UPCOMING_SESSION', 'LOW_ATTENDANCE', 'MONTHLY_REPORT', 'SUBSCRIPTION_EXPIRATION', 'ANNOUNCEMENT', 'PAYMENT_APPROVED', 'PAYMENT_REJECTED');
+CREATE TYPE "NotificationType" AS ENUM ('NEW_LESSON', 'NEW_QUIZ', 'QUIZ_RESULT', 'NEW_HOMEWORK', 'HOMEWORK_DEADLINE', 'UPCOMING_SESSION', 'LOW_ATTENDANCE', 'MONTHLY_REPORT', 'SUBSCRIPTION_EXPIRATION', 'ANNOUNCEMENT', 'PAYMENT_APPROVED', 'PAYMENT_REJECTED', 'SESSION_SCHEDULED', 'SESSION_LINK', 'SESSION_RESCHEDULED', 'SESSION_CANCELLED', 'ABSENCE_FINALIZED', 'ABSENCE_REASON_SUBMITTED', 'ABSENCE_EXCUSED', 'ABSENCE_UNEXCUSED', 'ABSENCE_REMINDER');
+CREATE TYPE "AbsenceReviewStatus" AS ENUM ('PENDING_REASON', 'PENDING_REVIEW', 'EXCUSED', 'UNEXCUSED', 'NO_ACTION_REQUIRED');
+CREATE TYPE "AbsenceHoldStatus" AS ENUM ('ACTIVE', 'RESOLVED');
 
 -- 2. Tables, parents before children (migration order).
 CREATE TABLE "Coupon" (
@@ -447,8 +449,11 @@ CREATE TABLE "Notification" (
   "message" TEXT NOT NULL,
   "isRead" BOOLEAN NOT NULL DEFAULT FALSE,
   "link" TEXT,
+  "sessionId" TEXT,
+  "dedupeKey" TEXT,
   "createdAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT "Notification_pkey" PRIMARY KEY ("id"),
+  CONSTRAINT "Notification_userId_dedupeKey_key" UNIQUE ("userId", "dedupeKey"),
   CONSTRAINT "Notification_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON UPDATE CASCADE ON DELETE CASCADE
 );
 
@@ -550,9 +555,28 @@ CREATE TABLE "LiveSession" (
   "recordingUrl" TEXT,
   "status" "SessionStatus" NOT NULL DEFAULT 'SCHEDULED',
   "createdAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "createdByUserId" TEXT,
+  "statusChangedAt" TIMESTAMPTZ(3),
+  "statusChangedByUserId" TEXT,
+  "conductedAt" TIMESTAMPTZ(3),
+  "endedAt" TIMESTAMPTZ(3),
+  "cancelledAt" TIMESTAMPTZ(3),
+  "cancelledByUserId" TEXT,
+  "cancelReason" TEXT,
+  "rescheduleCount" INTEGER NOT NULL DEFAULT 0,
+  "lastRescheduledAt" TIMESTAMPTZ(3),
+  "rescheduledByUserId" TEXT,
+  "originalStartAt" TIMESTAMPTZ(3),
+  "substituteTeacherId" TEXT,
+  "substituteAssignedAt" TIMESTAMPTZ(3),
+  "substituteAssignedByUserId" TEXT,
+  "attendanceFinalizedAt" TIMESTAMPTZ(3),
+  "attendanceFinalizedByUserId" TEXT,
+  "updatedAt" TIMESTAMPTZ(3),
   CONSTRAINT "LiveSession_pkey" PRIMARY KEY ("id"),
   CONSTRAINT "LiveSession_lessonId_fkey" FOREIGN KEY ("lessonId") REFERENCES "Lesson" ("id") ON UPDATE CASCADE,
   CONSTRAINT "LiveSession_teacherId_fkey" FOREIGN KEY ("teacherId") REFERENCES "Teacher" ("id") ON UPDATE CASCADE,
+  CONSTRAINT "LiveSession_substituteTeacherId_fkey" FOREIGN KEY ("substituteTeacherId") REFERENCES "Teacher" ("id") ON UPDATE CASCADE ON DELETE SET NULL,
   CONSTRAINT "LiveSession_groupId_fkey" FOREIGN KEY ("groupId") REFERENCES "Group" ("id") ON UPDATE CASCADE ON DELETE CASCADE
 );
 
@@ -586,10 +610,82 @@ CREATE TABLE "Attendance" (
   "status" "AttendanceStatus" NOT NULL DEFAULT 'PRESENT',
   "note" TEXT,
   "createdAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "markedByUserId" TEXT,
+  "markedAt" TIMESTAMPTZ(3),
+  "updatedAt" TIMESTAMPTZ(3),
   CONSTRAINT "Attendance_pkey" PRIMARY KEY ("id"),
   CONSTRAINT "Attendance_studentId_sessionId_key" UNIQUE ("studentId", "sessionId"),
   CONSTRAINT "Attendance_sessionId_fkey" FOREIGN KEY ("sessionId") REFERENCES "LiveSession" ("id") ON UPDATE CASCADE ON DELETE CASCADE,
   CONSTRAINT "Attendance_studentId_fkey" FOREIGN KEY ("studentId") REFERENCES "Student" ("id") ON UPDATE CASCADE ON DELETE CASCADE
+);
+
+CREATE TABLE "AbsenceReview" (
+  "id" TEXT NOT NULL,
+  "attendanceId" TEXT NOT NULL,
+  "studentId" TEXT NOT NULL,
+  "sessionId" TEXT NOT NULL,
+  "groupId" TEXT NOT NULL,
+  "lessonId" TEXT,
+  "teacherId" TEXT,
+  "status" "AbsenceReviewStatus" NOT NULL DEFAULT 'PENDING_REASON',
+  "reason" TEXT,
+  "reasonSubmittedAt" TIMESTAMPTZ(3),
+  "reasonSubmittedByUserId" TEXT,
+  "reasonSubmittedByRole" TEXT,
+  "decidedByUserId" TEXT,
+  "decidedAt" TIMESTAMPTZ(3),
+  "decisionNote" TEXT,
+  "createdAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMPTZ(3),
+  CONSTRAINT "AbsenceReview_pkey" PRIMARY KEY ("id"),
+  CONSTRAINT "AbsenceReview_attendanceId_key" UNIQUE ("attendanceId"),
+  CONSTRAINT "AbsenceReview_attendanceId_fkey" FOREIGN KEY ("attendanceId") REFERENCES "Attendance" ("id") ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT "AbsenceReview_studentId_fkey" FOREIGN KEY ("studentId") REFERENCES "Student" ("id") ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT "AbsenceReview_sessionId_fkey" FOREIGN KEY ("sessionId") REFERENCES "LiveSession" ("id") ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT "AbsenceReview_groupId_fkey" FOREIGN KEY ("groupId") REFERENCES "Group" ("id") ON UPDATE CASCADE ON DELETE CASCADE
+);
+
+CREATE TABLE "AbsenceHold" (
+  "id" TEXT NOT NULL,
+  "absenceReviewId" TEXT NOT NULL,
+  "studentId" TEXT NOT NULL,
+  "sessionId" TEXT NOT NULL,
+  "status" "AbsenceHoldStatus" NOT NULL DEFAULT 'ACTIVE',
+  "reason" TEXT,
+  "createdAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "resolvedAt" TIMESTAMPTZ(3),
+  "resolvedByUserId" TEXT,
+  "resolution" TEXT,
+  CONSTRAINT "AbsenceHold_pkey" PRIMARY KEY ("id"),
+  CONSTRAINT "AbsenceHold_absenceReviewId_key" UNIQUE ("absenceReviewId"),
+  CONSTRAINT "AbsenceHold_absenceReviewId_fkey" FOREIGN KEY ("absenceReviewId") REFERENCES "AbsenceReview" ("id") ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT "AbsenceHold_studentId_fkey" FOREIGN KEY ("studentId") REFERENCES "Student" ("id") ON UPDATE CASCADE ON DELETE CASCADE
+);
+
+CREATE TABLE "AbsenceReasonSubmission" (
+  "id" TEXT NOT NULL,
+  "absenceReviewId" TEXT NOT NULL,
+  "reason" TEXT NOT NULL,
+  "submittedByUserId" TEXT NOT NULL,
+  "submittedByRole" TEXT NOT NULL,
+  "createdAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "AbsenceReasonSubmission_pkey" PRIMARY KEY ("id"),
+  CONSTRAINT "AbsenceReasonSubmission_absenceReviewId_fkey" FOREIGN KEY ("absenceReviewId") REFERENCES "AbsenceReview" ("id") ON UPDATE CASCADE ON DELETE CASCADE
+);
+
+CREATE TABLE "AttendanceCorrection" (
+  "id" TEXT NOT NULL,
+  "attendanceId" TEXT NOT NULL,
+  "sessionId" TEXT NOT NULL,
+  "studentId" TEXT NOT NULL,
+  "previousStatus" "AttendanceStatus" NOT NULL,
+  "newStatus" "AttendanceStatus" NOT NULL,
+  "reason" TEXT NOT NULL,
+  "correctedByUserId" TEXT NOT NULL,
+  "correctedAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "AttendanceCorrection_pkey" PRIMARY KEY ("id"),
+  CONSTRAINT "AttendanceCorrection_attendanceId_fkey" FOREIGN KEY ("attendanceId") REFERENCES "Attendance" ("id") ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT "AttendanceCorrection_sessionId_fkey" FOREIGN KEY ("sessionId") REFERENCES "LiveSession" ("id") ON UPDATE CASCADE ON DELETE CASCADE
 );
 
 CREATE TABLE "Enrollment" (
@@ -921,6 +1017,7 @@ CREATE INDEX "User_role_idx" ON "User" ("role");
 CREATE INDEX "User_status_idx" ON "User" ("status");
 CREATE INDEX "AuditLog_userId_idx" ON "AuditLog" ("userId");
 CREATE INDEX "Notification_userId_isRead_idx" ON "Notification" ("userId", "isRead");
+CREATE INDEX "Notification_sessionId_idx" ON "Notification" ("sessionId");
 CREATE INDEX "PasswordResetToken_userId_usedAt_idx" ON "PasswordResetToken" ("userId", "usedAt");
 CREATE INDEX "PasswordResetToken_expiresAt_idx" ON "PasswordResetToken" ("expiresAt");
 CREATE INDEX "SecurityEvent_userId_createdAt_idx" ON "SecurityEvent" ("userId", "createdAt");
@@ -929,10 +1026,23 @@ CREATE INDEX "Group_courseId_idx" ON "Group" ("courseId");
 CREATE INDEX "Group_trackScope_idx" ON "Group" ("trackScope");
 CREATE INDEX "LiveSession_groupId_idx" ON "LiveSession" ("groupId");
 CREATE INDEX "LiveSession_startAt_idx" ON "LiveSession" ("startAt");
+CREATE INDEX "LiveSession_teacherId_startAt_idx" ON "LiveSession" ("teacherId", "startAt");
+CREATE INDEX "LiveSession_substituteTeacherId_idx" ON "LiveSession" ("substituteTeacherId");
+CREATE INDEX "LiveSession_status_startAt_idx" ON "LiveSession" ("status", "startAt");
 CREATE INDEX "Student_schoolType_idx" ON "Student" ("schoolType");
 CREATE INDEX "Student_groupId_idx" ON "Student" ("groupId");
 CREATE INDEX "Student_batchId_idx" ON "Student" ("batchId");
 CREATE INDEX "Attendance_studentId_idx" ON "Attendance" ("studentId");
+CREATE INDEX "Attendance_sessionId_idx" ON "Attendance" ("sessionId");
+CREATE INDEX "AbsenceReview_status_idx" ON "AbsenceReview" ("status");
+CREATE INDEX "AbsenceReview_studentId_status_idx" ON "AbsenceReview" ("studentId", "status");
+CREATE INDEX "AbsenceReview_sessionId_idx" ON "AbsenceReview" ("sessionId");
+CREATE INDEX "AbsenceReview_groupId_idx" ON "AbsenceReview" ("groupId");
+CREATE INDEX "AbsenceHold_studentId_status_idx" ON "AbsenceHold" ("studentId", "status");
+CREATE INDEX "AbsenceHold_sessionId_idx" ON "AbsenceHold" ("sessionId");
+CREATE INDEX "AbsenceReasonSubmission_absenceReviewId_createdAt_idx" ON "AbsenceReasonSubmission" ("absenceReviewId", "createdAt");
+CREATE INDEX "AttendanceCorrection_attendanceId_idx" ON "AttendanceCorrection" ("attendanceId");
+CREATE INDEX "AttendanceCorrection_sessionId_idx" ON "AttendanceCorrection" ("sessionId");
 CREATE INDEX "Enrollment_courseId_trackId_status_idx" ON "Enrollment" ("courseId", "trackId", "status");
 CREATE INDEX "ExamAttempt_studentId_examType_idx" ON "ExamAttempt" ("studentId", "examType");
 CREATE INDEX "ExamAttempt_finishedAt_idx" ON "ExamAttempt" ("finishedAt");

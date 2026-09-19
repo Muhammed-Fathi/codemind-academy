@@ -61,6 +61,7 @@ const OLD_PG_SCHEMA = path.join(REPO, "prisma", "schema.postgresql.prisma");
 const BASELINE_SQL = path.join(REPO, "scripts", "db", "postgres-baseline.sql");
 const CHECKER = path.join(REPO, "scripts", "db", "check-pg-migration-state.mjs");
 const MIG_26D = "20260915180000_phase26d_quiz_attempt_architecture";
+const MIG_PHASE_F = "20260919120000_phase_f_live_session_lifecycle";
 
 let pass = 0;
 const failures = [];
@@ -90,9 +91,12 @@ function partA() {
   // A1 — layout contract
   const sqliteMigrations = listMigrationDirs(SQLITE_MIGRATIONS);
   const pgMigrations = listMigrationDirs(PG_MIGRATIONS);
-  ok(sqliteMigrations.length === 12, `SQLite migrations dir carries all 12 historical migrations (got ${sqliteMigrations.length})`);
-  ok(pgMigrations.length === 2, `PG migrations dir carries exactly 0_init + Phase 26D (got ${pgMigrations.length})`);
-  ok(pgMigrations[0] === "0_init" && pgMigrations[1] === MIG_26D, "PG migrations are 0_init then Phase 26D, in order");
+  ok(sqliteMigrations.length === 13, `SQLite migrations dir carries all 13 historical migrations (got ${sqliteMigrations.length})`);
+  ok(pgMigrations.length === 3, `PG migrations dir carries exactly 0_init + Phase 26D + Phase F (got ${pgMigrations.length})`);
+  ok(
+    pgMigrations[0] === "0_init" && pgMigrations[1] === MIG_26D && pgMigrations[2] === MIG_PHASE_F,
+    "PG migrations are 0_init, Phase 26D, Phase F, in order"
+  );
   ok(fs.existsSync(PG_SCHEMA), "prisma/postgres/schema.prisma exists (PG schema owns its own directory)");
   ok(!fs.existsSync(OLD_PG_SCHEMA), "prisma/schema.postgresql.prisma does NOT exist (must never share prisma/ with SQLite again)");
   ok(/provider\s*=\s*"postgresql"/.test(read(PG_SCHEMA)), "PG schema targets postgresql");
@@ -108,6 +112,11 @@ function partA() {
     !fs.existsSync(path.join(PG_MIGRATIONS, MIG_26D, "migration.sql")) === false &&
     read(path.join(PG_MIGRATIONS, MIG_26D, "migration.sql")) !== read(path.join(SQLITE_MIGRATIONS, MIG_26D, "migration.sql")),
     "the PG and SQLite editions of Phase 26D are distinct files (provider-specific SQL)"
+  );
+  ok(
+    !fs.existsSync(path.join(PG_MIGRATIONS, MIG_PHASE_F, "migration.sql")) === false &&
+    read(path.join(PG_MIGRATIONS, MIG_PHASE_F, "migration.sql")) !== read(path.join(SQLITE_MIGRATIONS, MIG_PHASE_F, "migration.sql")),
+    "the PG and SQLite editions of Phase F are distinct files (provider-specific SQL)"
   );
   const pgSchemaHeader = read(PG_SCHEMA).split("\n").slice(0, 35).join("\n");
   ok(/WHY THIS FILE LIVES IN prisma\/postgres\//.test(pgSchemaHeader), "PG schema header documents the directory contract");
@@ -132,9 +141,11 @@ function partA() {
     "20260914120000_payment_lifecycle_redesign": "6eb880cf2b067593c53ae903b05b96324ea759c7dc1a41302b3c6ce39d78e636",
     "20260915120000_phase26b_group_track_scope": "06cc038d4fc0f23b6fe63724f944f436c4007fc94ad4d04759c728bd893a4b39",
     "20260915180000_phase26d_quiz_attempt_architecture": "be10b56f4539f74b5ee1da28f52a97270ba656d8be87b78f7ddbb4ab39c92b4f",
+    "20260919120000_phase_f_live_session_lifecycle": "480a5327e1ebeb488b2723ab4e263778530d141577315d38ac48cf3728f94ac3",
     // PostgreSQL history (frozen from this commit on):
     "0_init": "c7f5d3fa76931d02e48c5cd2c4bfdb972c0f25e528e3c0c116736d3729cefa80",
     "PG:20260915180000_phase26d_quiz_attempt_architecture": "2c1bdde167f7dfff9b79a61f116da3dbd93b13c6aa27825404a79312ec7be104",
+    "PG:20260919120000_phase_f_live_session_lifecycle": "186f921f184b21bafc5c65ffa514bd526dd614f21227a4afd2462ca5d971d388",
   };
   for (const [name, checksum] of Object.entries(PINNED)) {
     const isPg = name.startsWith("PG:") || name === "0_init";
@@ -169,8 +180,17 @@ function partA() {
 
   // A4 — structural convergence: 0_init + PG 26D == postgres-baseline.sql.
   const parseInventory = (sql) => {
-    const inv = { enums: new Set(), tables: new Map(), indexes: new Set(), constraints: new Set() };
+    const inv = { enums: new Set(), enumAdds: new Map(), tables: new Map(), indexes: new Set(), constraints: new Set() };
     for (const m of sql.matchAll(/CREATE TYPE "([A-Za-z0-9_]+)" AS ENUM \(([^)]*)\);/g)) inv.enums.add(`${m[1]}(${m[2].split(",").length})`);
+    // Phase F appends enum values instead of re-creating the type (a type that
+    // already exists on production can only grow). Every
+    // `ALTER TYPE "X" ADD VALUE [IF NOT EXISTS] 'v'` is recorded as a DELTA and
+    // folded into the enum count by `merge`, so one file may contribute a
+    // CREATE TYPE and a later file may only add values to it.
+    inv.enumAdds = new Map();
+    for (const m of sql.matchAll(/ALTER TYPE "([A-Za-z0-9_]+)" ADD VALUE (?:IF NOT EXISTS )?'([^']+)'/g)) {
+      inv.enumAdds.set(m[1], (inv.enumAdds.get(m[1]) || 0) + 1);
+    }
     for (const m of sql.matchAll(/CREATE TABLE "([A-Za-z0-9_]+)" \(([\s\S]*?)\n\);/g)) {
       const cols = [];
       for (const line of m[2].split("\n")) {
@@ -182,7 +202,7 @@ function partA() {
       inv.tables.set(m[1], cols);
       for (const c of m[2].matchAll(/CONSTRAINT "([A-Za-z0-9_]+)"/g)) inv.constraints.add(c[1]);
     }
-    for (const m of sql.matchAll(/CREATE (?:UNIQUE )?INDEX "([A-Za-z0-9_]+)"/g)) inv.indexes.add(m[1]);
+    for (const m of sql.matchAll(/CREATE (?:UNIQUE )?INDEX (?:IF NOT EXISTS )?"([A-Za-z0-9_]+)"/g)) inv.indexes.add(m[1]);
     // ALTER TABLE ... ADD COLUMN "x" <type>  (26D edition) counts as a column of that table
     for (const m of sql.matchAll(/ALTER TABLE "([A-Za-z0-9_]+)" ADD COLUMN "([A-Za-z0-9_]+")/g)) {
       if (!inv.tables.has(m[1])) inv.tables.set(m[1], []);
@@ -193,14 +213,24 @@ function partA() {
     return inv;
   };
   const merge = (a, b) => {
-    const out = { enums: new Set([...a.enums, ...b.enums]), tables: new Map(a.tables), indexes: new Set([...a.indexes, ...b.indexes]), constraints: new Set([...a.constraints, ...b.constraints]) };
+    const out = { enums: new Set([...a.enums, ...b.enums]), enumAdds: new Map(a.enumAdds), tables: new Map(a.tables), indexes: new Set([...a.indexes, ...b.indexes]), constraints: new Set([...a.constraints, ...b.constraints]) };
     for (const [t, cols] of b.tables) out.tables.set(t, [...(out.tables.get(t) || []), ...cols]);
+    for (const [name, n] of b.enumAdds) out.enumAdds.set(name, (out.enumAdds.get(name) || 0) + n);
+    for (const [name, n] of out.enumAdds) {
+      const existing = [...out.enums].find((e) => e.startsWith(`${name}(`));
+      if (!existing) continue;
+      out.enums.delete(existing);
+      out.enums.add(`${name}(${Number(existing.slice(name.length + 1, -1)) + n})`);
+    }
     return out;
   };
   const want = parseInventory(read(BASELINE_SQL));
   const got = merge(
-    parseInventory(read(path.join(PG_MIGRATIONS, "0_init", "migration.sql"))),
-    parseInventory(read(path.join(PG_MIGRATIONS, MIG_26D, "migration.sql")))
+    merge(
+      parseInventory(read(path.join(PG_MIGRATIONS, "0_init", "migration.sql"))),
+      parseInventory(read(path.join(PG_MIGRATIONS, MIG_26D, "migration.sql")))
+    ),
+    parseInventory(read(path.join(PG_MIGRATIONS, MIG_PHASE_F, "migration.sql")))
   );
   {
     const diffs = [];
@@ -218,7 +248,7 @@ function partA() {
     for (const c of want.indexes) if (!got.indexes.has(c)) diffs.push(`missing index ${c}`);
     for (const c of got.indexes) if (!want.indexes.has(c)) diffs.push(`extra index ${c}`);
     ok(diffs.length === 0,
-      `0_init + PG Phase 26D == scripts/db/postgres-baseline.sql structurally (${want.tables.size} tables, ${[...want.tables.values()].reduce((a, c) => a + c.length, 0)} columns)`,
+      `0_init + PG Phase 26D + Phase F == scripts/db/postgres-baseline.sql structurally (${want.tables.size} tables, ${[...want.tables.values()].reduce((a, c) => a + c.length, 0)} columns)`,
       diffs.slice(0, 8).join("; "));
   }
 
@@ -235,7 +265,41 @@ function partA() {
     ok(/ON DELETE SET NULL/.test(pg26d), "PG edition keeps ON DELETE SET NULL on the grant FK (history-preserving)");
   }
 
-  // A6 — fresh SQLite through the repo's own harness: base DDL + 12 migrations.
+  // A5b — the two Phase F editions add the same logical objects (SQLite stores
+  // enums as TEXT and has no cross-provider type to alter, so the check is on
+  // columns/tables/index names, not on DDL text).
+  {
+    const sqliteF = read(path.join(SQLITE_MIGRATIONS, MIG_PHASE_F, "migration.sql"));
+    const pgF = read(path.join(PG_MIGRATIONS, MIG_PHASE_F, "migration.sql"));
+    const cols = (sql) => [...sql.matchAll(/ADD COLUMN "([A-Za-z0-9_]+)"/g)].map((m) => m[1]).sort().join(",");
+    ok(cols(sqliteF) === cols(pgF), "both Phase F editions add the same columns in the same order");
+    const tables = (sql) => [...sql.matchAll(/CREATE TABLE "([A-Za-z0-9_]+)"/g)].map((m) => m[1]).sort().join(",");
+    ok(tables(sqliteF) === tables(pgF), "both Phase F editions create the same four absence tables");
+    // Index/constraint NAMES must agree. The two providers spell a unique
+    // object differently — SQLite has no ALTER TABLE ADD CONSTRAINT, so it uses
+    // CREATE UNIQUE INDEX — hence the name-set comparison, not a text compare.
+    const names = (sql) =>
+      [
+        ...[...sql.matchAll(/CREATE (?:UNIQUE )?INDEX (?:IF NOT EXISTS )?"([A-Za-z0-9_]+)"/g)].map((m) => m[1]),
+        ...[...sql.matchAll(/CONSTRAINT "([A-Za-z0-9_]+)" UNIQUE/g)].map((m) => m[1]),
+      ].sort().join(",");
+    ok(names(sqliteF) === names(pgF), "both Phase F editions create the same index/unique objects", `${names(sqliteF)} :: ${names(pgF)}`);
+    ok(/DATETIME/.test(stripSqlComments(sqliteF)) && !/DATETIME/.test(stripSqlComments(pgF)), "the SQLite edition keeps DATETIME, the PG edition does not");
+    ok(/TIMESTAMPTZ\(3\)/.test(pgF) && !/SQLite-only/i.test(pgF), "the PG edition uses TIMESTAMPTZ(3)");
+    ok((pgF.match(/ALTER TYPE "NotificationType" ADD VALUE IF NOT EXISTS/g) || []).length === 9,
+      "the PG edition appends exactly the nine Phase F NotificationType values");
+    ok(/CREATE TYPE "AbsenceReviewStatus" AS ENUM/.test(pgF) && /CREATE TYPE "AbsenceHoldStatus" AS ENUM/.test(pgF),
+      "the PG edition creates the two absence enum types");
+    ok(/"AbsenceReview_attendanceId_key" UNIQUE \("attendanceId"\)/.test(pgF) && /"AbsenceHold_absenceReviewId_key" UNIQUE \("absenceReviewId"\)/.test(pgF),
+      "the PG edition keys every absence case to exactly one attendance row (and one hold per case)");
+    ok(!/DROP TABLE|DROP COLUMN|DELETE FROM/i.test(stripSqlComments(sqliteF)) && !/DROP TABLE|DROP COLUMN|DELETE FROM/i.test(stripSqlComments(pgF)),
+      "Phase F is additive in both providers (no table/column drop, no row delete)");
+    ok(/NOT NULL DEFAULT 0/.test(pgF) && /"rescheduleCount" INTEGER NOT NULL DEFAULT 0/.test(pgF), "rescheduleCount lands with a safe constant default");
+    ok(/IF NOT EXISTS "Attendance_sessionId_idx"/.test(pgF) && /IF NOT EXISTS "Attendance_sessionId_idx"/.test(sqliteF),
+      "the pre-existing Attendance.sessionId index divergence is closed additively in both providers");
+  }
+
+  // A6 — fresh SQLite through the repo's own harness: base DDL + 13 migrations.
   {
     const { DatabaseSync } = require("node:sqlite");
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cm-mig-providers-"));
@@ -243,8 +307,8 @@ function partA() {
     const mig = require(path.join(REPO, "scripts", "lib", "migrate-sqlite.mjs"));
     const db = new DatabaseSync(dbPath);
     const applied = mig.applyMigrations(db, { withBaseSchema: true });
-    ok(applied.length === 12, `fresh SQLite applies all 12 migrations (got ${applied.length})`);
-    ok(applied[applied.length - 1] === MIG_26D, "the last applied SQLite migration is Phase 26D");
+    ok(applied.length === 13, `fresh SQLite applies all 13 migrations (got ${applied.length})`);
+    ok(applied[applied.length - 1] === MIG_PHASE_F, "the last applied SQLite migration is Phase F");
     for (const [tbl, cols] of [
       ["Quiz", ["quizMode", "questionCount", "maxAttempts", "shuffleOptions", "difficultyPlan"]],
       ["QuizAttempt", ["attemptNumber", "status", "retryGrantId"]],
@@ -254,10 +318,26 @@ function partA() {
       ok(cols.every((c) => present.has(c)), `fresh SQLite schema carries ${tbl} Phase 26D columns`);
     }
     ok(!!db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='QuizRetryGrant'`).get(), "fresh SQLite schema carries the QuizRetryGrant table");
+    for (const tbl of ["AttendanceCorrection", "AbsenceReview", "AbsenceReasonSubmission", "AbsenceHold"]) {
+      ok(!!db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`).get(tbl), `fresh SQLite schema carries the Phase F ${tbl} table`);
+    }
+    for (const [tbl, cols] of [
+      ["LiveSession", ["createdByUserId", "rescheduleCount", "originalStartAt", "substituteTeacherId", "attendanceFinalizedAt"]],
+      ["Attendance", ["markedByUserId", "markedAt"]],
+      ["Notification", ["sessionId", "dedupeKey"]],
+    ]) {
+      const present = new Set(db.prepare(`PRAGMA table_info("${tbl}")`).all().map((r) => r.name));
+      ok(cols.every((c) => present.has(c)), `fresh SQLite schema carries ${tbl} Phase F columns`);
+    }
+    {
+      const dup = db.prepare(`SELECT id FROM "Notification" WHERE 1=0`).all();
+      const uniq = db.prepare(`SELECT name FROM sqlite_master WHERE type='index' AND name='Notification_userId_dedupeKey_key'`).get();
+      ok(!!uniq && dup.length === 0, "fresh SQLite schema carries the notification idempotency key (UNIQUE userId+dedupeKey)");
+    }
     // the harness ledger records the very checksums pinned in A2
     const rows = db.prepare('SELECT migration_name, checksum FROM "_prisma_migrations"').all();
     const pinned = rows.every((r) => r.checksum === PINNED[r.migration_name]);
-    ok(pinned && rows.length === 12, "fresh SQLite ledger carries exactly the pinned applied checksums");
+    ok(pinned && rows.length === 13, "fresh SQLite ledger carries exactly the pinned applied checksums");
     db.close();
     fs.rmSync(tmp, { recursive: true, force: true });
   }
@@ -368,7 +448,9 @@ async function buildNeonSimulation(query) {
   // The 11 pre-26D SQLite migration names, marked applied with the SQLITE file
   // checksums — exactly what `migrate resolve --applied` recorded on Neon at
   // cutover against the then-shared prisma/migrations directory.
-  const sqliteNames = listMigrationDirs(SQLITE_MIGRATIONS).filter((n) => n !== MIG_26D);
+  // Every SQLite migration that predates Phase 26D was already applied at
+  // cutover; Phase 26D and Phase F are the PostgreSQL-era files.
+  const sqliteNames = listMigrationDirs(SQLITE_MIGRATIONS).filter((n) => n < MIG_26D);
   for (const name of sqliteNames) {
     await query(
       `INSERT INTO _prisma_migrations (id, checksum, finished_at, migration_name, started_at, applied_steps_count)
@@ -509,8 +591,8 @@ async function partC() {
     const query2 = async (t, p) => pool2.query(t, p);
     const snap = await catalogSnapshot(query2);
     const ledger = await query2(`SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NOT NULL ORDER BY migration_name`);
-    ok(JSON.stringify(ledger.rows.map((x) => x.migration_name)) === JSON.stringify(["0_init", MIG_26D]),
-      "engine: fresh deploy ledger contains exactly 0_init + Phase 26D (never the SQLite names)");
+    ok(JSON.stringify(ledger.rows.map((x) => x.migration_name)) === JSON.stringify(["0_init", MIG_26D, MIG_PHASE_F]),
+      "engine: fresh deploy ledger contains exactly 0_init + Phase 26D + Phase F (never the SQLite names)");
     const refs = await query2(`SELECT to_regclass('public."QuizRetryGrant"') AS t`);
     ok(refs.rows[0].t !== null, "engine: QuizRetryGrant exists after fresh deploy");
     await pool2.end();
@@ -556,6 +638,7 @@ async function partC() {
     const ledger = await q2(`SELECT migration_name, finished_at IS NOT NULL AS done, rolled_back_at IS NOT NULL AS rb FROM _prisma_migrations ORDER BY started_at`);
     ok(ledger.rows.filter((x) => !x.done && !x.rb).length === 0, "engine: no failed rows remain after recovery");
     ok(ledger.rows.filter((x) => x.migration_name === MIG_26D && x.done).length === 1, "engine: exactly one applied Phase 26D row");
+    ok(ledger.rows.filter((x) => x.migration_name === MIG_PHASE_F && x.done).length <= 1, "engine: at most one applied Phase F row");
     ok(ledger.rows.filter((x) => x.migration_name === MIG_26D && x.rb).length === 1, "engine: the rolled-back historical row is retained (audit trail)");
     const refs = await q2(`SELECT to_regclass('public."QuizRetryGrant"') AS t`);
     ok(refs.rows[0].t !== null, "engine: QuizRetryGrant exists after recovery");
@@ -563,7 +646,7 @@ async function partC() {
   }
 
   // C3 — SQLite applied-ledger contract through the real engine: a database
-  //      migrated with the repo harness (base DDL + 12 files, real checksums)
+  //      migrated with the repo harness (base DDL + 13 files, real checksums)
   //      must be recognised as fully up to date.
   {
     const { DatabaseSync } = require("node:sqlite");

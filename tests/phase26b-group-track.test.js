@@ -95,7 +95,15 @@ async function main() {
     // Phase 26D later appended its own migration, so the audience migration is
     // no longer the LAST entry — but it must still be present, still sort after
     // the 10 PR-era migrations, and still be the only migration 26B added.
-    eq(migs.length, 12, "B1: history is 12 (10 PR-era + Phase 26B audience + Phase 26D quiz architecture)");
+    // Phase F appended `20260919120000_phase_f_live_session_lifecycle`, so the
+    // history grew by exactly one. The invariants this case actually protects —
+    // the audience migration still exists, still sorts after the 10 PR-era
+    // migrations, and no destructive SQL was introduced — are asserted below.
+    eq(
+      migs.length,
+      13,
+      "B1: history is 13 (10 PR-era + Phase 26B audience + Phase 26D quiz architecture + Phase F live sessions)"
+    );
     ok(migs.includes(GROUP_TRACK_MIGRATION), "B1: the audience migration is in the history");
     ok(
       migs.indexOf(GROUP_TRACK_MIGRATION) === 10,

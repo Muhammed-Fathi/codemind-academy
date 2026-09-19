@@ -25,6 +25,13 @@ import { StudentDashboard } from "@/components/student/student-dashboard";
 import { ParentDashboard } from "@/components/parent/parent-dashboard";
 import { TeacherDashboard } from "@/components/teacher/teacher-dashboard";
 import { TeacherSessions } from "@/components/teacher/teacher-sessions";
+import { TeacherLiveSessionsWorkspace } from "@/components/teacher/live-sessions-workspace";
+import {
+  ParentAbsencesView,
+  StudentAbsencesView,
+  StudentLiveSessionsView,
+} from "@/components/student/live-sessions-view";
+import { AdminLiveOpsView } from "@/components/admin/live-ops-view";
 import { AdminDashboard } from "@/components/admin/admin-dashboard";
 // SHARED role → view whitelist (single definition, also used by the
 // notifications panel): stale/illegal persisted views redirect safely
@@ -218,6 +225,13 @@ function renderView(view: string, role?: string | null) {
       return <BookmarksView />;
     case "student-scheduler":
       return <StudySchedulerView />;
+    // Phase F — the student's live-session schedule and absence cases. The
+    // components fetch through the role-scoped APIs (`/api/live-sessions`,
+    // `/api/absence-reviews`), so a wrong role can never widen the data.
+    case "student-sessions":
+      return <StudentLiveSessionsView />;
+    case "student-absences":
+      return <StudentAbsencesView />;
     case "student-referral":
       return <ReferralView />;
     case "student-leaderboard":
@@ -230,6 +244,10 @@ function renderView(view: string, role?: string | null) {
     case "parent-report":
     case "parent-notifications":
       return <ParentDashboard />;
+    // Phase F — a parent sees ONLY their linked children's absence cases and
+    // may submit a reason; attendance/decision/hold stay read-only for them.
+    case "parent-absences":
+      return <ParentAbsencesView />;
     case "teacher-dashboard":
     case "teacher-attendance":
     case "teacher-quizzes":
@@ -244,6 +262,9 @@ function renderView(view: string, role?: string | null) {
     // exactly as written.
     case "teacher-sessions":
       return <TeacherSessions />;
+    // Phase F — the teacher live workspace (schedule + attendance + finalize).
+    case "teacher-live-sessions":
+      return <TeacherLiveSessionsWorkspace />;
     // All admin-* views route to the AdminDashboard shell
     case "admin-overview":
     case "admin-students":
@@ -261,6 +282,10 @@ function renderView(view: string, role?: string | null) {
     case "admin-quiz-review":
     case "admin-settings":
       return <AdminDashboard />;
+    // Phase F — the admin live console (ops overview, attendance review,
+    // absence decisions, locked-register corrections, repeated-absence flags).
+    case "admin-live-sessions":
+      return <AdminLiveOpsView />;
     default:
       return fallback;
   }

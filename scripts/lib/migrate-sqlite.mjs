@@ -246,6 +246,32 @@ const BASE_SKIP_COLUMNS = {
     "reviewedAt",
     "reviewedByUserId",
   ],
+  // Phase F — added by 20260919120000_phase_f_live_session_lifecycle.
+  // LiveSession becomes an operational event (creator, lifecycle flips,
+  // conducted/ended markers, cancellation, reschedule bookkeeping, a
+  // session-scoped substitute teacher and the attendance lock).
+  LiveSession: [
+    "createdByUserId",
+    "statusChangedAt",
+    "statusChangedByUserId",
+    "conductedAt",
+    "endedAt",
+    "cancelledAt",
+    "cancelledByUserId",
+    "cancelReason",
+    "rescheduleCount",
+    "lastRescheduledAt",
+    "rescheduledByUserId",
+    "originalStartAt",
+    "substituteTeacherId",
+    "substituteAssignedAt",
+    "substituteAssignedByUserId",
+    "attendanceFinalizedAt",
+    "attendanceFinalizedByUserId",
+    "updatedAt",
+  ],
+  Attendance: ["markedByUserId", "markedAt", "updatedAt"],
+  Notification: ["sessionId", "dedupeKey"],
 };
 
 /** Tables created by a migration, so absent from the base. */
@@ -269,6 +295,11 @@ const BASE_SKIP_TABLES = new Set([
   "TeacherActivationToken",
   // Phase 26D — created by 20260915180000_phase26d_quiz_attempt_architecture.
   "QuizRetryGrant",
+  // Phase F — created by 20260919120000_phase_f_live_session_lifecycle.
+  "AttendanceCorrection",
+  "AbsenceReview",
+  "AbsenceReasonSubmission",
+  "AbsenceHold",
 ]);
 
 const PRISMA_TO_SQLITE = {

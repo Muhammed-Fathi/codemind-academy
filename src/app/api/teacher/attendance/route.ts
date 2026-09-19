@@ -1,16 +1,40 @@
-import { getServerT } from "@/lib/i18n-server";
 // GET  /api/teacher/attendance?groupId=X&sessionId=Y
 //   Returns students of the group + their attendance record for the
 //   given session (if any).
 // POST /api/teacher/attendance
 //   body: { sessionId, attendance: [{studentId, status}] }
 //   Upserts each Attendance record (relies on @@unique([studentId, sessionId])).
+//
+// PHASE F — this endpoint is the LEGACY address of the teacher register. Its
+// response keys are unchanged (the teacher workspace and
+// scripts/verify-phase26d-teacher.mjs §F depend on them) but the WRITES now go
+// through the one Phase F authority (`saveAttendance` in src/lib/live-sessions.ts):
+//
+//   * the roster is derived from `LiveSession.groupId → Group.students`;
+//   * the attendance WINDOW and the LOCK are enforced SERVER-SIDE (before the
+//     scheduled start, after the window closes, or after finalization the write
+//     is refused with a stable code) — an old client cannot bypass the register
+//     any more than the new UI can;
+//   * every save is audited, and the response now reports the window, the lock
+//     and the live counts so the UI never has to recompute them.
+//
+// The GET additionally reports the session state the Phase F UI needs
+// (`session` block below); the pre-existing keys keep their exact meaning.
+
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import type { AttendanceStatus } from "@prisma/client";
 import { ok, err, requireUser, getTeacherProfile } from "@/lib/api";
-
-const ALLOWED: AttendanceStatus[] = ["PRESENT", "ABSENT", "LATE", "EXCUSED"];
+import { getServerT } from "@/lib/i18n-server";
+import {
+  loadSessionForTeacher,
+  loadTeacherScope,
+  loadSessionRoster,
+  saveAttendance,
+  toLiveSessionPayload,
+} from "@/lib/live-sessions";
+import { failureResponse, readBody } from "@/lib/live-session-api";
+import { decideAttendanceWrite } from "@/lib/live-session-policy";
 
 export async function GET(req: NextRequest) {
   const tApi = await getServerT();
@@ -26,8 +50,7 @@ export async function GET(req: NextRequest) {
   const groupId = url.searchParams.get("groupId") || "";
   const sessionId = url.searchParams.get("sessionId") || "";
 
-  if (!teacherGroupIds.includes(groupId))
-    return err(tApi("api.156"), 403);
+  if (!teacherGroupIds.includes(groupId)) return err(tApi("api.156"), 403);
 
   // Sessions for this group (upcoming + past)
   const sessions = await db.liveSession.findMany({
@@ -104,6 +127,28 @@ export async function GET(req: NextRequest) {
     };
   });
 
+  // Phase F — the session block: window, lock, counts and review state.
+  let sessionBlock: Record<string, unknown> | null = null;
+  if (sessionId) {
+    try {
+      const scope = await loadTeacherScope(user.id);
+      if (scope) {
+        const access = await loadSessionForTeacher(scope, sessionId);
+        const write = decideAttendanceWrite(access.session, new Date());
+        const { counts } = await loadSessionRoster(sessionId);
+        sessionBlock = {
+          ...toLiveSessionPayload({ session: access.session, now: new Date(), counts }),
+          canWrite: write.allowed,
+          writeDenialCode: write.allowed ? null : write.code,
+          via: access.via,
+        };
+      }
+    } catch {
+      // The legacy payload must keep working even if the session vanished.
+      sessionBlock = null;
+    }
+  }
+
   return ok({
     group: {
       id: groupId,
@@ -119,19 +164,16 @@ export async function GET(req: NextRequest) {
       isPast: s.startAt.getTime() < Date.now(),
     })),
     students: studentsPayload,
+    session: sessionBlock,
   });
 }
 
 export async function POST(req: NextRequest) {
-  const tApi = await getServerT();
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
   if (user.role !== "TEACHER") return err("Forbidden", 403);
 
-  const teacher = await getTeacherProfile(user.id);
-  if (!teacher) return err("Teacher profile not found", 404);
-
-  const body = (await req.json().catch(() => ({} as Record<string, unknown>))) as Record<string, unknown>;
+  const body = await readBody(req);
   const sessionId = String((body.sessionId as string) || "");
   const attendance: Array<{
     studentId: string;
@@ -139,82 +181,53 @@ export async function POST(req: NextRequest) {
     note?: string;
   }> = Array.isArray(body.attendance) ? (body.attendance as Array<{ studentId: string; status: AttendanceStatus; note?: string }>) : [];
 
-  if (!sessionId) return err(tApi("api.157"), 400);
-  if (attendance.length === 0) return err(tApi("api.158"), 400);
-
-  // Verify the session belongs to one of the teacher's groups
-  const session = await db.liveSession.findUnique({
-    where: { id: sessionId },
-    select: { id: true, groupId: true },
-  });
-  if (!session) return err(tApi("api.159"), 404);
-  const belongsToTeacher = teacher.groups.some(
-    (g) => g.id === session.groupId
-  );
-  if (!belongsToTeacher) return err(tApi("api.160"), 403);
-
-  // Validate each entry + verify student belongs to that group
-  const validStudents = await db.student.findMany({
-    where: { groupId: session.groupId },
-    select: { id: true },
-  });
-  const validStudentIds = new Set(validStudents.map((s) => s.id));
-
-  for (const entry of attendance) {
-    if (!entry.studentId || !entry.status) {
-      return err(tApi("api.161"), 400);
-    }
-    if (!ALLOWED.includes(entry.status)) {
-      return err(tApi("api.162", { p1: entry.status }), 400);
-    }
-    if (!validStudentIds.has(entry.studentId)) {
-      return err(tApi("api.163"), 403);
-    }
+  if (!sessionId) {
+    const tApi = await getServerT();
+    return err(tApi("api.157"), 400);
+  }
+  if (attendance.length === 0) {
+    const tApi = await getServerT();
+    return err(tApi("api.158"), 400);
   }
 
-  // Upsert each record. Prisma's upsert can't use composite unique on SQLite
-  // for find queries directly with where — use the @@unique constraint name.
-  const results: Array<{
-    studentId: string;
-    sessionId: string;
-    status: AttendanceStatus;
-    note: string | null;
-  }> = [];
-  for (const entry of attendance) {
-    const r = await db.attendance.upsert({
-      where: {
-        studentId_sessionId: {
-          studentId: entry.studentId,
-          sessionId,
-        },
-      },
-      update: {
+  try {
+    const scope = await loadTeacherScope(user.id);
+    if (!scope) return err("Teacher profile not found", 404);
+    // Authorizes the session (own group or a session this teacher covers) and
+    // yields the same 403/404 rules as the Phase F register route.
+    await loadSessionForTeacher(scope, sessionId);
+
+    const result = await saveAttendance({
+      sessionId,
+      actorUserId: user.id,
+      entries: attendance.map((entry) => ({
+        studentId: String(entry.studentId),
         status: entry.status,
         note: entry.note ?? null,
-      },
-      create: {
-        studentId: entry.studentId,
-        sessionId,
-        status: entry.status,
-        note: entry.note ?? null,
-      },
+      })),
     });
-    results.push({
-      studentId: r.studentId,
-      sessionId: r.sessionId,
-      status: r.status,
-      note: r.note,
+
+    const { rows } = await loadSessionRoster(sessionId);
+    const summary = {
+      present: rows.filter((r) => r.status === "PRESENT").length,
+      absent: rows.filter((r) => r.status === "ABSENT").length,
+      late: rows.filter((r) => r.status === "LATE").length,
+      excused: rows.filter((r) => r.status === "EXCUSED").length,
+      total: rows.length,
+    };
+
+    return ok({
+      saved: true,
+      summary,
+      attendance: rows
+        .filter((r) => r.rawStatus !== null)
+        .map((r) => ({ studentId: r.studentId, sessionId, status: r.rawStatus, note: r.note })),
+      // Phase F additions (additive: the legacy keys above are unchanged).
+      counts: result.counts,
+      closesAt: result.closesAt,
+      unmarked: result.counts.unmarked,
     });
+  } catch (error) {
+    return failureResponse(error);
   }
-
-  // Summary
-  const summary = {
-    present: results.filter((r) => r.status === "PRESENT").length,
-    absent: results.filter((r) => r.status === "ABSENT").length,
-    late: results.filter((r) => r.status === "LATE").length,
-    excused: results.filter((r) => r.status === "EXCUSED").length,
-    total: results.length,
-  };
-
-  return ok({ saved: true, summary, attendance: results });
 }
