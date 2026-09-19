@@ -39,9 +39,11 @@ const SNAPSHOT_WIDTH = 320; // small, low-bandwidth still
 export function QuizCameraConsent({
   onDecision,
   starting,
+  required = false,
 }: {
   onDecision: (allow: boolean) => void;
   starting: boolean;
+  required?: boolean;
 }) {
   const tr = useT();
   return (
@@ -56,7 +58,7 @@ export function QuizCameraConsent({
             {tr("quiz.201")}
           </p>
           <p className="text-xs leading-relaxed text-muted-foreground">
-            {tr("quiz.202")}
+            {required ? "الكاميرا مطلوبة في الاختبار ده علشان التحقق أثناء المحاولة." : "تشغيل الكاميرا اختياري في الاختبار ده."}
           </p>
         </div>
       </div>
@@ -69,7 +71,7 @@ export function QuizCameraConsent({
           )}
           {tr("quiz.203")}
         </Button>
-        <Button
+        {!required && <Button
           variant="outline"
           className="flex-1"
           onClick={() => onDecision(false)}
@@ -77,7 +79,7 @@ export function QuizCameraConsent({
         >
           <CameraOff className="w-4 h-4 me-2" />
           {tr("quiz.210")}
-        </Button>
+        </Button>}
       </div>
     </Card>
   );

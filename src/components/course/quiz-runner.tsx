@@ -55,6 +55,7 @@ type QuizData = {
     description: string | null;
     passMark: number;
     timeLimit: number | null;
+    cameraPolicy?: "REQUIRED" | "OPTIONAL";
   };
   lesson: {
     id: string;
@@ -127,6 +128,12 @@ export function QuizRunner() {
       if (!navParam) return;
       setStartingAttempt(true);
       try {
+        if (allow && navigator.mediaDevices?.getUserMedia) {
+          const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          stream.getTracks().forEach((track) => track.stop());
+        } else if (allow) {
+          throw new Error("CAMERA_UNAVAILABLE");
+        }
         const r = await fetch(`/api/quizzes/${encodeURIComponent(navParam)}/start`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -323,7 +330,7 @@ export function QuizRunner() {
       {/* Consent gate — nothing is captured, and the questions are not shown,
           until the student has made an explicit choice. */}
       {cameraAllowed === null ? (
-        <QuizCameraConsent onDecision={beginAttempt} starting={startingAttempt} />
+        <QuizCameraConsent onDecision={beginAttempt} starting={startingAttempt} required={quiz.quiz.cameraPolicy === "REQUIRED"} />
       ) : (
         <>
       {/* Live camera indicator. Rendered only when the student opted in and an

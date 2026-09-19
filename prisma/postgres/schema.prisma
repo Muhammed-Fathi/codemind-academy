@@ -759,6 +759,8 @@ model Quiz {
 
   /// `DRAFT` | `PUBLISHED`.
   status      String        @default("PUBLISHED")
+  /// REQUIRED or OPTIONAL camera policy; legacy quizzes remain optional.
+  cameraPolicy String      @default("OPTIONAL")
   /// First successful publish instant (null while the quiz is a draft).
   publishedAt DateTime?
 

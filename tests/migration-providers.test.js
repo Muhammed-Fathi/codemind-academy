@@ -63,6 +63,7 @@ const CHECKER = path.join(REPO, "scripts", "db", "check-pg-migration-state.mjs")
 const MIG_26D = "20260915180000_phase26d_quiz_attempt_architecture";
 const MIG_PHASE_F = "20260919120000_phase_f_live_session_lifecycle";
 const MIG_PHASE_G = "20260919180000_phase_g_quiz_homework_workflow";
+const MIG_CAMERA = "20260919190000_phase_g_camera_policy";
 
 let pass = 0;
 const failures = [];
@@ -102,10 +103,10 @@ function partA() {
   // A1 — layout contract
   const sqliteMigrations = listMigrationDirs(SQLITE_MIGRATIONS);
   const pgMigrations = listMigrationDirs(PG_MIGRATIONS);
-  ok(sqliteMigrations.length === 14, `SQLite migrations dir carries all 14 historical migrations (got ${sqliteMigrations.length})`);
-  ok(pgMigrations.length === 4, `PG migrations dir carries exactly 0_init + Phase 26D + Phase F + Phase G (got ${pgMigrations.length})`);
+  ok(sqliteMigrations.length === 15, `SQLite migrations dir carries all 15 historical migrations (got ${sqliteMigrations.length})`);
+  ok(pgMigrations.length === 5, `PG migrations dir carries the provider chain plus camera policy (got ${pgMigrations.length})`);
   ok(
-    pgMigrations[0] === "0_init" && pgMigrations[1] === MIG_26D && pgMigrations[2] === MIG_PHASE_F && pgMigrations[3] === MIG_PHASE_G,
+    pgMigrations[0] === "0_init" && pgMigrations[1] === MIG_26D && pgMigrations[2] === MIG_PHASE_F && pgMigrations[3] === MIG_PHASE_G && pgMigrations[4] === MIG_CAMERA,
     "PG migrations are 0_init, Phase 26D, Phase F, Phase G, in order"
   );
   ok(fs.existsSync(PG_SCHEMA), "prisma/postgres/schema.prisma exists (PG schema owns its own directory)");
@@ -159,6 +160,7 @@ function partA() {
     "20260915180000_phase26d_quiz_attempt_architecture": "be10b56f4539f74b5ee1da28f52a97270ba656d8be87b78f7ddbb4ab39c92b4f",
     "20260919120000_phase_f_live_session_lifecycle": "480a5327e1ebeb488b2723ab4e263778530d141577315d38ac48cf3728f94ac3",
     "20260919180000_phase_g_quiz_homework_workflow": "d86e31ee0774403354c33084437e0f550b45b1595ab8faf4341e114bc80922b3",
+    "20260919190000_phase_g_camera_policy": "b34ddf74f0cd88fedf41baec4dc6d6dcb305a4a9da47989e918e19d89460ed24",
     // PostgreSQL history (frozen from this commit on):
     "0_init": "c7f5d3fa76931d02e48c5cd2c4bfdb972c0f25e528e3c0c116736d3729cefa80",
     "PG:20260915180000_phase26d_quiz_attempt_architecture": "2c1bdde167f7dfff9b79a61f116da3dbd93b13c6aa27825404a79312ec7be104",
@@ -251,12 +253,15 @@ function partA() {
   const got = merge(
     merge(
       merge(
-        parseInventory(read(path.join(PG_MIGRATIONS, "0_init", "migration.sql"))),
-        parseInventory(read(path.join(PG_MIGRATIONS, MIG_26D, "migration.sql")))
+        merge(
+          parseInventory(read(path.join(PG_MIGRATIONS, "0_init", "migration.sql"))),
+          parseInventory(read(path.join(PG_MIGRATIONS, MIG_26D, "migration.sql")))
+        ),
+        parseInventory(read(path.join(PG_MIGRATIONS, MIG_PHASE_F, "migration.sql")))
       ),
-      parseInventory(read(path.join(PG_MIGRATIONS, MIG_PHASE_F, "migration.sql")))
+      parseInventory(read(path.join(PG_MIGRATIONS, MIG_PHASE_G, "migration.sql")))
     ),
-    parseInventory(read(path.join(PG_MIGRATIONS, MIG_PHASE_G, "migration.sql")))
+    parseInventory(read(path.join(PG_MIGRATIONS, MIG_CAMERA, "migration.sql")))
   );
   {
     const diffs = [];
@@ -349,7 +354,7 @@ function partA() {
       "Phase G is additive in both providers (no table/column drop, no row delete)");
   }
 
-  // A6 — fresh SQLite through the repo's own harness: base DDL + 14 migrations.
+  // A6 — fresh SQLite through the repo's own harness: base DDL + 15 migrations.
   {
     const { DatabaseSync } = require("node:sqlite");
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cm-mig-providers-"));
@@ -357,8 +362,8 @@ function partA() {
     const mig = require(path.join(REPO, "scripts", "lib", "migrate-sqlite.mjs"));
     const db = new DatabaseSync(dbPath);
     const applied = mig.applyMigrations(db, { withBaseSchema: true });
-    ok(applied.length === 14, `fresh SQLite applies all 14 migrations (got ${applied.length})`);
-    ok(applied[applied.length - 1] === MIG_PHASE_G, "the last applied SQLite migration is Phase G");
+    ok(applied.length === 15, `fresh SQLite applies all 15 migrations (got ${applied.length})`);
+    ok(applied[applied.length - 1] === MIG_CAMERA, "the last applied SQLite migration is the camera-policy migration");
     for (const [tbl, cols] of [
       ["Quiz", ["quizMode", "questionCount", "maxAttempts", "shuffleOptions", "difficultyPlan"]],
       ["QuizAttempt", ["attemptNumber", "status", "retryGrantId"]],
@@ -395,7 +400,7 @@ function partA() {
     // the harness ledger records the very checksums pinned in A2
     const rows = db.prepare('SELECT migration_name, checksum FROM "_prisma_migrations"').all();
     const pinned = rows.every((r) => r.checksum === PINNED[r.migration_name]);
-    ok(pinned && rows.length === 14, "fresh SQLite ledger carries exactly the pinned applied checksums");
+    ok(pinned && rows.length === 15, "fresh SQLite ledger carries exactly the pinned applied checksums");
     db.close();
     fs.rmSync(tmp, { recursive: true, force: true });
   }

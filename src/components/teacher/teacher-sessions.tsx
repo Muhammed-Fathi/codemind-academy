@@ -1214,6 +1214,7 @@ function QuizCreateDialog({
   const [passMark, setPassMark] = React.useState(60);
   const [timeLimit, setTimeLimit] = React.useState<string>("");
   const [trackScope, setTrackScope] = React.useState("");
+  const [cameraPolicy, setCameraPolicy] = React.useState<"OPTIONAL" | "REQUIRED">("OPTIONAL");
   const [questions, setQuestions] = React.useState<QuestionDraft[]>([emptyQuestion()]);
 
   const mutation = useMutation({
@@ -1270,6 +1271,7 @@ function QuizCreateDialog({
       passMark,
       timeLimit: timeLimit.trim() === "" ? null : Number(timeLimit),
       trackScope,
+      cameraPolicy,
       questions: normalized.map((q) => ({ ...q, schoolType: undefined })),
     });
   };
@@ -1298,6 +1300,14 @@ function QuizCreateDialog({
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground">{tr("teacher.271")}</Label>
             <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
+          </div>
+          <div className="space-y-1.5 rounded-lg border p-3">
+            <Label className="text-xs text-muted-foreground">الكاميرا أثناء الاختبار</Label>
+            <Select value={cameraPolicy} onValueChange={(v) => setCameraPolicy(v as "OPTIONAL" | "REQUIRED")}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="OPTIONAL">اختيارية</SelectItem><SelectItem value="REQUIRED">مطلوبة</SelectItem></SelectContent>
+            </Select>
+            <p className="text-[11px] text-muted-foreground">تحدد هل يجب السماح بالكاميرا قبل بدء المحاولة.</p>
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">

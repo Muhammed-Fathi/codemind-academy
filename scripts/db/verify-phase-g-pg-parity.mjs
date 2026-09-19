@@ -68,6 +68,7 @@ const CHAIN = [
   // comparison would report the newer columns as missing. scripts/db/verify-phase-g-pg-parity.mjs
   // is the canonical full-chain proof from Phase G onward.
   "20260919180000_phase_g_quiz_homework_workflow",
+  "20260919190000_phase_g_camera_policy",
 ];
 const read = (p) => fs.readFileSync(p, "utf8");
 const stmts = (p) => splitSqlStatements(read(p));

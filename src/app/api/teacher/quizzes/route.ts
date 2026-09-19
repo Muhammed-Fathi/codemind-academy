@@ -305,6 +305,7 @@ export async function POST(req: NextRequest) {
   const descriptionIn = boundedText(body.description, TEACHER_LIMITS.DESCRIPTION_MAX);
   if (!descriptionIn.ok) return err(tApi("api.177"), 400);
   const description = descriptionIn.value;
+  const cameraPolicy = body.cameraPolicy === "REQUIRED" ? "REQUIRED" : "OPTIONAL";
 
   // Pass mark and time limit are validated, never clamped silently: a value
   // outside the contract is a client bug, and guessing it would hide the bug
@@ -462,6 +463,7 @@ export async function POST(req: NextRequest) {
       // publish route. The column default stays PUBLISHED only so pre-Phase-G
       // quizzes keep their behaviour.
       status: "DRAFT",
+      cameraPolicy,
       // Phase 26D blueprint columns.
       quizMode: blueprintStorage.quizMode,
       questionCount: blueprintStorage.questionCount,

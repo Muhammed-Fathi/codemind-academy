@@ -346,6 +346,7 @@ CREATE TABLE "Quiz" (
   "timeLimit" INTEGER,
   "order" INTEGER NOT NULL DEFAULT 0,
   "status" TEXT NOT NULL DEFAULT 'PUBLISHED',
+  "cameraPolicy" TEXT NOT NULL DEFAULT 'OPTIONAL',
   "publishedAt" TIMESTAMPTZ(3),
   "quizMode" TEXT NOT NULL DEFAULT 'FIXED',
   "questionCount" INTEGER,
