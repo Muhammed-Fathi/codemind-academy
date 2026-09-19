@@ -115,8 +115,14 @@ function appliedMigrations(db) {
 /**
  * Apply migration SQL exactly as `prisma migrate deploy` does: one file at a
  * time, in name order, each inside a transaction, then recorded with the real
- * SHA-256 checksum of the file.
+ * canonical SHA-256 checksum of the migration content. Git's repository
+ * contract is LF; canonicalizing CRLF here keeps a pre-existing Windows
+ * checkout from producing a different fresh ledger for identical SQL.
  */
+function canonicalChecksum(sql) {
+  return crypto.createHash("sha256").update(sql.replace(/\r\n/g, "\n")).digest("hex");
+}
+
 function applyMigrations(db, { upTo = null, label = "", withBaseSchema = false } = {}) {
   if (withBaseSchema) {
     // A brand-new scratch database: lay down the pre-migration base first,
@@ -131,7 +137,7 @@ function applyMigrations(db, { upTo = null, label = "", withBaseSchema = false }
     if (done.has(name)) continue;
     const file = path.join(MIGRATIONS_DIR, name, "migration.sql");
     const sql = fs.readFileSync(file, "utf8");
-    const checksum = crypto.createHash("sha256").update(sql).digest("hex");
+    const checksum = canonicalChecksum(sql);
     const started = Date.now();
     db.exec("BEGIN");
     try {
