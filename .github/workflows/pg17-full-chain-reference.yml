@@ -98,9 +98,14 @@ name: PG17 trusted catalog references (pre-26D + POST-26D full chain)
 #       once; and the Phase F tables, enum labels, columns, indexes and
 #       constraints are asserted BY NAME;
 #     * the full chain must match the measured catalog size exactly:
-#         585 columns / 94 enum values / 185 indexes / 593 constraints
+#         585 columns / 94 enum values / 185 indexes /
+#         185 primary+unique+foreign-key constraints
 #       (the read-only inspector excludes _prisma_migrations in every section,
-#       so these counts are the real schema, not the ledger table).
+#       so these counts are the real schema, not the ledger table. The constraint
+#       count is the p/u/f SUBSET because the raw pg_constraint total is
+#       PostgreSQL-major dependent: PG18 additionally stores NOT NULL as
+#       contype 'n', PG17 — the CI service container and the production target —
+#       keeps NOT NULL on pg_attribute.)
 #
 #   Artifact, job and file names keep their historical "phase26d" labels: the
 #   captured JSON is a cumulative FULL-CHAIN reference and renaming it would
@@ -318,16 +323,41 @@ env:
     // Catalog health.
     assert(ref.catalog.indexes.every(i => i.indisvalid && i.indisready), 'no invalid indexes');
     assert(ref.catalog.constraints.every(k => k.convalidated), 'no unvalidated constraints');
-    // ---- FULL-CHAIN CATALOG SIZE (measured, exact) -----------------------
+    // ---- FULL-CHAIN CATALOG SIZE (measured, exact (engine-stable)) --------
     // The read-only inspector excludes _prisma_migrations from every section,
     // so these counts describe the schema itself, not the ledger table.
+    //
+    // columns / enum values / indexes are identical on every supported
+    // PostgreSQL major, so they are asserted RAW.
     const enumValues = ref.catalog.enums.reduce((n, e) => n + e.values.length, 0);
     const size = 'columns=' + ref.catalog.columns.length + ' enumValues=' + enumValues +
-      ' indexes=' + ref.catalog.indexes.length + ' constraints=' + ref.catalog.constraints.length;
+      ' indexes=' + ref.catalog.indexes.length + ' con(p+u+f)=' +
+      ref.catalog.constraints.filter(k => ['p', 'u', 'f'].includes(k.contype)).length +
+      ' con(total)=' + ref.catalog.constraints.length;
     assert.equal(ref.catalog.columns.length, 585, 'full chain must have 585 columns — ' + size);
     assert.equal(enumValues, 94, 'full chain must have 94 enum values — ' + size);
     assert.equal(ref.catalog.indexes.length, 185, 'full chain must have 185 indexes — ' + size);
-    assert.equal(ref.catalog.constraints.length, 593, 'full chain must have 593 constraints — ' + size);
+    //
+    // Constraints are asserted through their TYPED subset (p = primary key,
+    // u = unique, f = foreign key), never through the raw pg_constraint total,
+    // because the raw total is PostgreSQL-MAJOR DEPENDENT:
+    //   * PostgreSQL 18 stores column NOT NULL specifications in pg_constraint
+    //     as contype 'n' (PostgreSQL 18.0 release notes, "Store column NOT NULL
+    //     specifications in pg_constraint"), which adds 408 rows for this schema
+    //     (raw total 593 = 408 n + 60 p + 38 u + 87 f);
+    //   * PostgreSQL 17 — the CI service container, matching the production
+    //     target — keeps NOT NULL on the relation in pg_attribute instead
+    //     ("Not-null constraints on relations are represented in the pg_attribute
+    //     catalog, not here", PG17 docs 51.13), so pg_constraint carries only
+    //     p/u/f for this schema (raw total 185).
+    // The p/u/f subset is the same on both majors and is exactly the constraint
+    // set the migrations create, so 185 is the stable contract. NOTHING is
+    // weakened by this: every Phase F constraint is additionally asserted BY
+    // NAME above, the reference is still verified `convalidated` end to end,
+    // and the self-comparison and full section shape checks are unchanged.
+    const typedConstraints = ref.catalog.constraints.filter(k => ['p', 'u', 'f'].includes(k.contype));
+    assert.equal(typedConstraints.length, 185,
+      'full chain must have 185 primary/unique/foreign-key constraints — ' + size);
     // Ledger proof: the real engine applied EXACTLY the PG chain, cleanly.
     assert.deepEqual(ref.ledger.map(r => r.migration_name),
       ['0_init', '20260915180000_phase26d_quiz_attempt_architecture',
