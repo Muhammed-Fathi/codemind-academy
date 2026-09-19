@@ -960,6 +960,17 @@ function QuizzesCard({ ws, refresh }: { ws: Workspace; refresh: () => void }) {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const duplicate = useMutation({
+    mutationFn: async (id: string) => { const r = await fetch(`/api/teacher/quizzes/${encodeURIComponent(id)}/duplicate`, { method: "POST" }); if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "تعذر نسخ الاختبار"); return r.json(); },
+    onSuccess: () => { toast.success("تم إنشاء نسخة جديدة كمسودة"); refresh(); }, onError: (e: Error) => toast.error(e.message),
+  });
+  const preview = async (id: string) => {
+    const r = await fetch(`/api/teacher/quizzes/${encodeURIComponent(id)}/preview`);
+    if (!r.ok) return toast.error((await r.json().catch(() => ({}))).error || "تعذر فتح المعاينة");
+    const data = await r.json();
+    toast.success(`المعاينة جاهزة: ${data.preview?.questions?.length ?? data.questions?.length ?? 0} سؤال`);
+  };
+
   const del = useMutation({
     mutationFn: async (id: string) => {
       const r = await fetch(`/api/teacher/quizzes/${encodeURIComponent(id)}`, {
@@ -1040,6 +1051,8 @@ function QuizzesCard({ ws, refresh }: { ws: Workspace; refresh: () => void }) {
                   </Badge>
                 )}
                 <span className="ms-auto flex items-center gap-1">
+                  <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => preview(q.id)}>معاينة</Button>
+                  {q.attemptsCount > 0 && <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => duplicate.mutate(q.id)} disabled={duplicate.isPending}>نسخ الاختبار</Button>}
                   {q.status === "DRAFT" && q.questionCount > 0 && (
                     <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => publish.mutate(q.id)} disabled={publish.isPending}>
                       نشر
