@@ -30,6 +30,7 @@ import { GlobalControls } from "@/components/global-controls";
 import {
   LayoutDashboard,
   BookOpen,
+  Presentation,
   Bell,
   CreditCard,
   Users,
@@ -91,6 +92,7 @@ const NAV_BY_ROLE: Record<string, NavItem[]> = {
   ],
   TEACHER: [
     { key: "teacher-dashboard", label: "shell.027", icon: LayoutDashboard },
+    { key: "teacher-sessions", label: "shell.043", icon: Presentation },
     { key: "teacher-attendance", label: "shell.034", icon: CalendarDays },
     { key: "teacher-quizzes", label: "shell.035", icon: Trophy },
     { key: "teacher-homework", label: "shell.004", icon: ClipboardList },

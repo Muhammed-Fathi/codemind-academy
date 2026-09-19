@@ -176,3 +176,55 @@ export async function PATCH(
     },
   });
 }
+
+// DELETE /api/teacher/homework/[id] — Phase E
+//
+// Remove an assignment the teacher owns. Deletion CASCADES into
+// `HomeworkSubmission` (`onDelete: Cascade`), so it is refused (409) the
+// moment ANY submission exists — graded or not. A submission row is a
+// student's work record (and possibly already feedback-bearing); a teacher
+// delete must never erase it, matching the quiz DELETE's frozen-attempt
+// refusal. Only a submission-free assignment (a staging mistake, a duplicate)
+// may be removed.
+//
+// AUTHORIZATION: same chain as PATCH — TEACHER role, own course resolved from
+// the teacher's groups (never a client-supplied id), homework → lesson →
+// (canonical) course. Nothing about student submissions, grading or the
+// lecture progression rules changes here: this route only adds the guarded
+// removal the Phase E workspace needs.
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const tApi = await getServerT();
+  const { id } = await params;
+  const user = await requireUser();
+  if (!user) return err("Unauthorized", 401);
+  if (user.role !== "TEACHER") return err("Forbidden", 403);
+
+  const teacher = await getTeacherProfile(user.id);
+  if (!teacher) return err("Teacher profile not found", 404);
+
+  const existing = await db.homework.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      lessonId: true,
+      lesson: { select: LESSON_PLACEMENT_SELECT },
+      submissions: { select: { id: true }, take: 1 },
+    },
+  });
+  if (!existing) return err(tApi("api.238"), 404);
+
+  const placement = lessonPlacement(existing.lesson as ChainLesson | null);
+  if (!placement || !teacherCourseIds(teacher).includes(placement.courseId)) {
+    return err(tApi("api.180"), 403);
+  }
+
+  if (existing.submissions.length > 0) {
+    return err(tApi("api.323"), 409);
+  }
+
+  await db.homework.delete({ where: { id } });
+  return ok({ deleted: true, id });
+}

@@ -395,18 +395,29 @@ export function HomeworkDialog({
   lessons,
   lessonsLoading,
   homework = null,
+  onChanged,
+  fixedLessonId,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   lessons: TeacherLesson[];
   lessonsLoading: boolean;
   homework?: HomeworkRecord | null;
+  /** Phase E — an embedder (the session workspace) that must refresh its own
+      aggregate query after a successful create/edit. Optional and additive:
+      the legacy dashboard embed leaves it unset and behaviour is unchanged. */
+  onChanged?: () => void;
+  /** Phase E — when creating from inside ONE lesson's workspace the target
+      lesson is already known; seed it so the dialog opens attached to the
+      session it was launched from (the picker still only lists that lesson,
+      so the target can never drift). Ignored in edit mode. */
+  fixedLessonId?: string;
 }) {
   const tr = useT();
   const queryClient = useQueryClient();
   const editing = !!homework;
 
-  const [lessonId, setLessonId] = React.useState(homework?.lessonId ?? "");
+  const [lessonId, setLessonId] = React.useState(homework?.lessonId ?? fixedLessonId ?? "");
   const [title, setTitle] = React.useState(homework?.title ?? "");
   const [titleAr, setTitleAr] = React.useState(homework?.titleAr ?? "");
   const [instructions, setInstructions] = React.useState(
@@ -454,6 +465,7 @@ export function HomeworkDialog({
     onSuccess: () => {
       toast.success(tr("teacher.187"));
       queryClient.invalidateQueries({ queryKey: ["teacher-homework"] });
+      onChanged?.();
       onOpenChange(false);
     },
     onError: (e: Error) => toast.error(e.message || tr("teacher.030")),
@@ -599,11 +611,14 @@ export function QuestionManagerDialog({
   quizTitle,
   open,
   onOpenChange,
+  onChanged,
 }: {
   quizId: string;
   quizTitle: string;
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  /** Phase E — embedder-provided refresh hook (the session workspace). */
+  onChanged?: () => void;
 }) {
   const tr = useT();
   const queryClient = useQueryClient();
@@ -626,6 +641,7 @@ export function QuestionManagerDialog({
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["teacher-quiz-detail", quizId] });
     queryClient.invalidateQueries({ queryKey: ["teacher-quizzes"] });
+    onChanged?.();
   };
 
   const deleteMutation = useMutation({
