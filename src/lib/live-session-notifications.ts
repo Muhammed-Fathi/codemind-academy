@@ -75,6 +75,15 @@ export const LIVE_SESSION_NOTIFICATION_TYPES = {
 export type LiveSessionNotificationType =
   (typeof LIVE_SESSION_NOTIFICATION_TYPES)[keyof typeof LIVE_SESSION_NOTIFICATION_TYPES];
 
+// The localized label authority lives in a PURE module (`notification-labels`)
+// because the admin UI also needs it in the browser: importing it from here
+// would drag the Prisma client into the client bundle. Re-exported so server
+// callers keep using a single import site.
+export {
+  NOTIFICATION_TYPE_LABEL_KEYS,
+  notificationTypeLabelKey,
+} from "@/lib/notification-labels";
+
 /** The live-session events that reach students (and parents, when relevant). */
 export type SessionNotifyKind = Extract<
   SessionEventKind,

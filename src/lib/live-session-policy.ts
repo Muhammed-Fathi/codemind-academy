@@ -433,6 +433,131 @@ export function isAttendanceLocked(
 }
 
 // ---------------------------------------------------------------------------
+// The canonical session identity (Manual-QA fix, Finding 2)
+// ---------------------------------------------------------------------------
+//
+// WHY THIS EXISTS
+// ===============
+// A LiveSession used to be identified on screen by its free-text `title`
+// ("lesson 1 test"), so two sessions of the same lesson looked unrelated and
+// the academic identity was whatever the operator typed. The Lesson is the
+// canonical entity (Course → Part → Unit → Lesson); the session is one
+// scheduled OCCURRENCE of it.
+//
+// This helper is the single way to render that identity: `1-1 — <title>`,
+// where `1-1` is `Lesson.officialCode`. A session whose `lessonId` is null
+// (legacy rows, deliberately never rewritten) has NO academic identity — the
+// caller falls back to its stored display title, and the UI is expected to
+// mark it as unlinked.
+
+export type SessionLessonRef =
+  | { officialCode?: string | null; title?: string | null; titleAr?: string | null }
+  | null
+  | undefined;
+
+/** `1-1 — <title>` (or the part that exists), null when the session has no lesson. */
+export function sessionLessonIdentity(
+  lesson: SessionLessonRef,
+  locale: "ar" | "en" = "ar"
+): string | null {
+  if (!lesson) return null;
+  const code = typeof lesson.officialCode === "string" ? lesson.officialCode.trim() : "";
+  const primary = locale === "en" ? lesson.title : lesson.titleAr;
+  const secondary = locale === "en" ? lesson.titleAr : lesson.title;
+  const title = String(primary || secondary || "").trim();
+  if (code && title) return `${code} — ${title}`;
+  return code || title || null;
+}
+
+/**
+ * The OPTIONAL display override: the session's own title when it adds something
+ * the lesson identity does not already say. Never the academic identity — an
+ * override can be blanked or rewritten without touching the linked Lesson.
+ */
+export function sessionDisplayOverride(
+  sessionTitle: unknown,
+  lesson: SessionLessonRef,
+  locale: "ar" | "en" = "ar"
+): string | null {
+  const own = typeof sessionTitle === "string" ? sessionTitle.trim() : "";
+  if (!own) return null;
+  const lessonTitle = String(
+    (locale === "en" ? lesson?.title : lesson?.titleAr) ?? lesson?.title ?? lesson?.titleAr ?? ""
+  ).trim();
+  if (!lessonTitle) return own;
+  return own === lessonTitle ? null : own;
+}
+
+// ---------------------------------------------------------------------------
+// The live/start window (Manual-QA fix, Finding 3)
+// ---------------------------------------------------------------------------
+//
+// WHY THIS EXISTS
+// ===============
+// The lifecycle flip to LIVE used to be a pure STATE-MACHINE check
+// (`SCHEDULED → LIVE`) with no time guard, while the attendance register is
+// derived from `startAt`. A teacher could therefore press "بدء الحصة" days
+// early and produce a session that was LIVE while its register was still
+// `NOT_STARTED` — a self-contradictory state (the class is running, but the
+// register cannot be written).
+//
+// The ONE rule, defined here and nowhere else:
+//   a session may go LIVE from its scheduled start until the attendance
+//   window closes.
+//
+// That makes the state machine CONSISTENT BY CONSTRUCTION: a session that is
+// LIVE through this authority always has an open register, so
+// `decideAttendanceWrite` can never answer `NOT_STARTED` for it. Starting is
+// also refused once the register window has closed (`START_WINDOW_CLOSED`) —
+// going live after the class is over would only create the mirror-image
+// contradiction.
+//
+// The join window is deliberately WIDER on the early side (it opens
+// `LIVE_SESSION_JOIN_EARLY_MINUTES` before the start so students can settle
+// in): students may arrive early, the teacher may not end the scheduled
+// period early.
+
+export type SessionStartDenialCode =
+  | "SESSION_CANCELLED"
+  | "TOO_EARLY"
+  | "START_WINDOW_CLOSED";
+
+export type SessionStartDecision =
+  | { allowed: true; opensAt: Date; closesAt: Date }
+  | { allowed: false; code: SessionStartDenialCode; opensAt: Date; closesAt: Date; opensInMinutes: number };
+
+/** The earliest instant a session may go LIVE: its scheduled start. */
+export function sessionStartOpensAt(session: SchedulableSession): Date {
+  return new Date(session.startAt);
+}
+
+export function decideSessionStart(
+  session: SchedulableSession & { status?: unknown; attendanceFinalizedAt?: Date | string | null },
+  now: Date
+): SessionStartDecision {
+  const windows = liveSessionWindows(session);
+  const opensAt = sessionStartOpensAt(session);
+  const closesAt = windows.attendanceClosesAt;
+  if (normalizeSessionStatus(session.status) === "CANCELLED") {
+    return { allowed: false, code: "SESSION_CANCELLED", opensAt, closesAt, opensInMinutes: 0 };
+  }
+  const t = now.getTime();
+  if (t < opensAt.getTime()) {
+    return {
+      allowed: false,
+      code: "TOO_EARLY",
+      opensAt,
+      closesAt,
+      opensInMinutes: Math.max(1, Math.ceil((opensAt.getTime() - t) / MINUTE_MS)),
+    };
+  }
+  if (t >= closesAt.getTime()) {
+    return { allowed: false, code: "START_WINDOW_CLOSED", opensAt, closesAt, opensInMinutes: 0 };
+  }
+  return { allowed: true, opensAt, closesAt };
+}
+
+// ---------------------------------------------------------------------------
 // Attendance facts (UNMARKED ≠ ABSENT)
 // ---------------------------------------------------------------------------
 

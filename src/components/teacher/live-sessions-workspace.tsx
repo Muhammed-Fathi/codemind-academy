@@ -28,6 +28,11 @@ import * as React from "react";
 import { useT } from "@/lib/i18n";
 import { useApp } from "@/lib/store";
 import { fmtDateTime as formatDateTime, type Locale } from "@/lib/i18n-core";
+import { EntitySelect, type EntityOption } from "@/components/shared/entity-select";
+import {
+  sessionDisplayOverride,
+  sessionLessonIdentity,
+} from "@/lib/live-session-policy";
 import { useJson, sendJson } from "@/lib/use-json";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -72,11 +77,17 @@ type SessionRow = {
   joinDenialCode: string | null;
   joinOpensAt: string;
   joinClosesAt: string;
+  /** Finding 4 — the CONFIGURED join-before rule in minutes (one authority). */
+  joinEarlyMinutes?: number;
+  /** Finding 3 — the live/start window, decided by the server. */
+  startAllowed?: boolean;
+  startDenialCode?: string | null;
+  startOpensAt?: string;
   attendanceLocked: boolean;
   attendanceFinalizedAt: string | null;
   rescheduleCount: number;
   group: { id: string; name: string; courseId: string } | null;
-  lesson: { id: string; title: string; titleAr: string } | null;
+  lesson: { id: string; title: string; titleAr: string; officialCode?: string | null } | null;
   teacher: { id: string; name: string } | null;
   substituteTeacher: { id: string; name: string } | null;
   counts?: { total: number; marked: number; unmarked: number; present: number; late: number; absent: number; excused: number };
@@ -327,6 +338,16 @@ function SessionDetail({
     };
   }, [roster, draft]);
 
+  // Finding 5 — ONE place decides why finalizing is unavailable, and the same
+  // answer drives both the disabled state and the visible explanation.
+  // Order matters: unsaved changes first (they would be silently dropped
+  // otherwise), then the unmarked acknowledgement.
+  const finalizeBlockedReason: string | null = dirty
+    ? "teacher.live.finalizeNeedsSave"
+    : draftCounts.unmarked > 0 && !ackUnmarked
+      ? "teacher.live.finalizeNeedsAck"
+      : null;
+
   const filtered = roster.filter((row) =>
     search.trim() ? row.name.toLowerCase().includes(search.trim().toLowerCase()) : true
   );
@@ -394,6 +415,19 @@ function SessionDetail({
     const result = await sendJson(`/api/live-sessions/${sessionId}`, "PATCH", { action });
     setBusy(false);
     if (!result.ok) {
+      // Finding 3 — the server is the authority: translate its refusal into
+      // the same wording the disabled button shows, so UI and API agree.
+      const code = String(result.body?.code ?? "");
+      if (code === "SESSION_START_TOO_EARLY") {
+        toast.error(t("teacher.live.startTooEarly", { p1: fmt(session?.startAt ?? null) }));
+        ws.reload();
+        return;
+      }
+      if (code === "SESSION_START_WINDOW_CLOSED") {
+        toast.error(t("teacher.live.startWindowClosed"));
+        ws.reload();
+        return;
+      }
       toast.error(String(result.body?.error ?? t("live.loadError")));
       return;
     }
@@ -465,13 +499,37 @@ function SessionDetail({
                 denialCode: session.joinDenialCode,
                 opensAt: session.joinOpensAt,
                 closesAt: session.joinClosesAt,
+                joinEarlyMinutes: session.joinEarlyMinutes ?? null,
               }}
             />
             {session.status === "SCHEDULED" && (
-              <Button size="sm" variant="outline" onClick={() => lifecycle("start")} disabled={busy}>
-                <Play className="w-4 h-4 ms-1.5" />
-                {t("teacher.live.start")}
-              </Button>
+              // Finding 3 — starting early is refused by the SERVER (the
+              // lifecycle authority). The UI mirrors that rule so the teacher
+              // sees why the button is not available instead of a failure
+              // toast after the fact.
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => lifecycle("start")}
+                  disabled={busy || session.startAllowed === false}
+                  title={
+                    session.startAllowed === false && session.startDenialCode === "TOO_EARLY"
+                      ? t("teacher.live.startTooEarly", { p1: fmt(session.startAt) })
+                      : undefined
+                  }
+                >
+                  <Play className="w-4 h-4 ms-1.5" />
+                  {t("teacher.live.start")}
+                </Button>
+                {session.startAllowed === false ? (
+                  <span className="text-[11px] text-muted-foreground max-w-56">
+                    {session.startDenialCode === "TOO_EARLY"
+                      ? t("teacher.live.startTooEarly", { p1: fmt(session.startAt) })
+                      : t("teacher.live.startWindowClosed")}
+                  </span>
+                ) : null}
+              </div>
             )}
             {session.status === "LIVE" && (
               <Button size="sm" variant="outline" onClick={() => lifecycle("end")} disabled={busy}>
@@ -641,6 +699,19 @@ function SessionDetail({
                 </label>
               </div>
             )}
+            {/* Finding 5 — a disabled button must SAY WHY, in the UI itself.
+                Hover-only `title` text is invisible on touch, to keyboard users
+                and to anyone who does not hover the exact spot. */}
+            {finalizeBlockedReason ? (
+              <div
+                className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 flex items-start gap-2"
+                role="status"
+                data-testid="finalize-blocked-reason"
+              >
+                <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-destructive" />
+                <p className="text-xs text-destructive">{t(finalizeBlockedReason)}</p>
+              </div>
+            ) : null}
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setFinalizeOpen(false)}>
@@ -648,8 +719,8 @@ function SessionDetail({
             </Button>
             <Button
               onClick={finalize}
-              disabled={busy || (draftCounts.unmarked > 0 && !ackUnmarked) || dirty}
-              title={dirty ? t("teacher.live.unsaved") : undefined}
+              disabled={busy || Boolean(finalizeBlockedReason)}
+              title={finalizeBlockedReason ? t(finalizeBlockedReason) : undefined}
             >
               {t("teacher.live.finalize")}
             </Button>
@@ -837,29 +908,53 @@ function ScheduleDialog({
   const [meetingUrl, setMeetingUrl] = React.useState("");
   const [busy, setBusy] = React.useState(false);
 
-  const lessons = useJson<{ lessons: Array<{ id: string; title: string; titleAr: string; courseId?: string }> }>(
+  const locale = useApp((s) => (s.locale === "en" ? "en" : "ar")) as Locale;
+  const lessons = useJson<{ lessons: Array<{ id: string; title: string; titleAr: string; officialCode?: string | null; courseId?: string }> }>(
     open && groupId ? `/api/teacher/lessons?groupId=${groupId}` : null
   );
+  // Finding 2 — only a Lesson belonging to the SELECTED GROUP's course may be
+  // scheduled (the teacher API scopes them; the server re-validates anyway).
+  const lessonOptions: EntityOption[] = React.useMemo(
+    () =>
+      (lessons.data?.lessons ?? []).map((l) => ({
+        value: l.id,
+        label:
+          sessionLessonIdentity(
+            { officialCode: l.officialCode ?? null, title: l.title, titleAr: l.titleAr },
+            locale
+          ) ?? l.id,
+      })),
+    [lessons.data, locale]
+  );
+  const selectedLessonLabel = lessonOptions.find((o) => o.value === lessonId)?.label ?? "";
 
   React.useEffect(() => {
     if (open && groups.length > 0 && !groupId) setGroupId(groups[0].id);
   }, [open, groups, groupId]);
+
+  // Switching group invalidates the chosen lesson (it may belong to another
+  // course entirely) — the teacher must re-pick from the new group's course.
+  React.useEffect(() => {
+    setLessonId("");
+  }, [groupId]);
 
   const submit = async () => {
     if (!groupId) {
       toast.error(t("admin.live.filterGroup"));
       return;
     }
-    if (!titleAr.trim()) {
-      toast.error(t("teacher.live.editTitle"));
+    // Finding 2 — a session is an OCCURRENCE of a canonical Lesson: the link is
+    // mandatory, the free-text title is only an optional display override.
+    if (!lessonId) {
+      toast.error(t("live.lesson.pick"));
       return;
     }
     setBusy(true);
     const result = await sendJson("/api/live-sessions", "POST", {
       groupId,
-      lessonId: lessonId || null,
-      title: titleAr.trim(),
-      titleAr: titleAr.trim(),
+      lessonId,
+      title: titleAr.trim() || null,
+      titleAr: titleAr.trim() || null,
       startAt: new Date(startAt).toISOString(),
       duration: Number(duration),
       meetingUrl: meetingUrl.trim() || null,
@@ -903,22 +998,33 @@ function ScheduleDialog({
           </div>
           <div>
             <Label>{t("live.lesson")}</Label>
-            <Select value={lessonId} onValueChange={setLessonId}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder={t("live.lesson")} />
-              </SelectTrigger>
-              <SelectContent>
-                {(lessons.data?.lessons ?? []).map((l) => (
-                  <SelectItem key={l.id} value={l.id}>
-                    {l.titleAr || l.title}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <EntitySelect
+              value={lessonId}
+              onChange={setLessonId}
+              options={lessonOptions}
+              placeholder={t("live.lesson.pick")}
+              searchPlaceholder={t("live.filter.searchGroups")}
+              allLabel={t("live.lesson.pick")}
+              emptyLabel={t("live.lesson.none")}
+              loading={lessons.loading}
+              error={lessons.error ? t("live.lesson.loadError") : null}
+              onRetry={lessons.reload}
+              disabled={!groupId}
+            />
+            {lessonId ? (
+              <div className="text-[11px] text-emerald-600 mt-1 truncate">{selectedLessonLabel}</div>
+            ) : null}
           </div>
           <div>
-            <Label htmlFor="schedule-title">{t("teacher.live.editTitle")}</Label>
-            <Input id="schedule-title" value={titleAr} maxLength={200} onChange={(e) => setTitleAr(e.target.value)} />
+            <Label htmlFor="schedule-title">{t("live.lesson.optionalTitle")}</Label>
+            <Input
+              id="schedule-title"
+              value={titleAr}
+              maxLength={200}
+              placeholder={selectedLessonLabel}
+              onChange={(e) => setTitleAr(e.target.value)}
+            />
+            <p className="text-[11px] text-muted-foreground mt-1">{t("live.lesson.optionalHint")}</p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
@@ -958,7 +1064,7 @@ function ScheduleDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {t("live.close")}
           </Button>
-          <Button onClick={submit} disabled={busy || !groupId || !titleAr.trim()}>
+          <Button onClick={submit} disabled={busy || !groupId || !lessonId || !startAt}>
             {t("live.save")}
           </Button>
         </DialogFooter>

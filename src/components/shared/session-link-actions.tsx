@@ -33,6 +33,12 @@ export type JoinState = {
   denialCode?: string | null;
   opensAt?: string | null;
   closesAt?: string | null;
+  /**
+   * Finding 4 — the CONFIGURED join-before window in minutes, straight from the
+   * server policy (`LiveSessionPayload.joinEarlyMinutes`). It is what the copy
+   * may quote as the RULE; the remaining wait is derived from `opensAt`.
+   */
+  joinEarlyMinutes?: number | null;
 };
 
 export type SessionLinkActionsProps = {
@@ -70,6 +76,13 @@ export function SessionLinkActions({
   const [busy, setBusy] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
 
+  // Finding 4 — the CONFIGURED join-before rule travels in the payload (one
+  // authority: the server policy). Nothing here may hardcode "15".
+  const joinEarlyMinutes =
+    typeof state.joinEarlyMinutes === "number" && Number.isFinite(state.joinEarlyMinutes)
+      ? state.joinEarlyMinutes
+      : null;
+
   const cancelled = status === "CANCELLED";
   const ended = status === "COMPLETED";
   const disabled = !state.allowed;
@@ -79,14 +92,18 @@ export function SessionLinkActions({
     if (ended || state.denialCode === "SESSION_ENDED") return t("live.join.ended");
     if (state.denialCode === "LINK_NOT_SET") return t("live.join.noLink");
     if (state.denialCode === "TOO_EARLY") {
-      const minutes = Math.max(
-        1,
-        Math.round((new Date(state.opensAt ?? Date.now()).getTime() - Date.now()) / 60000)
-      );
-      return t("live.join.tooEarly", { p1: minutes });
+      // Finding 4 — this is the REMAINING WAIT ("opens in 37 minutes"), which
+      // used to be rendered through the configured-rule string, telling the
+      // user that the window was "37 minutes before the session".
+      const minutes = remainingMinutes();
+      return minutes <= 1 ? t("live.join.waitsInOne") : t("live.join.waitsIn", { p1: minutes });
     }
     return t("live.join.noLink");
   };
+
+  /** Minutes until the join window opens, from the payload's own timestamp. */
+  const remainingMinutes = (): number =>
+    Math.max(1, Math.ceil((new Date(state.opensAt ?? Date.now()).getTime() - Date.now()) / 60000));
 
   /** Fetch the authorized URL. Returns null (and toasts) on refusal. */
   const fetchUrl = async (): Promise<string | null> => {
@@ -94,7 +111,10 @@ export function SessionLinkActions({
     const body = await res.json().catch(() => ({}));
     if (!res.ok) {
       const code = String(body?.code ?? "");
-      if (code === "TOO_EARLY") toast.error(t("live.join.tooEarly", { p1: 15 }));
+      if (code === "TOO_EARLY") {
+        const minutes = remainingMinutes();
+        toast.error(minutes <= 1 ? t("live.join.waitsInOne") : t("live.join.waitsIn", { p1: minutes }));
+      }
       else if (code === "SESSION_ENDED") toast.error(t("live.join.ended"));
       else if (code === "SESSION_CANCELLED") toast.error(t("live.join.cancelled"));
       else if (code === "LINK_NOT_SET") toast.error(t("live.join.noLink"));
@@ -179,9 +199,22 @@ export function SessionLinkActions({
       {disabled && !compact && (
         <span className="text-xs text-muted-foreground">{denialLabel()}</span>
       )}
-      {!disabled && !compact && state.opensAt && status === "SCHEDULED" && (
-        <span className="text-[11px] text-muted-foreground">
-          {t("live.join.opensAt", { p1: fmt(state.opensAt) })}
+      {!compact && status === "SCHEDULED" && (
+        <span className="text-[11px] text-muted-foreground flex items-center gap-1 flex-wrap">
+          {/* Finding 4 — the RULE and the WAIT are two different facts and are
+              never merged into one sentence. */}
+          {joinEarlyMinutes !== null ? (
+            <span>{t("live.join.ruleEarly", { p1: joinEarlyMinutes })}</span>
+          ) : null}
+          {disabled && state.denialCode === "TOO_EARLY" ? (
+            <span>
+              ·{" "}
+              {remainingMinutes() <= 1
+                ? t("live.join.waitsInOne")
+                : t("live.join.waitsIn", { p1: remainingMinutes() })}
+            </span>
+          ) : null}
+          {!disabled && state.opensAt ? <span>· {t("live.join.opensAt", { p1: fmt(state.opensAt) })}</span> : null}
         </span>
       )}
     </div>

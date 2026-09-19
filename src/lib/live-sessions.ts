@@ -40,8 +40,10 @@ import {
   ATTENDANCE_STATUSES,
   decideAttendanceWrite,
   decideJoin,
+  decideSessionStart,
   deriveSessionPhase,
   deriveSessionReviewState,
+  liveSessionJoinEarlyMinutes,
   liveSessionWindows,
   normalizeAttendanceStatus,
   normalizeSessionStatus,
@@ -87,6 +89,9 @@ export type LiveSessionFailureCode =
   | "INVALID_MEETING_URL"
   | "INVALID_STATUS_TRANSITION"
   | "SESSION_TERMINAL"
+  // Finding 3 — the live/start window (one policy authority).
+  | "SESSION_START_TOO_EARLY"
+  | "SESSION_START_WINDOW_CLOSED"
   | "ATTENDANCE_NOT_STARTED"
   | "ATTENDANCE_WINDOW_CLOSED"
   | "ATTENDANCE_ALREADY_FINALIZED"
@@ -205,6 +210,12 @@ export type LiveSessionPayload = {
   joinDenialCode: string | null;
   joinOpensAt: string;
   joinClosesAt: string;
+  /** The CONFIGURED join-before window in minutes (Finding 4 — one authority). */
+  joinEarlyMinutes: number;
+  /** May this session go LIVE right now? (Finding 3 — the start window.) */
+  startAllowed: boolean;
+  startDenialCode: string | null;
+  startOpensAt: string;
   attendanceOpensAt: string;
   attendanceClosesAt: string;
   attendanceLocked: boolean;
@@ -216,7 +227,7 @@ export type LiveSessionPayload = {
   originalStartAt: string | null;
   lastRescheduledAt: string | null;
   group: { id: string; name: string; courseId: string } | null;
-  lesson: { id: string; title: string; titleAr: string } | null;
+  lesson: { id: string; title: string; titleAr: string; officialCode?: string | null } | null;
   teacher: { id: string; name: string } | null;
   substituteTeacher: { id: string; name: string } | null;
   counts?: AttendanceCounts;
@@ -237,6 +248,7 @@ export function toLiveSessionPayload(params: {
   const windows = liveSessionWindows(session);
   const join = decideJoin(session, now);
   const write = decideAttendanceWrite(session, now);
+  const start = decideSessionStart(session, now);
   const link = validateMeetingUrl(session.meetingUrl);
   const counts = params.counts;
   return {
@@ -256,6 +268,15 @@ export function toLiveSessionPayload(params: {
     joinDenialCode: join.allowed ? null : join.code,
     joinOpensAt: toIso(windows.joinOpensAt)!,
     joinClosesAt: toIso(windows.joinClosesAt)!,
+    // Finding 4 — the CONFIGURED rule travels with the payload so no surface
+    // has to hardcode "15": the copy can say "you may join 15 minutes before"
+    // (rule) and, separately, "the link opens in 37 minutes" (remaining wait).
+    joinEarlyMinutes: liveSessionJoinEarlyMinutes(),
+    // Finding 3 — the start window travels the same way, so the teacher UI
+    // disables the start button with the REAL reason instead of guessing.
+    startAllowed: start.allowed,
+    startDenialCode: start.allowed ? null : start.code,
+    startOpensAt: toIso(start.opensAt)!,
     attendanceOpensAt: toIso(windows.attendanceOpensAt)!,
     attendanceClosesAt: toIso(windows.attendanceClosesAt)!,
     attendanceLocked: write.allowed === false,
@@ -270,7 +291,12 @@ export function toLiveSessionPayload(params: {
       ? { id: session.group.id, name: session.group.name, courseId: session.group.courseId }
       : null,
     lesson: session.lesson
-      ? { id: session.lesson.id, title: session.lesson.title, titleAr: session.lesson.titleAr }
+      ? {
+          id: session.lesson.id,
+          title: session.lesson.title,
+          titleAr: session.lesson.titleAr,
+          officialCode: session.lesson.officialCode ?? null,
+        }
       : null,
     teacher: session.teacher?.user
       ? { id: session.teacher.id, name: session.teacher.user.name }
@@ -289,7 +315,10 @@ export function toLiveSessionPayload(params: {
 const SESSION_WITH_CONTEXT = {
   ...LIVE_SESSION_SELECT,
   group: { select: { id: true, name: true, courseId: true } },
-  lesson: { select: { id: true, title: true, titleAr: true } },
+  // Finding 2 — `officialCode` is the canonical curriculum identity of the
+  // lesson ("1-1"), so every surface can show `1-1 — <title>` instead of a
+  // free-text session title.
+  lesson: { select: { id: true, title: true, titleAr: true, officialCode: true } },
   teacher: { select: { id: true, user: { select: { name: true } } } },
   substituteTeacher: { select: { id: true, user: { select: { name: true } } } },
 } as const;
@@ -1004,6 +1033,20 @@ export async function startLiveSession(params: {
   if (normalizeSessionStatus(current.status) === "SCHEDULED") {
     if (!canTransitionSession(current.status, "LIVE")) {
       throw new LiveSessionError("INVALID_STATUS_TRANSITION", "This session cannot be started", 409);
+    }
+    // Finding 3 — the START WINDOW is enforced HERE, on the server, through
+    // the one policy authority. A UI-only guard would be bypassable, and a
+    // missing guard is what allowed LIVE-while-the-register-is-locked.
+    const startDecision = decideSessionStart(current, now);
+    if (!startDecision.allowed) {
+      throw new LiveSessionError(
+        startDecision.code === "TOO_EARLY" ? "SESSION_START_TOO_EARLY" : "SESSION_START_WINDOW_CLOSED",
+        startDecision.code === "TOO_EARLY"
+          ? "This session cannot be started before its scheduled time"
+          : "The start window for this session has closed",
+        409,
+        { reason: startDecision.code, opensAt: startDecision.opensAt.toISOString() }
+      );
     }
     const updated = (await (client as any).liveSession.update({
       where: { id: params.sessionId },

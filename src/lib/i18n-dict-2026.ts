@@ -2214,8 +2214,62 @@ export const DICT_2026: Record<string, DictEntry> = {
   "live.join.opensAt": { ar: "يفتح: {p1}", en: "Opens: {p1}" },
   "live.join.closesAt": { ar: "ينتهي: {p1}", en: "Closes: {p1}" },
   "live.join.joinNow": { ar: "انضم الآن", en: "Join now" },
+  // ---------------------------------------------------------------------
+  // Finding 4 — the join window is stated as TWO different facts, never one
+  // ambiguous sentence:
+  //   * `ruleEarly`  = the CONFIGURED rule  ("you may join 15 min before")
+  //   * `waitsIn`    = the REMAINING WAIT   ("the link opens in 37 min")
+  // The old copy reused `live.join.tooEarly` ("الرابط يفتح قبل الموعد بـ N
+  // دقيقة") for the remaining wait, so a user 37 minutes early was told the
+  // rule was "37 minutes before the session".
+  // ---------------------------------------------------------------------
+  "live.join.ruleEarly": {
+    ar: "يمكن الانضمام قبل الحصة بـ {p1} دقيقة",
+    en: "You can join {p1} minutes before the session",
+  },
+  "live.join.waitsIn": {
+    ar: "يفتح رابط الحصة بعد {p1} دقيقة",
+    en: "The session link opens in {p1} minutes",
+  },
+  "live.join.waitsInOne": {
+    ar: "يفتح رابط الحصة بعد دقيقة",
+    en: "The session link opens in a minute",
+  },
+  "live.join.ruleEarlyShort": {
+    ar: "يفتح قبل الموعد بـ {p1} دقيقة",
+    en: "Opens {p1} min before",
+  },
   // ---- session cards / lists ----
   "live.title": { ar: "الحصص المباشرة", en: "Live sessions" },
+  // ---------------------------------------------------------------------
+  // Finding 8 — ONE localized label per NotificationType. The admin
+  // notifications screen used to print the raw enum
+  // (`type.replace(/_/g, " ")`), so users read "ABSENCE EXCUSED". Every value
+  // of the enum is mapped (see NOTIFICATION_TYPE_LABEL_KEYS), plus a generic
+  // fallback so an unknown value can never leak either.
+  // ---------------------------------------------------------------------
+  "notif.type.generic": { ar: "إشعار", en: "Notification" },
+  "notif.type.newLesson": { ar: "درس جديد", en: "New lesson" },
+  "notif.type.newQuiz": { ar: "اختبار جديد", en: "New quiz" },
+  "notif.type.quizResult": { ar: "نتيجة اختبار", en: "Quiz result" },
+  "notif.type.newHomework": { ar: "واجب جديد", en: "New homework" },
+  "notif.type.homeworkDeadline": { ar: "موعد تسليم واجب", en: "Homework deadline" },
+  "notif.type.upcomingSession": { ar: "حصة قادمة", en: "Upcoming session" },
+  "notif.type.lowAttendance": { ar: "تنبيه حضور", en: "Attendance alert" },
+  "notif.type.monthlyReport": { ar: "التقرير الشهري", en: "Monthly report" },
+  "notif.type.subscriptionExpiration": { ar: "انتهاء الاشتراك", en: "Subscription expiring" },
+  "notif.type.announcement": { ar: "إعلان", en: "Announcement" },
+  "notif.type.paymentApproved": { ar: "تم تأكيد الدفع", en: "Payment approved" },
+  "notif.type.paymentRejected": { ar: "تم رفض الدفع", en: "Payment rejected" },
+  "notif.type.sessionScheduled": { ar: "تم تحديد حصة", en: "Session scheduled" },
+  "notif.type.sessionLink": { ar: "رابط حصة متاح", en: "Session link available" },
+  "notif.type.sessionRescheduled": { ar: "تم تغيير موعد حصة", en: "Session rescheduled" },
+  "notif.type.sessionCancelled": { ar: "تم إلغاء حصة", en: "Session cancelled" },
+  "notif.type.absenceFinalized": { ar: "تم تسجيل الغياب", en: "Absence recorded" },
+  "notif.type.absenceReasonSubmitted": { ar: "تم إرسال عذر غياب", en: "Absence reason submitted" },
+  "notif.type.absenceExcused": { ar: "تم قبول العذر", en: "Absence excused" },
+  "notif.type.absenceUnexcused": { ar: "تم رفض العذر", en: "Absence not excused" },
+  "notif.type.absenceReminder": { ar: "تذكير بإرسال العذر", en: "Absence reason reminder" },
   "shell.f1": { ar: "حصصي المباشرة", en: "My live sessions" },
   "shell.f2": { ar: "أعذار الغياب", en: "Absence reasons" },
   "shell.f3": { ar: "الحصص المباشرة", en: "Live sessions" },
@@ -2232,6 +2286,27 @@ export const DICT_2026: Record<string, DictEntry> = {
   "live.retry": { ar: "إعادة المحاولة", en: "Retry" },
   "live.loading": { ar: "جاري التحميل…", en: "Loading…" },
   "live.teacher": { ar: "المعلم", en: "Teacher" },
+  // Finding 1 — the admin live-ops filters are human-readable selectors over
+  // authoritative data (no raw ID text inputs).
+  "live.filter.allTeachers": { ar: "كل المعلمين", en: "All teachers" },
+  "live.filter.allGroups": { ar: "كل المجموعات", en: "All groups" },
+  "live.filter.searchTeachers": { ar: "ابحث باسم المعلم", en: "Search by teacher name" },
+  "live.filter.searchGroups": { ar: "ابحث باسم المجموعة", en: "Search by group name" },
+  "live.filter.noTeachers": { ar: "مفيش معلمين", en: "No teachers" },
+  "live.filter.noGroups": { ar: "مفيش مجموعات", en: "No groups" },
+  "live.filter.clear": { ar: "مسح الفلتر", en: "Clear filter" },
+  "live.filter.optionCount": { ar: "{p1} طالب", en: "{p1} students" },
+  "live.filter.groupsCount": { ar: "{p1} مجموعة", en: "{p1} groups" },
+  // Finding 2 — the canonical Lesson identity shown on every session.
+  "live.lesson.pick": { ar: "اختَر الدرس الرسمي", en: "Choose the official lesson" },
+  "live.lesson.none": { ar: "مفيش دروس متاحة للمجموعة دي", en: "No lessons available for this group" },
+  "live.lesson.loadError": { ar: "تعذر تحميل دروس المجموعة", en: "Could not load the group's lessons" },
+  "live.lesson.optionalTitle": { ar: "عنوان إضافي (اختياري)", en: "Extra display title (optional)" },
+  "live.lesson.optionalHint": {
+    ar: "العنوان الرسمي بييجي من الدرس. الكتابة هنا بتغيّر الشكل المعروض بس — مش الدرس المرتبط.",
+    en: "The official title comes from the lesson. Typing here only changes what is displayed — not the linked lesson.",
+  },
+  "live.lesson.unlinked": { ar: "غير مرتبطة بدرس", en: "Not linked to a lesson" },
   "live.group": { ar: "المجموعة", en: "Group" },
   "live.lesson": { ar: "الدرس", en: "Lesson" },
   "live.duration": { ar: "{p1} دقيقة", en: "{p1} minutes" },
@@ -2268,6 +2343,25 @@ export const DICT_2026: Record<string, DictEntry> = {
   "teacher.live.locked": { ar: "الحضور مقفول — للعرض فقط", en: "Attendance is locked — read only" },
   "teacher.live.saved": { ar: "تم حفظ الحضور", en: "Attendance saved" },
   "teacher.live.unsaved": { ar: "فيه تغييرات لم يتم حفظها", en: "You have unsaved changes" },
+  // Finding 5 — a DISABLED button must say WHY, in the UI (not a hover-only
+  // tooltip, which is invisible on touch and to keyboard users).
+  "teacher.live.finalizeNeedsSave": {
+    ar: "احفظ تغييرات الحضور أولًا قبل تأكيد الحضور.",
+    en: "Save the attendance changes first, then finalize.",
+  },
+  "teacher.live.finalizeNeedsAck": {
+    ar: "فيه طلاب لم يتم تسجيل حضورهم — وافق على تسجيلهم قبل التأكيد.",
+    en: "Some students are unmarked — acknowledge them before finalizing.",
+  },
+  // Finding 3 — the teacher must know WHEN starting is allowed.
+  "teacher.live.startTooEarly": {
+    ar: "مش هتقدر تبدأ الحصة قبل موعدها. تبدأ الساعة {p1}.",
+    en: "You cannot start the session before its scheduled time. It starts at {p1}.",
+  },
+  "teacher.live.startWindowClosed": {
+    ar: "انتهى وقت بدء الحصة — سجّل الحضور من الإدارة أو تواصل مع الدعم.",
+    en: "The start window for this session has closed.",
+  },
   "teacher.live.save": { ar: "حفظ الحضور", en: "Save attendance" },
   "teacher.live.markAllPresent": { ar: "تسجيل الكل حاضر", en: "Mark all present" },
   "teacher.live.markAllPresentConfirm": { ar: "تسجيل كل الطلاب حاضرين؟ تقدر تعدّل فرد فرد بعد كده.", en: "Mark every student present? You can still change individuals afterwards." },
@@ -2299,6 +2393,35 @@ export const DICT_2026: Record<string, DictEntry> = {
   "student.absences.decision": { ar: "قرار الإدارة", en: "Administrative decision" },
   "student.absences.awaitingDecision": { ar: "في انتظار قرار الإدارة", en: "Awaiting the administrative decision" },
   "student.absences.decided": { ar: "تم اتخاذ القرار", en: "Decided" },
+  // ---------------------------------------------------------------------
+  // Finding 9/10 — the Parent Monthly Report had hardcoded English labels
+  // ("Course Progress", "Quiz Average", "Subscription Status"…) inside an
+  // Arabic-first report. Every label now comes from the dictionary.
+  // ---------------------------------------------------------------------
+  // Finding 11 — the Parent quick-action row: one clean icon + label per
+  // action, Arabic-first, and a real notifications entry that is distinct from
+  // notification PREFERENCES (the bell icon used to open preferences, so the
+  // entry point looked like the notifications surface but was not).
+  "parent.action.analytics": { ar: "التحليلات", en: "Analytics" },
+  "parent.action.weekly": { ar: "التقرير الأسبوعي", en: "Weekly Report" },
+  "parent.action.monthly": { ar: "التقرير الشهري", en: "Monthly Report" },
+  "parent.action.notifications": { ar: "الإشعارات", en: "Notifications" },
+  "parent.action.notificationsUnread": {
+    ar: "{p1} إشعار غير مقروء",
+    en: "{p1} unread notifications",
+  },
+  "parent.action.prefs": { ar: "إعدادات الإشعارات", en: "Notification settings" },
+  "parent.report.title": { ar: "التقرير الشهري", en: "Monthly Report" },
+  "parent.report.titleFor": { ar: "التقرير الشهري — {p1}", en: "Monthly Report — {p1}" },
+  "parent.report.courseProgress": { ar: "تقدّم المنهج", en: "Course Progress" },
+  "parent.report.attendance": { ar: "الحضور", en: "Attendance" },
+  "parent.report.quizAverage": { ar: "متوسط الاختبارات", en: "Quiz Average" },
+  "parent.report.homework": { ar: "الواجبات", en: "Homework" },
+  "parent.report.lessonsCount": { ar: "{p1}/{p2} درس", en: "{p1}/{p2} lessons" },
+  "parent.report.sessionsCount": { ar: "{p1}/{p2} حصة", en: "{p1}/{p2} sessions" },
+  "parent.report.submittedCount": { ar: "{p1} مُسلَّم", en: "{p1} submitted" },
+  "parent.report.subscriptionStatus": { ar: "حالة الاشتراك", en: "Subscription status" },
+  "parent.report.strongTopics": { ar: "نقاط القوة", en: "Strong topics" },
   "parent.absences.title": { ar: "غياب الأبناء", en: "Children's absences" },
   "parent.absences.subtitle": { ar: "تابع الغياب وأرسل العذر — بدون تعديل الحضور.", en: "Follow absences and submit reasons — attendance cannot be changed here." },
   "parent.absences.readOnlyNotice": { ar: "لا يمكن لولي الأمر تعديل الحضور أو قبول العذر أو رفع التعليق؛ ده من اختصاص الإدارة.", en: "A parent cannot change attendance, excuse an absence or lift a hold — that is the administration's job." },

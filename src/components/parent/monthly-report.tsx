@@ -2,6 +2,7 @@
 import { useT, useLocale , pickAuto } from "@/lib/i18n";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -162,7 +163,15 @@ export function MonthlyReportContent({
 }) {
   const tr = useT();
   const locale = useLocale();
+  // Finding 10 — the print copy is portaled into <body>; it can only exist
+  // after mount (`document` is undefined during SSR). The on-screen copy is
+  // untouched, so server rendering still emits the complete report markup.
+  const [printMounted, setPrintMounted] = React.useState(false);
+  React.useEffect(() => setPrintMounted(true), []);
   const handlePrint = () => {
+    // The printable copy is already in the DOM (portaled into <body>) and the
+    // print stylesheet hides every other body child: this prints what is on
+    // screen — RTL layout, colors, every section, nothing clipped.
     window.print();
   };
 
@@ -195,7 +204,7 @@ export function MonthlyReportContent({
               <CreditCard className="w-7 h-7 text-amber-500" />
             </div>
             <Badge variant="secondary" className="mb-3">
-              Monthly Report — {data.studentName}
+              {tr("parent.report.titleFor", { p1: data.studentName })}
             </Badge>
             <h2 className="text-lg font-bold mb-2">{subscriptionInfo.title}</h2>
             <p className="text-sm text-muted-foreground leading-relaxed">
@@ -212,21 +221,61 @@ export function MonthlyReportContent({
   return (
     <>
       {/* Print-specific styles */}
+      {/* ------------------------------------------------------------------
+          Finding 10 — PRINT FIX (root cause).
+          The blank PDF was never a data problem: `.print-report` lived INSIDE
+          the `.no-print` overlay, and `@media print` hides that ancestor with
+          `display: none !important`. No `visibility: visible` descendant can
+          come back from a `display: none` ancestor, so the page printed empty.
+          The printable copy now lives OUTSIDE every wrapper that hides,
+          scrolls or clips: it is portaled straight into <body>, where it flows
+          normally (so it PAGINATES instead of being cut at one viewport) and
+          is the only laid-out body child while printing.
+         ------------------------------------------------------------------ */}
       <style jsx global>{`
+        .cm-print-portal { display: none; }
         @media print {
-          body * { visibility: hidden; }
-          .print-report, .print-report * { visibility: visible; }
-          .print-report { position: absolute; left: 0; top: 0; width: 100%; }
+          /* While printing, the portaled report is the only laid-out child. */
+          body > *:not(.cm-print-portal) { display: none !important; }
+          .cm-print-portal { display: block !important; }
           .no-print { display: none !important; }
+          /* Keep printed colors: browsers drop backgrounds by default, which
+             would print the emerald header white-on-white. */
+          .cm-print-portal,
+          .cm-print-portal * {
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+          .print-report { box-shadow: none !important; border-radius: 0 !important; }
+          /* Sensible page breaks: never split a card, a row or a list item,
+             and repeat the quiz table head on every page. */
+          .print-report tr,
+          .print-report li { break-inside: avoid; page-break-inside: avoid; }
+          .print-report thead { display: table-header-group; }
+          .print-report h3,
+          .print-report h4 { break-after: avoid; }
           @page { margin: 1.5cm; }
         }
       `}</style>
+
+      {/* The PRINTABLE copy: a direct child of <body>, hidden on screen.
+          Same component as the on-screen copy — one source of markup. */}
+      {printMounted && typeof document !== "undefined"
+        ? createPortal(
+            <div className="cm-print-portal" aria-hidden="true">
+              <div className="print-report bg-white text-black">
+                <ReportBody data={data} subscriptionInfo={subscriptionInfo} tr={tr} />
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
 
       {/* Toolbar (not printed) */}
       <div className="no-print fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-start justify-center p-4 sm:p-6 overflow-y-auto">
         <div className="w-full max-w-4xl my-8">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold">Monthly Report — {data.studentName}</h2>
+            <h2 className="text-lg font-bold">{tr("parent.report.titleFor", { p1: data.studentName })}</h2>
             <div className="flex items-center gap-2">
               <Button onClick={handlePrint} className="font-bold">
                 <Printer className="w-4 h-4 ms-2" />
@@ -237,8 +286,32 @@ export function MonthlyReportContent({
             </div>
           </div>
 
-          {/* Report content (also printed) */}
+          {/* Report content — printed through the portaled copy below. */}
           <div className="print-report bg-white text-black rounded-2xl shadow-2xl overflow-hidden">
+            <ReportBody data={data} subscriptionInfo={subscriptionInfo} tr={tr} />
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/**
+ * The report body — ONE source of markup, rendered twice: inside the
+ * on-screen overlay and inside the portaled print copy (Finding 10). A single
+ * component guarantees the exported PDF can never drift from the screen.
+ */
+function ReportBody({
+  data,
+  subscriptionInfo,
+  tr,
+}: {
+  data: ReportData;
+  subscriptionInfo: ReturnType<typeof describeParentSubscription>;
+  tr: (key: string, params?: Record<string, unknown>) => string;
+}) {
+  return (
+    <>
             {/* Header */}
             <div className="bg-gradient-to-br from-emerald-600 via-teal-600 to-amber-500 text-white p-8">
               <div className="flex items-center justify-between">
@@ -249,7 +322,7 @@ export function MonthlyReportContent({
                 <CodeMindLogo size={48} />
               </div>
               <div className="mt-6 pt-6 border-t border-white/20">
-                <div className="text-xs opacity-75 uppercase tracking-wider">Monthly Report</div>
+                <div className="text-xs opacity-75 uppercase tracking-wider">{tr("parent.report.title")}</div>
                 <div className="text-3xl font-extrabold mt-1">{data.reportMonth}</div>
               </div>
             </div>
@@ -270,10 +343,10 @@ export function MonthlyReportContent({
                 <TrendingUp className="w-5 h-5 text-emerald-600" />
                 {tr("parent.019")}</h3>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <MetricCard label="Course Progress" value={`${data.courseProgress.pct}%`} sub={`${data.courseProgress.completed}/${data.courseProgress.total} Lessons`} tone="emerald" />
-                <MetricCard label="Attendance" value={`${data.attendance.pct}%`} sub={`${data.attendance.present}/${data.attendance.total} Sessions`} tone="teal" />
-                <MetricCard label="Quiz Average" value={`${data.quizzes.average}%`} sub={tr("parent.020", { p1: data.quizzes.passed })} tone="amber" />
-                <MetricCard label="Homework" value={`${data.homework.completionPct}%`} sub={`${data.homework.submitted} submitted`} tone="orange" />
+                <MetricCard label={tr("parent.report.courseProgress")} value={`${data.courseProgress.pct}%`} sub={tr("parent.report.lessonsCount", { p1: data.courseProgress.completed, p2: data.courseProgress.total })} tone="emerald" />
+                <MetricCard label={tr("parent.report.attendance")} value={`${data.attendance.pct}%`} sub={tr("parent.report.sessionsCount", { p1: data.attendance.present, p2: data.attendance.total })} tone="teal" />
+                <MetricCard label={tr("parent.report.quizAverage")} value={`${data.quizzes.average}%`} sub={tr("parent.020", { p1: data.quizzes.passed })} tone="amber" />
+                <MetricCard label={tr("parent.report.homework")} value={`${data.homework.completionPct}%`} sub={tr("parent.report.submittedCount", { p1: data.homework.submitted })} tone="orange" />
               </div>
             </div>
 
@@ -284,7 +357,7 @@ export function MonthlyReportContent({
                 data-testid="monthly-report-subscription"
               >
                 <div>
-                  <div className="text-xs text-gray-500">Subscription Status</div>
+                  <div className="text-xs text-gray-500">{tr("parent.report.subscriptionStatus")}</div>
                   <div className="text-sm font-bold mt-1">
                     {subscriptionInfo.label}
                     {data.subscription?.planName && ` · ${data.subscription.planName}`}
@@ -310,7 +383,7 @@ export function MonthlyReportContent({
                 <div>
                   <h4 className="text-sm font-bold mb-3 flex items-center gap-2 text-emerald-700">
                     <CheckCircle2 className="w-4 h-4" />
-                    Strong Topics
+                    {tr("parent.report.strongTopics")}
                   </h4>
                   {data.strongTopics.length === 0 ? (
                     <p className="text-xs text-gray-400">{tr("parent.022")}</p>
@@ -404,7 +477,11 @@ export function MonthlyReportContent({
                 {data.recommendations.map((r, i) => (
                   <li key={i} className="text-sm flex items-start gap-2">
                     <span className="text-emerald-600 font-bold mt-0.5">{i + 1}.</span>
-                    <span>{r}</span>
+                    {/* Finding 9 — `generateRecommendations` yields dictionary
+                        KEYS ("parent.035"…): resolve them HERE, at the render
+                        site. The i18n core never returns a dotted key, so an
+                        already-human string passes through untouched. */}
+                    <span>{tr(r)}</span>
                   </li>
                 ))}
               </ul>
@@ -420,9 +497,6 @@ export function MonthlyReportContent({
                 CodeMind Academy · Learn. Build. Think.
               </div>
             </div>
-          </div>
-        </div>
-      </div>
     </>
   );
 }

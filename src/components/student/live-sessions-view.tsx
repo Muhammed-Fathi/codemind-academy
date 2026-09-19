@@ -38,6 +38,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { SessionLinkActions } from "@/components/shared/session-link-actions";
+import {
+  sessionDisplayOverride,
+  sessionLessonIdentity,
+} from "@/lib/live-session-policy";
 import { toast } from "sonner";
 import { AlertTriangle, CalendarClock, CheckCircle2, Clock, MessageSquarePlus } from "lucide-react";
 
@@ -60,6 +64,8 @@ export type LiveSessionPayload = {
   joinDenialCode: string | null;
   joinOpensAt: string;
   joinClosesAt: string;
+  /** Finding 4 — the CONFIGURED join-before window (server policy). */
+  joinEarlyMinutes?: number;
   attendanceLocked: boolean;
   cancelledAt: string | null;
   cancelReason: string | null;
@@ -82,7 +88,7 @@ type AbsenceCase = {
   decisionNote: string | null;
   student: { id: string; name: string };
   session: { id: string; title: string; titleAr: string; startAt: string; endsAt: string; status: string };
-  lesson: { id: string; title: string; titleAr: string } | null;
+  lesson: { id: string; title: string; titleAr: string; officialCode?: string | null } | null;
   group: { id: string; name: string } | null;
   teacherName: string | null;
   hold: { status: string } | null;
@@ -151,7 +157,11 @@ export function LiveSessionCard({ session }: { session: LiveSessionPayload }) {
   const t = useT();
   const locale = useApp((s) => (s.locale === "en" ? "en" : "ar")) as Locale;
   const fmtDateTime = (value: string | null) => (value ? formatDateTime(value, locale) : "");
-  const title = session.titleAr || session.title;
+  // Finding 2 — the card leads with the canonical Lesson identity
+  // (`1-1 — <title>`) and only falls back to the stored display title for a
+  // legacy session that was never linked to a lesson.
+  const lessonIdentity = sessionLessonIdentity(session.lesson, locale);
+  const title = lessonIdentity ?? (session.titleAr || session.title);
   const teacherName = session.substituteTeacher?.name || session.teacher?.name || "";
 
   return (
@@ -160,6 +170,16 @@ export function LiveSessionCard({ session }: { session: LiveSessionPayload }) {
         <div className="flex items-start justify-between gap-2 flex-wrap">
           <div className="min-w-0">
             <h3 className="font-bold text-sm break-words">{title}</h3>
+            {lessonIdentity ? (
+              (() => {
+                const override = sessionDisplayOverride(session.titleAr || session.title, session.lesson, locale);
+                return override ? (
+                  <div className="text-[11px] text-muted-foreground truncate">{override}</div>
+                ) : null;
+              })()
+            ) : (
+              <div className="text-[11px] text-muted-foreground">{t("live.lesson.unlinked")}</div>
+            )}
             <p className="text-xs text-muted-foreground flex items-center gap-1.5 mt-0.5">
               <CalendarClock className="w-3.5 h-3.5" />
               {fmtDateTime(session.startAt)}
@@ -186,7 +206,7 @@ export function LiveSessionCard({ session }: { session: LiveSessionPayload }) {
           {session.lesson && (
             <div className="col-span-2">
               <span className="font-medium text-foreground">{t("live.lesson")}: </span>
-              {session.lesson.titleAr || session.lesson.title}
+              {lessonIdentity}
             </div>
           )}
           {session.rescheduleCount > 0 && (
@@ -213,6 +233,9 @@ export function LiveSessionCard({ session }: { session: LiveSessionPayload }) {
             denialCode: session.joinDenialCode,
             opensAt: session.joinOpensAt,
             closesAt: session.joinClosesAt,
+            // Finding 4 — the configured window comes from the server policy,
+            // never from a number typed into this component.
+            joinEarlyMinutes: session.joinEarlyMinutes ?? null,
           }}
         />
       </CardContent>

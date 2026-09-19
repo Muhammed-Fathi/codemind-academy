@@ -37,6 +37,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { EntitySelect, type EntityOption } from "@/components/shared/entity-select";
+import {
+  sessionDisplayOverride,
+  sessionLessonIdentity,
+} from "@/lib/live-session-policy";
 import {
   Dialog,
   DialogContent,
@@ -81,7 +86,7 @@ type SessionRow = {
   attendanceFinalizedAt: string | null;
   rescheduleCount: number;
   group: { id: string; name: string } | null;
-  lesson: { id: string; title: string; titleAr: string } | null;
+  lesson: { id: string; title: string; titleAr: string; officialCode?: string | null } | null;
   teacher: { id: string; name: string } | null;
   substituteTeacher: { id: string; name: string } | null;
   counts: { total: number; marked: number; unmarked: number; present: number; late: number; absent: number; excused: number };
@@ -97,7 +102,7 @@ type AbsenceCase = {
   decisionNote: string | null;
   student: { id: string; name: string; studentCode: string | null };
   session: { id: string; title: string; titleAr: string; startAt: string };
-  lesson: { id: string; title: string; titleAr: string } | null;
+  lesson: { id: string; title: string; titleAr: string; officialCode?: string | null } | null;
   group: { id: string; name: string } | null;
   teacherName: string | null;
   hold: { status: string } | null;
@@ -178,6 +183,31 @@ export function AdminLiveOpsView() {
 
   const [tab, setTab] = React.useState<"sessions" | "review" | "absences" | "flags">("sessions");
   const [filters, setFilters] = React.useState({ from: "", to: "", groupId: "", teacherId: "", status: "", q: "" });
+  // Finding 1 — the teacher/group filters are SELECTORS over the authoritative
+  // admin lists (the screen can never invent an id), while the query sent to
+  // /api/admin/live-ops keeps exactly the same `groupId` / `teacherId` params.
+  const filterGroups = useJson<{ groups: Array<{ id: string; name: string; courseName?: string | null; studentsCount?: number }> }>("/api/admin/groups");
+  const filterTeachers = useJson<{ teachers: Array<{ id: string; name: string; email?: string | null; groupsCount?: number }> }>("/api/admin/teachers");
+  const groupOptions: EntityOption[] = React.useMemo(
+    () =>
+      (filterGroups.data?.groups ?? []).map((g) => ({
+        value: g.id,
+        label: g.name,
+        hint: g.courseName || undefined,
+        meta: typeof g.studentsCount === "number" ? t("live.filter.optionCount", { p1: g.studentsCount }) : undefined,
+      })),
+    [filterGroups.data, t]
+  );
+  const teacherOptions: EntityOption[] = React.useMemo(
+    () =>
+      (filterTeachers.data?.teachers ?? []).map((row) => ({
+        value: row.id,
+        label: row.name,
+        hint: row.email || undefined,
+        meta: typeof row.groupsCount === "number" ? t("live.filter.groupsCount", { p1: row.groupsCount }) : undefined,
+      })),
+    [filterTeachers.data, t]
+  );
   const [absenceStatus, setAbsenceStatus] = React.useState("PENDING_REVIEW");
 
   const query = React.useMemo(() => {
@@ -287,18 +317,32 @@ export function AdminLiveOpsView() {
               </div>
               <div>
                 <Label className="text-[11px]">{t("admin.live.filterGroup")}</Label>
-                <Input
+                <EntitySelect
                   value={filters.groupId}
-                  onChange={(e) => setFilters({ ...filters, groupId: e.target.value })}
-                  placeholder="ID"
+                  onChange={(groupId) => setFilters({ ...filters, groupId })}
+                  options={groupOptions}
+                  placeholder={t("live.filter.allGroups")}
+                  searchPlaceholder={t("live.filter.searchGroups")}
+                  allLabel={t("live.filter.allGroups")}
+                  emptyLabel={t("live.filter.noGroups")}
+                  loading={filterGroups.loading}
+                  error={filterGroups.error ? t("live.loadError") : null}
+                  onRetry={filterGroups.reload}
                 />
               </div>
               <div>
                 <Label className="text-[11px]">{t("admin.live.filterTeacher")}</Label>
-                <Input
+                <EntitySelect
                   value={filters.teacherId}
-                  onChange={(e) => setFilters({ ...filters, teacherId: e.target.value })}
-                  placeholder="ID"
+                  onChange={(teacherId) => setFilters({ ...filters, teacherId })}
+                  options={teacherOptions}
+                  placeholder={t("live.filter.allTeachers")}
+                  searchPlaceholder={t("live.filter.searchTeachers")}
+                  allLabel={t("live.filter.allTeachers")}
+                  emptyLabel={t("live.filter.noTeachers")}
+                  loading={filterTeachers.loading}
+                  error={filterTeachers.error ? t("live.loadError") : null}
+                  onRetry={filterTeachers.reload}
                 />
               </div>
               <div>
@@ -349,11 +393,29 @@ export function AdminLiveOpsView() {
                       data.sessions.map((s) => (
                         <TableRow key={s.id}>
                           <TableCell className="max-w-56">
-                            <div className="font-medium truncate">{s.titleAr || s.title}</div>
-                            {s.lesson && (
-                              <div className="text-[11px] text-muted-foreground truncate">
-                                {s.lesson.titleAr || s.lesson.title}
-                              </div>
+                            {/* Finding 2 — the academic identity is the linked
+                                LESSON (`1-1 — <title>`); the free-text session
+                                title, when it adds something, is a secondary
+                                display override. A legacy row without a lesson
+                                stays readable and is marked as unlinked. */}
+                            {sessionLessonIdentity(s.lesson, locale) ? (
+                              <>
+                                <div className="font-medium truncate">
+                                  {sessionLessonIdentity(s.lesson, locale)}
+                                </div>
+                                {sessionDisplayOverride(s.titleAr || s.title, s.lesson, locale) ? (
+                                  <div className="text-[11px] text-muted-foreground truncate">
+                                    {sessionDisplayOverride(s.titleAr || s.title, s.lesson, locale)}
+                                  </div>
+                                ) : null}
+                              </>
+                            ) : (
+                              <>
+                                <div className="font-medium truncate">{s.titleAr || s.title}</div>
+                                <div className="text-[11px] text-muted-foreground truncate">
+                                  {t("live.lesson.unlinked")}
+                                </div>
+                              </>
                             )}
                           </TableCell>
                           <TableCell className="text-xs whitespace-nowrap">{fmt(s.startAt)}</TableCell>
@@ -596,10 +658,14 @@ function AbsenceReviewRow({
             {item.student.studentCode ? ` • ${item.student.studentCode}` : ""}
           </p>
           <p className="text-[11px] text-muted-foreground">
-            {item.session.titleAr || item.session.title} • {fmt(item.session.startAt)}
+            {/* Finding 2 — canonical lesson identity first (`1-1 — <title>`),
+                then the session's own display title when it differs. */}
+            {sessionLessonIdentity(item.lesson, locale) ??
+              sessionDisplayOverride(item.session.titleAr || item.session.title, item.lesson, locale) ??
+              (item.session.titleAr || item.session.title)}{" "}
+            • {fmt(item.session.startAt)}
             {item.group ? ` • ${item.group.name}` : ""}
             {item.teacherName ? ` • ${item.teacherName}` : ""}
-            {item.lesson ? ` • ${item.lesson.titleAr || item.lesson.title}` : ""}
           </p>
         </div>
         <div className="flex items-center gap-1 flex-wrap">
@@ -978,8 +1044,12 @@ function AdminScheduleDialog({
   onCreated: () => void;
 }) {
   const t = useT();
-  const groups = useJson<{ groups: Array<{ id: string; name: string; courseId: string }> }>(open ? "/api/admin/groups" : null);
+  const locale = useApp((s) => (s.locale === "en" ? "en" : "ar")) as Locale;
+  // Finding 2 — the group is chosen from the authoritative list and carries its
+  // COURSE, which is what constrains the selectable Lessons below.
+  const groups = useJson<{ groups: Array<{ id: string; name: string; courseId: string; courseName?: string | null }> }>(open ? "/api/admin/groups" : null);
   const [groupId, setGroupId] = React.useState("");
+  const [lessonId, setLessonId] = React.useState("");
   const [teacherId, setTeacherId] = React.useState("");
   const [titleAr, setTitleAr] = React.useState("");
   const [startAt, setStartAt] = React.useState("");
@@ -990,6 +1060,38 @@ function AdminScheduleDialog({
   const teachers = useJson<{ teachers: Array<{ id: string; user?: { name: string }; name?: string }> }>(
     open ? "/api/admin/teachers" : null
   );
+
+  // The group's course constrains the lessons: only a Lesson that really
+  // belongs to this course can be scheduled (the server re-validates it).
+  const selectedGroupCourseId = React.useMemo(
+    () => (groups.data?.groups ?? []).find((g) => g.id === groupId)?.courseId ?? null,
+    [groups.data, groupId]
+  );
+  const lessons = useJson<{ lessons: Array<{ id: string; officialCode?: string | null; title: string; titleAr: string }> }>(
+    open && selectedGroupCourseId ? `/api/admin/lessons?courseId=${selectedGroupCourseId}&limit=200` : null
+  );
+  const lessonOptions: EntityOption[] = React.useMemo(
+    () =>
+      (lessons.data?.lessons ?? []).map((l) => ({
+        value: l.id,
+        label:
+          sessionLessonIdentity(
+            { officialCode: l.officialCode ?? null, title: l.title, titleAr: l.titleAr },
+            locale
+          ) ?? l.id,
+      })),
+    [lessons.data, locale]
+  );
+  const selectedLessonLabel = React.useMemo(
+    () => lessonOptions.find((o) => o.value === lessonId)?.label ?? "",
+    [lessonOptions, lessonId]
+  );
+
+  // A group change invalidates the lesson: scheduling "group A + lesson from
+  // another course" must be impossible from the UI as well as from the API.
+  React.useEffect(() => {
+    setLessonId("");
+  }, [groupId]);
 
   React.useEffect(() => {
     if (open && !startAt) {
@@ -1002,16 +1104,22 @@ function AdminScheduleDialog({
   }, [open, startAt]);
 
   const submit = async () => {
-    if (!groupId || !titleAr.trim() || !startAt) {
-      toast.error(t("teacher.live.editTitle"));
+    // Finding 2 — a session MUST be scheduled against a real Lesson: that is
+    // its academic identity (and what Phase H progression/catch-up will read).
+    // The free-text title is optional and only overrides the DISPLAY name.
+    if (!groupId || !lessonId || !startAt) {
+      toast.error(!lessonId ? t("live.lesson.pick") : t("live.lesson.pick"));
       return;
     }
     setBusy(true);
     const result = await sendJson("/api/live-sessions", "POST", {
       groupId,
+      lessonId,
       teacherId: teacherId || null,
-      title: titleAr.trim(),
-      titleAr: titleAr.trim(),
+      // Empty title → the server derives it from the lesson (no free text
+      // standing in for the academic identity).
+      title: titleAr.trim() || null,
+      titleAr: titleAr.trim() || null,
       startAt: new Date(startAt).toISOString(),
       duration: Number(duration),
       meetingUrl: meetingUrl.trim() || null,
@@ -1024,6 +1132,7 @@ function AdminScheduleDialog({
     }
     toast.success(t("teacher.live.scheduleSaved"));
     onOpenChange(false);
+    setLessonId("");
     setTitleAr("");
     setMeetingUrl("");
     onCreated();
@@ -1039,18 +1148,22 @@ function AdminScheduleDialog({
         <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain space-y-3 py-2">
           <div>
             <Label>{t("admin.live.filterGroup")}</Label>
-            <Select value={groupId} onValueChange={setGroupId}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder={t("admin.live.filterGroup")} />
-              </SelectTrigger>
-              <SelectContent>
-                {(groups.data?.groups ?? []).map((g) => (
-                  <SelectItem key={g.id} value={g.id}>
-                    {g.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <EntitySelect
+              value={groupId}
+              onChange={setGroupId}
+              options={(groups.data?.groups ?? []).map((g) => ({
+                value: g.id,
+                label: g.name,
+                hint: g.courseName || undefined,
+              }))}
+              placeholder={t("admin.live.filterGroup")}
+              searchPlaceholder={t("live.filter.searchGroups")}
+              allLabel={t("live.filter.allGroups")}
+              emptyLabel={t("live.filter.noGroups")}
+              loading={groups.loading}
+              error={groups.error ? t("live.loadError") : null}
+              onRetry={groups.reload}
+            />
           </div>
           <div>
             <Label>{t("admin.live.filterTeacher")}</Label>
@@ -1068,8 +1181,38 @@ function AdminScheduleDialog({
             </Select>
           </div>
           <div>
-            <Label htmlFor="admin-schedule-title">{t("teacher.live.editTitle")}</Label>
-            <Input id="admin-schedule-title" value={titleAr} maxLength={200} onChange={(e) => setTitleAr(e.target.value)} />
+            <Label>{t("live.lesson")}</Label>
+            {/* Finding 2 — the group's COURSE constrains this list, and the
+                option text is the canonical `1-1 — <title>` identity. */}
+            <EntitySelect
+              value={lessonId}
+              onChange={setLessonId}
+              options={lessonOptions}
+              placeholder={t("live.lesson.pick")}
+              searchPlaceholder={t("live.filter.searchGroups")}
+              allLabel={t("live.lesson.pick")}
+              emptyLabel={
+                selectedGroupCourseId ? t("live.lesson.none") : t("admin.live.filterGroup")
+              }
+              loading={Boolean(selectedGroupCourseId) && lessons.loading}
+              error={lessons.error ? t("live.lesson.loadError") : null}
+              onRetry={lessons.reload}
+              disabled={!selectedGroupCourseId}
+            />
+            {lessonId ? (
+              <div className="text-[11px] text-emerald-600 mt-1 truncate">{selectedLessonLabel}</div>
+            ) : null}
+          </div>
+          <div>
+            <Label htmlFor="admin-schedule-title">{t("live.lesson.optionalTitle")}</Label>
+            <Input
+              id="admin-schedule-title"
+              value={titleAr}
+              maxLength={200}
+              placeholder={selectedLessonLabel}
+              onChange={(e) => setTitleAr(e.target.value)}
+            />
+            <p className="text-[11px] text-muted-foreground mt-1">{t("live.lesson.optionalHint")}</p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
@@ -1098,7 +1241,7 @@ function AdminScheduleDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {t("plan.018")}
           </Button>
-          <Button onClick={submit} disabled={busy || !groupId || !titleAr.trim()}>
+          <Button onClick={submit} disabled={busy || !groupId || !lessonId || !startAt}>
             {t("live.save")}
           </Button>
         </DialogFooter>

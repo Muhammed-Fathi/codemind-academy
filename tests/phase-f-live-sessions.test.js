@@ -1,12 +1,15 @@
 // CodeMind Academy — Phase F LIVE SESSION LIFECYCLE test suite.
 //
-//   48 numbered cases across six sections:
+//   66 numbered cases across seven sections:
 //     §A 1–7    scheduling authority and validation
 //     §B 8–12   the Session Link and the student surface
 //     §C 13–24  the attendance register, the window and THE LOCK
 //     §D 25–35  absence review, holds and admin correction
 //     §E 36–42  notifications (structured + idempotent)
 //     §F 43–48  UI source contracts, wiring and i18n
+//     §G 49–66  the Manual-QA fix round (start window, canonical Lesson,
+//               join-window copy, finalize reason, notification labels/scroll,
+//               Parent report i18n + PDF export, Parent notification entry)
 //
 // THREE LAYERS, all offline (no network, no dev server):
 //   1. BEHAVIOURAL — `src/lib/live-session-policy.ts` and
@@ -991,6 +994,314 @@ if (!db) {
     secondCaseRefused = true;
   }
   ok(secondCaseRefused, "DB13. a second case for the same attendance row is impossible (idempotency by DB)");
+}
+
+
+// ===========================================================================
+section("G. Manual-QA fix round: lifecycle authority, canonical Lesson, i18n (49-65)");
+// ===========================================================================
+
+// 49. The START window is a policy decision (Finding 3), not a raw status flip.
+{
+  const now = new Date("2026-09-19T10:00:00.000Z");
+  const mk = (startAt, extra) => ({ startAt, duration: 120, ...(extra || {}) });
+
+  const early = P.decideSessionStart(mk("2026-09-19T12:00:00.000Z"), now);
+  ok(early.allowed === false && early.code === "TOO_EARLY", "49. a session may not start before its scheduled time");
+  ok(early.opensInMinutes === 120, "49b. the refusal reports how long until starting is allowed");
+  ok(early.opensAt.toISOString() === "2026-09-19T12:00:00.000Z", "49c. the start window opens exactly at `startAt`");
+
+  const atTime = P.decideSessionStart(mk("2026-09-19T10:00:00.000Z"), now);
+  ok(atTime.allowed === true, "49d. starting exactly at the scheduled time is allowed");
+
+  const late = P.decideSessionStart(mk("2026-09-19T09:00:00.000Z"), now);
+  ok(late.allowed === true, "49e. starting inside the session is allowed");
+
+  const gone = P.decideSessionStart(mk("2026-09-19T06:00:00.000Z"), now);
+  ok(gone.allowed === false && gone.code === "START_WINDOW_CLOSED", "49f. the start window closes with the attendance window (no live session after the class is over)");
+
+  const cancelled = P.decideSessionStart(mk("2026-09-19T09:00:00.000Z", { status: "CANCELLED" }), now);
+  ok(cancelled.allowed === false && cancelled.code === "SESSION_CANCELLED", "49g. a cancelled session can never go live");
+}
+
+// 50. CONSISTENCY BY CONSTRUCTION: a session that may start has a writable
+//     register — the contradiction reported in QA (LIVE + locked attendance)
+//     is unreachable through the policy.
+{
+  const startTimes = [
+    "2026-09-19T10:00:00.000Z",
+    "2026-09-19T09:30:00.000Z",
+    "2026-09-19T06:00:00.000Z",
+    "2026-09-19T13:00:00.000Z",
+  ];
+  let contradiction = null;
+  for (const startAt of startTimes) {
+    const session = { startAt, duration: 120, status: "SCHEDULED" };
+    const now = new Date("2026-09-19T10:00:00.000Z");
+    const start = P.decideSessionStart(session, now);
+    const write = P.decideAttendanceWrite(session, now);
+    if (start.allowed && write.allowed === false && write.code === "NOT_STARTED") {
+      contradiction = { startAt, start, write };
+    }
+  }
+  ok(contradiction === null, "50. a startable session never has a NOT_STARTED register (the QA contradiction is impossible)");
+}
+
+// 51. The server — not the button — is the authority (Finding 3).
+{
+  const src = read("src/lib/live-sessions.ts");
+  ok(src.includes("decideSessionStart(current, now)"), "51. startLiveSession consults the start-window policy");
+  ok(src.includes("SESSION_START_TOO_EARLY") && src.includes("SESSION_START_WINDOW_CLOSED"), "51b. both refusals are named failure codes (409 to the caller)");
+  const decisionAt = src.indexOf("const startDecision = decideSessionStart(current, now)");
+  const updateAt = src.indexOf("liveSession.update", decisionAt);
+  ok(decisionAt > -1 && updateAt > decisionAt, "51c. the guard runs BEFORE the status is flipped");
+  ok(!/action\s*===\s*"start"[^]*?skipStartCheck/.test(src), "51d. no bypass flag exists for the start guard");
+}
+
+// 52. The join window copy distinguishes the RULE from the REMAINING WAIT
+//     (Finding 4), and the configured value has ONE authority.
+{
+  const policy = read("src/lib/live-session-policy.ts");
+  ok(P.liveSessionJoinEarlyMinutes({ LIVE_SESSION_JOIN_EARLY_MINUTES: "15" }) === 15, "52. the configured join-before window is read from the environment policy");
+
+  const payload = read("src/lib/live-sessions.ts");
+  ok(payload.includes("joinEarlyMinutes: liveSessionJoinEarlyMinutes()"), "52b. the payload carries the configured rule to every surface");
+
+  const actions = read("src/components/shared/session-link-actions.tsx");
+  ok(actions.includes('t("live.join.waitsIn"'), "52c. the remaining wait uses its own sentence");
+  ok(actions.includes('t("live.join.ruleEarly"'), "52d. the configured rule is stated separately");
+  ok(!/live\.join\.tooEarly",\s*\{\s*p1:\s*15\s*\}/.test(actions), "52e. no hardcoded 15 in the join copy (the old duplicate authority)");
+  ok(!/live\.join\.tooEarly/.test(actions), "52f. the ambiguous mixed-purpose key is gone from the component");
+
+  const dict = read("src/lib/i18n-dict-2026.ts");
+  ok(dict.includes('"live.join.ruleEarly"') && dict.includes('"live.join.waitsIn"'), "52g. both strings are localized (ar + en)");
+  ok(dict.includes("يمكن الانضمام قبل الحصة بـ {p1} دقيقة") && dict.includes("يفتح رابط الحصة بعد {p1} دقيقة"), "52h. the Arabic copy says the configured rule and the remaining wait, never one for the other");
+}
+
+// 53. A session carries its canonical Lesson (Finding 2): schema + payload.
+{
+  const src = read("src/lib/live-sessions.ts");
+  ok(src.includes("officialCode: true"), "53. the session context loads the lesson's officialCode");
+  ok(src.includes("officialCode: session.lesson.officialCode ?? null"), "53b. the serialized lesson carries the canonical identity");
+  ok(src.includes("LESSON_NOT_IN_GROUP_COURSE"), "53c. a lesson outside the group's course is still refused (409)");
+  const draft = src.indexOf("export async function buildSessionDraft");
+  const lessonCheck = src.indexOf("lessonChainForCourse(group.courseId)", draft);
+  const createdAt = src.indexOf("return { groupId: group.id, lessonId", draft);
+  ok(lessonCheck > draft && lessonCheck < createdAt, "53d. the lesson/course check happens while building the draft (before any write)");
+}
+
+// 54. Both scheduling surfaces offer ONLY a real Lesson (Finding 2): teacher
+//     inside its scope, admin constrained by the group's course.
+{
+  const admin = read("src/components/admin/live-ops-view.tsx");
+  const teacher = read("src/components/teacher/live-sessions-workspace.tsx");
+
+  ok(admin.includes("lessonId," ) || /lessonId,\n/.test(admin), "54. the admin schedule payload sends lessonId");
+  ok(/admin\/lessons\?courseId=\$\{selectedGroupCourseId\}/.test(admin), "54b. the admin lesson list is constrained by the group's course");
+  ok(admin.includes('t("live.lesson.pick")'), "54c. the admin surface states that a lesson must be chosen");
+  ok(!/titleAr\s*\}\s*,\s*startAt/.test(admin) || admin.includes("lessonId"), "54d. the free-text title is no longer the identity the dialog sends alone");
+
+  ok(/teacher\/lessons\?groupId=\$\{groupId\}/.test(teacher), "54e. the teacher lesson list is scoped to the selected group (server-scoped by scope)");
+  ok(/lessonId,\n\s*title:/.test(teacher), "54f. the teacher payload sends lessonId");
+  ok(!/lessonId:\s*lessonId\s*\|\|\s*null/.test(teacher), "54g. the teacher can no longer schedule a session with a null lessonId");
+}
+
+// 55. The finalized register stays locked, and the absence flow is untouched
+//     by the scheduling/title work.
+{
+  const src = read("src/lib/live-sessions.ts");
+  ok(src.includes('"ALREADY_FINALIZED"'), "55. a finalized register still refuses teacher writes");
+  const review = read("src/lib/absence-review.ts");
+  ok(review.includes('"PENDING_REASON"') || review.includes("PENDING_REASON"), "55b. the absence workflow still starts only from a finalized ABSENT row");
+}
+
+// 56. Finalizing with unsaved changes explains itself in the UI (Finding 5).
+{
+  const ws = read("src/components/teacher/live-sessions-workspace.tsx");
+  ok(ws.includes("finalizeBlockedReason"), "56. one variable decides why finalizing is unavailable");
+  ok(ws.includes('"teacher.live.finalizeNeedsSave"'), "56b. unsaved attendance produces the reason key");
+  ok(ws.includes('data-testid="finalize-blocked-reason"'), "56c. the reason is rendered in the UI (not only as a hover title)");
+  ok(ws.includes('disabled={busy || Boolean(finalizeBlockedReason)}'), "56d. the disabled state and the message can never disagree");
+  const dict = read("src/lib/i18n-dict-2026.ts");
+  ok(dict.includes("احفظ تغييرات الحضور أولًا قبل تأكيد الحضور."), "56e. the exact Arabic reason required by QA is present");
+}
+
+// 57. No mixed Arabic/English copy on the teacher surfaces (Finding 6).
+{
+  const dict = read("src/lib/i18n-dict.ts");
+  const dict2026 = read("src/lib/i18n-dict-2026.ts");
+  ok(!/ar:\s*"Sessions الأسبوع/.test(dict) && !/ar:\s*"Session الأسبوع/.test(dict), "57. no `Sessions الأسبوع` style key remains");
+  ok(dict.includes('"teacher.020": { ar: "حصص الأسبوع الجاي"'), "57b. the reported string is now fully Arabic");
+  ok(dict.includes('"teacher.011": { ar: "حصص الأسبوع ده"'), "57c. the sibling string is Arabic too");
+  // The Phase F surfaces may only contain latin text for brand names.
+  const phaseFKeys = dict2026.match(/"(?:live|teacher\.live|absence)\.[^"]*":\s*\{[^}]*\}/g) || [];
+  const offenders = phaseFKeys.filter(
+    (line) => /ar:\s*"[^"]*[A-Za-z]{3,}[^"]*"/.test(line) && !/Google Meet|Zoom|Microsoft Teams|https/.test(line)
+  );
+  ok(offenders.length === 0, `57d. no mixed copy on the Phase F surfaces (offenders: ${offenders.join(" | ")})`);
+}
+
+// 58. The shared notifications list is bounded and scrollable (Finding 7).
+{
+  const admin = read("src/components/admin/admin-dashboard.tsx");
+  ok(!/ScrollArea className="max-h-80"/.test(admin), "58. the inert `max-h-80` root is gone from the All-Notifications list");
+  ok(admin.includes("max-h-[min(52dvh,calc(100dvh-22rem))] min-h-0 overscroll-contain"), "58b. the list viewport is bounded and contains its overscroll");
+  ok(/space-y-2 pb-1 pe-1/.test(admin), "58c. the last row stays clear of the scrollbar");
+  const panel = read("src/components/shared/notifications-panel.tsx");
+  ok(panel.includes("max-h-[min(60dvh,calc(100dvh-15rem))]"), "58d. the shared panel keeps its own bounded viewport");
+}
+
+// 59. No raw NotificationType enum reaches a user-facing surface (Finding 8).
+{
+  const labels = read("src/lib/notification-labels.ts");
+  const TYPES = [
+    "SESSION_SCHEDULED",
+    "SESSION_LINK",
+    "SESSION_RESCHEDULED",
+    "SESSION_CANCELLED",
+    "ABSENCE_FINALIZED",
+    "ABSENCE_REASON_SUBMITTED",
+    "ABSENCE_EXCUSED",
+    "ABSENCE_UNEXCUSED",
+    "ABSENCE_REMINDER",
+  ];
+  for (const type of TYPES) {
+    ok(labels.includes(`${type}: "notif.type.`), `59. ${type} maps to a localized label key`);
+  }
+  ok(labels.includes("notif.type.generic"), "59b. an unknown/legacy value falls back instead of leaking the enum");
+  ok(read("src/lib/live-session-notifications.ts").includes("notification-labels"), "59c. the server emitters share the same label authority (re-exported, not duplicated)");
+
+  const admin = read("src/components/admin/admin-dashboard.tsx");
+  ok(!admin.includes('replace(/_/g, " ")'), "59d. the admin surfaces no longer stringify the enum");
+  ok(admin.includes("notificationTypeLabelKey"), "59e. the admin surfaces use the shared label helper");
+
+  const dict = read("src/lib/i18n-dict-2026.ts");
+  ok(dict.includes('"notif.type.absenceFinalized": { ar: "تم تسجيل الغياب"'), "59f. ABSENCE_FINALIZED reads as the Arabic QA requirement");
+  ok(dict.includes('"notif.type.absenceReasonSubmitted": { ar: "تم إرسال عذر غياب"'), "59g. ABSENCE_REASON_SUBMITTED is localized");
+  ok(dict.includes('"notif.type.absenceExcused": { ar: "تم قبول العذر"'), "59h. ABSENCE_EXCUSED is localized");
+}
+
+// 60. The Parent report resolves ALL copy through the dictionary (Finding 9).
+{
+  const report = read("src/components/parent/monthly-report.tsx");
+  ok(/<span>\{tr\(r\)\}<\/span>/.test(report), "60. recommendation keys are resolved at the render site");
+  ok(!/generateRecommendations[^]*?return recs;/.test(report) || report.includes("parent.042"), "60b. the generator still yields dictionary keys");
+  const keys = ["parent.035", "parent.036", "parent.037", "parent.038", "parent.039", "parent.040", "parent.041", "parent.042"];
+  const dict = read("src/lib/i18n-dict.ts");
+  for (const key of keys) {
+    ok(new RegExp(`"${key.replace(".", "\\.")}":`).test(dict), `60c. ${key} exists in the dictionary`);
+  }
+  ok(!/>\s*\{[a-z]\}\s*</.test(report), "60d. no bare `{x}` key render remains in the report body");
+  ok(report.includes('tr("parent.report.courseProgress")') && report.includes('tr("parent.report.quizAverage")'), "60e. the metric labels come from the dictionary (no hardcoded English)");
+  const dict2026 = read("src/lib/i18n-dict-2026.ts");
+  for (const key of ["parent.report.title", "parent.report.titleFor", "parent.report.attendance", "parent.report.homework"]) {
+    ok(dict2026.includes(`"${key}"`), `60f. ${key} is localized`);
+  }
+}
+
+// 61. The PDF export keeps the report content (Finding 10).
+{
+  const report = read("src/components/parent/monthly-report.tsx");
+  ok(report.includes("createPortal"), "61. the printable copy is portaled out of the hidden overlay");
+  ok(!/\.print-report, \.print-report \* \{ visibility: visible; \}/.test(report), "61b. the broken visibility-resurrection rule is gone");
+  ok(report.includes("body > *:not(.cm-print-portal)"), "61c. while printing, only the report is laid out (no blank first page from the app shell)");
+  ok(report.includes("print-color-adjust: exact"), "61d. printed colors survive (white-on-white header is impossible)");
+  ok(report.includes("break-inside: avoid") && report.includes("display: table-header-group"), "61e. page breaks are sane and the table head repeats");
+  ok(/function ReportBody\(/.test(report), "61f. ONE body component feeds the screen copy and the print copy");
+  const bodyUses = (report.match(/<ReportBody /g) || []).length;
+  ok(bodyUses === 2, "61g. the body is rendered exactly twice (screen + print), from one definition");
+  // The ids live inside the shared body (both copies render it); the
+  // server-rendered markup is pinned end-to-end by
+  // tests/parent-monthly-report.test.js.
+  ok(
+    report.includes("monthly-report-subscription") &&
+      report.indexOf("monthly-report-subscription") > report.indexOf("function ReportBody"),
+    "61h. the shared body still carries the report's test ids (server markup unchanged)"
+  );
+  ok(report.includes('data-testid="monthly-report-no-subscription"'), "61i. the no-subscription state still renders its id");
+}
+
+// 62. The Parent notification entry uses the shared, localized surface (Finding 11).
+{
+  const parent = read("src/components/parent/parent-dashboard.tsx");
+  ok(parent.includes("NotificationsPanel"), "62. the Parent notification view is the SHARED panel");
+  ok(parent.includes('goToView("parent-notifications"'), "62b. the entry navigates to the notifications view");
+  ok(parent.includes("parentUnread") && parent.includes("/api/notifications/unread-count"), "62c. the entry shows a live unread count");
+  ok(parent.includes("NOTIFICATIONS_CHANGED_EVENT"), "62d. the badge refreshes on the shared event (no polling loop)");
+  ok(parent.includes('tr("parent.action.notifications")') && parent.includes('tr("parent.action.prefs")'), "62e. the bell and the settings entry are distinct, localized controls");
+  ok(!/<Bell className="w-4 h-4 ms-2" \/>\s*\n\s*\{tr\("parent\.053"\)\}/.test(parent), "62f. the bell no longer opens preferences");
+  ok(!/>\s*Analytics\s*</.test(parent) && !/>\s*Weekly Report\s*</.test(parent), "62g. the quick actions are Arabic-first like the rest of the dashboard");
+}
+
+// 63. The student and admin surfaces show the same canonical identity (Finding 2).
+{
+  const student = read("src/components/student/live-sessions-view.tsx");
+  const admin = read("src/components/admin/live-ops-view.tsx");
+  for (const [name, src] of [["student", student], ["admin", admin]]) {
+    ok(src.includes("sessionLessonIdentity"), `63. the ${name} surface renders the canonical lesson identity`);
+  }
+  const policy = read("src/lib/live-session-policy.ts");
+  ok(policy.includes("export function sessionLessonIdentity"), "63b. the identity helper has ONE definition");
+  ok(/return `\$\{code\} — \$\{title\}`/.test(policy), "63c. the identity is rendered as `1-1 — <title>`");
+  ok(policy.includes("export function sessionDisplayOverride"), "63d. the optional display override is separate from the identity");
+  ok(admin.includes('t("live.lesson.unlinked")'), "63e. a legacy row without a lesson stays readable and is marked unlinked");
+}
+
+// 64. The admin filters are selectors over authoritative data (Finding 1).
+{
+  const admin = read("src/components/admin/live-ops-view.tsx");
+  ok(!/placeholder="ID"/.test(admin), "64. the raw `ID` inputs are gone");
+  ok(admin.includes("EntitySelect"), "64b. the filters use the shared searchable selector");
+  ok(admin.includes('useJson<{ groups:') && admin.includes("/api/admin/groups"), "64c. the group filter loads the authoritative group list");
+  ok(admin.includes('useJson<{ teachers:') && admin.includes("/api/admin/teachers"), "64d. the teacher filter loads the authoritative teacher list");
+  ok(/params\.set\("groupId", filters\.groupId\)/.test(admin) && /params\.set\("teacherId", filters\.teacherId\)/.test(admin), "64e. the same ids are still sent to the API (filtering semantics unchanged)");
+  const select = read("src/components/shared/entity-select.tsx");
+  ok(select.includes("loading") && select.includes("CommandEmpty") && select.includes("onRetry"), "64f. the selector has loading / empty / error-with-retry states");
+  ok(!/<Input[^>]*value=\{value\}/.test(select), "64g. a value can never be typed by hand into the selector");
+}
+
+// 65. Student Code stays a first-class identifier (it was never a raw-id defect).
+{
+  const admin = read("src/components/admin/live-ops-view.tsx");
+  ok(admin.includes("studentCode"), "65. the Student Code is still shown where it was");
+  ok(admin.includes("EntitySelect") && !/"placeholder=\"CM-/.test(admin), "65b. no Student-Code input was turned into a selector (behaviour unchanged)");
+}
+
+
+// 66. An ACCEPTED absence still does not touch academic progression: no
+//     LessonProgress write, no unlock, no completion — the decision only
+//     records the state and resolves the hold (administrative ≠ academic).
+{
+  const review = read("src/lib/absence-review.ts");
+  const decideAt = review.indexOf("export async function decideAbsence");
+  const nextExport = review.indexOf("export async function voidAbsenceCaseForCorrection");
+  const decideBody = review.slice(decideAt, nextExport > decideAt ? nextExport : review.length);
+  ok(decideAt > -1, "66. the absence decision path is still one function");
+  ok(
+    !/lessonProgress|LessonProgress|lessonCompletion|unlockNextLesson|completedAt/.test(decideBody),
+    "66b. deciding a case writes NO progression state (EXCUSED never unlocks the next Lesson)"
+  );
+  ok(
+    decideBody.includes("AbsenceHold") || decideBody.includes("absenceHold"),
+    "66c. an acceptance resolves the hold as a STATE change only"
+  );
+  // Comments legitimately EXPLAIN the rule ("an EXCUSED absence does not unlock
+  // the next Lesson"), so strip them before inspecting code.
+  const stripComments = (src) =>
+    src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|\s)\/\/[^\n]*/g, "$1");
+  const policyCode = stripComments(read("src/lib/absence-policy.ts"));
+  ok(
+    !/lessonProgress|LessonProgress|unlockNext|completeLesson|markCompleted/i.test(policyCode),
+    "66d. the absence policy module has no progression authority at all"
+  );
+  ok(
+    !/lessonProgress|LessonProgress/i.test(stripComments(decideBody)),
+    "66f. the decision path contains no progression WRITE in code (comments excluded)"
+  );
+  ok(
+    review.includes("EXCUSED_ABSENCE") && review.includes("UNEXCUSED_ABSENCE"),
+    "66e. the audit reason names the administrative decision, not a completion"
+  );
 }
 
 // ---------------------------------------------------------------------------

@@ -1,5 +1,8 @@
 "use client";
 import { useT , pickAuto, useLocale } from "@/lib/i18n";
+// Finding 8 — the ONE mapping from NotificationType to a localized label key
+// (pure module, safe in the browser). Raw enum names never reach the UI.
+import { notificationTypeLabelKey } from "@/lib/notification-labels";
 
 // ============================================================
 // CodeMind Academy — Admin Dashboard
@@ -4552,7 +4555,9 @@ function NotificationsView() {
                     <div key={n.id} className="rounded-lg border p-3">
                       <div className="flex items-start justify-between gap-2">
                         <div className="text-sm font-medium">{n.title}</div>
-                        <Badge variant="outline" className="text-[10px]">{n.type.replace(/_/g, " ")}</Badge>
+                        <Badge variant="outline" className="text-[10px]">
+                          {tr(notificationTypeLabelKey(n.type))}
+                        </Badge>
                       </div>
                       <div className="text-xs text-muted-foreground mt-1">{n.message}</div>
                       <div className="flex items-center justify-between mt-2 text-[10px] text-muted-foreground">
@@ -5211,7 +5216,7 @@ function NotificationCenterStats() {
                       : "bg-muted/50 text-muted-foreground hover:bg-primary/10 hover:text-primary"
                   }`}
                 >
-                  {t.type.replace(/_/g, " ")}
+                  {tr(notificationTypeLabelKey(t.type))}
                   <Badge variant="outline" className="text-[10px] ms-1">
                     {t.count}
                   </Badge>
@@ -5227,15 +5232,21 @@ function NotificationCenterStats() {
         <CardHeader className="pb-3">
           <CardTitle className="text-sm flex items-center gap-2">
             <Bell className="w-4 h-4 text-amber-500" />
-            All Notifications {filter && `· ${filter.replace(/_/g, " ")}`}
+            All Notifications {filter && `· ${tr(notificationTypeLabelKey(filter))}`}
           </CardTitle>
         </CardHeader>
         <CardContent>
+          {/* Finding 7 — Radix `ScrollArea` Root is `overflow-hidden`, so
+              bounding the ROOT (`max-h-80`) did nothing: the card grew and the
+              page scrolled, leaving the last rows and their actions
+              unreachable. The constraint belongs on the VIEWPORT, and the inner
+              padding keeps the final row clear of the scrollbar. Same pattern
+              the already-fixed notification surfaces use. */}
           {data.notifications.length === 0 ? (
             <EmptyBlock message={tr("admin.306")} />
           ) : (
-            <ScrollArea className="max-h-80">
-              <div className="space-y-2">
+            <ScrollArea className="max-h-[min(52dvh,calc(100dvh-22rem))] min-h-0 overscroll-contain">
+              <div className="space-y-2 pb-1 pe-1">
                 {data.notifications.map((n: any) => (
                   <div
                     key={n.id}
@@ -5264,7 +5275,7 @@ function NotificationCenterStats() {
                         </div>
                       </div>
                       <Badge variant="outline" className="text-[10px] shrink-0">
-                        {n.type.replace(/_/g, " ")}
+                        {tr(notificationTypeLabelKey(n.type))}
                       </Badge>
                     </div>
                   </div>
