@@ -75,7 +75,9 @@ name: PG17 trusted catalog references (pre-26D + POST-26D full chain)
 #   The PostgreSQL chain now holds THREE migrations:
 #     0_init
 #     20260915180000_phase26d_quiz_attempt_architecture
-#     20260919120000_phase_f_live_session_lifecycle   <- PHASE F, NEW
+#     20260919120000_phase_f_live_session_lifecycle
+#     20260919180000_phase_g_quiz_homework_workflow
+#     20260919190000_phase_g_camera_policy   <- PHASE G, NEW
 #
 #   WHY THIS FILE MUST CHANGE (verification only — no production access):
 #     * the PRE-26D job assembles its 0_init-only bundle by copying
@@ -98,7 +100,7 @@ name: PG17 trusted catalog references (pre-26D + POST-26D full chain)
 #       once; and the Phase F tables, enum labels, columns, indexes and
 #       constraints are asserted BY NAME;
 #     * the full chain must match the measured catalog size exactly:
-#         585 columns / 94 enum values / 185 indexes /
+#         594 columns / 94 enum values / 185 indexes /
 #         185 primary+unique+foreign-key constraints
 #       (the read-only inspector excludes _prisma_migrations in every section,
 #       so these counts are the real schema, not the ledger table. The constraint
@@ -334,7 +336,7 @@ env:
       ' indexes=' + ref.catalog.indexes.length + ' con(p+u+f)=' +
       ref.catalog.constraints.filter(k => ['p', 'u', 'f'].includes(k.contype)).length +
       ' con(total)=' + ref.catalog.constraints.length;
-    assert.equal(ref.catalog.columns.length, 585, 'full chain must have 585 columns — ' + size);
+    assert.equal(ref.catalog.columns.length, 594, 'full chain must have 594 columns — ' + size);
     assert.equal(enumValues, 94, 'full chain must have 94 enum values — ' + size);
     assert.equal(ref.catalog.indexes.length, 185, 'full chain must have 185 indexes — ' + size);
     //
@@ -356,12 +358,14 @@ env:
     // NAME above, the reference is still verified `convalidated` end to end,
     // and the self-comparison and full section shape checks are unchanged.
     const typedConstraints = ref.catalog.constraints.filter(k => ['p', 'u', 'f'].includes(k.contype));
-    assert.equal(typedConstraints.length, 185,
-      'full chain must have 185 primary/unique/foreign-key constraints — ' + size);
+    assert.equal(typedConstraints.length, 188,
+      'full chain must have 188 primary/unique/foreign-key constraints — ' + size);
     // Ledger proof: the real engine applied EXACTLY the PG chain, cleanly.
     assert.deepEqual(ref.ledger.map(r => r.migration_name),
       ['0_init', '20260915180000_phase26d_quiz_attempt_architecture',
-       '20260919120000_phase_f_live_session_lifecycle'],
+       '20260919120000_phase_f_live_session_lifecycle',
+       '20260919180000_phase_g_quiz_homework_workflow',
+       '20260919190000_phase_g_camera_policy'],
       'ledger is exactly the PostgreSQL chain, in order (never the SQLite names)');
     for (const r of ref.ledger) {
       assert(r.finished_at, r.migration_name + ' finished');
@@ -432,6 +436,8 @@ jobs:
           # exactly the pre-26D state even as the chain grows (Phase 26D, Phase F).
           rm -rf "$BUNDLE/migrations/20260915180000_phase26d_quiz_attempt_architecture"
           rm -rf "$BUNDLE/migrations/20260919120000_phase_f_live_session_lifecycle"
+          rm -rf "$BUNDLE/migrations/20260919180000_phase_g_quiz_homework_workflow"
+          rm -rf "$BUNDLE/migrations/20260919190000_phase_g_camera_policy"
           [ ! -d "$BUNDLE/migrations/20260915180000_phase26d_quiz_attempt_architecture" ]
           [ ! -d "$BUNDLE/migrations/20260919120000_phase_f_live_session_lifecycle" ]
           echo "$INIT_SQL_SHA256  $BUNDLE/migrations/0_init/migration.sql" | sha256sum -c -
