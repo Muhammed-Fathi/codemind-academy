@@ -12,6 +12,7 @@ import {
 } from "@/lib/session-quiz";
 import { getStudentSchoolType } from "@/lib/enrollment";
 import { createNotificationIfAllowed } from "@/lib/notify";
+import { tryResolveHoldForCatchUp } from "@/lib/progression-engine";
 
 // POST /api/quizzes/[id]/submit
 // Body: { answers: { questionId, selected }[] }
@@ -248,6 +249,15 @@ export async function POST(
   });
 
   const submittedLimit = timeLimitState(open.startedAt, quiz.timeLimit);
+
+  // Phase H — catch-up: if this quiz's lesson requirements are now satisfied,
+  // try to resolve an active hold.
+  if (passed) {
+    const quizRow = await db.quiz.findUnique({ where: { id }, select: { lessonId: true } });
+    if (quizRow?.lessonId) {
+      tryResolveHoldForCatchUp({ studentId: s.id, lessonId: quizRow.lessonId, actorUserId: user.id }).catch(() => {});
+    }
+  }
 
   // One terminal notification emission point. The dedupe key is the immutable
   // attempt id, so retries/replays cannot create a second result notification.

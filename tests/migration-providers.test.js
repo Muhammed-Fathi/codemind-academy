@@ -64,6 +64,7 @@ const MIG_26D = "20260915180000_phase26d_quiz_attempt_architecture";
 const MIG_PHASE_F = "20260919120000_phase_f_live_session_lifecycle";
 const MIG_PHASE_G = "20260919180000_phase_g_quiz_homework_workflow";
 const MIG_CAMERA = "20260919190000_phase_g_camera_policy";
+const MIG_PHASE_H = "20260920000000_phase_h_progression_engine";
 
 let pass = 0;
 const failures = [];
@@ -103,11 +104,11 @@ function partA() {
   // A1 — layout contract
   const sqliteMigrations = listMigrationDirs(SQLITE_MIGRATIONS);
   const pgMigrations = listMigrationDirs(PG_MIGRATIONS);
-  ok(sqliteMigrations.length === 15, `SQLite migrations dir carries all 15 historical migrations (got ${sqliteMigrations.length})`);
-  ok(pgMigrations.length === 5, `PG migrations dir carries the provider chain plus camera policy (got ${pgMigrations.length})`);
+  ok(sqliteMigrations.length === 16, `SQLite migrations dir carries all 16 historical migrations (got ${sqliteMigrations.length})`);
+  ok(pgMigrations.length === 6, `PG migrations dir carries the provider chain plus camera policy plus Phase H (got ${pgMigrations.length})`);
   ok(
-    pgMigrations[0] === "0_init" && pgMigrations[1] === MIG_26D && pgMigrations[2] === MIG_PHASE_F && pgMigrations[3] === MIG_PHASE_G && pgMigrations[4] === MIG_CAMERA,
-    "PG migrations are 0_init, Phase 26D, Phase F, Phase G, in order"
+    pgMigrations[0] === "0_init" && pgMigrations[1] === MIG_26D && pgMigrations[2] === MIG_PHASE_F && pgMigrations[3] === MIG_PHASE_G && pgMigrations[4] === MIG_CAMERA && pgMigrations[5] === MIG_PHASE_H,
+    "PG migrations are 0_init, Phase 26D, Phase F, Phase G, camera, Phase H in order"
   );
   ok(fs.existsSync(PG_SCHEMA), "prisma/postgres/schema.prisma exists (PG schema owns its own directory)");
   ok(!fs.existsSync(OLD_PG_SCHEMA), "prisma/schema.postgresql.prisma does NOT exist (must never share prisma/ with SQLite again)");
@@ -254,14 +255,17 @@ function partA() {
     merge(
       merge(
         merge(
-          parseInventory(read(path.join(PG_MIGRATIONS, "0_init", "migration.sql"))),
-          parseInventory(read(path.join(PG_MIGRATIONS, MIG_26D, "migration.sql")))
+          merge(
+            parseInventory(read(path.join(PG_MIGRATIONS, "0_init", "migration.sql"))),
+            parseInventory(read(path.join(PG_MIGRATIONS, MIG_26D, "migration.sql")))
+          ),
+          parseInventory(read(path.join(PG_MIGRATIONS, MIG_PHASE_F, "migration.sql")))
         ),
-        parseInventory(read(path.join(PG_MIGRATIONS, MIG_PHASE_F, "migration.sql")))
+        parseInventory(read(path.join(PG_MIGRATIONS, MIG_PHASE_G, "migration.sql")))
       ),
-      parseInventory(read(path.join(PG_MIGRATIONS, MIG_PHASE_G, "migration.sql")))
+      parseInventory(read(path.join(PG_MIGRATIONS, MIG_CAMERA, "migration.sql")))
     ),
-    parseInventory(read(path.join(PG_MIGRATIONS, MIG_CAMERA, "migration.sql")))
+    parseInventory(read(path.join(PG_MIGRATIONS, MIG_PHASE_H, "migration.sql")))
   );
   {
     const diffs = [];
@@ -354,7 +358,7 @@ function partA() {
       "Phase G is additive in both providers (no table/column drop, no row delete)");
   }
 
-  // A6 — fresh SQLite through the repo's own harness: base DDL + 15 migrations.
+  // A6 — fresh SQLite through the repo's own harness: base DDL + 16 migrations.
   {
     const { DatabaseSync } = require("node:sqlite");
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cm-mig-providers-"));
@@ -362,8 +366,8 @@ function partA() {
     const mig = require(path.join(REPO, "scripts", "lib", "migrate-sqlite.mjs"));
     const db = new DatabaseSync(dbPath);
     const applied = mig.applyMigrations(db, { withBaseSchema: true });
-    ok(applied.length === 15, `fresh SQLite applies all 15 migrations (got ${applied.length})`);
-    ok(applied[applied.length - 1] === MIG_CAMERA, "the last applied SQLite migration is the camera-policy migration");
+    ok(applied.length === 16, `fresh SQLite applies all 16 migrations (got ${applied.length})`);
+    ok(applied[applied.length - 1] === MIG_PHASE_H, "the last applied SQLite migration is the Phase H migration");
     for (const [tbl, cols] of [
       ["Quiz", ["quizMode", "questionCount", "maxAttempts", "shuffleOptions", "difficultyPlan"]],
       ["QuizAttempt", ["attemptNumber", "status", "retryGrantId"]],
@@ -397,10 +401,13 @@ function partA() {
       const present = new Set(db.prepare(`PRAGMA table_info("${tbl}")`).all().map((r) => r.name));
       ok(cols.every((c) => present.has(c)), `fresh SQLite schema carries ${tbl} Phase G columns`);
     }
-    // the harness ledger records the very checksums pinned in A2
+    // the harness ledger records the very checksums pinned in A2 plus Phase H
     const rows = db.prepare('SELECT migration_name, checksum FROM "_prisma_migrations"').all();
-    const pinned = rows.every((r) => r.checksum === PINNED[r.migration_name]);
-    ok(pinned && rows.length === 15, "fresh SQLite ledger carries exactly the pinned applied checksums");
+    const pinnedRows = rows.filter((r) => PINNED[r.migration_name]);
+    const pinned = pinnedRows.every((r) => r.checksum === PINNED[r.migration_name]);
+    ok(pinned && pinnedRows.length === 15, "fresh SQLite ledger carries exactly the pinned applied checksums for historical migrations");
+    ok(rows.length === 16, "fresh SQLite ledger carries 16 migrations including Phase H");
+    ok(!!db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='ProgressionOverride'`).get(), "fresh SQLite schema carries the ProgressionOverride table (Phase H)");
     db.close();
     fs.rmSync(tmp, { recursive: true, force: true });
   }
@@ -704,7 +711,7 @@ async function partC() {
     const query2 = async (t, p) => pool2.query(t, p);
     const snap = await catalogSnapshot(query2);
     const ledger = await query2(`SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NOT NULL ORDER BY migration_name`);
-    const expectedPgLedger = ["0_init", MIG_26D, MIG_PHASE_F, MIG_PHASE_G, MIG_CAMERA];
+    const expectedPgLedger = ["0_init", MIG_26D, MIG_PHASE_F, MIG_PHASE_G, MIG_CAMERA, MIG_PHASE_H];
     ok(JSON.stringify(ledger.rows.map((x) => x.migration_name)) === JSON.stringify(expectedPgLedger),
       "engine: fresh deploy ledger contains exactly the complete PostgreSQL chain (never the SQLite names)");
     ok(ledger.rows.every((x) => expectedPgLedger.includes(x.migration_name)),

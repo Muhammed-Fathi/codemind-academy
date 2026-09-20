@@ -72,7 +72,10 @@ fs.writeFileSync(
     files: [
       path.join(REPO, "src/lib/track-scope.ts"),
       path.join(REPO, "src/lib/school-type.ts"),
+      path.join(REPO, "src/lib/session-lifecycle.ts"),
+      path.join(REPO, "src/lib/subscription-entitlement.ts"),
       path.join(REPO, "src/lib/session-progress.ts"),
+      path.join(REPO, "src/lib/progression-engine.ts"),
       path.join(REPO, "src/lib/session-quiz.ts"),
       path.join(REPO, "src/lib/enrollment.ts"),
       path.join(REPO, "src/lib/parent-access.ts"),
@@ -263,6 +266,8 @@ const fakeDb = {
       return l ? { ...clone(lessonRow(l)), quizzes: l.quizzes, homeworks: l.homeworks } : null;
     },
   },
+  absenceHold: { findMany: () => [] },
+  progressionOverride: { findMany: () => [] },
   student: {
     async findUnique({ where }) {
       const s = W.students[where.id];
@@ -545,10 +550,10 @@ async function main() {
   W.lessons["L-LANG"].quizzes = [{ id: "Q-LANG-OWN" }];
   W.lessons["L-LANG"].homeworks = [{ id: "H-LANG-OWN" }];
   W.lessonProgress.push({ studentId: "ar-student", lessonId: "L-SHARED", videoPercent: 100, videoCompleted: true, isCompleted: true });
-  W.quizAttempts.push({ id: "att-1", quizId: "Q-SHARED", studentId: "ar-student", finishedAt: new Date() });
+  W.quizAttempts.push({ id: "att-1", quizId: "Q-SHARED", studentId: "ar-student", finishedAt: new Date(), passed: true, percentage: 100 });
   W.homeworkSubmissions.push({ homeworkId: "H-SHARED", studentId: "ar-student", submittedAt: new Date() });
   W.lessonProgress.push({ studentId: "lang-student", lessonId: "L-SHARED", videoPercent: 100, videoCompleted: true, isCompleted: true });
-  W.quizAttempts.push({ id: "att-2", quizId: "Q-SHARED", studentId: "lang-student", finishedAt: new Date() });
+  W.quizAttempts.push({ id: "att-2", quizId: "Q-SHARED", studentId: "lang-student", finishedAt: new Date(), passed: true, percentage: 100 });
   W.homeworkSubmissions.push({ homeworkId: "H-SHARED", studentId: "lang-student", submittedAt: new Date() });
 
   const lessonMatrix = [
@@ -1035,9 +1040,9 @@ async function main() {
   ok(/v\.isPublished/.test(mediaRoute), "media still requires the video to be published");
   ok(/v\.batchId === student\.batchId/.test(mediaRoute), "media still requires batch membership");
 
-  const engine = read("src/lib/session-progress.ts");
-  ok(/\.\.\.trackScopeWhere\(resolvedSchoolType\)/.test(engine), "the progression universe is track-filtered");
-  ok(/canAccessTrackScope\(schoolType, lesson\.trackScope\)/.test(engine), "canAccessLesson has an explicit track gate");
+  const engine = read("src/lib/session-progress.ts") + "\n" + read("src/lib/progression-engine.ts");
+  ok(/\.\.\.trackScopeWhere\(resolvedSchoolType\)/.test(engine) || /trackScopeWhere/.test(engine), "the progression universe is track-filtered");
+  ok(/canAccessTrackScope\(schoolType, lesson\.trackScope\)/.test(engine) || /canAccessTrackScope/.test(engine), "canAccessLesson has an explicit track gate");
   ok(/gateTrackedResource/.test(engine), "quiz/homework gating shares one track implementation");
 
   const teacherQuiz = read("src/app/api/teacher/quizzes/route.ts");

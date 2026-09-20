@@ -23,6 +23,7 @@ import {
 import { VIDEO_COMPLETION_THRESHOLD } from "@/lib/progress";
 import { canAccessLesson } from "@/lib/session-progress";
 import { getServerT } from "@/lib/i18n-server";
+import { tryResolveHoldForCatchUp } from "@/lib/progression-engine";
 
 /** Heartbeats further apart than this are treated as a resumed session. */
 const MAX_CREDIT_PER_BEAT_SEC = 60;
@@ -110,6 +111,12 @@ export async function POST(
       progress: Math.max(existing?.progress ?? 0, percent),
     },
   });
+
+  // Phase H — catch-up: if this lesson's requirements are now satisfied,
+  // try to resolve an active hold (idempotent, preserves history).
+  if (videoCompleted) {
+    tryResolveHoldForCatchUp({ studentId: student.id, lessonId: id, actorUserId: user.id }).catch(() => {});
+  }
 
   return ok({
     lessonId: id,

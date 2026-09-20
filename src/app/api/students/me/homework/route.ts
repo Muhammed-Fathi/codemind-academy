@@ -13,6 +13,7 @@ import { LESSON_STUDENT_STATUS_FILTER } from "@/lib/session-lifecycle";
 import { homeworkAttachmentPayload } from "@/lib/homework-lifecycle";
 import { STUDENT_HOMEWORK_LIST_FILTER } from "@/lib/student-visibility";
 import { validateHomeworkFile } from "@/lib/homework-files";
+import { tryResolveHoldForCatchUp } from "@/lib/progression-engine";
 import {
   activeMediaStorageValue,
   makeStorageKey,
@@ -313,8 +314,15 @@ export async function POST(req: NextRequest) {
       attachment: {
         select: { id: true, mimeType: true, sizeBytes: true, originalName: true },
       },
+      homework: { select: { lessonId: true } },
     },
   });
+
+  // Phase H — catch-up resolution (idempotent)
+  const lessonIdForHold = (submission as any).homework?.lessonId || homework.lessonId || null;
+  if (lessonIdForHold) {
+    tryResolveHoldForCatchUp({ studentId: s.id, lessonId: lessonIdForHold, actorUserId: user.id }).catch(() => {});
+  }
 
   return ok({
     message: tApi("api.225"),

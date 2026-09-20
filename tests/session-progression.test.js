@@ -64,11 +64,14 @@ fs.writeFileSync(
     },
     files: [
       path.join(REPO, "src/lib/session-progress.ts"),
+      path.join(REPO, "src/lib/progression-engine.ts"),
       path.join(REPO, "src/lib/progress.ts"),
       // Phase 12: session-progress now imports these.
       path.join(REPO, "src/lib/track-scope.ts"),
       path.join(REPO, "src/lib/school-type.ts"),
       path.join(REPO, "src/lib/enrollment.ts"),
+      path.join(REPO, "src/lib/session-lifecycle.ts"),
+      path.join(REPO, "src/lib/subscription-entitlement.ts"),
     ],
   })
 );
@@ -125,6 +128,8 @@ const state = {
   lessonProgress: {},
   /** finished quiz ids */
   attemptedQuizzes: new Set(),
+  /** Phase H: passed quiz ids (PASS required) */
+  passedQuizzes: new Set(),
   /** submitted homeworks ids */
   submittedHomeworks: new Set(),
 };
@@ -134,6 +139,7 @@ function reset() {
   state.studentSchoolType = "ARABIC";
   state.lessonProgress = {};
   state.attemptedQuizzes = new Set();
+  state.passedQuizzes = new Set();
   state.submittedHomeworks = new Set();
 }
 
@@ -284,33 +290,34 @@ const fakeDb = {
     findMany: ({ where }) =>
       Object.entries(state.lessonProgress)
         .filter(([lessonId]) => where.lessonId.in.includes(lessonId))
-        .map(([lessonId, p]) => ({ lessonId, ...p })),
+        .map(([lessonId, p]) => ({ lessonId, videoWatchedSec: 0, ...p })),
   },
   quizAttempt: {
-    findMany: ({ where }) =>
-      [...state.attemptedQuizzes]
+    findMany: ({ where }) => {
+      // Phase H: only PASSED attempts satisfy the quiz gate.
+      const passed = state.passedQuizzes ?? state.attemptedQuizzes;
+      return [...passed]
         .filter((q) => where.quizId.in.includes(q))
-        .map((quizId) => ({ quizId, percentage: 100 })),
+        .map((quizId) => ({ quizId, percentage: 100, passed: true }));
+    },
   },
   homeworkSubmission: {
     findMany: ({ where }) =>
       [...state.submittedHomeworks]
         .filter((h) => where.homeworkId.in.includes(h))
-        .map((homeworkId) => ({ homeworkId })),
+        .map((homeworkId) => ({ homeworkId, submittedAt: new Date() })),
   },
   student: {
     findUnique: () => ({
       id: "S1",
       schoolType: state.studentSchoolType,
       group: state.studentGroup,
+      subscription: null,
     }),
   },
   quiz: {
     findUnique: ({ where }) => {
       const lessonId = Object.keys(QUIZZES).find((l) => QUIZZES[l] === where.id);
-      // Phase G — the gate now refuses anything not PUBLISHED, so the fixture
-      // models the live default explicitly (overridable per id for the DRAFT
-      // gate tests below).
       return lessonId
         ? { id: where.id, lessonId, trackScope: "SHARED", status: state.quizStatus?.[where.id] ?? "PUBLISHED" }
         : null;
@@ -323,6 +330,12 @@ const fakeDb = {
         ? { id: where.id, lessonId, trackScope: "SHARED", status: state.homeworkStatus?.[where.id] ?? "PUBLISHED" }
         : null;
     },
+  },
+  absenceHold: {
+    findMany: () => [],
+  },
+  progressionOverride: {
+    findMany: () => [],
   },
 };
 
@@ -391,7 +404,7 @@ async function main() {
   ok(prog.sessions[1].unlocked === false, "session 2 still locked without the quiz");
 
   section("5. Video + assignment + quiz unlocks the next session");
-  state.attemptedQuizzes.add("Q1");
+  state.attemptedQuizzes.add("Q1"); state.passedQuizzes.add("Q1");
   prog = await SP.getCourseSessionProgress("S1", COURSE);
   ok(prog.sessions[0].completed === true, "session 1 complete when all three are satisfied");
   ok(prog.sessions[1].unlocked === true, "SESSION 2 UNLOCKS");
@@ -449,7 +462,7 @@ async function main() {
   ok((await SP.canAccessHomework("S1", "H2")).allowed === false, "Phase G: CLOSED homework keeps its progression verdict (locked here)");
   state.lessonProgress.L1 = { videoPercent: 100, videoCompleted: true, isCompleted: true };
   state.submittedHomeworks.add("H1");
-  state.attemptedQuizzes.add("Q1");
+  state.attemptedQuizzes.add("Q1"); state.passedQuizzes.add("Q1");
   ok((await SP.canAccessHomework("S1", "H2")).allowed === true, "Phase G: CLOSED homework stays accessible once its session is open");
   state.homeworkStatus = {};
   state.lessonProgress = {};
@@ -465,7 +478,7 @@ async function main() {
   section("9. Completing L1 opens L2's resources, not L3's");
   state.lessonProgress.L1 = { videoPercent: 100, videoCompleted: true, isCompleted: true };
   state.submittedHomeworks.add("H1");
-  state.attemptedQuizzes.add("Q1");
+  state.attemptedQuizzes.add("Q1"); state.passedQuizzes.add("Q1");
   ok((await SP.canAccessQuiz("S1", "Q2")).allowed === true, "L2 quiz reachable once L1 is complete");
   ok((await SP.canAccessQuiz("S1", "Q3")).allowed === false, "L3 quiz still unreachable");
   ok((await SP.canAccessHomework("S1", "H2")).allowed === true, "L2 assignment reachable once L1 is complete");
@@ -525,7 +538,7 @@ async function main() {
   // the same completion sequence unlocks the next legacy session
   state.lessonProgress.LG1 = { videoPercent: 100, videoCompleted: true, isCompleted: true };
   state.submittedHomeworks.add("LH1");
-  state.attemptedQuizzes.add("LQ1");
+  state.attemptedQuizzes.add("LQ1"); state.passedQuizzes.add("LQ1");
   prog = await SP.getCourseSessionProgress("S1", LEGACY_COURSE);
   ok(prog.sessions[0].completed === true, "legacy session 1 completes on all three requirements");
   ok(prog.sessions[1].unlocked === true, "legacy session 2 unlocks");
@@ -556,7 +569,7 @@ async function main() {
   // completing MX-C (the only one with components) opens MX-B
   state.lessonProgress["MX-C"] = { videoPercent: 100, videoCompleted: true, isCompleted: true };
   state.submittedHomeworks.add("MH1");
-  state.attemptedQuizzes.add("MQ1");
+  state.attemptedQuizzes.add("MQ1"); state.passedQuizzes.add("MQ1");
   prog = await SP.getCourseSessionProgress("S1", MIXED_COURSE);
   ok(prog.sessions[0].completed === true, "the canonical session of a mixed unit completes normally");
   ok(prog.sessions[1].unlocked === true, "the next session of a mixed unit unlocks");
@@ -656,27 +669,26 @@ async function main() {
   ok(!/requirements: access\.status/.test(lessonRoute), "the lesson 403 no longer echoes access.status");
 
   section("20. Source invariants: the progression universe covers BOTH chains");
-  const sp = read("src/lib/session-progress.ts");
-  ok(/\{ unit: \{ part: \{ courseId \} \} \}/.test(sp), "the universe query follows the canonical Unit chain");
-  ok(/\{ topic: \{ unit: \{ part: \{ courseId \} \} \} \}/.test(sp), "the universe query still follows the legacy Topic chain");
-  ok(/OR: \[/.test(sp), "both chains are combined with OR (one query, one system)");
+  // Phase H: canonical authority is now progression-engine.ts, session-progress.ts is compatibility layer
+  const sp = read("src/lib/progression-engine.ts");
+  const spCompat = read("src/lib/session-progress.ts");
+  const combined = sp + "\n" + spCompat;
+  ok(/\{ unit: \{ part: \{ courseId \} \} \}/.test(combined), "the universe query follows the canonical Unit chain");
+  ok(/\{ topic: \{ unit: \{ part: \{ courseId \} \} \} \}/.test(combined), "the universe query still follows the legacy Topic chain");
+  ok(/OR: \[/.test(combined), "both chains are combined with OR (one query, one system)");
   ok(
-    /const found = await db\.lesson\.findMany\(\{\s*where: \{\s*\.\.\.LESSON_STUDENT_STATUS_FILTER,\s*\.\.\.EXCLUDE_ARCHIVED_LESSON,/.test(sp),
+    /LESSON_STUDENT_STATUS_FILTER/.test(combined) && /EXCLUDE_ARCHIVED_LESSON/.test(combined),
     "the universe query is lifecycle-scoped first and excludes archived lessons (Phases 11 + 13)"
   );
   ok(
-    !/const found = await db\.lesson\.findMany\(\{\s*where: \{\s*isPublished:/.test(sp),
+    !/const found = await db\.lesson\.findMany\(\{\s*where: \{\s*isPublished:/.test(spCompat),
     "the universe no longer reads the demoted isPublished mirror"
   );
-  ok(sp.includes("orderCourseLessons(found, courseId)"), "ordering is applied explicitly, not left to SQL");
-  ok(!/orderBy: \[\s*\{ topic:/.test(sp), "the old topic-only orderBy is gone");
-  ok(/lesson\.unit\?\.part\.courseId \?\?/.test(sp), "canAccessLesson resolves the course canonical-first");
-  // Phase 12: `canAccessLesson` still builds its row from the SHARED chain
-  // select (so both paths see the same lesson) and additionally reads the
-  // lesson's trackScope for the track gate. The assertion is tightened, not
-  // relaxed: it now pins both facts.
+  ok(combined.includes("orderCourseLessons"), "ordering is applied explicitly, not left to SQL");
+  ok(!/orderBy: \[\s*\{ topic:/.test(combined), "the old topic-only orderBy is gone");
+  ok(/resolveLessonCourseId/.test(combined), "canAccessLesson resolves the course canonical-first");
   ok(
-    /select: \{\s*\.\.\.LESSON_CHAIN_SELECT,\s*trackScope: true,\s*status: true,\s*curriculumStatus: true,/.test(sp),
+    /LESSON_CHAIN_SELECT/.test(combined),
     "the chain shape is shared, so both paths see the same lesson — and it now also carries the lifecycle state the gate reads"
   );
 

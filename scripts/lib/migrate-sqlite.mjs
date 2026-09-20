@@ -323,6 +323,8 @@ const BASE_SKIP_TABLES = new Set([
   "AbsenceReview",
   "AbsenceReasonSubmission",
   "AbsenceHold",
+  // Phase H — created by 20260920000000_phase_h_progression_engine.
+  "ProgressionOverride",
 ]);
 
 const PRISMA_TO_SQLITE = {

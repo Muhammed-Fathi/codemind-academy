@@ -338,11 +338,16 @@ export async function GET(
 
   // Determine locked / current / completed statuses from the SHARED session
   // progression service, so the UI mirrors exactly what the backend enforces:
-  // a session is complete only when its video (>=95%), quiz and assignment
-  // requirements are all satisfied; missing components are not required.
-  const requirementsByLesson = new Map<string, unknown>();
+  // a session is complete only when its video (>=95%), quiz PASS and assignment
+  // SUBMITTED requirements are all satisfied; missing components are not required.
+  // Phase H adds hold boundary and override overlay.
+  const requirementsByLesson = new Map<string, any>();
+  let activeHoldInfo: any = null;
+  let boundaryLessonId: string | null = null;
   if (studentId) {
     const sessionProgress = await getCourseSessionProgress(studentId, course.id);
+    activeHoldInfo = (sessionProgress as any).activeHold ?? null;
+    boundaryLessonId = (sessionProgress as any).boundaryLessonId ?? null;
     for (const row of sessionProgress.sessions) {
       requirementsByLesson.set(row.lessonId, row);
     }
@@ -400,6 +405,7 @@ export async function GET(
     const lp = progressMap[lesson.id];
     const visibleQuizzes = assessmentVisible(lesson.quizzes);
     const visibleHomeworks = assessmentVisible(lesson.homeworks);
+    const reqFull: any = requirementsByLesson.get(lesson.id) ?? null;
     // Phase C — this lesson's content summary from the shared authority.
     // Presence badges (hasVideo/hasPdf/hasQuiz/hasAssignment + materialCount)
     // and the serialized `content` block all read from it — never from
@@ -458,6 +464,14 @@ export async function GET(
       progress: locked ? 0 : lp?.progress || 0,
       isCompleted: locked ? false : !!lp?.isCompleted,
       status: statusById.get(lesson.id) ?? "available",
+      // Phase H — canonical progression state, Arabic reason, structured unmet, hold/override
+      progressionState: reqFull?.state ?? null,
+      reason: reqFull?.reason ?? null,
+      unmet: reqFull?.unmet ?? [],
+      blockedByHold: !!reqFull?.blockedByHold,
+      unlockedByOverride: !!reqFull?.unlockedByOverride,
+      activeHold: reqFull?.activeHold ?? null,
+      activeOverride: reqFull?.activeOverride ?? null,
       requirements: locked ? null : requirementsByLesson.get(lesson.id) ?? null,
       // Presence flags only — enough for the "Quiz"/"Homework" badges in the
       // course tree, without naming or linking the protected items.
@@ -530,6 +544,9 @@ export async function GET(
       totalLessons,
       completedLessons,
       percentage,
+      // Phase H — active hold boundary
+      activeHold: activeHoldInfo,
+      boundaryLessonId,
     },
   });
 }

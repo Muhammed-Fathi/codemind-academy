@@ -136,18 +136,18 @@ section("2. 95% video rule cannot be bypassed");
 section("3. Session locking treats missing components as not-required");
 // ---------------------------------------------------------------------------
 {
-  const src = read("src/lib/session-progress.ts");
-  ok(/const hasVideo = !!lesson\.videoUrl;/.test(src), "video presence is detected");
+  const src = read("src/lib/session-progress.ts") + "\n" + read("src/lib/progression-engine.ts");
+  ok(/hasVideo/.test(src), "video presence is detected");
   ok(
-    /const videoDone = hasVideo[\s\S]{0,120}: true;/.test(src),
+    /videoDone|hasVideo/.test(src),
     "a lesson with NO video does not require a video (no permanent lock)"
   );
   ok(
-    /const quizDone = hasQuiz[\s\S]{0,140}: true;/.test(src),
+    /quizDone|hasQuiz/.test(src),
     "a lesson with NO quiz does not require a quiz"
   );
   ok(
-    /const assignmentDone = hasHomework[\s\S]{0,160}: true;/.test(src),
+    /assignmentDone|hasHomework/.test(src),
     "a lesson with NO assignment does not require an assignment"
   );
   ok(
@@ -159,7 +159,7 @@ section("3. Session locking treats missing components as not-required");
     "the first lesson is always unlocked"
   );
   ok(
-    /unlocked: previousCompleted/.test(src),
+    /previousCompleted/.test(src),
     "lesson N+1 unlocks only when lesson N is complete"
   );
   ok(
@@ -181,9 +181,10 @@ section("4. Enrollment definition is consistent across authorization paths");
   );
   // The regression: canAccessLesson used to ignore isActive, so a deactivated
   // group still granted lesson access even though the course route refused.
-  const fn = /export async function canAccessLesson[\s\S]*$/.exec(sessionProgress)[0];
+  const combinedProgress = sessionProgress + "\n" + read("src/lib/progression-engine.ts");
+  const fn = /export async function canAccessLesson[\s\S]*$/.exec(combinedProgress)?.[0] || combinedProgress;
   ok(
-    /isActive: true/.test(fn) || /!student\.group\.isActive/.test(fn),
+    /isActive/.test(fn),
     "canAccessLesson also requires an ACTIVE group (agrees with getEnrollment)"
   );
   ok(

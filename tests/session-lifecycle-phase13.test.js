@@ -425,7 +425,9 @@ function makeDb(seed = {}) {
         return data;
       },
     },
-    student: {
+    absenceHold: { findMany: () => [] },
+  progressionOverride: { findMany: () => [] },
+  student: {
       findUnique: async ({ where } = {}) => {
         const row = t.student.get(where?.id);
         if (!row) return null;
@@ -1288,17 +1290,34 @@ section("8. the ceremony — MARK_READY requires readiness");
     // Re-derive the compiled engine's universe filter with the clause removed
     // and prove the fake-db universe widens — i.e. that the assertions above
     // are guards and not decoration.
-    const src = fs.readFileSync(path.join(EMIT, "session-progress.js"), "utf8");
+    // Phase H: canonical engine is progression-engine.js, session-progress.js delegates
+    const srcMain = fs.readFileSync(path.join(EMIT, "session-progress.js"), "utf8");
+    const canonPath = path.join(EMIT, "progression-engine.js");
+    const srcCanon = fs.existsSync(canonPath) ? fs.readFileSync(canonPath, "utf8") : "";
+    const src = srcMain + "\n" + srcCanon;
     ok(
       /LESSON_STUDENT_STATUS_FILTER/.test(src),
       "the compiled progression engine references the lifecycle clause"
     );
-    const neutered = src
+    const neuteredCanon = srcCanon
       .replace(/[A-Za-z_$][\w$]*\.LESSON_STUDENT_STATUS_FILTER/g, "{}")
       .replace(/(?<![\w$.])LESSON_STUDENT_STATUS_FILTER/g, "{}");
-    ok(neutered !== src, "and the clause can actually be removed from it");
-    ok(!/LESSON_STUDENT_STATUS_FILTER/.test(neutered), "…leaving no trace of it (the control is real)");
-    fs.writeFileSync(path.join(EMIT, "session-progress-neutered.js"), neutered);
+    ok(neuteredCanon !== srcCanon, "and the clause can actually be removed from it");
+    ok(!/LESSON_STUDENT_STATUS_FILTER/.test(neuteredCanon), "…leaving no trace of it (the control is real)");
+    const neuteredCanonPath = path.join(EMIT, "progression-engine-neutered.js");
+    fs.writeFileSync(neuteredCanonPath, neuteredCanon);
+    // Backup and overwrite canonical engine with neutered version
+    const canonBackup = fs.readFileSync(canonPath, "utf8");
+    fs.writeFileSync(canonPath, neuteredCanon);
+    // Clear require cache for canonical engine so neutered version is loaded
+    try { delete require.cache[require.resolve(canonPath)]; } catch {}
+    try { delete require.cache[require.resolve(path.join(EMIT, "progression-engine.js"))]; } catch {}
+    // Also clear cache for session-progress wrapper
+    try { delete require.cache[require.resolve(path.join(EMIT, "session-progress.js"))]; } catch {}
+    // Neutered session-progress is just the original wrapper (it will import the neutered canonical)
+    const neuteredWrapper = srcMain;
+    fs.writeFileSync(path.join(EMIT, "session-progress-neutered.js"), neuteredWrapper);
+    try { delete require.cache[require.resolve(path.join(EMIT, "session-progress-neutered.js"))]; } catch {}
     const NEUTERED = require(path.join(EMIT, "session-progress-neutered.js"));
     const db = makeDb({
       lessons: {
@@ -1320,14 +1339,15 @@ section("8. the ceremony — MARK_READY requires readiness");
     eq(
       leaked.sessions.map((s) => s.lessonId),
       ["L1", "L2"],
-      "without it: the staged lesson enters the universe — so the guard is what stops the leak"
+      "without it: the staged lesson enters the universe — so the guard is what stops the leak (got [\"L1\"], want [\"L1\",\"L2\"])"
     );
-    fs.rmSync(path.join(EMIT, "session-progress-neutered.js"), { force: true });
+    ok(!guarded.byLessonId.has("L2"), "and L2 is gone from the guarded universe");
+    ok(leaked.byLessonId.has("L2"), "and L2 appears in the neutered universe");
+    // Restore canonical engine
+    try { fs.writeFileSync(canonPath, canonBackup); } catch {}
   }
 
-  // -------------------------------------------------------------------------
-  // 20. the real database, executed as a child process
-  // -------------------------------------------------------------------------
+  section("20. real-database verifier — proves the behaviour at scale (when DATABASE_URL is set)");
   section("20. REAL DATABASE — scripts/verify-phase13-db.mjs (migration + backfill + shipped code)");
   {
     let sqliteAvailable = true;
