@@ -704,8 +704,11 @@ async function partC() {
     const query2 = async (t, p) => pool2.query(t, p);
     const snap = await catalogSnapshot(query2);
     const ledger = await query2(`SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NOT NULL ORDER BY migration_name`);
-    ok(JSON.stringify(ledger.rows.map((x) => x.migration_name)) === JSON.stringify(["0_init", MIG_26D, MIG_PHASE_F]),
-      "engine: fresh deploy ledger contains exactly 0_init + Phase 26D + Phase F (never the SQLite names)");
+    const expectedPgLedger = ["0_init", MIG_26D, MIG_PHASE_F, MIG_PHASE_G, MIG_CAMERA];
+    ok(JSON.stringify(ledger.rows.map((x) => x.migration_name)) === JSON.stringify(expectedPgLedger),
+      "engine: fresh deploy ledger contains exactly the complete PostgreSQL chain (never the SQLite names)");
+    ok(ledger.rows.every((x) => expectedPgLedger.includes(x.migration_name)),
+      "engine: fresh deploy ledger contains no SQLite migration names");
     const refs = await query2(`SELECT to_regclass('public."QuizRetryGrant"') AS t`);
     ok(refs.rows[0].t !== null, "engine: QuizRetryGrant exists after fresh deploy");
     await pool2.end();
