@@ -129,6 +129,7 @@ export function BookmarksView() {
                       size="sm"
                       onClick={() => {
                         setView("student-lesson");
+                        useApp.getState().setLessonId(b.lessonId);
                         setNavParam(b.lessonId);
                       }}
                     >

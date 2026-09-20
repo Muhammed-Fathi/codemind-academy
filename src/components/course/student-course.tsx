@@ -451,6 +451,7 @@ function LessonRow({ lesson }: { lesson: LessonItem }) {
       return;
     }
     setView("student-lesson");
+    useApp.getState().setLessonId(lesson.id);
     setNavParam(lesson.id);
   };
 
