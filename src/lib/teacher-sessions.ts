@@ -435,6 +435,8 @@ export async function loadTeacherSessionWorkspace(params: {
         passMark: true,
         timeLimit: true,
         trackScope: true,
+        status: true,
+        publishedAt: true,
         order: true,
         // NOTE: Quiz has no createdAt column (schema L481) — do not add one.
         _count: { select: { questions: true, attempts: true } },
@@ -544,6 +546,8 @@ export async function loadTeacherSessionWorkspace(params: {
         passMark: q.passMark,
         timeLimit: q.timeLimit,
         trackScope: normalizeTrackScope(q.trackScope) ?? "SHARED",
+        status: q.status,
+        publishedAt: q.publishedAt,
         order: q.order,
         questionCount: q._count.questions,
         attemptsCount: q._count.attempts,
