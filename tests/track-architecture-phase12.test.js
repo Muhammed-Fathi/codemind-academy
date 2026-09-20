@@ -140,9 +140,9 @@ function world() {
       "L-OTHER": { id: "L-OTHER", order: 1, trackScope: "SHARED", isPublished: true, status: "PUBLISHED", curriculumStatus: "OFFICIAL", videoUrl: null, unitId: "U9", topicId: null, unit: { id: "U9", order: 1, part: { id: "P9", order: 1, courseId: OTHER_COURSE } }, topic: null, quizzes: [], homeworks: [] },
     },
     quizzes: {
-      "Q-SHARED": { id: "Q-SHARED", lessonId: "L-SHARED", trackScope: "SHARED" },
-      "Q-AR": { id: "Q-AR", lessonId: "L-SHARED", trackScope: "ARABIC" },
-      "Q-LANG": { id: "Q-LANG", lessonId: "L-SHARED", trackScope: "LANGUAGE" },
+      "Q-SHARED": { id: "Q-SHARED", lessonId: "L-SHARED", trackScope: "SHARED", status: "PUBLISHED" },
+      "Q-AR": { id: "Q-AR", lessonId: "L-SHARED", trackScope: "ARABIC", status: "PUBLISHED" },
+      "Q-LANG": { id: "Q-LANG", lessonId: "L-SHARED", trackScope: "LANGUAGE", status: "PUBLISHED" },
       "Q-AR-OWN": { id: "Q-AR-OWN", lessonId: "L-AR", trackScope: "ARABIC" },
       "Q-LANG-OWN": { id: "Q-LANG-OWN", lessonId: "L-LANG", trackScope: "LANGUAGE" },
     },
