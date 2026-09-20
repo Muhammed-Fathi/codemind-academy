@@ -989,9 +989,12 @@ async function main() {
     // therefore ADMISSIBLE on a SHARED quiz — the quiz reaches both tracks and
     // the per-student track filter drops it for ARABIC students at selection
     // time (covered by QUIZ-05/13). Asserting a 400 there would be wrong.
-    const sharedQuizLangQ = await POST(R.tQuizQuestions, url(`/api/teacher/quizzes/${bpQuiz.id}/questions`), {
+    const sharedAuthoringQuiz = await client.quiz.create({
+      data: { lessonId: L.pub.id, title: "Shared authoring quiz", titleAr: "اختبار تأليف مشترك", passMark: 50 },
+    });
+    const sharedQuizLangQ = await POST(R.tQuizQuestions, url(`/api/teacher/quizzes/${sharedAuthoringQuiz.id}/questions`), {
       type: "MCQ", prompt: "LANGUAGE-only Q on SHARED", options: ["a", "b"], answer: "0", schoolType: "LANGUAGE",
-    }, { id: bpQuiz.id });
+    }, { id: sharedAuthoringQuiz.id });
     ok(sharedQuizLangQ.status === 200 || sharedQuizLangQ.status === 201,
       "TEACHER-22: a LANGUAGE question IS admissible on a SHARED quiz (filtered per student later)");
 
@@ -1169,13 +1172,14 @@ async function main() {
     const originalMarks = targetFrozen.marksSnapshot;
     const originalOptions = targetFrozen.optionsSnapshot;
 
-    // (3)+(4) EDIT the live question. Non-grading fields are editable by design,
-    // so this is the realistic "bank edit" case.
+    // (3)+(4) Once an attempt exists, Phase G freezes the complete blueprint,
+    // including non-grading fields. The historical snapshot remains readable;
+    // quiz duplication is the sanctioned editing path.
     asUser(teacherUserA);
     const hzEdit = await PATCH(R.tQuestionById, url(`/api/teacher/questions/${target.id}`), {
       prompt: "REWRITTEN AFTER SUBMISSION", explanation: "rewritten too",
     }, { id: target.id });
-    eq(hzEdit.status, 200, "QUIZ-31: a non-grading edit of the live question is allowed");
+    eq(hzEdit.status, 409, "QUIZ-31: editing any field after an attempt is REFUSED → 409");
 
     const hzAfterEdit = await client.quizAnswer.findFirst({ where: { attemptId: hzAttemptId, questionId: target.id } });
     eq(hzAfterEdit.promptSnapshot, originalPrompt, "QUIZ-31: the frozen prompt is UNCHANGED by the live edit");
