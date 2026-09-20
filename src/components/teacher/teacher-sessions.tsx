@@ -1061,6 +1061,7 @@ function QuizzesCard({ ws, refresh }: { ws: Workspace; refresh: () => void }) {
                     size="sm"
                     className="h-7 px-2"
                     onClick={() => setManageQuiz(q)}
+                    disabled={q.attemptsCount > 0}
                   >
                     {tr("teacher.192")}
                   </Button>
@@ -1069,6 +1070,7 @@ function QuizzesCard({ ws, refresh }: { ws: Workspace; refresh: () => void }) {
                     size="sm"
                     className="h-7 px-2"
                     onClick={() => setEditQuiz(q)}
+                    disabled={q.attemptsCount > 0}
                   >
                     <Pencil className="me-1 h-3.5 w-3.5" />
                     {tr("teacher.194")}
@@ -1565,6 +1567,7 @@ function QuizEditDialog({
     quiz.timeLimit != null ? String(quiz.timeLimit) : ""
   );
   const [trackScope, setTrackScope] = React.useState(quiz.trackScope);
+  const locked = quiz.attemptsCount > 0;
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -1601,20 +1604,21 @@ function QuizEditDialog({
           <DialogTitle>{tr("teacher.256")}</DialogTitle>
           <DialogDescription>{quiz.title}</DialogDescription>
         </DialogHeader>
+        {locked && <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-800" role="status">تم قفل إعدادات الاختبار بعد بدء أول محاولة. لإجراء تغييرات، أنشئ نسخة جديدة من الاختبار.</div>}
         <div className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">{tr("teacher.269")}</Label>
-              <Input value={title} onChange={(e) => setTitle(e.target.value)} dir="ltr" />
+              <Input value={title} onChange={(e) => setTitle(e.target.value)} dir="ltr" disabled={locked} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">{tr("teacher.270")}</Label>
-              <Input value={titleAr} onChange={(e) => setTitleAr(e.target.value)} />
+              <Input value={titleAr} onChange={(e) => setTitleAr(e.target.value)} disabled={locked} />
             </div>
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground">{tr("teacher.271")}</Label>
-            <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
+            <Textarea value={description} onChange={(e) => setDescription(e.target.value)} disabled={locked} rows={2} />
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">
@@ -1624,7 +1628,7 @@ function QuizEditDialog({
                 min={0}
                 max={100}
                 value={passMark}
-                onChange={(e) => setPassMark(Number(e.target.value))}
+                onChange={(e) => setPassMark(Number(e.target.value))} disabled={locked}
                 dir="ltr"
               />
             </div>
@@ -1635,7 +1639,7 @@ function QuizEditDialog({
                 min={1}
                 max={300}
                 value={timeLimit}
-                onChange={(e) => setTimeLimit(e.target.value)}
+                onChange={(e) => setTimeLimit(e.target.value)} disabled={locked}
                 dir="ltr"
               />
             </div>
@@ -1683,7 +1687,7 @@ function QuizEditDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>
             {tr("admin.288")}
           </Button>
-          <Button onClick={() => mutation.mutate()} disabled={mutation.isPending}>
+          <Button onClick={() => mutation.mutate()} disabled={locked || mutation.isPending}>
             {mutation.isPending && <Loader2 className="w-4 h-4 me-1.5 animate-spin" />}
             {tr("teacher.272")}
           </Button>
