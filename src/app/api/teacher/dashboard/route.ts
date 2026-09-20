@@ -266,6 +266,8 @@ export async function GET(_req: NextRequest) {
     studentName: string;
     time: Date;
     kind: "good" | "neutral" | "warn";
+    attemptId?: string;
+    quizId?: string;
   };
   const activities: Activity[] = [];
   for (const s of recentSubs) {
@@ -286,6 +288,8 @@ export async function GET(_req: NextRequest) {
       studentName: a.student?.user?.name || tApi("api.165"),
       time: a.finishedAt || a.startedAt,
       kind: a.passed ? "good" : "warn",
+      attemptId: a.id,
+      quizId: a.quiz.id,
     });
   }
   activities.sort((a, b) => b.time.getTime() - a.time.getTime());

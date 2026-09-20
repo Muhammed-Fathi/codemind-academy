@@ -2030,6 +2030,78 @@ export const DICT_2026: Record<string, DictEntry> = {
     ar: "الملف ده اتسجّل قبل كده ببيانات مختلفة — مش هيتم تعديله.",
     en: "This upload was already recorded with different data — it will not be modified.",
   },
+
+  // ------------------------------------------------------------------
+  // Phase G — Quiz / Homework operational workflow (api.340–api.359)
+  // ------------------------------------------------------------------
+  "api.340": {
+    ar: "مش ممكن نشر الاختبار دلوقتي — فيه مشاكل لازم تتصلّح الأول.",
+    en: "The quiz cannot be published yet — fix the problems listed first.",
+  },
+  "api.341": {
+    ar: "الاختبار مفيهوش أي أسئلة — أضف سؤال واحد على الأقل قبل النشر.",
+    en: "The quiz has no questions — add at least one question before publishing.",
+  },
+  "api.342": {
+    ar: "مفيش أسئلة صالحة كافية لمسار {p1} — راجع عدد الأسئلة وخصائص الاختيار.",
+    en: "Not enough valid questions for the {p1} track — review the question count and selection settings.",
+  },
+  "api.343": { ar: "اللغة العربية", en: "Arabic Language" },
+  "api.344": { ar: "اللغات", en: "Languages" },
+  "api.345": {
+    ar: "اختبار جديد: {p1}",
+    en: "New quiz: {p1}",
+  },
+  "api.346": {
+    ar: "اتنشر اختبار جديد في الكورس بتاعك — ادخل شوفه.",
+    en: "A new quiz was published in your course — go check it out.",
+  },
+  "api.347": { ar: " (نسخة)", en: " (Copy)" },
+  "api.348": { ar: " (نسخة)", en: " (Copy)" },
+  "api.349": {
+    ar: "الاختبار ده مش متاح دلوقتي.",
+    en: "This quiz is not available right now.",
+  },
+  "api.350": {
+    ar: "مش ممكن نشر الواجب في الحالة دي.",
+    en: "The assignment cannot be published from its current state.",
+  },
+  "api.351": {
+    ar: "الواجب لسه مسودة — انشره الأول قبل ما تقفله.",
+    en: "The assignment is still a draft — publish it before closing.",
+  },
+  "api.352": {
+    ar: "واجب جديد: {p1}",
+    en: "New assignment: {p1}",
+  },
+  "api.353": {
+    ar: "اتنشر واجب جديد في الكورس بتاعك — ادخل شوفه وسلّمه في معاده.",
+    en: "A new assignment was published in your course — check it and submit before the deadline.",
+  },
+  "api.354": {
+    ar: "الواجب مقفول — مش ممكن تعديل المرفقات دلوقتي.",
+    en: "The assignment is closed — attachments cannot be changed now.",
+  },
+  "api.355": {
+    ar: "الملف المحدد مش صالح للاستخدام هنا.",
+    en: "The selected file is not valid for this purpose.",
+  },
+  "api.356": {
+    ar: "مش ممكن تصحيح واجب لسه مسودة — انشره الأول.",
+    en: "A draft assignment cannot be graded — publish it first.",
+  },
+  "api.357": {
+    ar: "الواجب مقفول — مش ممكن تسليم حل جديد.",
+    en: "The assignment is closed — new submissions are not accepted.",
+  },
+  "api.358": {
+    ar: "الملف غير مسموح — الأنواع المسموحة: PDF أو DOCX أو PPTX أو ZIP للواجبات، وصور JPG أو PNG كمان للحلول — وبحد أقصى 25 ميجا.",
+    en: "File not allowed — allowed types: PDF, DOCX, PPTX or ZIP for assignments, plus JPG or PNG images for solutions — up to 25 MB.",
+  },
+  "api.359": {
+    ar: "مساحة التخزين المتاحة خلصت — تواصل مع الإدارة أو جرّب ملف أصغر.",
+    en: "The available storage quota is exhausted — contact administration or try a smaller file.",
+  },
   "api.307": {
     ar: "اختار أسئلة من غير تكرار — قائمة الأسئلة المختارة فاضية أو فيها أسئلة مكررة.",
     en: "Select questions without duplicates — the selection is empty or contains repeated questions.",

@@ -307,6 +307,7 @@ function DashboardHome({
 
   const openLesson = (lessonId: string) => {
     setView("student-lesson");
+    useApp.getState().setLessonId(lessonId);
     setNavParam(lessonId);
   };
 
@@ -1176,25 +1177,25 @@ function HomeworkSubmitForm({
 }) {
   const t = useT();
   const [value, setValue] = React.useState("");
+  const [file, setFile] = React.useState<File | null>(null);
   const [busy, setBusy] = React.useState(false);
 
   const submit = async () => {
     const content = value.trim();
-    if (!content || busy) return;
+    if ((!content && !file) || busy) return;
     setBusy(true);
     try {
-      const r = await fetch("/api/students/me/homework", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ homeworkId, content }),
-      });
+      const body = new FormData();
+      body.set("homeworkId", homeworkId); body.set("content", content);
+      if (file) body.set("file", file);
+      const r = await fetch("/api/students/me/homework", { method: "POST", body });
       const data = await r.json().catch(() => null);
       if (!r.ok) {
         toast.error(data?.error || t("student.116"));
         return;
       }
       toast.success(data?.message || t("api.225"));
-      setValue("");
+      setValue(""); setFile(null);
       onSubmitted();
     } catch {
       toast.error(t("student.116"));
@@ -1205,6 +1206,7 @@ function HomeworkSubmitForm({
 
   return (
     <div className="w-full flex items-start gap-2 pt-1">
+      <input type="file" accept=".pdf,.docx,.jpg,.jpeg,.png,.zip" onChange={(e) => setFile(e.target.files?.[0] ?? null)} disabled={busy} className="max-w-44 text-xs" />
       <Textarea
         value={value}
         onChange={(e) => setValue(e.target.value)}
@@ -1320,6 +1322,8 @@ function HomeworkView() {
                         <div className="text-xs text-muted-foreground truncate">
                           {h.lessonTitle}
                         </div>
+                        {h.attachment && <a className="text-[11px] text-primary underline block truncate" href={`/api/media/${h.attachment.id}`} target="_blank" rel="noreferrer">مرفق الواجب: {h.attachment.originalName || "تحميل"}</a>}
+                        {sub?.attachment && <a className="text-[11px] text-primary underline block truncate" href={`/api/media/${sub.attachment.id}`} target="_blank" rel="noreferrer">ملف التسليم: {sub.attachment.originalName || "تحميل"}</a>}
                         {isGraded && (
                           <div className="text-[11px] mt-1 text-primary flex items-center gap-1">
                             <CheckCircle2 className="w-3 h-3" />
@@ -1379,11 +1383,15 @@ function HomeworkView() {
                           {t("student.182")}<ChevronLeft className="w-3.5 h-3.5 flip-rtl" />
                         </Button>
                       )}
-                      {!isGraded && (
-                        <HomeworkSubmitForm
-                          homeworkId={h.id}
-                          onSubmitted={reload}
-                        />
+                      {sub && (isSubmitted || isLate || isGraded) ? (
+                        <div className="w-full rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-1 text-xs">
+                          <div className="font-semibold text-primary">تم التسليم</div>
+                          <div className="text-muted-foreground">{sub.submittedAt ? new Intl.DateTimeFormat("ar-EG", { dateStyle: "medium", timeStyle: "short" }).format(new Date(sub.submittedAt)) : ""} · {isLate ? "متأخر" : "في الميعاد"}</div>
+                          {sub.attachment && <a className="text-primary underline block truncate" href={`/api/media/${sub.attachment.id}`} target="_blank" rel="noreferrer">{sub.attachment.originalName || "تحميل ملف التسليم"}</a>}
+                          {!isGraded && <div className="text-muted-foreground">مستني التصحيح</div>}
+                        </div>
+                      ) : !isGraded && (
+                        <HomeworkSubmitForm homeworkId={h.id} onSubmitted={reload} />
                       )}
                     </li>
                   );

@@ -55,6 +55,7 @@ type QuizData = {
     description: string | null;
     passMark: number;
     timeLimit: number | null;
+    cameraPolicy?: "REQUIRED" | "OPTIONAL";
   };
   lesson: {
     id: string;
@@ -103,6 +104,8 @@ export function QuizRunner() {
   const setView = useApp((s) => s.setView);
   const setNavParam = useApp((s) => s.setNavParam);
   const navParam = useApp((s) => s.navParam);
+  const quizId = useApp((s) => s.quizId);
+  const activeQuizId = quizId;
 
   const [quiz, setQuiz] = React.useState<QuizData | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -126,8 +129,15 @@ export function QuizRunner() {
     async (allow: boolean) => {
       if (!navParam) return;
       setStartingAttempt(true);
+      let requiredDenied = false;
       try {
-        const r = await fetch(`/api/quizzes/${encodeURIComponent(navParam)}/start`, {
+        if (allow && navigator.mediaDevices?.getUserMedia) {
+          const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          stream.getTracks().forEach((track) => track.stop());
+        } else if (allow) {
+          throw new Error("CAMERA_UNAVAILABLE");
+        }
+        const r = await fetch(`/api/quizzes/${encodeURIComponent(activeQuizId || "")}/start`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ cameraStatus: allow ? "NOT_REQUESTED" : "DECLINED" }),
@@ -140,7 +150,7 @@ export function QuizRunner() {
         // blueprint quiz, larger) set than the one the student is graded on.
         if (r.ok && d.attemptId) {
           setAttemptId(d.attemptId);
-          const fresh = await fetch(`/api/quizzes/${encodeURIComponent(navParam)}`);
+          const fresh = await fetch(`/api/quizzes/${encodeURIComponent(activeQuizId || "")}`);
           if (fresh.ok) {
             const fd = await fresh.json();
             setQuiz(fd);
@@ -159,9 +169,16 @@ export function QuizRunner() {
         // Any other failed attempt-open must not block the student from taking
         // the quiz; it only means no evidence can be linked.
       } catch {
-        /* ignore — quiz still runs */
+        if (allow && quiz?.quiz.cameraPolicy === "REQUIRED") {
+          requiredDenied = true;
+          setError("لا يمكن بدء الاختبار قبل السماح بالكاميرا. تحقق من صلاحيات المتصفح ثم حاول مرة أخرى.");
+          setCameraAllowed(null);
+          setStartingAttempt(false);
+          return;
+        }
+        /* Optional camera failures do not block the quiz. */
       } finally {
-        setCameraAllowed(allow);
+        if (!requiredDenied) setCameraAllowed(allow);
         setStartingAttempt(false);
       }
     },
@@ -169,14 +186,14 @@ export function QuizRunner() {
   );
 
   const load = React.useCallback(() => {
-    if (!navParam) {
-      setError(t("course.001"));
+      if (!activeQuizId) {
+        setError(t("course.001"));
       setLoading(false);
       return;
     }
     setLoading(true);
     setError(null);
-    fetch(`/api/quizzes/${encodeURIComponent(navParam)}`)
+    fetch(`/api/quizzes/${encodeURIComponent(activeQuizId || "")}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error("fail"))))
       .then((d) => {
         setQuiz(d);
@@ -323,15 +340,15 @@ export function QuizRunner() {
       {/* Consent gate — nothing is captured, and the questions are not shown,
           until the student has made an explicit choice. */}
       {cameraAllowed === null ? (
-        <QuizCameraConsent onDecision={beginAttempt} starting={startingAttempt} />
+        <QuizCameraConsent onDecision={beginAttempt} starting={startingAttempt} required={quiz.quiz.cameraPolicy === "REQUIRED"} />
       ) : (
         <>
       {/* Live camera indicator. Rendered only when the student opted in and an
           attempt row exists to attach the snapshots to. */}
-      {cameraAllowed && attemptId && navParam && (
+      {cameraAllowed && attemptId && activeQuizId && (
         <div className="flex justify-end">
           <QuizCameraMonitor
-            quizId={navParam}
+            quizId={activeQuizId}
             attemptId={attemptId}
             enabled
           />

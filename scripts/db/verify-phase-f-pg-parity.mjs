@@ -61,6 +61,11 @@ const CHAIN = [
   "0_init",
   "20260915180000_phase26d_quiz_attempt_architecture",
   "20260919120000_phase_f_live_session_lifecycle",
+  // Phase G — the parity proof is CUMULATIVE: the baseline is derived from the
+  // current schema source, so every later migration must join this chain or the
+  // comparison would report the newer columns as missing. scripts/db/verify-phase-g-pg-parity.mjs
+  // is the canonical full-chain proof from Phase G onward.
+  "20260919180000_phase_g_quiz_homework_workflow",
 ];
 const read = (p) => fs.readFileSync(p, "utf8");
 const stmts = (p) => splitSqlStatements(read(p));

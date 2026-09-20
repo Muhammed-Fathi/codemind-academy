@@ -146,6 +146,8 @@ type QuizRow = {
   order: number;
   questionCount: number;
   attemptsCount: number;
+  status?: string;
+  publishedAt?: string | null;
 };
 
 type HomeworkRow = {
@@ -161,6 +163,8 @@ type HomeworkRow = {
   createdAt: string;
   submissionsCount: number;
   gradedCount: number;
+  status?: string;
+  publishedAt?: string | null;
 };
 
 type Workspace = {
@@ -195,6 +199,18 @@ const shortDate = (iso: string) => {
 };
 
 /** localize-with-fallback for labels that are plain, dict-keyed copy. */
+function lifecycleLabel(status: string | undefined, homework = false): string {
+  if (status === "DRAFT") return "مسودة";
+  if (status === "CLOSED") return "مغلق";
+  return homework ? "منشور" : "منشور";
+}
+
+function lifecycleTone(status: string | undefined): string {
+  if (status === "DRAFT") return "border-amber-500/30 text-amber-700 dark:text-amber-300";
+  if (status === "CLOSED") return "border-slate-500/30 text-slate-700 dark:text-slate-300";
+  return "border-emerald-500/30 text-emerald-700 dark:text-emerald-300";
+}
+
 function indicatorTone(state: string): string {
   if (state === "OK") {
     return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
@@ -933,6 +949,24 @@ function QuizzesCard({ ws, refresh }: { ws: Workspace; refresh: () => void }) {
   const [manageQuiz, setManageQuiz] = React.useState<QuizRow | null>(null);
   const [editQuiz, setEditQuiz] = React.useState<QuizRow | null>(null);
   const [deleteQuiz, setDeleteQuiz] = React.useState<QuizRow | null>(null);
+  const [previewQuizId, setPreviewQuizId] = React.useState<string | null>(null);
+  const [attemptsQuizId, setAttemptsQuizId] = React.useState<string | null>(null);
+
+  const publish = useMutation({
+    mutationFn: async (id: string) => {
+      const r = await fetch(`/api/teacher/quizzes/${encodeURIComponent(id)}/publish`, { method: "POST" });
+      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || "تعذر النشر"); }
+      return r.json();
+    },
+    onSuccess: () => { toast.success("تم نشر الاختبار"); refresh(); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const duplicate = useMutation({
+    mutationFn: async (id: string) => { const r = await fetch(`/api/teacher/quizzes/${encodeURIComponent(id)}/duplicate`, { method: "POST" }); if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "تعذر نسخ الاختبار"); return r.json(); },
+    onSuccess: (data: any) => { const title = data?.quiz?.titleAr || data?.quiz?.title || "الاختبار"; toast.success(`تم إنشاء نسخة جديدة كمسودة: ${title}`); refresh(); }, onError: (e: Error) => toast.error(e.message),
+  });
+  const preview = (id: string) => setPreviewQuizId(id);
 
   const del = useMutation({
     mutationFn: async (id: string) => {
@@ -978,6 +1012,9 @@ function QuizzesCard({ ws, refresh }: { ws: Workspace; refresh: () => void }) {
             <li key={q.id} className="rounded-lg border p-2.5 text-xs space-y-1.5">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="min-w-0 truncate font-medium">{q.title}</span>
+                <Badge variant="outline" className={`text-[10px] ${lifecycleTone(q.status)}`}>
+                  {lifecycleLabel(q.status)}
+                </Badge>
                 <TrackScopeBadge scope={q.trackScope} />
                 <span className="text-muted-foreground">
                   {tr("teacher.267")}: {q.passMark}٪
@@ -1011,11 +1048,20 @@ function QuizzesCard({ ws, refresh }: { ws: Workspace; refresh: () => void }) {
                   </Badge>
                 )}
                 <span className="ms-auto flex items-center gap-1">
+                  <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => preview(q.id)}>معاينة</Button>
+                  {q.attemptsCount > 0 && <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => duplicate.mutate(q.id)} disabled={duplicate.isPending}>نسخ الاختبار</Button>}
+                  {q.attemptsCount > 0 && <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => setAttemptsQuizId(q.id)}>عرض المحاولات</Button>}
+                  {q.status === "DRAFT" && q.questionCount > 0 && (
+                    <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => publish.mutate(q.id)} disabled={publish.isPending}>
+                      نشر
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     size="sm"
                     className="h-7 px-2"
                     onClick={() => setManageQuiz(q)}
+                    disabled={q.attemptsCount > 0}
                   >
                     {tr("teacher.192")}
                   </Button>
@@ -1024,6 +1070,7 @@ function QuizzesCard({ ws, refresh }: { ws: Workspace; refresh: () => void }) {
                     size="sm"
                     className="h-7 px-2"
                     onClick={() => setEditQuiz(q)}
+                    disabled={q.attemptsCount > 0}
                   >
                     <Pencil className="me-1 h-3.5 w-3.5" />
                     {tr("teacher.194")}
@@ -1043,6 +1090,9 @@ function QuizzesCard({ ws, refresh }: { ws: Workspace; refresh: () => void }) {
           ))}
         </ul>
       )}
+
+      <QuizAttemptsDialog id={attemptsQuizId} open={!!attemptsQuizId} onOpenChange={(v) => !v && setAttemptsQuizId(null)} />
+      <QuizPreviewDialog id={previewQuizId} open={!!previewQuizId} onOpenChange={(v) => !v && setPreviewQuizId(null)} />
 
       {/* Create (metadata + at least one question — the API contract) */}
       <QuizCreateDialog
@@ -1090,6 +1140,37 @@ function QuizzesCard({ ws, refresh }: { ws: Workspace; refresh: () => void }) {
   );
 }
 
+function QuizAttemptsDialog({ id, open, onOpenChange }: { id: string | null; open: boolean; onOpenChange: (v: boolean) => void }) {
+  const [data, setData] = React.useState<any>(null); const [error, setError] = React.useState<string | null>(null);
+  React.useEffect(() => { if (!open || !id) return; let live=true; setData(null); setError(null); fetch(`/api/teacher/quizzes/${encodeURIComponent(id)}/attempts`).then(async r => { const b=await r.json(); if(!r.ok) throw new Error(b.error||"تعذر تحميل النتائج"); return b; }).then(b=>live&&setData(b)).catch(e=>live&&setError(e.message)); return ()=>{live=false}; },[id,open]);
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-w-3xl max-h-[88vh] overflow-y-auto" dir="rtl"><DialogHeader><DialogTitle>نتائج الطلاب</DialogTitle></DialogHeader>{!data&&!error&&<div className="py-10 text-center text-muted-foreground">جارٍ التحميل…</div>}{error&&<p className="text-destructive">{error}</p>}{data&&(!data.attempts?.length?<p className="py-8 text-center text-muted-foreground">لا توجد محاولات بعد</p>:<div className="space-y-2">{data.attempts.map((a:any,i:number)=><div key={a.id||i} className="rounded border p-3 flex flex-wrap gap-3 items-center"><strong>{a.student?.name || "طالب"}</strong><span>المحاولة {a.attemptNumber}</span><span>{a.score ?? 0}/{a.totalMarks ?? 0}</span><span>{a.percentage ?? 0}%</span><Badge variant="outline">{a.passed ? "ناجح" : "غير ناجح"}</Badge><span className="text-muted-foreground text-xs">{a.finishedAt ? new Date(a.finishedAt).toLocaleString("ar-EG") : "مفتوحة"}</span></div>)}</div>)}<DialogFooter><Button variant="outline" onClick={()=>onOpenChange(false)}>إغلاق</Button></DialogFooter></DialogContent></Dialog>;
+}
+
+function QuizPreviewDialog({ id, open, onOpenChange }: { id: string | null; open: boolean; onOpenChange: (v: boolean) => void }) {
+  const [data, setData] = React.useState<any>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    if (!open || !id) return;
+    let alive = true; setData(null); setError(null);
+    fetch(`/api/teacher/quizzes/${encodeURIComponent(id)}/preview`)
+      .then(async (r) => { const body = await r.json(); if (!r.ok) throw new Error(body.error || "تعذر فتح المعاينة"); return body.preview; })
+      .then((v) => alive && setData(v)).catch((e) => alive && setError(e.message));
+    return () => { alive = false; };
+  }, [id, open]);
+  return <Dialog open={open} onOpenChange={onOpenChange}>
+    <DialogContent className="max-w-3xl max-h-[88vh] overflow-y-auto" dir="rtl">
+      <DialogHeader><DialogTitle>معاينة الاختبار</DialogTitle><DialogDescription>معاينة مدرسية لا تنشئ محاولة للطالب</DialogDescription></DialogHeader>
+      {!data && !error && <div className="py-12 text-center text-muted-foreground">جارٍ تحميل المعاينة…</div>}
+      {error && <div className="rounded border border-destructive/30 p-4 text-destructive">{error}</div>}
+      {data && <div className="space-y-4">
+        <div className="rounded-lg border p-4 space-y-2"><h3 className="font-semibold">{data.quiz.title}</h3><p className="text-sm text-muted-foreground">{data.quiz.description || "لا يوجد وصف"}</p><div className="flex flex-wrap gap-2 text-xs"><Badge variant="outline">{data.quiz.status === "DRAFT" ? "مسودة" : "منشور"}</Badge><Badge variant="outline">درجة النجاح: {data.quiz.passMark}</Badge><Badge variant="outline">المدة: {data.quiz.timeLimit ?? "بدون حد"}</Badge><Badge variant="outline">الأسئلة: {data.quiz.questionCount}</Badge><Badge variant="outline">الدرجة الكلية: {data.quiz.totalMarks}</Badge></div></div>
+        {data.questions?.length === 0 ? <div className="p-8 text-center text-muted-foreground">لا توجد أسئلة للمعاينة</div> : data.questions.map((q: any, i: number) => <div key={q.id || i} className="rounded-lg border p-4 space-y-2"><div className="flex justify-between text-xs text-muted-foreground"><span>سؤال {i + 1} · {q.type === "MCQ" ? "اختيار من متعدد" : q.type === "TRUE_FALSE" ? "صح أو خطأ" : "سؤال"}</span><span>{q.marks} درجة · {q.difficulty === "EASY" ? "سهل" : q.difficulty === "HARD" ? "صعب" : "متوسط"}</span></div><p className="font-medium">{q.promptAr || q.prompt}</p><div className="grid gap-2 sm:grid-cols-2">{(Array.isArray(q.options) ? q.options : []).map((o: string, j: number) => <div key={j} className={`rounded border p-2 ${String(q.answer) === String(j) ? "border-emerald-500 bg-emerald-500/10" : ""}`}>{o}</div>)}</div></div>)}
+      </div>}
+      <DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>إغلاق</Button></DialogFooter>
+    </DialogContent>
+  </Dialog>;
+}
+
 // ------------------------------------------------------------
 // Quiz create — lesson is FIXED to the workspace session
 // ------------------------------------------------------------
@@ -1135,6 +1216,7 @@ function QuizCreateDialog({
   const [passMark, setPassMark] = React.useState(60);
   const [timeLimit, setTimeLimit] = React.useState<string>("");
   const [trackScope, setTrackScope] = React.useState("");
+  const [cameraPolicy, setCameraPolicy] = React.useState<"OPTIONAL" | "REQUIRED">("OPTIONAL");
   const [questions, setQuestions] = React.useState<QuestionDraft[]>([emptyQuestion()]);
 
   const mutation = useMutation({
@@ -1191,6 +1273,7 @@ function QuizCreateDialog({
       passMark,
       timeLimit: timeLimit.trim() === "" ? null : Number(timeLimit),
       trackScope,
+      cameraPolicy,
       questions: normalized.map((q) => ({ ...q, schoolType: undefined })),
     });
   };
@@ -1219,6 +1302,14 @@ function QuizCreateDialog({
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground">{tr("teacher.271")}</Label>
             <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
+          </div>
+          <div className="space-y-1.5 rounded-lg border p-3">
+            <Label className="text-xs text-muted-foreground">الكاميرا أثناء الاختبار</Label>
+            <Select value={cameraPolicy} onValueChange={(v) => setCameraPolicy(v as "OPTIONAL" | "REQUIRED")}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="OPTIONAL">اختيارية</SelectItem><SelectItem value="REQUIRED">مطلوبة</SelectItem></SelectContent>
+            </Select>
+            <p className="text-[11px] text-muted-foreground">تحدد هل يجب السماح بالكاميرا قبل بدء المحاولة.</p>
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">
@@ -1476,6 +1567,7 @@ function QuizEditDialog({
     quiz.timeLimit != null ? String(quiz.timeLimit) : ""
   );
   const [trackScope, setTrackScope] = React.useState(quiz.trackScope);
+  const locked = quiz.attemptsCount > 0;
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -1512,20 +1604,21 @@ function QuizEditDialog({
           <DialogTitle>{tr("teacher.256")}</DialogTitle>
           <DialogDescription>{quiz.title}</DialogDescription>
         </DialogHeader>
+        {locked && <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-800" role="status">تم قفل إعدادات الاختبار بعد بدء أول محاولة. لإجراء تغييرات، أنشئ نسخة جديدة من الاختبار.</div>}
         <div className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">{tr("teacher.269")}</Label>
-              <Input value={title} onChange={(e) => setTitle(e.target.value)} dir="ltr" />
+              <Input value={title} onChange={(e) => setTitle(e.target.value)} dir="ltr" disabled={locked} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">{tr("teacher.270")}</Label>
-              <Input value={titleAr} onChange={(e) => setTitleAr(e.target.value)} />
+              <Input value={titleAr} onChange={(e) => setTitleAr(e.target.value)} disabled={locked} />
             </div>
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground">{tr("teacher.271")}</Label>
-            <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
+            <Textarea value={description} onChange={(e) => setDescription(e.target.value)} disabled={locked} rows={2} />
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">
@@ -1535,7 +1628,7 @@ function QuizEditDialog({
                 min={0}
                 max={100}
                 value={passMark}
-                onChange={(e) => setPassMark(Number(e.target.value))}
+                onChange={(e) => setPassMark(Number(e.target.value))} disabled={locked}
                 dir="ltr"
               />
             </div>
@@ -1546,7 +1639,7 @@ function QuizEditDialog({
                 min={1}
                 max={300}
                 value={timeLimit}
-                onChange={(e) => setTimeLimit(e.target.value)}
+                onChange={(e) => setTimeLimit(e.target.value)} disabled={locked}
                 dir="ltr"
               />
             </div>
@@ -1594,7 +1687,7 @@ function QuizEditDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>
             {tr("admin.288")}
           </Button>
-          <Button onClick={() => mutation.mutate()} disabled={mutation.isPending}>
+          <Button onClick={() => mutation.mutate()} disabled={locked || mutation.isPending}>
             {mutation.isPending && <Loader2 className="w-4 h-4 me-1.5 animate-spin" />}
             {tr("teacher.272")}
           </Button>
@@ -1612,6 +1705,16 @@ function HomeworkCard({ ws, refresh }: { ws: Workspace; refresh: () => void }) {
   const [dialogOpen, setDialogOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<HomeworkRecord | null>(null);
   const [deleting, setDeleting] = React.useState<HomeworkRow | null>(null);
+
+  const transition = useMutation({
+    mutationFn: async ({ id, action }: { id: string; action: "publish" | "close" }) => {
+      const r = await fetch(`/api/teacher/homework/${encodeURIComponent(id)}/${action}`, { method: "POST" });
+      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || "تعذر تحديث حالة الواجب"); }
+      return r.json();
+    },
+    onSuccess: (_data, vars) => { toast.success(vars.action === "publish" ? "تم نشر الواجب" : "تم إغلاق الواجب"); refresh(); },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   const del = useMutation({
     mutationFn: async (id: string) => {
@@ -1697,6 +1800,9 @@ function HomeworkCard({ ws, refresh }: { ws: Workspace; refresh: () => void }) {
             <li key={h.id} className="rounded-lg border p-2.5 text-xs space-y-1.5">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="min-w-0 truncate font-medium">{h.title}</span>
+                <Badge variant="outline" className={`text-[10px] ${lifecycleTone(h.status)}`}>
+                  {lifecycleLabel(h.status, true)}
+                </Badge>
                 <TrackScopeBadge scope={h.trackScope} />
                 {!h.instructions?.trim() && (
                   <Badge
@@ -1724,6 +1830,8 @@ function HomeworkCard({ ws, refresh }: { ws: Workspace; refresh: () => void }) {
                   </Badge>
                 )}
                 <span className="ms-auto flex items-center gap-1">
+                  {h.status === "DRAFT" && <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => transition.mutate({ id: h.id, action: "publish" })} disabled={transition.isPending}>نشر الواجب</Button>}
+                  {h.status === "PUBLISHED" && <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => transition.mutate({ id: h.id, action: "close" })} disabled={transition.isPending}>إغلاق الواجب</Button>}
                   <Button
                     variant="ghost"
                     size="sm"

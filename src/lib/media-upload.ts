@@ -77,13 +77,28 @@ import { acquireUploadFinalizeLock } from "@/lib/db-serialization";
 import { normalizeTrackScope, type TrackScope } from "@/lib/track-scope";
 import { assertVolumeQuota } from "@/lib/storage-quotas";
 import { validateSessionVideoLink } from "@/lib/session-video-link";
+import {
+  MAX_HOMEWORK_FILE_BYTES,
+  extFromHomeworkFileMime,
+  hasAllowedHomeworkFileExtension,
+  isAllowedHomeworkFileMime,
+  verifyHomeworkFileMagicBytes,
+} from "@/lib/homework-files";
 
 // ---------------------------------------------------------------------------
 // Purposes
 // ---------------------------------------------------------------------------
 
 /** The upload purposes that may use the presigned flow. Evidence excluded. */
-export const UPLOAD_PURPOSES = ["SESSION_VIDEO", "LESSON_PDF"] as const;
+export const UPLOAD_PURPOSES = [
+  "SESSION_VIDEO",
+  "LESSON_PDF",
+  // Phase G — homework files ride the SAME presigned flow (intent token,
+  // server-generated key, completion verification); their admissibility rules
+  // (types, 25 MB ceiling, magic bytes) live in src/lib/homework-files.ts.
+  "HOMEWORK_ATTACHMENT",
+  "HOMEWORK_SUBMISSION",
+] as const;
 export type UploadPurpose = (typeof UPLOAD_PURPOSES)[number];
 
 export function isUploadPurpose(value: unknown): value is UploadPurpose {
@@ -143,7 +158,57 @@ const PURPOSE_SPECS: Record<UploadPurpose, UploadPurposeSpec> = {
     verifyMagicBytes: (head) => hasPdfMagicBytes(head),
     requireExtension: (name) => hasPdfExtension(name),
   },
+  // Phase G — the teacher's assignment attachment (PDF/DOCX/PPTX/ZIP, 25 MB).
+  // Same security posture as LESSON_PDF: declared MIME allow-listed before
+  // presigning, stored Content-Type compared at completion, magic bytes of the
+  // stored head verified, final-extension enforced over the sanitized name.
+  HOMEWORK_ATTACHMENT: {
+    purpose: "HOMEWORK_ATTACHMENT",
+    kind: "DOCUMENT",
+    keyScope: "homework-attachments",
+    maxBytes: MAX_HOMEWORK_FILE_BYTES,
+    isAllowedMime: (mime) => isAllowedHomeworkFileMime("TEACHER_ATTACHMENT", mime),
+    // No default content type: office/zip types must always be declared.
+    defaultContentType: null,
+    extFor: (mime) => extFromHomeworkFileMime("TEACHER_ATTACHMENT", mime) ?? "bin",
+    verifyMagicBytes: undefined, // bound per content type below
+    requireExtension: (name) =>
+      hasAllowedHomeworkFileExtension("TEACHER_ATTACHMENT", name),
+  },
+  // Phase G — the student's submission file (PDF/DOCX/JPG/JPEG/PNG/ZIP, 25 MB).
+  HOMEWORK_SUBMISSION: {
+    purpose: "HOMEWORK_SUBMISSION",
+    kind: "DOCUMENT",
+    keyScope: "homework-submissions",
+    maxBytes: MAX_HOMEWORK_FILE_BYTES,
+    isAllowedMime: (mime) => isAllowedHomeworkFileMime("STUDENT_SUBMISSION", mime),
+    defaultContentType: null,
+    extFor: (mime) => extFromHomeworkFileMime("STUDENT_SUBMISSION", mime) ?? "bin",
+    verifyMagicBytes: undefined, // bound per content type below
+    requireExtension: (name) =>
+      hasAllowedHomeworkFileExtension("STUDENT_SUBMISSION", name),
+  },
 };
+
+/**
+ * Magic-byte verification for the homework purposes is CONTENT-TYPE-SPECIFIC
+ * (a ZIP head for office/zip types, %PDF- for PDFs, SOI/PNG signatures for
+ * images), so it cannot be one static function per spec — the completion step
+ * dispatches through this helper with the GRANTED content type.
+ */
+function purposeMagicBytesOk(
+  spec: UploadPurposeSpec,
+  contentType: string,
+  head: Buffer
+): boolean {
+  if (spec.purpose === "HOMEWORK_ATTACHMENT") {
+    return verifyHomeworkFileMagicBytes("TEACHER_ATTACHMENT", contentType, head);
+  }
+  if (spec.purpose === "HOMEWORK_SUBMISSION") {
+    return verifyHomeworkFileMagicBytes("STUDENT_SUBMISSION", contentType, head);
+  }
+  return spec.verifyMagicBytes ? spec.verifyMagicBytes(head) : true;
+}
 
 // ---------------------------------------------------------------------------
 // Presign expiry (short by construction)
@@ -208,10 +273,14 @@ export type UploadIntentPayload = {
    * The validated target identity, signed at init (Phase A):
    *   SESSION_VIDEO — batchId + lessonId (the academic link, both required)
    *   LESSON_PDF    — lessonId (batchId is always null)
+   *   HOMEWORK_*    — homeworkId (Phase G; batchId null, lessonId resolved
+   *                   from the homework for information only)
    * Completion MUST use these values, never the request body's.
    */
   batchId: string | null;
   lessonId: string | null;
+  /** Phase G — the homework a HOMEWORK_ATTACHMENT / HOMEWORK_SUBMISSION targets. */
+  homeworkId?: string | null;
   /** Issued-at / expiry, unix seconds. */
   iat: number;
   exp: number;
@@ -314,9 +383,18 @@ export function verifyUploadIntent(
   // unbound completion is impossible by construction.
   const batchId = p.batchId;
   const lessonId = p.lessonId;
+  const homeworkId = p.homeworkId ?? null;
   if (purpose === "SESSION_VIDEO") {
     if (typeof batchId !== "string" || !batchId.trim()) return { ok: false, reason: "MALFORMED" };
     if (typeof lessonId !== "string" || !lessonId.trim()) return { ok: false, reason: "MALFORMED" };
+  } else if (purpose === "HOMEWORK_ATTACHMENT" || purpose === "HOMEWORK_SUBMISSION") {
+    // Phase G — the HOMEWORK id is the authoritative target; the lesson is
+    // informational (resolved at init) and may legitimately be null-shaped.
+    if (typeof homeworkId !== "string" || !homeworkId.trim()) return { ok: false, reason: "MALFORMED" };
+    if (lessonId !== null && (typeof lessonId !== "string" || !lessonId.trim())) {
+      return { ok: false, reason: "MALFORMED" };
+    }
+    if (batchId !== null) return { ok: false, reason: "MALFORMED" };
   } else {
     if (typeof lessonId !== "string" || !lessonId.trim()) return { ok: false, reason: "MALFORMED" };
     if (batchId !== null) return { ok: false, reason: "MALFORMED" };
@@ -351,9 +429,11 @@ export function verifyUploadIntent(
       contentType,
       maxBytes,
       // SESSION_VIDEO: both non-empty strings. LESSON_PDF: lessonId only
-      // (batchId was verified to be exactly null above).
+      // (batchId was verified to be exactly null above). HOMEWORK_*: the
+      // homeworkId is authoritative; lessonId may be null.
       batchId: typeof batchId === "string" ? batchId : null,
-      lessonId: String(lessonId),
+      lessonId: typeof lessonId === "string" ? lessonId : null,
+      homeworkId: typeof homeworkId === "string" ? homeworkId : null,
       iat,
       exp,
     },
@@ -374,6 +454,10 @@ export const UPLOAD_ERROR_STATUS = {
   BATCH_NOT_FOUND: 404,
   LESSON_NOT_FOUND: 404,
   LESSON_ARCHIVED: 409,
+  // Phase G — homework upload targets
+  HOMEWORK_NOT_FOUND: 404,
+  HOMEWORK_CLOSED: 409,
+  HOMEWORK_NOT_PUBLISHED: 409,
   // Academic link contract (Phase A): a NEW session video must be bound to a
   // valid Lesson × Batch identity. The codes are the machine-readable names
   // of the contract itself (src/lib/session-video-link.ts) — the UI maps them
@@ -510,21 +594,79 @@ type TargetValidation =
       batchId: string | null;
       lessonId: string | null;
       lesson: { id: string; title: string | null; trackScope?: unknown } | null;
+      /** Phase G — set for HOMEWORK_ATTACHMENT / HOMEWORK_SUBMISSION. */
+      homeworkId: string | null;
     }
   | { ok: false; code: UploadErrorCode; message: string };
 
 /**
- * Re-usable target authorization for both purposes. Runs on init AND again
+ * Re-usable target authorization for every purpose. Runs on init AND again
  * on completion (the target may have been deleted/archived in between).
- * This is the same authorization the buffered paths apply — ADMIN-only
- * role checks stay in the routes; entity ownership/validation lives here.
+ * This is the same authorization the buffered paths apply — ADMIN-only /
+ * TEACHER-only / STUDENT-only role checks stay in the routes; entity
+ * ownership/validation lives here.
  */
 async function validateUploadTarget(
   client: typeof db,
   purpose: UploadPurpose,
   batchIdRaw: unknown,
-  lessonIdRaw: unknown
+  lessonIdRaw: unknown,
+  homeworkIdRaw?: unknown
 ): Promise<TargetValidation> {
+  // Phase G — homework file targets.
+  if (purpose === "HOMEWORK_ATTACHMENT" || purpose === "HOMEWORK_SUBMISSION") {
+    const homeworkId = asTrimmedString(homeworkIdRaw);
+    if (!homeworkId) {
+      return { ok: false, code: "HOMEWORK_NOT_FOUND", message: "Homework not found" };
+    }
+    const homework = await client.homework.findUnique({
+      where: { id: homeworkId },
+      select: {
+        id: true,
+        status: true,
+        lesson: { select: { id: true, title: true, curriculumStatus: true, trackScope: true } },
+      },
+    });
+    if (!homework) {
+      return { ok: false, code: "HOMEWORK_NOT_FOUND", message: "Homework not found" };
+    }
+    if (String(homework.lesson?.curriculumStatus ?? "").toUpperCase() === "ARCHIVED") {
+      return {
+        ok: false,
+        code: "LESSON_ARCHIVED",
+        message: "Cannot attach files to an archived lesson",
+      };
+    }
+    const status = String(homework.status);
+    if (purpose === "HOMEWORK_SUBMISSION" && status !== "PUBLISHED") {
+      return {
+        ok: false,
+        code: "HOMEWORK_NOT_PUBLISHED",
+        message: "This assignment is not accepting submissions",
+      };
+    }
+    if (purpose === "HOMEWORK_ATTACHMENT" && status === "CLOSED") {
+      return {
+        ok: false,
+        code: "HOMEWORK_CLOSED",
+        message: "Reopen the assignment before changing its attachment",
+      };
+    }
+    return {
+      ok: true,
+      batchId: null,
+      lessonId: homework.lesson?.id ?? null,
+      lesson: homework.lesson
+        ? {
+            id: homework.lesson.id,
+            title: homework.lesson.title,
+            trackScope: homework.lesson.trackScope,
+          }
+        : null,
+      homeworkId,
+    };
+  }
+
   if (purpose === "SESSION_VIDEO") {
     // THE canonical academic-link contract (Phase A): a NEW session video
     // requires a valid Lesson × Batch identity — lesson present, exists, not
@@ -543,7 +685,7 @@ async function validateUploadTarget(
         message: link.message,
       };
     }
-    return { ok: true, batchId: link.batchId, lessonId: link.lessonId, lesson: null };
+    return { ok: true, batchId: link.batchId, lessonId: link.lessonId, lesson: null, homeworkId: null };
   }
 
   // LESSON_PDF — same lesson rules as uploadLessonPdfMaterial.
@@ -566,6 +708,7 @@ async function validateUploadTarget(
     batchId: null,
     lessonId,
     lesson: { id: lesson.id, title: lesson.title, trackScope: lesson.trackScope },
+    homeworkId: null,
   };
 }
 
@@ -602,6 +745,8 @@ export type PresignedUploadInitInput = {
   batchId?: unknown;
   /** SESSION_VIDEO optional lesson link / LESSON_PDF required target. */
   lessonId?: unknown;
+  /** HOMEWORK_ATTACHMENT / HOMEWORK_SUBMISSION required target. */
+  homeworkId?: unknown;
 };
 
 export type PresignedUploadInit =
@@ -683,11 +828,17 @@ export async function initPresignedUpload(
     };
   }
 
-  // 5. Target authorization (batch / lesson / archived state).
+  // 5. Target authorization (batch / lesson / homework / archived state).
   const client = deps.db ?? db;
   let target: TargetValidation;
   try {
-    target = await validateUploadTarget(client, spec.purpose, input.batchId, input.lessonId);
+    target = await validateUploadTarget(
+      client,
+      spec.purpose,
+      input.batchId,
+      input.lessonId,
+      input.homeworkId
+    );
   } catch (e) {
     // Authorization itself could not be performed (DB outage): fail closed
     // without issuing anything — retriable, nothing was created or deleted.
@@ -752,6 +903,9 @@ export async function initPresignedUpload(
       maxBytes: spec.maxBytes,
       batchId: target.batchId,
       lessonId: target.lessonId,
+      // Phase G — the homework identity is signed exactly like (batch, lesson):
+      // completion re-derives it from THIS token, never the request body.
+      homeworkId: target.homeworkId,
       iat,
       exp: iat + grant.expiresInSec,
     },
@@ -846,6 +1000,28 @@ async function resolveExistingLinkage(
         };
       }
       return { status: "INCONSISTENT" };
+    }
+
+    // Phase G — HOMEWORK_ATTACHMENT / HOMEWORK_SUBMISSION. The consumed
+    // marker is the MediaAsset row itself under the exact key, issued to the
+    // same actor (the intent's `sub`): a replay returns the original asset;
+    // a key recorded under someone else fails closed. Attachment linkage to
+    // the Homework row happens in finalization and is re-established on replay
+    // by the caller (idempotent pointer update), so the marker stays the asset.
+    if (
+      payload.purpose === "HOMEWORK_ATTACHMENT" ||
+      payload.purpose === "HOMEWORK_SUBMISSION"
+    ) {
+      if (asset.kind !== "DOCUMENT") return { status: "INCONSISTENT" };
+      if (payload.sub && asset.createdById && asset.createdById !== payload.sub) {
+        return { status: "INCONSISTENT" };
+      }
+      return {
+        status: "FINALIZED",
+        mediaAssetId: asset.id,
+        video: null,
+        material: null,
+      };
     }
 
     // LESSON_PDF
@@ -1016,7 +1192,8 @@ export async function completePresignedUpload(
       client,
       payload.purpose,
       payload.batchId,
-      payload.lessonId
+      payload.lessonId,
+      payload.homeworkId
     );
   } catch (e) {
     // DB outage during re-authorization: fail closed BEFORE any storage or
@@ -1032,6 +1209,14 @@ export async function completePresignedUpload(
   if (payload.purpose === "SESSION_VIDEO") {
     title = asTrimmedString(input.title) ?? "";
     if (!title) return { ok: false, code: "TITLE_REQUIRED", message: "Title is required" };
+  } else if (
+    payload.purpose === "HOMEWORK_ATTACHMENT" ||
+    payload.purpose === "HOMEWORK_SUBMISSION"
+  ) {
+    // Phase G — no track scope, no title: the homework row is the target and
+    // the file is metadata on it (or, for submissions, an asset the student's
+    // submit route links AFTER re-authorizing the submission itself).
+    trackScope = undefined;
   } else {
     const scopeParse = parseMaterialTrackScopeInput(input.trackScope);
     if (!scopeParse.ok) {
@@ -1125,7 +1310,11 @@ export async function completePresignedUpload(
   }
 
   // 5. Magic bytes (streamed first-KB read), where applicable.
-  if (spec.verifyMagicBytes) {
+  if (
+    spec.verifyMagicBytes ||
+    spec.purpose === "HOMEWORK_ATTACHMENT" ||
+    spec.purpose === "HOMEWORK_SUBMISSION"
+  ) {
     let head: Buffer;
     try {
       const result = await backend.readStream(payload.key, { start: 0, end: 1023 });
@@ -1137,23 +1326,45 @@ export async function completePresignedUpload(
     } catch (e) {
       return { ok: false, code: "VERIFICATION_FAILED", message: (e as Error).message };
     }
-    if (!spec.verifyMagicBytes(head)) {
+    if (!purposeMagicBytesOk(spec, payload.contentType, head)) {
       const cleaned = await cleanupObject(backend, client, payload.key);
-      return { ok: false, code: "MAGIC_REJECTED", message: "File content is not a valid PDF", cleaned };
+      return {
+        ok: false,
+        code: "MAGIC_REJECTED",
+        message:
+          spec.purpose === "HOMEWORK_ATTACHMENT" || spec.purpose === "HOMEWORK_SUBMISSION"
+            ? "File content does not match its type"
+            : "File content is not a valid PDF",
+        cleaned,
+      };
     }
   }
 
-  // 6. Original name metadata + extension enforcement (PDF: .pdf).
+  // 6. Original name metadata + extension enforcement (PDF: .pdf; homework:
+  //    the role allow-list). The fallback name mirrors the purpose so an
+  //    omitted filename can never fail a check the bytes already passed.
+  const nameFallback =
+    spec.purpose === "HOMEWORK_ATTACHMENT" || spec.purpose === "HOMEWORK_SUBMISSION"
+      ? `document.${extFromHomeworkFileMime(
+          spec.purpose === "HOMEWORK_ATTACHMENT" ? "TEACHER_ATTACHMENT" : "STUDENT_SUBMISSION",
+          payload.contentType
+        ) ?? "bin"}`
+      : spec.kind === "DOCUMENT"
+        ? "document.pdf"
+        : "video";
   const originalName = sanitizeOriginalFilename(
     asTrimmedString(input.originalName) ?? undefined,
-    spec.kind === "DOCUMENT" ? "document.pdf" : "video"
+    nameFallback
   );
   if (spec.requireExtension && !spec.requireExtension(originalName)) {
     const cleaned = await cleanupObject(backend, client, payload.key);
     return {
       ok: false,
       code: "EXTENSION_REJECTED",
-      message: "Only .pdf files are accepted",
+      message:
+        spec.purpose === "HOMEWORK_ATTACHMENT" || spec.purpose === "HOMEWORK_SUBMISSION"
+          ? "File type not allowed for homework files"
+          : "Only .pdf files are accepted",
       cleaned,
     };
   }
@@ -1307,6 +1518,87 @@ export async function completePresignedUpload(
         purpose: payload.purpose,
         mediaAssetId: created.assetId,
         video: created.video,
+      };
+    }
+
+    // Phase G — HOMEWORK_ATTACHMENT / HOMEWORK_SUBMISSION. Finalization
+    // creates ONLY the private MediaAsset row (under the per-key advisory
+    // lock, linkage re-checked inside it); LINKING the asset to the Homework
+    // or HomeworkSubmission row happens in the calling route, which owns the
+    // ownership/access decision for that write. The previous attachment asset
+    // (if any) simply loses the pointer — its bytes are never deleted here.
+    if (
+      payload.purpose === "HOMEWORK_ATTACHMENT" ||
+      payload.purpose === "HOMEWORK_SUBMISSION"
+    ) {
+      let created:
+        | { kind: "CREATED"; assetId: string }
+        | { kind: "FINALIZED"; mediaAssetId: string }
+        | { kind: "INCONSISTENT" };
+      if (typeof (client as { $transaction?: unknown }).$transaction === "function") {
+        created = await (client as typeof db).$transaction(async (tx: any) => {
+          await acquireUploadFinalizeLock(tx, payload.key);
+          const linkage = await resolveExistingLinkage(
+            tx as unknown as typeof db,
+            payload,
+            target,
+            null
+          );
+          if (linkage.status === "FINALIZED") {
+            return { kind: "FINALIZED" as const, mediaAssetId: linkage.mediaAssetId };
+          }
+          if (linkage.status === "INCONSISTENT") {
+            return { kind: "INCONSISTENT" as const };
+          }
+          const asset = await tx.mediaAsset.create({
+            data: {
+              kind: spec.kind,
+              storage,
+              storageKey: payload.key,
+              mimeType: payload.contentType,
+              sizeBytes: size,
+              originalName,
+              isPrivate: true,
+              createdById: input.actorUserId ?? null,
+            },
+          });
+          return { kind: "CREATED" as const, assetId: asset.id };
+        });
+      } else {
+        const asset = await client.mediaAsset.create({
+          data: {
+            kind: spec.kind,
+            storage,
+            storageKey: payload.key,
+            mimeType: payload.contentType,
+            sizeBytes: size,
+            originalName,
+            isPrivate: true,
+            createdById: input.actorUserId ?? null,
+          },
+        });
+        created = { kind: "CREATED", assetId: asset.id };
+      }
+      if (created.kind === "FINALIZED") {
+        return {
+          ok: true,
+          purpose: payload.purpose,
+          mediaAssetId: created.mediaAssetId,
+          replay: true,
+        };
+      }
+      if (created.kind === "INCONSISTENT") {
+        return {
+          ok: false,
+          code: "ALREADY_LINKED",
+          message:
+            "This upload was already recorded with different data — refusing to modify it",
+        };
+      }
+      return {
+        ok: true,
+        purpose: payload.purpose,
+        mediaAssetId: created.assetId,
       };
     }
 

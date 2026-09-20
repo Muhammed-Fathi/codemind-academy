@@ -21,9 +21,12 @@
 //     * deleting the row CASCADES into `QuizAnswer` (onDelete: Cascade), which
 //       would silently rewrite every attempt that ever included it → refused
 //       while referenced.
-//   Prompt/explanation/difficulty stay editable: they cannot change what was
-//   graded (difficulty re-labelling historical analytics is documented Phase 6
-//   behaviour).
+//   Phase G closes the remaining gap: once the FIRST attempt exists, the
+//   question blueprint is FULLY immutable — prompt/explanation/difficulty
+//   included. One teacher-facing rule ("الاختبار عليه محاولات — الأسئلة
+//   مقفولة") with DUPLICATE as the sanctioned edit path; PATCH runs inside a
+//   transaction that takes the shared quiz lock first, so the guard is
+//   race-safe against an attempt-start (same protocol as DELETE below).
 //
 // AUTHORIZATION: TEACHER role → the question's quiz → quiz's lesson → lesson's
 // course (CANONICAL chain first) must be one of the teacher's own courses.
@@ -45,6 +48,8 @@ import {
   teacherCourseIds,
   validateQuestionDraft,
   type ChainLesson,
+  type QuestionReferences,
+  type QuestionValidationReason,
 } from "@/lib/teacher-content";
 import { acquireQuizDestructiveLock } from "@/lib/db-serialization";
 
@@ -154,7 +159,7 @@ export async function GET(
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
-) {
+): Promise<Response> {
   const tApi = await getServerT();
   const { id } = await params;
   const user = await requireUser();
@@ -190,58 +195,90 @@ export async function PATCH(
   }
   if (Object.keys(patch).length === 0) return err(tApi("api.244"), 400);
 
-  const { references } = await loadQuestionReferences(id);
-  const guard = questionEditGuards(references, patch);
-  if (!guard.allowed) {
+  // PHASE G — RACE-SAFE TOTAL BLUEPRINT LOCK.
+  //
+  // The reference read and the update now run in ONE transaction whose FIRST
+  // statement is the shared quiz lock (`acquireQuizDestructiveLock`). That is
+  // the same protocol `POST /api/quizzes/[id]/start` takes before freezing an
+  // attempt, so the two are totally ordered: either the attempt-start wins the
+  // lock and we observe its attempt below (→ 409), or we win and the update
+  // commits before any attempt can exist. The check-vs-write window the bare
+  // read-then-update had is gone.
+  //
+  // The guard itself is Phase G-final: after the first attempt, EVERY question
+  // field is blocked (see `questionEditGuards`) — prompt and explanation
+  // included. The sanctioned alternative is quiz DUPLICATE.
+  let result: { blocked: boolean; references: QuestionReferences };
+  try {
+    result = await db.$transaction(async (tx) => {
+      // MUST be first: acquiring it after the read reopens the window.
+      await acquireQuizDestructiveLock(tx, owned.owner.quiz.id);
+      const { references } = await loadQuestionReferences(id, tx);
+      const guard = questionEditGuards(references, patch);
+      if (!guard.allowed) {
+        return { blocked: true, references };
+      }
+
+      // Validate the MERGED draft: a prompt-only edit must not have to
+      // restate the options, but a changed option list must still answer to
+      // the same rules.
+      const current = owned.question;
+      const merged = {
+        type: patch.type ?? current.type,
+        prompt: patch.prompt ?? current.prompt,
+        promptAr: patch.promptAr !== undefined ? patch.promptAr : current.promptAr,
+        options:
+          patch.options !== undefined ? patch.options : safeOptions(current.options),
+        answer: patch.answer !== undefined ? patch.answer : current.answer,
+        explanation:
+          patch.explanation !== undefined ? patch.explanation : current.explanation,
+        difficulty: patch.difficulty ?? current.difficulty,
+        marks: patch.marks ?? current.marks,
+        schoolType: patch.schoolType !== undefined ? patch.schoolType : undefined,
+      };
+
+      const validated = validateQuestionDraft(
+        merged,
+        owned.owner.quiz.trackScope
+      );
+      if (!validated.ok) {
+        throw new QuestionPatchValidationError(validated.reason);
+      }
+      const v = validated.question;
+
+      const data: Record<string, unknown> = {
+        type: v.type,
+        prompt: v.prompt,
+        promptAr: v.promptAr,
+        options: JSON.stringify(v.options),
+        answer: v.answer,
+        explanation: v.explanation,
+        difficulty: v.difficulty,
+        marks: v.marks,
+      };
+      // `schoolType` is only rewritten when the caller supplied one: an omitted
+      // field must never silently re-tag an existing question (that is exactly
+      // the "no silent inference" rule of the phase).
+      if (patch.schoolType !== undefined) data.schoolType = v.schoolType;
+
+      await tx.question.update({ where: { id }, data });
+      return { blocked: false, references };
+    });
+  } catch (e) {
+    if (e instanceof QuestionPatchValidationError) {
+      return err(questionValidationMessage(tApi, e.reason), 400);
+    }
+    throw e;
+  }
+
+  if (result.blocked) {
     return err(tApi("api.245"), 409);
   }
 
-  // Validate the MERGED draft: a prompt-only edit must not have to restate the
-  // options, but a changed option list must still answer to the same rules.
-  const current = owned.question;
-  const merged = {
-    type: patch.type ?? current.type,
-    prompt: patch.prompt ?? current.prompt,
-    promptAr: patch.promptAr !== undefined ? patch.promptAr : current.promptAr,
-    options:
-      patch.options !== undefined ? patch.options : safeOptions(current.options),
-    answer: patch.answer !== undefined ? patch.answer : current.answer,
-    explanation:
-      patch.explanation !== undefined ? patch.explanation : current.explanation,
-    difficulty: patch.difficulty ?? current.difficulty,
-    marks: patch.marks ?? current.marks,
-    schoolType: patch.schoolType !== undefined ? patch.schoolType : undefined,
-  };
-
-  const validated = validateQuestionDraft(
-    merged,
-    owned.owner.quiz.trackScope
-  );
-  if (!validated.ok) {
-    return err(questionValidationMessage(tApi, validated.reason), 400);
-  }
-  const v = validated.question;
-
-  const data: Record<string, unknown> = {
-    type: v.type,
-    prompt: v.prompt,
-    promptAr: v.promptAr,
-    options: JSON.stringify(v.options),
-    answer: v.answer,
-    explanation: v.explanation,
-    difficulty: v.difficulty,
-    marks: v.marks,
-  };
-  // `schoolType` is only rewritten when the caller supplied one: an omitted
-  // field must never silently re-tag an existing question (that is exactly the
-  // "no silent inference" rule of the phase).
-  if (patch.schoolType !== undefined) data.schoolType = v.schoolType;
-
-  const updated = await db.question.update({ where: { id }, data });
-
+  const updated = await db.question.findUnique({ where: { id } });
   return ok({
-    question: questionPayload(updated),
-    references,
+    question: questionPayload(updated!),
+    references: result.references,
     /** Fields that were refused by the frozen-attempt lock, if any. */
     lockedFields: [] as string[],
     lesson: owned.owner.lesson
@@ -330,6 +367,20 @@ export async function DELETE(
 }
 
 /** Carries the guard's blockers out of the delete transaction. */
+/**
+ * Thrown from inside the PATCH transaction when the merged draft fails
+ * validation, so the transaction rolls back (nothing was written) and the
+ * outer catch maps the reason onto the localized 400.
+ */
+class QuestionPatchValidationError extends Error {
+  readonly reason: QuestionValidationReason;
+  constructor(reason: QuestionValidationReason) {
+    super(`question patch invalid: ${reason}`);
+    this.name = "QuestionPatchValidationError";
+    this.reason = reason;
+  }
+}
+
 class QuestionDeleteBlockedError extends Error {
   readonly blockers: string[];
   constructor(blockers: string[]) {

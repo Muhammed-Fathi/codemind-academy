@@ -211,6 +211,10 @@ export async function GET(req: NextRequest) {
       description: q.description,
       passMark: q.passMark,
       timeLimit: q.timeLimit,
+      // Phase G lifecycle — مسودة / منشور (+ derived عليه محاولات / الأسئلة
+      // مقفولة from attemptsCount below). The UI never parses these raw.
+      status: q.status,
+      publishedAt: q.publishedAt,
       // Phase 12/18 — the quiz's own eligibility, surfaced so the teacher sees
       // what they configured instead of inferring it from the lesson.
       trackScope: normalizeTrackScope(q.trackScope) ?? "SHARED",
@@ -242,6 +246,10 @@ export async function GET(req: NextRequest) {
       questionCount: q.questions.length,
       totalMarks,
       attemptsCount: summary.attemptCount,
+      // Phase G — EVERY attempt (open + finished). This is the lifecycle
+      // lock signal: once it is > 0 the question blueprint is immutable and
+      // the UI shows the locked explanation + Duplicate path.
+      totalAttempts: q.attempts.length,
       // Kept under the pre-existing name for UI compatibility: it is the
       // rounded mean percentage over FINISHED attempts (previously it averaged
       // every attempt, open ones included, which deflated the number).
@@ -297,6 +305,7 @@ export async function POST(req: NextRequest) {
   const descriptionIn = boundedText(body.description, TEACHER_LIMITS.DESCRIPTION_MAX);
   if (!descriptionIn.ok) return err(tApi("api.177"), 400);
   const description = descriptionIn.value;
+  const cameraPolicy = body.cameraPolicy === "REQUIRED" ? "REQUIRED" : "OPTIONAL";
 
   // Pass mark and time limit are validated, never clamped silently: a value
   // outside the contract is a client bug, and guessing it would hide the bug
@@ -449,6 +458,12 @@ export async function POST(req: NextRequest) {
       timeLimit: timeLimit ?? null,
       order: 0,
       trackScope: quizTrackScope,
+      // Phase G — a new quiz is a DRAFT: invisible to students and excluded
+      // from progression until the teacher publishes it through the validated
+      // publish route. The column default stays PUBLISHED only so pre-Phase-G
+      // quizzes keep their behaviour.
+      status: "DRAFT",
+      cameraPolicy,
       // Phase 26D blueprint columns.
       quizMode: blueprintStorage.quizMode,
       questionCount: blueprintStorage.questionCount,
@@ -495,6 +510,9 @@ export async function POST(req: NextRequest) {
       passMark: createdQuiz.passMark,
       timeLimit: createdQuiz.timeLimit,
       trackScope: createdQuiz.trackScope,
+      // Phase G lifecycle (DRAFT until published).
+      status: createdQuiz.status,
+      publishedAt: createdQuiz.publishedAt,
       /** True when the scope came from the request, false when inherited. */
       trackScopeExplicit: !scope.inherited,
       lesson: placement

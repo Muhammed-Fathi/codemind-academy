@@ -16,6 +16,7 @@ import {
   isParentLessonPreviewAllowed,
 } from "@/lib/parent-access";
 import { LESSON_STUDENT_STATUS_FILTER } from "@/lib/session-lifecycle";
+import { filterStudentLessonRows } from "@/lib/student-visibility";
 import {
   eligibleTrackScopes,
   trackScopeInWhere,
@@ -126,6 +127,20 @@ export async function GET(
     },
   });
   if (!lesson) return err("Lesson not found", 404);
+
+  // Phase G — DRAFT quizzes/homework are authoring-only: for students and
+  // parents they must not appear in the lesson's lists at all (a title, a
+  // deadline or an id in the response would leak something that cannot be
+  // opened). Staff keeps the full lists for preview/authoring. Filtering HERE
+  // covers every downstream consumer of these arrays (payload lists, the
+  // attempted-set lookup, the content summary input).
+  // Filter before serialization using the authenticated role itself. The
+  // contentViewer summary is populated later for Students, so it cannot be
+  // the gate for lifecycle visibility at this point.
+  if (user.role === "STUDENT" || user.role === "PARENT") {
+    lesson.quizzes = filterStudentLessonRows(lesson.quizzes);
+    lesson.homeworks = filterStudentLessonRows(lesson.homeworks);
+  }
 
   // Canonical chain first; legacy topic chain as fallback.
   const chainPart = lesson.unit?.part ?? lesson.topic?.unit.part ?? null;

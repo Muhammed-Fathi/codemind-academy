@@ -38,6 +38,7 @@ export type RateLimitKey =
   | "notification"
   | "materialDownload"
   | "pdfUpload"
+  | "homeworkUpload"
   | "teacherApply";
 
 export const RATE_LIMIT_KEYS: readonly RateLimitKey[] = [
@@ -47,6 +48,7 @@ export const RATE_LIMIT_KEYS: readonly RateLimitKey[] = [
   "notification",
   "materialDownload",
   "pdfUpload",
+  "homeworkUpload",
   "teacherApply",
 ] as const;
 
@@ -71,6 +73,10 @@ export const DEFAULT_RATE_LIMITS: Record<RateLimitKey, RateLimitConfig> = {
   notification: { limit: 30, windowSec: 60, blockSec: 300 },
   materialDownload: { limit: 120, windowSec: 60, blockSec: 60 },
   pdfUpload: { limit: 30, windowSec: 60, blockSec: 300 },
+  // Phase G — homework file uploads (student submissions + teacher
+  // attachments): the same shape as pdfUpload, on its own key so a busy
+  // student submission window can never starve teacher PDF management.
+  homeworkUpload: { limit: 30, windowSec: 60, blockSec: 300 },
   // Public surface — one application attempt per hour per email identity,
   // with an hour-long block after abuse (a human applies once).
   teacherApply: { limit: 5, windowSec: 3600, blockSec: 3600 },
@@ -84,6 +90,7 @@ export const RATE_LIMIT_ENV: Record<RateLimitKey, string> = {
   notification: "RATE_LIMIT_NOTIFICATION",
   materialDownload: "RATE_LIMIT_MATERIAL_DOWNLOAD",
   pdfUpload: "RATE_LIMIT_PDF_UPLOAD",
+  homeworkUpload: "RATE_LIMIT_HOMEWORK_UPLOAD",
   teacherApply: "RATE_LIMIT_TEACHER_APPLY",
 } as const;
 

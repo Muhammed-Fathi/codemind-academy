@@ -105,9 +105,16 @@ export async function POST(
       difficultyPlan: true,
       shuffleOptions: true,
       maxAttempts: true,
+      // Phase G lifecycle gate.
+      status: true,
+      cameraPolicy: true,
     },
   });
   if (!quiz) return err("Quiz not found", 404);
+
+  // Phase G — a DRAFT quiz cannot be started: identical 404 to a nonexistent
+  // id so its existence never leaks. Only a PUBLISHED quiz accepts attempts.
+  if (quiz.status !== "PUBLISHED") return err("Quiz not found", 404);
 
   // Backend authorization: a quiz belonging to a locked session cannot be
   // opened, so no attempt row is ever created for content the student has not
@@ -123,6 +130,9 @@ export async function POST(
   const body = await req.json().catch(() => ({}));
   const requested = String(body.cameraStatus || "NOT_REQUESTED");
   const cameraStatus = ALLOWED_STATUSES.has(requested) ? requested : "NOT_REQUESTED";
+  if (quiz.cameraPolicy === "REQUIRED" && cameraStatus !== "GRANTED") {
+    return NextResponse.json({ error: "الكاميرا مطلوبة قبل بدء الاختبار", code: "CAMERA_REQUIRED" }, { status: 409 });
+  }
 
   const blueprint = resolveQuizBlueprint(quiz);
 

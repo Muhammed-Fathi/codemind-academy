@@ -150,9 +150,57 @@ export async function PATCH(
     data.trackScope = scope.scope;
   }
 
+  // Phase G — assignment attachment. `null` explicitly DETACHES the current
+  // file (the MediaAsset row itself is never deleted here); an id must point
+  // at a private DOCUMENT asset uploaded by THIS teacher through the
+  // homework upload flow — nothing else can be attached.
+  if (body.attachmentId !== undefined) {
+    if (body.attachmentId === null || String(body.attachmentId).trim() === "") {
+      data.attachmentId = null;
+    } else {
+      const assetId = String(body.attachmentId).trim();
+      if (existing.status === "CLOSED") {
+        return err(tApi("api.354"), 409);
+      }
+      const asset = await db.mediaAsset.findUnique({
+        where: { id: assetId },
+        include: { homeworkAttachments: { select: { id: true } } },
+      });
+      const admissible =
+        !!asset &&
+        asset.kind === "DOCUMENT" &&
+        asset.isPrivate === true &&
+        asset.createdById === user.id &&
+        (asset.homeworkAttachments.length === 0 ||
+          asset.homeworkAttachments.every((h) => h.id === id));
+      if (!admissible) return err(tApi("api.355"), 400);
+      data.attachmentId = assetId;
+    }
+  }
+
   if (Object.keys(data).length === 0) return err(tApi("api.234"), 400);
 
   const updated = await db.homework.update({ where: { id }, data });
+
+  // Phase G — audit IMPORTANT post-publish edits (deadline, marks, attachment,
+  // instructions, scope). Draft edits stay unaudited: a draft is private work
+  // in progress and auditing every keystroke would be noise, not history.
+  if (existing.status !== "DRAFT") {
+    await db.auditLog
+      .create({
+        data: {
+          userId: user.id,
+          action: "HOMEWORK_UPDATED",
+          entity: "Homework",
+          entityId: id,
+          details: JSON.stringify({
+            status: existing.status,
+            fields: Object.keys(data).sort(),
+          }),
+        },
+      })
+      .catch(() => {});
+  }
 
   return ok({
     homework: {
@@ -164,6 +212,10 @@ export async function PATCH(
       deadline: updated.deadline,
       maxMarks: updated.maxMarks,
       trackScope: updated.trackScope,
+      // Phase G lifecycle.
+      status: updated.status,
+      publishedAt: updated.publishedAt,
+      attachmentId: updated.attachmentId,
       lesson: {
         id: existing.lessonId,
         officialCode: (existing.lesson as ChainLesson | null)?.officialCode ?? null,

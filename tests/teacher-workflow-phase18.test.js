@@ -288,8 +288,8 @@ eq(
 eq(TS.questionEditGuards(refs(), { answer: "1" }), { allowed: true }, "A: the answer key is editable before any attempt");
 eq(
   TS.questionEditGuards(refs({ openAttempts: 1 }), { prompt: "new" }),
-  { allowed: true },
-  "A: a prompt edit is safe even under an open attempt"
+  { allowed: false, blockedFields: ["prompt"], reason: "FROZEN_ATTEMPT" },
+  "A: prompt mutation is rejected once any attempt exists (Phase G blueprint lock)"
 );
 const gradingLock = TS.questionEditGuards(refs({ gradedAttempts: 1 }), { answer: "1" });
 eq(gradingLock.allowed, false, "A: the answer key is locked by graded history");
@@ -309,8 +309,8 @@ eq(
 );
 eq(
   TS.questionEditGuards(refs({ gradedAttempts: 1 }), { explanation: "note", difficulty: "HARD" }),
-  { allowed: true },
-  "A: explanation + difficulty stay editable (Phase 6 analytics may be re-labelled)"
+  { allowed: false, blockedFields: ["explanation", "difficulty"], reason: "FROZEN_ATTEMPT" },
+  "A: explanation and difficulty are immutable after the first attempt"
 );
 
 // --- question scope containment ------------------------------------------

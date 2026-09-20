@@ -65,6 +65,13 @@ export async function GET(
   });
   if (!quiz) return err("Quiz not found", 404);
 
+  // Phase G — a DRAFT quiz is authoring-only: students and parents get the
+  // SAME 404 as a nonexistent id (existence must not leak). Teachers/admins
+  // still pass for review/preview through their own surfaces.
+  if ((user.role === "STUDENT" || user.role === "PARENT") && quiz.status !== "PUBLISHED") {
+    return err("Quiz not found", 404);
+  }
+
   // Phase 7 + 12 + 13, in ONE predicate (see `isParentLessonPreviewAllowed`):
   // a parent may open a quiz only when a linked, ENROLLED child is in the
   // quiz's course, the quiz and its lesson are on that child's TRACK, and the

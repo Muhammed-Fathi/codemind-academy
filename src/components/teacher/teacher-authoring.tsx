@@ -152,6 +152,8 @@ export type HomeworkRecord = {
   maxMarks: number;
   trackScope: string;
   gradedCount?: number;
+  status?: string;
+  attachment?: { id: string; originalName: string | null; mimeType: string | null; sizeBytes: number | null } | null;
   lessonId?: string;
 };
 
@@ -592,6 +594,9 @@ export function HomeworkDialog({
   const [deadline, setDeadline] = React.useState(toLocalInput(homework?.deadline));
   const [maxMarks, setMaxMarks] = React.useState(homework?.maxMarks ?? 10);
   const [trackScope, setTrackScope] = React.useState("");
+  const [attachmentFile, setAttachmentFile] = React.useState<File | null>(null);
+  const [attachmentBusy, setAttachmentBusy] = React.useState(false);
+  const [attachmentMessage, setAttachmentMessage] = React.useState<string | null>(null);
 
   // Phase 18 — no re-seed effect: the dashboard mounts a fresh dialog per target
   // (`key={homework?.id ?? "new"}`), so editing a different homework remounts
@@ -628,7 +633,9 @@ export function HomeworkDialog({
       }
       return r.json();
     },
-    onSuccess: () => {
+    onSuccess: async (data: { homework?: { id?: string } }) => {
+      const id = homework?.id ?? data.homework?.id;
+      if (id && attachmentFile) await uploadAttachment(id, attachmentFile);
       toast.success(tr("teacher.187"));
       queryClient.invalidateQueries({ queryKey: ["teacher-homework"] });
       onChanged?.();
@@ -636,6 +643,29 @@ export function HomeworkDialog({
     },
     onError: (e: Error) => toast.error(e.message || tr("teacher.030")),
   });
+
+  const uploadAttachment = async (homeworkId: string, file: File) => {
+    setAttachmentBusy(true); setAttachmentMessage(null);
+    try {
+      const form = new FormData(); form.set("file", file);
+      const r = await fetch(`/api/teacher/homework/${encodeURIComponent(homeworkId)}/attachment`, { method: "POST", body: form });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error || "تعذر رفع المرفق");
+      setAttachmentMessage(`تم رفع ${data.attachment?.name || file.name}`);
+    } catch (e) { setAttachmentMessage(e instanceof Error ? e.message : "تعذر رفع المرفق"); }
+    finally { setAttachmentBusy(false); }
+  };
+
+  const removeAttachment = async () => {
+    if (!homework?.id || !homework.attachment) return;
+    setAttachmentBusy(true); setAttachmentMessage(null);
+    try {
+      const r = await fetch(`/api/teacher/homework/${encodeURIComponent(homework.id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ attachmentId: null }) });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "تعذر إزالة المرفق");
+      setAttachmentMessage("تمت إزالة المرفق"); onChanged?.();
+    } catch (e) { setAttachmentMessage(e instanceof Error ? e.message : "تعذر إزالة المرفق"); }
+    finally { setAttachmentBusy(false); }
+  };
 
   const submit = () => {
     if (!editing && !lessonId) return toast.error(tr("teacher.188"));
@@ -701,6 +731,14 @@ export function HomeworkDialog({
             <DeadlineField value={deadline} onChange={setDeadline} />
           </div>
 
+          <div className="rounded-lg border border-dashed p-3 space-y-2">
+            <Label className="text-xs text-muted-foreground">مرفق الواجب (PDF، DOCX، PPTX، ZIP — حتى 25MB)</Label>
+            <Input type="file" accept=".pdf,.docx,.pptx,.zip" onChange={(e) => setAttachmentFile(e.target.files?.[0] ?? null)} disabled={attachmentBusy || (editing && homework?.status === "CLOSED")} />
+            {homework?.attachment && <div className="flex items-center gap-2 text-xs"><a className="underline text-primary truncate" href={`/api/media/${homework.attachment.id}`} target="_blank" rel="noreferrer">{homework.attachment.originalName || "تحميل المرفق"}</a><span className="text-muted-foreground">{homework.attachment.mimeType || ""} · {homework.attachment.sizeBytes ? `${(homework.attachment.sizeBytes / 1024 / 1024).toFixed(2)} MB` : ""}</span><Button type="button" variant="ghost" size="sm" disabled={attachmentBusy || homework.status === "CLOSED"} onClick={removeAttachment}>إزالة المرفق</Button></div>}
+            {attachmentFile && <p className="text-xs text-muted-foreground truncate">{attachmentFile.name} · {(attachmentFile.size / 1024 / 1024).toFixed(2)} MB</p>}
+            {attachmentMessage && <p className="text-xs text-emerald-700">{attachmentMessage}</p>}
+          </div>
+
           <div className="grid sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">{tr("teacher.186")}</Label>
@@ -722,7 +760,9 @@ export function HomeworkDialog({
             </div>
           </div>
 
-          {selectedLesson && !editing && <LessonMeta lesson={selectedLesson} />}
+          {/* The lesson picker is the single source of lesson context. Avoid
+              rendering a second lesson summary here (especially in the
+              session workspace, where the surrounding card already names it). */}
         </div>
 
         <DialogFooter>
@@ -867,6 +907,7 @@ export function QuestionManagerDialog({
                 onEdit={() => setEditingId(editingId === q.id ? null : q.id)}
                 onDelete={() => deleteMutation.mutate(q.id)}
                 deleting={deleteMutation.isPending}
+                locked={!!detail.data?.attempts.total}
                 onSaved={() => {
                   setEditingId(null);
                   invalidate();
@@ -877,7 +918,7 @@ export function QuestionManagerDialog({
         )}
 
         <DialogFooter className="flex-row justify-between gap-2 sm:justify-between">
-          <Button variant="outline" onClick={() => setAdding((v) => !v)}>
+          <Button variant="outline" disabled={!!detail.data?.attempts.total} onClick={() => setAdding((v) => !v)}>
             <Plus className="w-4 h-4 ms-1.5" />
             {tr("teacher.202")}
           </Button>
@@ -908,6 +949,7 @@ function QuestionRow({
   onEdit,
   onDelete,
   deleting,
+  locked,
   onSaved,
 }: {
   index: number;
@@ -916,6 +958,7 @@ function QuestionRow({
   onEdit: () => void;
   onDelete: () => void;
   deleting: boolean;
+  locked?: boolean;
   onSaved: () => void;
 }) {
   const tr = useT();
@@ -957,7 +1000,7 @@ function QuestionRow({
           )}
         </div>
         <div className="flex items-center gap-1 shrink-0">
-          <Button variant="ghost" size="sm" className="text-xs" onClick={onEdit}>
+          <Button variant="ghost" size="sm" className="text-xs" disabled={locked} onClick={onEdit}>
             {tr("teacher.194")}
           </Button>
           {question.canDelete ? (

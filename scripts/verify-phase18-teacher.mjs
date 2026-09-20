@@ -760,6 +760,8 @@ async function main() {
   eq(quizCreate.json.quiz.trackScope, "ARABIC", "G: explicit quiz scope inside a SHARED lesson is stored");
   eq(quizCreate.json.quiz.trackScopeExplicit, true, "G: explicit scope is flagged");
   const timedQuizId = quizCreate.json.quiz.id;
+  // Phase G lifecycle: publish explicitly before student-facing start/submit.
+  await client.quiz.update({ where: { id: timedQuizId }, data: { status: "PUBLISHED", publishedAt: new Date() } });
 
   const quizInherit = await POST_JSON(R.quizzes, url("/api/teacher/quizzes"), {
     lessonId: L.ar.id,
@@ -802,12 +804,14 @@ async function main() {
   eq(quizForeignLesson.status, 403, "G: a quiz on another teacher's lesson → 403");
 
   // ---- H. question append: the quiz scope is the ceiling ------------------
-  const qAppend = await POST_JSON(R.quizQuestions, url(`/api/teacher/quizzes/${quizShared.id}/questions`), {
+  // Phase G: append is allowed before the first attempt. quizInherit has no
+  // attempt history; quizShared below intentionally proves the 409 lock.
+  const qAppend = await POST_JSON(R.quizQuestions, url(`/api/teacher/quizzes/${quizInherit.json.quiz.id}/questions`), {
     type: "MCQ", prompt: "Appended", options: ["a", "b"], answer: "1", marks: 2,
-  }, { id: quizShared.id });
+  }, { id: quizInherit.json.quiz.id });
   eq(qAppend.status, 200, "H: POST quiz/[id]/questions → 200");
-  eq(qAppend.json.question.schoolType, null, "H: an untagged question in a SHARED quiz inherits SHARED (null)");
-  ok(qAppend.json.questionCount >= 4, "H: the running question count is returned");
+  eq(qAppend.json.question.schoolType, "ARABIC", "H: an untagged question inherits the owning quiz track");
+  ok(qAppend.json.questionCount >= 1, "H: the running question count is returned");
   const appendedId = qAppend.json.question.id;
 
   const qOutOfScope = await POST_JSON(R.quizQuestions, url(`/api/teacher/quizzes/${quizInherit.json.quiz.id}/questions`), {
@@ -815,14 +819,14 @@ async function main() {
   }, { id: quizInherit.json.quiz.id });
   eq(qOutOfScope.status, 400, "H: a LANGUAGE question inside an ARABIC quiz is refused (unreachable content)");
 
-  const qBadAnswer = await POST_JSON(R.quizQuestions, url(`/api/teacher/quizzes/${quizShared.id}/questions`), {
+  const qBadAnswer = await POST_JSON(R.quizQuestions, url(`/api/teacher/quizzes/${quizInherit.json.quiz.id}/questions`), {
     type: "MCQ", prompt: "Bad answer", options: ["a", "b"], answer: "9",
-  }, { id: quizShared.id });
+  }, { id: quizInherit.json.quiz.id });
   eq(qBadAnswer.status, 400, "H: an out-of-range answer index is refused (400)");
 
-  const qTooFewOptions = await POST_JSON(R.quizQuestions, url(`/api/teacher/quizzes/${quizShared.id}/questions`), {
+  const qTooFewOptions = await POST_JSON(R.quizQuestions, url(`/api/teacher/quizzes/${quizInherit.json.quiz.id}/questions`), {
     type: "MCQ", prompt: "One option", options: ["a"], answer: "0",
-  }, { id: quizShared.id });
+  }, { id: quizInherit.json.quiz.id });
   eq(qTooFewOptions.status, 400, "H: fewer than two options is refused (400)");
 
   asUser(teacherUserB);
@@ -858,8 +862,9 @@ async function main() {
   const qTextEdit = await PATCH_JSON(R.questionById, url(`/api/teacher/questions/${qFrozen.id}`), {
     prompt: "Frozen question (wording fixed)",
   }, { id: qFrozen.id });
-  eq(qTextEdit.status, 200, "J: prompt-only edit is allowed with frozen history");
-  eq(qTextEdit.json.question.prompt, "Frozen question (wording fixed)", "J: the prompt really changed");
+  eq(qTextEdit.status, 409, "J: prompt-only edit is refused with frozen history (Phase G)");
+  const qFrozenAfterText = await client.question.findUnique({ where: { id: qFrozen.id } });
+  eq(qFrozenAfterText.prompt, "Frozen question", "J: the frozen prompt remains unchanged");
 
   const qAnswerEdit = await PATCH_JSON(R.questionById, url(`/api/teacher/questions/${qFrozen.id}`), {
     answer: "1",
@@ -886,7 +891,7 @@ async function main() {
   const qOpenText = await PATCH_JSON(R.questionById, url(`/api/teacher/questions/${qOpen.id}`), {
     explanation: "Added afterwards.",
   }, { id: qOpen.id });
-  eq(qOpenText.status, 200, "J: an explanation edit is safe even under an open attempt");
+  eq(qOpenText.status, 409, "J: an explanation edit is refused after the first attempt (Phase G)");
 
   const qInvalidEdit = await PATCH_JSON(R.questionById, url(`/api/teacher/questions/${appendedId}`), {
     options: ["only-one"],
@@ -1085,6 +1090,8 @@ async function main() {
   });
   eq(hwArOnly.status, 200, "N: an ARABIC-scoped assignment is created");
   const hwArId = hwArOnly.json.homework.id;
+  // Phase G lifecycle: student submission requires an explicitly published homework.
+  await client.homework.update({ where: { id: hwArId }, data: { status: "PUBLISHED", publishedAt: new Date() } });
 
   asUser(studentUserAr);
   const subAr = await POST_JSON(R.studentHomework, url("/api/students/me/homework"), {

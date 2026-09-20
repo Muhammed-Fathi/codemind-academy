@@ -31,7 +31,14 @@ import {
   getTeacherProfile,
 } from "@/lib/api";
 import { getServerT } from "@/lib/i18n-server";
-import { loadOwnedLesson, teacherCourseIds } from "@/lib/teacher-content";
+import {
+  LESSON_PLACEMENT_SELECT,
+  lessonPlacement,
+  loadOwnedLesson,
+  teacherCourseIds,
+  type ChainLesson,
+} from "@/lib/teacher-content";
+import { db } from "@/lib/db";
 import {
   UPLOAD_ERROR_STATUS,
   completePresignedUpload,
@@ -66,15 +73,12 @@ export async function POST(req: NextRequest) {
   const { user, error } = await requireRole("TEACHER");
   if (error) return error;
 
-  const rl = await applyRateLimit("pdfUpload", user?.id ?? "anonymous-teacher");
-  if (!rl.allowed) return rateLimitedResponse(rl);
-
   const body = await req.json().catch(() => null);
   if (!body || typeof body !== "object") return err(tApi("api.324"), 400);
   const b = body as Record<string, unknown>;
 
-  // Token-first authorization: the lesson id inside the SIGNED intent is the
-  // only identity this flow trusts (the service re-derives it the same way).
+  // Token-first authorization: the identity inside the SIGNED intent is the
+  // only one this flow trusts (the service re-derives it the same way).
   const intent = verifyUploadIntent(b.token, { expectedUser: user!.id });
   if (!intent.ok) {
     const code =
@@ -88,18 +92,111 @@ export async function POST(req: NextRequest) {
       { status: UPLOAD_ERROR_STATUS[code] }
     );
   }
-  // Lesson PDFs only — no teacher completes a video upload, ever.
-  if (intent.payload.purpose !== "LESSON_PDF") {
+
+  const rl = await applyRateLimit(
+    intent.payload.purpose === "HOMEWORK_ATTACHMENT" ? "homeworkUpload" : "pdfUpload",
+    user?.id ?? "anonymous-teacher"
+  );
+  if (!rl.allowed) return rateLimitedResponse(rl);
+
+  // Teacher document grants only — no teacher completes a video upload, ever.
+  if (
+    intent.payload.purpose !== "LESSON_PDF" &&
+    intent.payload.purpose !== "HOMEWORK_ATTACHMENT"
+  ) {
     return NextResponse.json(
       { error: tApi("api.180"), code: "UNSUPPORTED_PURPOSE" },
       { status: 403 }
     );
   }
-  const lessonId = intent.payload.lessonId;
-  if (!lessonId) return err(tApi("api.179"), 404);
 
   const teacher = await getTeacherProfile(user!.id);
   if (!teacher) return err(tApi("api.180"), 403);
+
+  // Phase G — the assignment-attachment leg: re-authorize against the SIGNED
+  // homework id (homework → lesson → course), then finalize + link.
+  if (intent.payload.purpose === "HOMEWORK_ATTACHMENT") {
+    const homeworkId = intent.payload.homeworkId;
+    if (!homeworkId) return err(tApi("api.238"), 404);
+    const homework = await db.homework.findUnique({
+      where: { id: homeworkId },
+      include: { lesson: { select: LESSON_PLACEMENT_SELECT } },
+    });
+    if (!homework) return err(tApi("api.238"), 404);
+    const placement = lessonPlacement(homework.lesson as ChainLesson | null);
+    if (!placement || !teacherCourseIds(teacher).includes(placement.courseId)) {
+      return err(tApi("api.180"), 403);
+    }
+    if (String(homework.lesson?.curriculumStatus ?? "").toUpperCase() === "ARCHIVED") {
+      return err(tApi("api.242"), 409);
+    }
+    if (homework.status === "CLOSED") return err(tApi("api.354"), 409);
+
+    const result = await completePresignedUpload({
+      token: b.token,
+      actorUserId: user?.id ?? null,
+      originalName: b.originalName,
+      sha256: b.sha256,
+    });
+
+    if (!result.ok) {
+      return NextResponse.json(
+        {
+          error: CODE_TO_API_KEY[result.code]
+            ? tApi(CODE_TO_API_KEY[result.code])
+            : result.message,
+          code: result.code,
+        },
+        { status: UPLOAD_ERROR_STATUS[result.code] ?? 400 }
+      );
+    }
+
+    // Link the verified asset to the assignment (idempotent pointer write —
+    // replays land on the same asset id). The replaced asset row survives;
+    // only the pointer moves.
+    await db.homework.update({
+      where: { id: homeworkId },
+      data: { attachmentId: result.mediaAssetId },
+    });
+    if (homework.status !== "DRAFT") {
+      await db.auditLog
+        .create({
+          data: {
+            userId: user!.id,
+            action: "HOMEWORK_UPDATED",
+            entity: "Homework",
+            entityId: homeworkId,
+            details: JSON.stringify({
+              status: homework.status,
+              fields: ["attachmentId"],
+            }),
+          },
+        })
+        .catch(() => {});
+    }
+
+    const asset = await db.mediaAsset.findUnique({
+      where: { id: result.mediaAssetId },
+      select: { id: true, mimeType: true, sizeBytes: true, originalName: true },
+    });
+    return ok({
+      purpose: result.purpose,
+      replay: result.replay === true,
+      attachment: asset
+        ? {
+            id: asset.id,
+            name: asset.originalName || "file",
+            mimeType: asset.mimeType,
+            sizeBytes: asset.sizeBytes,
+            downloadUrl: `/api/media/${asset.id}`,
+          }
+        : null,
+    });
+  }
+
+  const lessonId = intent.payload.lessonId;
+  if (!lessonId) return err(tApi("api.179"), 404);
+
   const owned = await loadOwnedLesson(lessonId, teacherCourseIds(teacher));
   if (!owned.ok) {
     return err(

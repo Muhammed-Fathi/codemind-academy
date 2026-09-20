@@ -148,7 +148,11 @@ export function StudentLessonView() {
   const locale = useLocale();
   const setView = useApp((s) => s.setView);
   const setNavParam = useApp((s) => s.setNavParam);
+  const setLessonId = useApp((s) => s.setLessonId);
+  const setQuizId = useApp((s) => s.setQuizId);
   const navParam = useApp((s) => s.navParam);
+  const lessonId = useApp((s) => s.lessonId);
+  const activeLessonId = lessonId;
 
   const [data, setData] = React.useState<LessonView | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -164,20 +168,20 @@ export function StudentLessonView() {
   const [bookmarked, setBookmarked] = React.useState(false);
 
   const checkBookmark = React.useCallback(() => {
-    if (!navParam) return;
+    if (!activeLessonId) return;
     fetch("/api/students/me/bookmarks")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
-        const found = (d?.bookmarks || []).some((b: any) => b.lessonId === navParam);
+        const found = (d?.bookmarks || []).some((b: any) => b.lessonId === activeLessonId);
         setBookmarked(found);
       })
       .catch(() => {});
-  }, [navParam]);
+  }, [activeLessonId]);
 
   const toggleBookmark = async () => {
-    if (!navParam) return;
+    if (!activeLessonId) return;
     if (bookmarked) {
-      await fetch(`/api/students/me/bookmarks?lessonId=${encodeURIComponent(navParam)}`, {
+      await fetch(`/api/students/me/bookmarks?lessonId=${encodeURIComponent(activeLessonId || "")}`, {
         method: "DELETE",
       });
       setBookmarked(false);
@@ -186,7 +190,7 @@ export function StudentLessonView() {
       await fetch("/api/students/me/bookmarks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lessonId: navParam }),
+        body: JSON.stringify({ lessonId: activeLessonId }),
       });
       setBookmarked(true);
       toast.success(t("course.048"));
@@ -198,7 +202,7 @@ export function StudentLessonView() {
   }, [checkBookmark]);
 
   const reload = React.useCallback(() => {
-    if (!navParam) {
+    if (!activeLessonId) {
       setError(t("course.049"));
       setErrorKind("error");
       setLoading(false);
@@ -206,7 +210,7 @@ export function StudentLessonView() {
     }
     setLoading(true);
     setError(null);
-    fetch(`/api/lessons/${encodeURIComponent(navParam)}`)
+    fetch(`/api/lessons/${encodeURIComponent(activeLessonId || "")}`)
       .then(async (r) => {
         if (r.ok) return r.json();
         const body = await r.json().catch(() => ({}));
@@ -232,7 +236,7 @@ export function StudentLessonView() {
         }
       })
       .finally(() => setLoading(false));
-  }, [navParam, t]);
+  }, [activeLessonId, t]);
 
   React.useEffect(() => {
     reload();
@@ -633,6 +637,9 @@ export function StudentLessonView() {
                           className="w-full"
                           onClick={() => {
                             setView("student-quiz");
+                            // Preserve the owning Lesson while switching the active entity to Quiz.
+                            if (activeLessonId) setLessonId(activeLessonId);
+                            setQuizId(q.id);
                             setNavParam(q.id);
                           }}
                         >
@@ -848,7 +855,7 @@ export function StudentLessonView() {
           </Card>
 
           {/* Notes */}
-          <LessonNotesSection lessonId={navParam} />
+          <LessonNotesSection lessonId={activeLessonId} />
         </div>
       </div>
     </div>

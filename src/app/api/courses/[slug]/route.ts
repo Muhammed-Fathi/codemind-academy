@@ -17,6 +17,7 @@ import {
 } from "@/lib/parent-access";
 import {
   eligibleTrackScopes,
+  normalizeTrackScope,
   trackScopeInWhere,
   trackScopeWhere,
 } from "@/lib/track-scope";
@@ -58,8 +59,8 @@ type LessonRow = {
   pdfUrl: string | null;
   summary: string | null;
   description: string | null;
-  quizzes: { id: string; title: string; titleAr: string }[];
-  homeworks: { id: string; title: string; titleAr: string; deadline: Date | null }[];
+  quizzes: { id: string; title: string; titleAr: string; trackScope: string | null; status: string }[];
+  homeworks: { id: string; title: string; titleAr: string; deadline: Date | null; trackScope: string | null; status: string }[];
   // Phase 14 — active materials (storageKey never selected).
   materials?: {
     id: string;
@@ -73,8 +74,8 @@ type LessonRow = {
 };
 
 const LESSON_INCLUDE = {
-  quizzes: { orderBy: { order: "asc" as const }, select: { id: true, titleAr: true, title: true, trackScope: true } },
-  homeworks: { select: { id: true, titleAr: true, title: true, deadline: true, trackScope: true } },
+  quizzes: { orderBy: { order: "asc" as const }, select: { id: true, titleAr: true, title: true, trackScope: true, status: true } },
+  homeworks: { select: { id: true, titleAr: true, title: true, deadline: true, trackScope: true, status: true } },
   // Phase 14 — active materials only. storageKey deliberately omitted.
   materials: {
     where: { isActive: true },
@@ -377,9 +378,28 @@ export async function GET(
   // the quiz and assignment identities and the requirement breakdown all stay
   // server-side — hiding them in the UI is not protection, because the client
   // can simply read this response.
+  // Phase G — assessment visibility, applied to the legacy identity fields:
+  // DRAFT quizzes/homework are authoring-only (never named to students or
+  // parents) and rows outside the viewer's track slice were never theirs.
+  // Staff keeps everything for preview/authoring. Same verdict the Lesson
+  // Content Summary authority reaches for the badges.
+  const assessmentVisible = <T extends { trackScope: unknown; status: unknown }>(
+    rows: T[]
+  ): T[] =>
+    contentViewer.role === "STAFF"
+      ? rows
+      : rows.filter((r) => {
+          if (String(r.status ?? "").toUpperCase() === "DRAFT") return false;
+          if (!viewerEligibleScopes) return true;
+          const scope = normalizeTrackScope(r.trackScope);
+          return scope !== null && viewerEligibleScopes.includes(scope);
+        });
+
   const toLesson = (lesson: LessonRow) => {
     const locked = statusById.get(lesson.id) === "locked";
     const lp = progressMap[lesson.id];
+    const visibleQuizzes = assessmentVisible(lesson.quizzes);
+    const visibleHomeworks = assessmentVisible(lesson.homeworks);
     // Phase C — this lesson's content summary from the shared authority.
     // Presence badges (hasVideo/hasPdf/hasQuiz/hasAssignment + materialCount)
     // and the serialized `content` block all read from it — never from
@@ -449,8 +469,13 @@ export async function GET(
       // component). The tree chips, the lesson page workspace and the
       // Continue Learning card all describe content through this one shape.
       content: toLessonContentPayload(content),
-      quiz: locked ? null : lesson.quizzes[0] || null,
-      homework: locked ? null : lesson.homeworks[0] || null,
+      // Phase G — the legacy first-quiz/first-homework identity fields obey
+      // the SAME visibility rule as the badges: a DRAFT assessment is
+      // authoring-only and must never be named to students or parents, and
+      // rows outside the viewer's track slice were never theirs either. Staff
+      // keeps the unfiltered rows for preview/authoring.
+      quiz: locked ? null : visibleQuizzes[0] || null,
+      homework: locked ? null : visibleHomeworks[0] || null,
     };
   };
 

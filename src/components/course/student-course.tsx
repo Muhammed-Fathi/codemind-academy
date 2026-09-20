@@ -174,7 +174,9 @@ export function StudentCourseView() {
   const tr = useT();
   const setView = useApp((s) => s.setView);
   const navParam = useApp((s) => s.navParam);
+  const courseSlug = useApp((s) => s.courseSlug);
   const setNavParam = useApp((s) => s.setNavParam);
+  const setCourseSlug = useApp((s) => s.setCourseSlug);
 
   const [data, setData] = React.useState<CourseData | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -196,55 +198,35 @@ export function StudentCourseView() {
     // resolved slug then flows through the unchanged authorized content
     // fetch below, so this path can never open a course the student is not
     // enrolled in: /api/courses/[slug] still 403s server-side.
-    if (!navParam) {
-      fetch("/api/students/me/current-course")
-        .then((r) =>
-          r.ok
-            ? r.json()
-            : Promise.reject(new Error(r.status === 403 || r.status === 401 ? "forbidden" : "fail"))
-        )
-        .then((d) => {
-          const slug = d?.course?.slug;
-          if (slug) {
-            // Hand off through the canonical mechanism; the effect re-runs
-            // with the slug and keeps `loading` true, so no empty frame
-            // flashes between the two fetches.
-            setNavParam(slug);
-            return;
-          }
-          // Zero courses: the existing empty state (nothing to guess).
-          setError(tr("course.213"));
-          setLoading(false);
-        })
-        .catch((e: Error) => {
-          setError(tr(e.message === "forbidden" ? "course.212" : "course.034"));
-          setLoading(false);
-        });
-      return;
-    }
-    fetch(`/api/courses/${encodeURIComponent(navParam)}`)
-      .then((r) => {
-        if (r.ok) return r.json();
-        // 403 is an authorization outcome, not a transport failure, and it
-        // must not be collapsed into the generic "try again" message — the
-        // student would retry forever. The server stays the source of truth.
-        if (r.status === 403 || r.status === 401)
-          return Promise.reject(new Error("forbidden"));
-        return Promise.reject(new Error("fail"));
-      })
-      .then((d) => {
-        setData(d);
-        const ids: string[] = [];
-        for (const p of (d as CourseData).parts) {
-          if (p.units[0]) ids.push(p.units[0].id);
+    // Always validate persisted navigation against the authoritative current
+    // course. Zustand persistence can retain an old slug after enrollment/group
+    // changes; never issue a request for that stale course.
+    fetch("/api/students/me/current-course")
+      .then((r) => r.ok ? r.json() : Promise.reject(new Error(r.status === 403 || r.status === 401 ? "forbidden" : "fail")))
+      .then((current) => {
+        const authoritativeSlug = current?.course?.slug;
+        if (!authoritativeSlug) throw new Error("empty");
+        if (courseSlug !== authoritativeSlug) {
+          setCourseSlug(authoritativeSlug);
+          setNavParam(authoritativeSlug);
+          return;
         }
-        setOpenUnits(ids);
+        return fetch(`/api/courses/${encodeURIComponent(authoritativeSlug)}`)
+          .then((r) => r.ok ? r.json() : Promise.reject(new Error(r.status === 403 || r.status === 401 ? "forbidden" : "fail")))
+          .then((d) => {
+            setData(d);
+            const ids: string[] = [];
+            for (const p of (d as CourseData).parts) if (p.units[0]) ids.push(p.units[0].id);
+            setOpenUnits(ids);
+          });
       })
+      .then(() => { if (navParam) setLoading(false); })
       .catch((e: Error) => {
-        setError(tr(e.message === "forbidden" ? "course.212" : "course.034"));
-      })
-      .finally(() => setLoading(false));
-  }, [navParam, tr, setNavParam]);
+        setError(tr(e.message === "forbidden" ? "course.212" : e.message === "empty" ? "course.213" : "course.034"));
+        setLoading(false);
+      });
+    return;
+  }, [navParam, courseSlug, tr, setNavParam, setCourseSlug]);
 
   React.useEffect(() => {
     reload();
@@ -469,6 +451,7 @@ function LessonRow({ lesson }: { lesson: LessonItem }) {
       return;
     }
     setView("student-lesson");
+    useApp.getState().setLessonId(lesson.id);
     setNavParam(lesson.id);
   };
 

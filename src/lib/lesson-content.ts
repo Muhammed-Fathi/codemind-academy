@@ -141,8 +141,8 @@ export type LessonContentLessonInput = {
   id: string;
   videoUrl?: string | null;
   pdfUrl?: string | null;
-  quizzes?: readonly { id: string; trackScope?: unknown }[] | null;
-  homeworks?: readonly { id: string; trackScope?: unknown }[] | null;
+  quizzes?: readonly { id: string; trackScope?: unknown; status?: unknown }[] | null;
+  homeworks?: readonly { id: string; trackScope?: unknown; status?: unknown }[] | null;
   /** Active Material rows WITH media metadata (the Phase 14 descriptor input). */
   materials?: Parameters<typeof buildMaterialDescriptors>[0]["materials"] | null;
 };
@@ -176,6 +176,21 @@ function rowScopeEligible(
   return eligible.includes(scope);
 }
 
+/**
+ * Phase G — a child row (quiz/homework) in DRAFT is authoring-only: it is
+ * neither exposed nor COUNTED for students and parents (a badge or a
+ * requirement derived from it would describe something the student can never
+ * open). Staff preview keeps DRAFT rows visible. A missing/unknown status is
+ * treated as visible — legacy rows predate the column and default to live.
+ */
+function rowLifecycleVisible(
+  viewer: LessonContentViewer,
+  status: unknown
+): boolean {
+  if (viewer.role === "STAFF") return true;
+  return String(status ?? "").toUpperCase() !== "DRAFT";
+}
+
 function part(count: number): LessonContentComponent {
   return { state: count > 0 ? "AVAILABLE" : "ABSENT", count };
 }
@@ -205,8 +220,8 @@ export function buildLessonContentSummary(input: {
   legacyPdfUrl?: string | null;
   /** Count of modern SessionVideo rows ALREADY filtered to this viewer. */
   visibleVideoCount?: number;
-  quizzes?: readonly { id: string; trackScope?: unknown }[] | null;
-  homeworks?: readonly { id: string; trackScope?: unknown }[] | null;
+  quizzes?: readonly { id: string; trackScope?: unknown; status?: unknown }[] | null;
+  homeworks?: readonly { id: string; trackScope?: unknown; status?: unknown }[] | null;
   materials?: LessonContentLessonInput["materials"];
 }): LessonContentSummary {
   const eligible = eligibleScopesOf(input.viewer);
@@ -240,8 +255,18 @@ export function buildLessonContentSummary(input: {
   // track-filtered lists reach, now from one shared implementation.
   const quizzes = Array.isArray(input.quizzes) ? input.quizzes : [];
   const homeworks = Array.isArray(input.homeworks) ? input.homeworks : [];
-  const quizCount = quizzes.filter((q) => q?.id && rowScopeEligible(eligible, q.trackScope)).length;
-  const homeworkCount = homeworks.filter((h) => h?.id && rowScopeEligible(eligible, h.trackScope)).length;
+  const quizCount = quizzes.filter(
+    (q) =>
+      q?.id &&
+      rowScopeEligible(eligible, q.trackScope) &&
+      rowLifecycleVisible(input.viewer, q.status)
+  ).length;
+  const homeworkCount = homeworks.filter(
+    (h) =>
+      h?.id &&
+      rowScopeEligible(eligible, h.trackScope) &&
+      rowLifecycleVisible(input.viewer, h.status)
+  ).length;
 
   return {
     lessonId: input.lessonId,

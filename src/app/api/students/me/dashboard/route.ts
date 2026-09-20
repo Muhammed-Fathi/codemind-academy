@@ -140,8 +140,8 @@ export async function GET(_req: NextRequest) {
         id: true,
         videoUrl: true,
         pdfUrl: true,
-        quizzes: { select: { id: true, trackScope: true } },
-        homeworks: { select: { id: true, trackScope: true } },
+        quizzes: { select: { id: true, trackScope: true, status: true } },
+        homeworks: { select: { id: true, trackScope: true, status: true } },
         materials: {
           where: { isActive: true },
           select: {
@@ -220,6 +220,10 @@ export async function GET(_req: NextRequest) {
   };
   const homeworks = await db.homework.findMany({
     where: {
+      // Phase G — DRAFT assignments are authoring-only: never listed, never
+      // counted as pending. CLOSED stays listed (the student still sees the
+      // closed assignment and its grade; only NEW submissions stop).
+      status: { in: ["PUBLISHED", "CLOSED"] },
       // Phase 12: an assignment belonging to the other school type must not be
       // listed here — this endpoint returns the row and its lesson title, so
       // leaving it unfiltered was an outright cross-track content leak.

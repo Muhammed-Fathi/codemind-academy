@@ -128,6 +128,7 @@ const REAL_CODE_MODULES = [
   "src/app/api/teacher/attendance/route.ts",
   "src/app/api/teacher/homework/route.ts",
   "src/app/api/teacher/homework/[id]/route.ts",
+  "src/app/api/teacher/homework/[id]/publish/route.ts",
   "src/app/api/teacher/homework/[id]/grade/route.ts",
   "src/app/api/teacher/quizzes/route.ts",
   "src/app/api/teacher/quizzes/[id]/route.ts",
@@ -243,6 +244,7 @@ function loadRealCode(outDir) {
     tAttendance: route("teacher/attendance/route.js"),
     tHomework: route("teacher/homework/route.js"),
     tHomeworkById: route("teacher/homework/[id]/route.js"),
+    tHomeworkPublish: route("teacher/homework/[id]/publish/route.js"),
     tHomeworkGrade: route("teacher/homework/[id]/grade/route.js"),
     tQuizzes: route("teacher/quizzes/route.js"),
     tQuizById: route("teacher/quizzes/[id]/route.js"),
@@ -452,6 +454,8 @@ async function main() {
   eq(hwCreate.status, 200, "TEACHER-07: homework create → 200");
   const hwId = hwCreate.json.homework?.id;
   ok(!!hwId, "TEACHER-07: the homework id is returned");
+  const hwPublish = await POST(R.tHomeworkPublish, url(`/api/teacher/homework/${hwId}/publish`), {}, { id: hwId });
+  eq(hwPublish.status, 200, "TEACHER-07: homework publish → 200");
   const hwBadDeadline = await POST(R.tHomework, url("/api/teacher/homework"), {
     lessonId: L.pub.id, title: "HW bad", deadline: "not-a-date", maxMarks: 10,
   });
@@ -913,15 +917,19 @@ async function main() {
   {
     section("R. TEACHER-13/14 question authoring authority");
     asUser(teacherUserA);
-    const qAdd = await POST(R.tQuizQuestions, url(`/api/teacher/quizzes/${legacyQuiz.id}/questions`), {
+    // Use a fresh, no-attempt quiz: Phase G correctly locks the blueprint after
+    // the first attempt, so the existing legacyQuiz is intentionally unsuitable
+    // for this authoring check by this point in the verifier.
+    const authoringQuiz = await client.quiz.create({ data: { lessonId: L.pub.id, title: "Authoring verifier quiz", titleAr: "اختبار تحقق التأليف", passMark: 50 } });
+    const qAdd = await POST(R.tQuizQuestions, url(`/api/teacher/quizzes/${authoringQuiz.id}/questions`), {
       type: "MCQ", prompt: "Authored Q", options: ["a", "b", "c"], answer: "1",
       difficulty: "EASY", marks: 5,
-    }, { id: legacyQuiz.id });
+    }, { id: authoringQuiz.id });
     ok(qAdd.status === 200 || qAdd.status === 201, "TEACHER-13: teacher authors a question on an own quiz → 200/201");
     const authoredId = qAdd.json.question ? qAdd.json.question.id : qAdd.json.id;
     ok(!!authoredId, "TEACHER-13: the authored question id is returned");
     const authoredRow = await client.question.findUnique({ where: { id: authoredId } });
-    eq(authoredRow.quizId, legacyQuiz.id, "TEACHER-13: the question landed on the own quiz");
+    eq(authoredRow.quizId, authoringQuiz.id, "TEACHER-13: the question landed on the own quiz");
     eq(authoredRow.marks, 5, "TEACHER-13: the authored marks were persisted, not defaulted");
 
     const qPatch = await PATCH(R.tQuestionById, url(`/api/teacher/questions/${authoredId}`), { prompt: "Authored Q v2" }, { id: authoredId });
@@ -981,9 +989,12 @@ async function main() {
     // therefore ADMISSIBLE on a SHARED quiz — the quiz reaches both tracks and
     // the per-student track filter drops it for ARABIC students at selection
     // time (covered by QUIZ-05/13). Asserting a 400 there would be wrong.
-    const sharedQuizLangQ = await POST(R.tQuizQuestions, url(`/api/teacher/quizzes/${bpQuiz.id}/questions`), {
+    const sharedAuthoringQuiz = await client.quiz.create({
+      data: { lessonId: L.pub.id, title: "Shared authoring quiz", titleAr: "اختبار تأليف مشترك", passMark: 50 },
+    });
+    const sharedQuizLangQ = await POST(R.tQuizQuestions, url(`/api/teacher/quizzes/${sharedAuthoringQuiz.id}/questions`), {
       type: "MCQ", prompt: "LANGUAGE-only Q on SHARED", options: ["a", "b"], answer: "0", schoolType: "LANGUAGE",
-    }, { id: bpQuiz.id });
+    }, { id: sharedAuthoringQuiz.id });
     ok(sharedQuizLangQ.status === 200 || sharedQuizLangQ.status === 201,
       "TEACHER-22: a LANGUAGE question IS admissible on a SHARED quiz (filtered per student later)");
 
@@ -1161,13 +1172,14 @@ async function main() {
     const originalMarks = targetFrozen.marksSnapshot;
     const originalOptions = targetFrozen.optionsSnapshot;
 
-    // (3)+(4) EDIT the live question. Non-grading fields are editable by design,
-    // so this is the realistic "bank edit" case.
+    // (3)+(4) Once an attempt exists, Phase G freezes the complete blueprint,
+    // including non-grading fields. The historical snapshot remains readable;
+    // quiz duplication is the sanctioned editing path.
     asUser(teacherUserA);
     const hzEdit = await PATCH(R.tQuestionById, url(`/api/teacher/questions/${target.id}`), {
       prompt: "REWRITTEN AFTER SUBMISSION", explanation: "rewritten too",
     }, { id: target.id });
-    eq(hzEdit.status, 200, "QUIZ-31: a non-grading edit of the live question is allowed");
+    eq(hzEdit.status, 409, "QUIZ-31: editing any field after an attempt is REFUSED → 409");
 
     const hzAfterEdit = await client.quizAnswer.findFirst({ where: { attemptId: hzAttemptId, questionId: target.id } });
     eq(hzAfterEdit.promptSnapshot, originalPrompt, "QUIZ-31: the frozen prompt is UNCHANGED by the live edit");

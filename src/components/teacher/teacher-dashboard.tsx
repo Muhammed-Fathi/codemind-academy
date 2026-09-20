@@ -159,11 +159,11 @@ function timeAgo(d: string | Date) {
   const diff = Date.now() - t;
   const m = Math.floor(diff / 60000);
   if (m < 1) return translate(curLocale(), "teacher.001");
-  if (m < 60) return translate(curLocale(), "teacher.002");
+  if (m < 60) return translate(curLocale(), "teacher.002", { p1: m });
   const h = Math.floor(m / 60);
-  if (h < 24) return translate(curLocale(), "teacher.003");
+  if (h < 24) return translate(curLocale(), "teacher.003", { p1: h });
   const days = Math.floor(h / 24);
-  if (days < 7) return translate(curLocale(), "teacher.004");
+  if (days < 7) return translate(curLocale(), "teacher.004", { p1: days });
   return arDateShortFmt().format(new Date(d));
 }
 
@@ -232,6 +232,8 @@ type ActivityItem = {
   studentName: string;
   time: string;
   kind: "good" | "neutral" | "warn";
+  attemptId?: string;
+  quizId?: string;
 };
 
 type DashboardPayload = {
@@ -352,6 +354,7 @@ type HomeworkSubmission = {
   status: string;
   content: string | null;
   fileUrl: string | null;
+  attachment?: { id: string; originalName: string | null; mimeType: string | null; sizeBytes: number | null } | null;
   submittedAt: string | null;
   grade: number | null;
   feedback: string | null;
@@ -373,6 +376,8 @@ type HomeworkListItem = {
   deadline: string;
   maxMarks: number;
   createdAt: string;
+  status: "DRAFT" | "PUBLISHED" | "CLOSED";
+  attachment?: { id: string; originalName: string | null; mimeType: string | null; sizeBytes: number | null } | null;
   /** Phase 18 — the assignment's own eligibility + edit guards. */
   trackScope: string;
   gradedCount?: number;
@@ -949,8 +954,9 @@ function ActivityRow({ item }: { item: ActivityItem }) {
     "quiz-attempt": Trophy,
   } as const;
   const Icon = IconMap[item.type];
-  return (
+  const content = (
     <div className="flex items-start gap-3 p-2.5 rounded-lg hover:bg-muted/40 transition-colors">
+
       <div
         className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${colorMap[item.kind]}`}
       >
@@ -967,6 +973,9 @@ function ActivityRow({ item }: { item: ActivityItem }) {
       </div>
     </div>
   );
+  return item.type === "quiz-attempt" && item.quizId ? (
+    <a href={`/teacher/sessions?quizId=${encodeURIComponent(item.quizId)}&attemptId=${encodeURIComponent(item.attemptId || "")}`} className="block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">{content}</a>
+  ) : content;
 }
 
 function OverviewSkeleton() {
@@ -2618,6 +2627,8 @@ function HomeworkView() {
                 maxMarks: authoring.homework.maxMarks,
                 trackScope: authoring.homework.trackScope,
                 gradedCount: authoring.homework.gradedCount ?? 0,
+                attachment: authoring.homework.attachment ?? null,
+                status: authoring.homework.status,
                 lessonId: authoring.homework.lesson?.id ?? "",
               }
             : null
@@ -2773,6 +2784,7 @@ function HomeworkCard({
           </p>
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
             <TrackScopeBadge scope={hw.trackScope || "SHARED"} />
+            <Badge variant="outline" className={hw.status === "DRAFT" ? "text-amber-700" : hw.status === "CLOSED" ? "text-muted-foreground" : "text-emerald-700"}>{hw.status === "DRAFT" ? "مسودة" : hw.status === "CLOSED" ? "مغلق" : "منشور"}</Badge>
             {hw.lesson?.curriculumStatus === "ARCHIVED" ? (
               <CurriculumBadge value="ARCHIVED" />
             ) : hw.lesson?.status ? (
@@ -2911,6 +2923,7 @@ function SubmissionRow({
         <div className="text-[10px] text-muted-foreground">
           {sub.submittedAt ? timeAgo(sub.submittedAt) : tr("teacher.127")}
         </div>
+        {sub.attachment ? <a className="text-[10px] text-primary underline truncate block" href={`/api/media/${sub.attachment.id}`} target="_blank" rel="noreferrer">{sub.attachment.originalName || "تحميل ملف التسليم"}</a> : <span className="text-[10px] text-muted-foreground">لا يوجد ملف</span>}
       </div>
       <Badge
         variant="secondary"

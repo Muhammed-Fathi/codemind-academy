@@ -52,6 +52,9 @@ async function loadOwnedQuiz(
         trackScope: unknown;
         order: number;
         lessonId: string;
+        /** Phase G lifecycle — مسودة / منشور (+ publishedAt). */
+        status: string;
+        publishedAt: Date | null;
       };
       lesson: ChainLesson | null;
       courseId: string;
@@ -70,6 +73,8 @@ async function loadOwnedQuiz(
       trackScope: true,
       order: true,
       lessonId: true,
+      status: true,
+      publishedAt: true,
       lesson: { select: LESSON_PLACEMENT_SELECT },
     },
   });

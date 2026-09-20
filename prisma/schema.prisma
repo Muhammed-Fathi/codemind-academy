@@ -31,6 +31,8 @@ model User {
   securityEvents SecurityEvent[]
   /// Phase 26D — the Admin's audit trail of retry permissions they issued.
   grantedQuizRetries QuizRetryGrant[] @relation("QuizRetryGrantGranter")
+  /// Phase G — homework grades this user wrote (grader identity).
+  homeworkGraded HomeworkSubmission[] @relation("HomeworkGrader")
 
   @@index([role])
   @@index([status])
@@ -713,6 +715,32 @@ model Quiz {
   order       Int           @default(0)
 
   // -------------------------------------------------------------------------
+  // Phase G — QUIZ LIFECYCLE
+  // -------------------------------------------------------------------------
+  // Before Phase G a quiz was student-visible the instant it existed. Phase G
+  // adds an authoring lifecycle WITHOUT a new enum (stored as TEXT, the same
+  // convention as `quizMode` below and `QuizAttempt.status`):
+  //   * `DRAFT`     — fully editable, invisible to students (a 404 on every
+  //                   student surface) and excluded from progression.
+  //   * `PUBLISHED` — student-visible through the existing lesson-unlock and
+  //                   track gates; attempts may start.
+  // Publishing is server-authoritative (`POST /api/teacher/quizzes/[id]/publish`)
+  // and refuses a structurally invalid quiz (Phase 26D authority re-run).
+  //
+  // The default is `PUBLISHED` ON PURPOSE: every pre-Phase-G row keeps the
+  // exact behaviour it always had (no draft limbo for live content); the
+  // teacher create route writes `DRAFT` explicitly for new quizzes. Once any
+  // attempt exists the question blueprint is immutable (see the Phase G lock
+  // in src/app/api/teacher/questions/[id] and the question append route).
+
+  /// `DRAFT` | `PUBLISHED`.
+  status      String        @default("PUBLISHED")
+  /// REQUIRED or OPTIONAL camera policy; legacy quizzes remain optional.
+  cameraPolicy String      @default("OPTIONAL")
+  /// First successful publish instant (null while the quiz is a draft).
+  publishedAt DateTime?
+
+  // -------------------------------------------------------------------------
   // Phase 26D — LESSON QUIZ BLUEPRINT
   // -------------------------------------------------------------------------
   // Before 26D a Quiz *was* its question list: every student received every
@@ -936,7 +964,36 @@ model Homework {
   deadline     DateTime
   maxMarks     Int                  @default(10)
   createdAt    DateTime             @default(now())
+
+  // -------------------------------------------------------------------------
+  // Phase G — HOMEWORK LIFECYCLE + TEACHER ATTACHMENT
+  // -------------------------------------------------------------------------
+  // `DRAFT → PUBLISHED → CLOSED`, stored as TEXT (the Phase 26D convention;
+  // no new enum, no client-visible contract):
+  //   * `DRAFT`     — teacher can fully edit; invisible to students (their
+  //                   list, the progression universe and the submit gate all
+  //                   skip it), so it can never be an unlock requirement.
+  //   * `PUBLISHED` — visible to eligible students; submissions accepted and
+  //                   classified ON_TIME/LATE against `deadline`.
+  //   * `CLOSED`    — historically visible (list + grades stay readable); no
+  //                   NEW student submission.
+  // Transitions are server-authoritative (publish/close routes) and audited.
+  //
+  // The default is `PUBLISHED` ON PURPOSE: every pre-Phase-G row keeps its
+  // exact behaviour; the teacher create route writes `DRAFT` explicitly.
+  //
+  // `attachmentId` links the teacher's assignment file (PDF/DOCX/PPTX/ZIP,
+  // ≤25 MB) through the ONE existing private MediaAsset stack — no second
+  // storage system. `SetNull` so removing an asset never destroys the
+  // assignment itself.
+
+  /// `DRAFT` | `PUBLISHED` | `CLOSED`.
+  status       String               @default("PUBLISHED")
+  /// Latest publish instant (set on DRAFT→PUBLISHED and on re-open).
+  publishedAt  DateTime?
+  attachmentId String?
   lesson       Lesson               @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  attachment   MediaAsset?          @relation(fields: [attachmentId], references: [id], onDelete: SetNull)
   submissions  HomeworkSubmission[]
 
   @@index([lessonId])
@@ -947,13 +1004,30 @@ model HomeworkSubmission {
   homeworkId  String
   studentId   String
   content     String?
+  /// Legacy free-form pointer, superseded by `attachmentId` in Phase G. Kept
+  /// because historical rows may carry it; new submissions never write it.
   fileUrl     String?
   submittedAt DateTime?
   grade       Int?
   feedback    String?
   status      HomeworkStatus @default(PENDING)
+
+  // -------------------------------------------------------------------------
+  // Phase G — STUDENT FILE + GRADER IDENTITY
+  // -------------------------------------------------------------------------
+  // `attachmentId` is the student's submitted file (PDF/DOCX/JPG/PNG/ZIP,
+  // ≤25 MB) in the same private MediaAsset stack. `gradedById`/`gradedAt`
+  // make a grade attributable (server-enforced 0 ≤ grade ≤ maxMarks); both
+  // are nullable because pre-Phase-G grades exist without them and because
+  // a teacher may pre-grade a student who never submitted.
+
+  attachmentId String?
+  gradedById   String?
+  gradedAt     DateTime?
   student     Student        @relation(fields: [studentId], references: [id], onDelete: Cascade)
   homework    Homework       @relation(fields: [homeworkId], references: [id], onDelete: Cascade)
+  attachment  MediaAsset?    @relation(fields: [attachmentId], references: [id], onDelete: SetNull)
+  gradedBy    User?          @relation("HomeworkGrader", fields: [gradedById], references: [id], onDelete: SetNull)
 
   @@unique([homeworkId, studentId])
   @@index([studentId])
@@ -1309,6 +1383,10 @@ model MediaAsset {
   sessionVideos SessionVideo[]
   quizEvidence  QuizAttemptEvidence[]
   materials     Material[]
+  /// Phase G — teacher assignment files referencing this asset.
+  homeworkAttachments Homework[]
+  /// Phase G — student submission files referencing this asset.
+  homeworkSubmissions HomeworkSubmission[]
 
   @@index([kind])
   @@index([storage])

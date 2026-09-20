@@ -62,6 +62,8 @@ const BASELINE_SQL = path.join(REPO, "scripts", "db", "postgres-baseline.sql");
 const CHECKER = path.join(REPO, "scripts", "db", "check-pg-migration-state.mjs");
 const MIG_26D = "20260915180000_phase26d_quiz_attempt_architecture";
 const MIG_PHASE_F = "20260919120000_phase_f_live_session_lifecycle";
+const MIG_PHASE_G = "20260919180000_phase_g_quiz_homework_workflow";
+const MIG_CAMERA = "20260919190000_phase_g_camera_policy";
 
 let pass = 0;
 const failures = [];
@@ -75,7 +77,17 @@ function ok(cond, label, extra) {
   }
 }
 const read = (p) => fs.readFileSync(p, "utf8");
-const sha256 = (p) => crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex");
+// Migration files are governed by .gitattributes (LF). Older Windows
+// worktrees may nevertheless contain CRLF after checkout; canonicalize only
+// CRLF transport bytes so the frozen SQL checksum remains portable. Any other
+// content change still fails the checksum contract.
+const sha256 = (p) => {
+  const bytes = fs.readFileSync(p);
+  const canonical = bytes.includes(0x0d)
+    ? Buffer.from(bytes.toString("utf8").replace(/\r\n/g, "\n"), "utf8")
+    : bytes;
+  return crypto.createHash("sha256").update(canonical).digest("hex");
+};
 /** SQL text with -- comments removed (for scanning CODE, not prose). */
 const stripSqlComments = (sql) => sql.split("\n").filter((l) => !l.trim().startsWith("--")).join("\n");
 const listMigrationDirs = (dir) =>
@@ -91,11 +103,11 @@ function partA() {
   // A1 — layout contract
   const sqliteMigrations = listMigrationDirs(SQLITE_MIGRATIONS);
   const pgMigrations = listMigrationDirs(PG_MIGRATIONS);
-  ok(sqliteMigrations.length === 13, `SQLite migrations dir carries all 13 historical migrations (got ${sqliteMigrations.length})`);
-  ok(pgMigrations.length === 3, `PG migrations dir carries exactly 0_init + Phase 26D + Phase F (got ${pgMigrations.length})`);
+  ok(sqliteMigrations.length === 15, `SQLite migrations dir carries all 15 historical migrations (got ${sqliteMigrations.length})`);
+  ok(pgMigrations.length === 5, `PG migrations dir carries the provider chain plus camera policy (got ${pgMigrations.length})`);
   ok(
-    pgMigrations[0] === "0_init" && pgMigrations[1] === MIG_26D && pgMigrations[2] === MIG_PHASE_F,
-    "PG migrations are 0_init, Phase 26D, Phase F, in order"
+    pgMigrations[0] === "0_init" && pgMigrations[1] === MIG_26D && pgMigrations[2] === MIG_PHASE_F && pgMigrations[3] === MIG_PHASE_G && pgMigrations[4] === MIG_CAMERA,
+    "PG migrations are 0_init, Phase 26D, Phase F, Phase G, in order"
   );
   ok(fs.existsSync(PG_SCHEMA), "prisma/postgres/schema.prisma exists (PG schema owns its own directory)");
   ok(!fs.existsSync(OLD_PG_SCHEMA), "prisma/schema.postgresql.prisma does NOT exist (must never share prisma/ with SQLite again)");
@@ -117,6 +129,11 @@ function partA() {
     !fs.existsSync(path.join(PG_MIGRATIONS, MIG_PHASE_F, "migration.sql")) === false &&
     read(path.join(PG_MIGRATIONS, MIG_PHASE_F, "migration.sql")) !== read(path.join(SQLITE_MIGRATIONS, MIG_PHASE_F, "migration.sql")),
     "the PG and SQLite editions of Phase F are distinct files (provider-specific SQL)"
+  );
+  ok(
+    !fs.existsSync(path.join(PG_MIGRATIONS, MIG_PHASE_G, "migration.sql")) === false &&
+    read(path.join(PG_MIGRATIONS, MIG_PHASE_G, "migration.sql")) !== read(path.join(SQLITE_MIGRATIONS, MIG_PHASE_G, "migration.sql")),
+    "the PG and SQLite editions of Phase G are distinct files (provider-specific SQL)"
   );
   const pgSchemaHeader = read(PG_SCHEMA).split("\n").slice(0, 35).join("\n");
   ok(/WHY THIS FILE LIVES IN prisma\/postgres\//.test(pgSchemaHeader), "PG schema header documents the directory contract");
@@ -142,10 +159,13 @@ function partA() {
     "20260915120000_phase26b_group_track_scope": "06cc038d4fc0f23b6fe63724f944f436c4007fc94ad4d04759c728bd893a4b39",
     "20260915180000_phase26d_quiz_attempt_architecture": "be10b56f4539f74b5ee1da28f52a97270ba656d8be87b78f7ddbb4ab39c92b4f",
     "20260919120000_phase_f_live_session_lifecycle": "480a5327e1ebeb488b2723ab4e263778530d141577315d38ac48cf3728f94ac3",
+    "20260919180000_phase_g_quiz_homework_workflow": "d86e31ee0774403354c33084437e0f550b45b1595ab8faf4341e114bc80922b3",
+    "20260919190000_phase_g_camera_policy": "b34ddf74f0cd88fedf41baec4dc6d6dcb305a4a9da47989e918e19d89460ed24",
     // PostgreSQL history (frozen from this commit on):
     "0_init": "c7f5d3fa76931d02e48c5cd2c4bfdb972c0f25e528e3c0c116736d3729cefa80",
     "PG:20260915180000_phase26d_quiz_attempt_architecture": "2c1bdde167f7dfff9b79a61f116da3dbd93b13c6aa27825404a79312ec7be104",
     "PG:20260919120000_phase_f_live_session_lifecycle": "186f921f184b21bafc5c65ffa514bd526dd614f21227a4afd2462ca5d971d388",
+    "PG:20260919180000_phase_g_quiz_homework_workflow": "e16d1b6d454af5dd332727e869400ffa281d6f953b934007bc5e968e2fb05099",
   };
   for (const [name, checksum] of Object.entries(PINNED)) {
     const isPg = name.startsWith("PG:") || name === "0_init";
@@ -222,15 +242,26 @@ function partA() {
       out.enums.delete(existing);
       out.enums.add(`${name}(${Number(existing.slice(name.length + 1, -1)) + n})`);
     }
+    // The ADD VALUE deltas are now folded into the enum counts — they must
+    // NOT survive into the next merge step, or a chain longer than three
+    // migrations would re-apply every earlier delta once per extra step
+    // (this surfaced when Phase G became the fourth merged file).
+    out.enumAdds = new Map();
     return out;
   };
   const want = parseInventory(read(BASELINE_SQL));
   const got = merge(
     merge(
-      parseInventory(read(path.join(PG_MIGRATIONS, "0_init", "migration.sql"))),
-      parseInventory(read(path.join(PG_MIGRATIONS, MIG_26D, "migration.sql")))
+      merge(
+        merge(
+          parseInventory(read(path.join(PG_MIGRATIONS, "0_init", "migration.sql"))),
+          parseInventory(read(path.join(PG_MIGRATIONS, MIG_26D, "migration.sql")))
+        ),
+        parseInventory(read(path.join(PG_MIGRATIONS, MIG_PHASE_F, "migration.sql")))
+      ),
+      parseInventory(read(path.join(PG_MIGRATIONS, MIG_PHASE_G, "migration.sql")))
     ),
-    parseInventory(read(path.join(PG_MIGRATIONS, MIG_PHASE_F, "migration.sql")))
+    parseInventory(read(path.join(PG_MIGRATIONS, MIG_CAMERA, "migration.sql")))
   );
   {
     const diffs = [];
@@ -248,7 +279,7 @@ function partA() {
     for (const c of want.indexes) if (!got.indexes.has(c)) diffs.push(`missing index ${c}`);
     for (const c of got.indexes) if (!want.indexes.has(c)) diffs.push(`extra index ${c}`);
     ok(diffs.length === 0,
-      `0_init + PG Phase 26D + Phase F == scripts/db/postgres-baseline.sql structurally (${want.tables.size} tables, ${[...want.tables.values()].reduce((a, c) => a + c.length, 0)} columns)`,
+      `0_init + PG Phase 26D + Phase F + Phase G == scripts/db/postgres-baseline.sql structurally (${want.tables.size} tables, ${[...want.tables.values()].reduce((a, c) => a + c.length, 0)} columns)`,
       diffs.slice(0, 8).join("; "));
   }
 
@@ -299,7 +330,31 @@ function partA() {
       "the pre-existing Attendance.sessionId index divergence is closed additively in both providers");
   }
 
-  // A6 — fresh SQLite through the repo's own harness: base DDL + 13 migrations.
+  // A5c — the two Phase G editions add the same logical objects (lifecycle TEXT
+  // columns both sides; the FK constraints exist in the PG edition only, as the
+  // documented SQLite provider asymmetry).
+  {
+    const sqliteG = read(path.join(SQLITE_MIGRATIONS, MIG_PHASE_G, "migration.sql"));
+    const pgG = read(path.join(PG_MIGRATIONS, MIG_PHASE_G, "migration.sql"));
+    const cols = (sql) => [...sql.matchAll(/ADD COLUMN "([A-Za-z0-9_]+)"/g)].map((m) => m[1]).sort().join(",");
+    ok(cols(sqliteG) === cols(pgG), "both Phase G editions add the same columns in the same order");
+    ok(/DATETIME/.test(stripSqlComments(sqliteG)) && !/DATETIME/.test(stripSqlComments(pgG)), "the SQLite edition keeps DATETIME, the PG edition does not");
+    ok(/TIMESTAMPTZ\(3\)/.test(pgG), "the PG edition uses TIMESTAMPTZ(3)");
+    for (const fkey of [
+      "Homework_attachmentId_fkey",
+      "HomeworkSubmission_attachmentId_fkey",
+      "HomeworkSubmission_gradedById_fkey",
+    ]) {
+      ok(new RegExp(`"${fkey}"`).test(pgG), `PG edition creates ${fkey} with the canonical name`);
+    }
+    ok((pgG.match(/ON DELETE SET NULL/g) || []).length === 3, "all three Phase G FKs are history-preserving (SET NULL)");
+    ok(/NOT NULL DEFAULT 'PUBLISHED'/.test(sqliteG) && /NOT NULL DEFAULT 'PUBLISHED'/.test(pgG),
+      "lifecycle defaults to PUBLISHED in both providers (pre-Phase-G rows keep their behaviour)");
+    ok(!/DROP TABLE|DROP COLUMN|DELETE FROM/i.test(stripSqlComments(sqliteG)) && !/DROP TABLE|DROP COLUMN|DELETE FROM/i.test(stripSqlComments(pgG)),
+      "Phase G is additive in both providers (no table/column drop, no row delete)");
+  }
+
+  // A6 — fresh SQLite through the repo's own harness: base DDL + 15 migrations.
   {
     const { DatabaseSync } = require("node:sqlite");
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cm-mig-providers-"));
@@ -307,8 +362,8 @@ function partA() {
     const mig = require(path.join(REPO, "scripts", "lib", "migrate-sqlite.mjs"));
     const db = new DatabaseSync(dbPath);
     const applied = mig.applyMigrations(db, { withBaseSchema: true });
-    ok(applied.length === 13, `fresh SQLite applies all 13 migrations (got ${applied.length})`);
-    ok(applied[applied.length - 1] === MIG_PHASE_F, "the last applied SQLite migration is Phase F");
+    ok(applied.length === 15, `fresh SQLite applies all 15 migrations (got ${applied.length})`);
+    ok(applied[applied.length - 1] === MIG_CAMERA, "the last applied SQLite migration is the camera-policy migration");
     for (const [tbl, cols] of [
       ["Quiz", ["quizMode", "questionCount", "maxAttempts", "shuffleOptions", "difficultyPlan"]],
       ["QuizAttempt", ["attemptNumber", "status", "retryGrantId"]],
@@ -334,10 +389,18 @@ function partA() {
       const uniq = db.prepare(`SELECT name FROM sqlite_master WHERE type='index' AND name='Notification_userId_dedupeKey_key'`).get();
       ok(!!uniq && dup.length === 0, "fresh SQLite schema carries the notification idempotency key (UNIQUE userId+dedupeKey)");
     }
+    for (const [tbl, cols] of [
+      ["Quiz", ["status", "publishedAt"]],
+      ["Homework", ["status", "publishedAt", "attachmentId"]],
+      ["HomeworkSubmission", ["attachmentId", "gradedById", "gradedAt"]],
+    ]) {
+      const present = new Set(db.prepare(`PRAGMA table_info("${tbl}")`).all().map((r) => r.name));
+      ok(cols.every((c) => present.has(c)), `fresh SQLite schema carries ${tbl} Phase G columns`);
+    }
     // the harness ledger records the very checksums pinned in A2
     const rows = db.prepare('SELECT migration_name, checksum FROM "_prisma_migrations"').all();
     const pinned = rows.every((r) => r.checksum === PINNED[r.migration_name]);
-    ok(pinned && rows.length === 13, "fresh SQLite ledger carries exactly the pinned applied checksums");
+    ok(pinned && rows.length === 15, "fresh SQLite ledger carries exactly the pinned applied checksums");
     db.close();
     fs.rmSync(tmp, { recursive: true, force: true });
   }
@@ -641,8 +704,11 @@ async function partC() {
     const query2 = async (t, p) => pool2.query(t, p);
     const snap = await catalogSnapshot(query2);
     const ledger = await query2(`SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NOT NULL ORDER BY migration_name`);
-    ok(JSON.stringify(ledger.rows.map((x) => x.migration_name)) === JSON.stringify(["0_init", MIG_26D, MIG_PHASE_F]),
-      "engine: fresh deploy ledger contains exactly 0_init + Phase 26D + Phase F (never the SQLite names)");
+    const expectedPgLedger = ["0_init", MIG_26D, MIG_PHASE_F, MIG_PHASE_G, MIG_CAMERA];
+    ok(JSON.stringify(ledger.rows.map((x) => x.migration_name)) === JSON.stringify(expectedPgLedger),
+      "engine: fresh deploy ledger contains exactly the complete PostgreSQL chain (never the SQLite names)");
+    ok(ledger.rows.every((x) => expectedPgLedger.includes(x.migration_name)),
+      "engine: fresh deploy ledger contains no SQLite migration names");
     const refs = await query2(`SELECT to_regclass('public."QuizRetryGrant"') AS t`);
     ok(refs.rows[0].t !== null, "engine: QuizRetryGrant exists after fresh deploy");
     await pool2.end();

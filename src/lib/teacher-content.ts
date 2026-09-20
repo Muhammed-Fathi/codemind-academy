@@ -428,24 +428,44 @@ export function canDeleteQuestion(refs: QuestionReferences): {
 /**
  * May the given patch be applied, given the question's references?
  *
- * Two independent locks, both derived from the frozen-set contract:
+ * PHASE G FINAL POLICY — once the FIRST attempt exists, the quiz's question
+ * blueprint is IMMUTABLE: every field is locked while an open or graded
+ * attempt references the question. Before Phase G, `prompt`/`promptAr`/
+ * `explanation`/`difficulty` stayed editable because they cannot change a
+ * stored grade; Phase G deliberately tightens that to ONE teacher-facing rule
+ * ("الاختبار عليه محاولات — الأسئلة مقفولة") with DUPLICATE as the sanctioned
+ * edit path, because a historical attempt must remain re-servable exactly as
+ * taken and a live row that drifts in ANY dimension undermines that.
  *
- *  * GRADING LOCK (`openAttempts > 0 || gradedAttempts > 0`) — `answer`,
- *    `options`, `type` and `marks` are read from the LIVE question row when an
- *    attempt is served and graded (the frozen set pins the question's ID, not
- *    its text). Editing them under an open attempt changes a running
- *    assessment, and editing them after a finish would make the stored score
- *    disagree with the key a student is shown. Both are refused.
- *  * ELIGIBILITY LOCK (`openAttempts > 0 || gradedAttempts > 0`) — `schoolType`
- *    is re-applied when the frozen set is loaded, so re-tagging a question
- *    would remove a question from an attempt the student already saw (or add
- *    one they never saw). Refused while any answer row exists.
+ * The pre-Phase-G locks remain the core of the rule:
  *
- * Text and analytic metadata (`prompt`, `promptAr`, `explanation`,
- * `difficulty`) stay editable: they cannot change what was graded, and
- * `difficulty` re-labelling historical analytics is the documented Phase 6
- * behaviour (src/lib/quiz-analytics.ts).
+ *  * GRADING LOCK — `answer`, `options`, `type` and `marks` are read from the
+ *    LIVE question row when an attempt is served and graded (the frozen set
+ *    pins the question's ID, not its text). Editing them under an open attempt
+ *    changes a running assessment; after a finish it would make the stored
+ *    score disagree with the key a student is shown.
+ *  * ELIGIBILITY LOCK — `schoolType` re-applies when the frozen set loads, so
+ *    re-tagging would remove a question from an attempt the student saw.
+ *
+ * Zero attempts ⇒ everything stays editable, exactly as before this phase.
+ * The SANCTIONED alternative once locked: duplicate the quiz (a new editable
+ * DRAFT copy). The admin question-bank surface keeps its broader authority
+ * for BANK rows by design, unchanged.
  */
+
+/** Every question field a teacher PATCH may touch. */
+export const ALL_QUESTION_FIELDS = [
+  "type",
+  "prompt",
+  "promptAr",
+  "options",
+  "answer",
+  "explanation",
+  "difficulty",
+  "marks",
+  "schoolType",
+] as const;
+
 export function questionEditGuards(
   refs: QuestionReferences,
   patch: Record<string, unknown>
@@ -455,10 +475,11 @@ export function questionEditGuards(
   const attempted = refs.openAttempts > 0 || refs.gradedAttempts > 0;
   const blockedFields: string[] = [];
   if (attempted) {
-    for (const f of GRADING_FIELDS) {
+    // Phase G — TOTAL blueprint lock after the first attempt: every field is
+    // blocked, not only the grading ones (see the doc comment above).
+    for (const f of ALL_QUESTION_FIELDS) {
       if (patch[f] !== undefined) blockedFields.push(f);
     }
-    if (patch.schoolType !== undefined) blockedFields.push("schoolType");
   }
   if (blockedFields.length > 0) {
     return { allowed: false, blockedFields, reason: "FROZEN_ATTEMPT" };
