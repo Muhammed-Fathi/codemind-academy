@@ -6,10 +6,16 @@ import {
   getStudentSchoolType,
   syncStudentBatch,
 } from "@/lib/enrollment";
+import { EXCLUDE_ARCHIVED_LESSON } from "@/lib/progression-universe";
+// Phase H — the CANONICAL progression authority. `getCourseSessionProgress`
+// (below) still exists as the historical shape and delegates to the same
+// engine; the tree reads the canonical verdict directly so it can also say WHY
+// a session is locked.
 import {
-  EXCLUDE_ARCHIVED_LESSON,
-  getCourseSessionProgress,
-} from "@/lib/session-progress";
+  evaluateCourseProgression,
+  toLessonProgressionPayload,
+  toCourseProgressionPayload,
+} from "@/lib/progression-engine";
 import { LESSON_STUDENT_STATUS_FILTER } from "@/lib/session-lifecycle";
 import {
   getParentTrackScopes,
@@ -336,19 +342,54 @@ export async function GET(
     viewer: contentViewer,
   });
 
-  // Determine locked / current / completed statuses from the SHARED session
-  // progression service, so the UI mirrors exactly what the backend enforces:
-  // a session is complete only when its video (>=95%), quiz and assignment
-  // requirements are all satisfied; missing components are not required.
+  // Determine locked / current / completed statuses from the CANONICAL
+  // progression ENGINE, so the UI mirrors exactly what the backend enforces:
+  // a session is complete only when its video (>=95%), quiz (PASS) and
+  // homework (SUBMITTED) requirements are all satisfied; missing components
+  // are not required; and an active AbsenceHold blocks the NEXT session only.
   const requirementsByLesson = new Map<string, unknown>();
+  const progressionByLesson = new Map<
+    string,
+    import("@/lib/progression-engine").LessonProgressionPayload
+  >();
+  let courseProgressionPayload:
+    | import("@/lib/progression-engine").CourseProgressionPayload
+    | null = null;
   if (studentId) {
-    const sessionProgress = await getCourseSessionProgress(studentId, course.id);
-    for (const row of sessionProgress.sessions) {
-      requirementsByLesson.set(row.lessonId, row);
+    // Phase H — the translator the canonical payload is rendered with. Called
+    // INSIDE this branch: no other viewer (and no offline test double that
+    // stubs i18n) is made to depend on it.
+    const tProgression = await getServerT();
+    const courseProgression = await evaluateCourseProgression({
+      studentId,
+      courseId: course.id,
+    });
+    courseProgressionPayload = toCourseProgressionPayload(courseProgression, tProgression);
+    for (const row of courseProgression.lessons) {
+      progressionByLesson.set(row.lessonId, toLessonProgressionPayload(row, tProgression));
+      requirementsByLesson.set(row.lessonId, {
+        completed: row.completed,
+        unlocked: row.unlocked,
+        video: {
+          required: row.requirements.video.required,
+          done: row.requirements.video.done,
+          value: row.requirements.video.value,
+        },
+        quiz: {
+          required: row.requirements.quiz.required,
+          done: row.requirements.quiz.done,
+          value: row.requirements.quiz.value,
+        },
+        assignment: {
+          required: row.requirements.homework.required,
+          done: row.requirements.homework.done,
+          value: row.requirements.homework.value,
+        },
+      });
     }
     let currentAssigned = false;
     for (const f of flat) {
-      const req = sessionProgress.byLessonId.get(f.lesson.id);
+      const req = courseProgression.byLessonId.get(f.lesson.id);
       if (!req) {
         f.status = f.isCompleted ? "completed" : "available";
         continue;
@@ -459,6 +500,22 @@ export async function GET(
       isCompleted: locked ? false : !!lp?.isCompleted,
       status: statusById.get(lesson.id) ?? "available",
       requirements: locked ? null : requirementsByLesson.get(lesson.id) ?? null,
+      // Phase H — every session explains itself, locked ones included. For a
+      // LOCKED session the payload carries the state, the Arabic-first reason
+      // and the ordered unmet CODES only — never the requirement breakdown,
+      // never an identity: the Phase 4/16 redaction contract is untouched and
+      // the student is no longer answered with a bare "locked".
+      progression: locked
+        ? (() => {
+            const row = progressionByLesson.get(lesson.id);
+            if (!row) return null;
+            return {
+              state: row.state,
+              reason: row.reason,
+              unmet: row.unmet.map((u) => ({ code: u.code, text: u.text })),
+            };
+          })()
+        : (progressionByLesson.get(lesson.id) ?? null),
       // Presence flags only — enough for the "Quiz"/"Homework" badges in the
       // course tree, without naming or linking the protected items.
       // Phase C — track-filtered through the shared authority: the other
@@ -531,5 +588,17 @@ export async function GET(
       completedLessons,
       percentage,
     },
+    // Phase H — the canonical course verdict: where the boundary is, which
+    // absence hold applies, what the catch-up needs, and the current session.
+    // One evaluation, shared by the tree and (through the lesson route) the
+    // workspace, so the two can never disagree.
+    progression: courseProgressionPayload
+      ? {
+          currentLessonId: courseProgressionPayload.currentLessonId,
+          boundary: courseProgressionPayload.boundary,
+          hold: courseProgressionPayload.hold,
+          catchUp: courseProgressionPayload.catchUp,
+        }
+      : null,
   });
 }

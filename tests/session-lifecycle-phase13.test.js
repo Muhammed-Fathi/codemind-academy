@@ -1285,21 +1285,27 @@ section("8. the ceremony — MARK_READY requires readiness");
 
   section("19. mutation controls on the engine's universe clause");
   {
-    // Re-derive the compiled engine's universe filter with the clause removed
-    // and prove the fake-db universe widens — i.e. that the assertions above
-    // are guards and not decoration.
-    const src = fs.readFileSync(path.join(EMIT, "session-progress.js"), "utf8");
+    // PHASE H: `session-progress.ts` is now a facade over the canonical engine,
+    // and the universe query lives in `progression-universe.ts`. The control
+    // below therefore neuters the clause in the compiled UNIVERSE module (where
+    // the guard really is) and re-requires the facade through it — the same
+    // mutation control, pointed at the code that owns the rule.
+    const uniPath = path.join(EMIT, "progression-universe.js");
+    const src = fs.readFileSync(uniPath, "utf8");
     ok(
       /LESSON_STUDENT_STATUS_FILTER/.test(src),
-      "the compiled progression engine references the lifecycle clause"
+      "the compiled progression universe references the lifecycle clause"
     );
     const neutered = src
       .replace(/[A-Za-z_$][\w$]*\.LESSON_STUDENT_STATUS_FILTER/g, "{}")
       .replace(/(?<![\w$.])LESSON_STUDENT_STATUS_FILTER/g, "{}");
     ok(neutered !== src, "and the clause can actually be removed from it");
     ok(!/LESSON_STUDENT_STATUS_FILTER/.test(neutered), "…leaving no trace of it (the control is real)");
-    fs.writeFileSync(path.join(EMIT, "session-progress-neutered.js"), neutered);
-    const NEUTERED = require(path.join(EMIT, "session-progress-neutered.js"));
+    fs.writeFileSync(uniPath, neutered);
+    for (const key of Object.keys(require.cache)) {
+      if (key.startsWith(EMIT)) delete require.cache[key];
+    }
+    const NEUTERED = require(path.join(EMIT, "session-progress.js"));
     const db = makeDb({
       lessons: {
         L1: { order: 1, status: "PUBLISHED", videoUrl: "https://cdn/1.mp4" },
@@ -1322,7 +1328,12 @@ section("8. the ceremony — MARK_READY requires readiness");
       ["L1", "L2"],
       "without it: the staged lesson enters the universe — so the guard is what stops the leak"
     );
-    fs.rmSync(path.join(EMIT, "session-progress-neutered.js"), { force: true });
+    // Restore the real module so nothing after this section inherits the
+    // neutered universe.
+    fs.writeFileSync(uniPath, src);
+    for (const key of Object.keys(require.cache)) {
+      if (key.startsWith(EMIT)) delete require.cache[key];
+    }
   }
 
   // -------------------------------------------------------------------------

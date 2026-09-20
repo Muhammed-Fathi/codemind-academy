@@ -2,20 +2,31 @@ import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireUser, getStudentProfile, denyProgression } from "@/lib/api";
 import {
-  canAccessLesson,
   EXCLUDE_ARCHIVED_LESSON,
   LESSON_CHAIN_SELECT,
   lessonCourseChainOr,
   orderCourseLessons,
   resolveLessonCourseId,
-} from "@/lib/session-progress";
-import { VIDEO_COMPLETION_THRESHOLD } from "@/lib/progress";
+} from "@/lib/progression-universe";
+// Phase H — the CANONICAL progression authority. The historical
+// `canAccessLesson` export of @/lib/session-progress now delegates to it, and
+// the lesson page reads the canonical payload (state + Arabic reason +
+// structured unmet + hold + override) instead of a raw status row.
+import {
+  canAccessLessonWithCourse,
+  toLessonProgressionPayload,
+  toCourseProgressionPayload,
+  VIDEO_COMPLETION_THRESHOLD,
+} from "@/lib/progression-engine";
 import { safeParseOptions } from "@/lib/session-quiz";
 import {
   getParentTrackScopes,
   isParentLessonPreviewAllowed,
 } from "@/lib/parent-access";
 import { LESSON_STUDENT_STATUS_FILTER } from "@/lib/session-lifecycle";
+// Phase H — the canonical progression payload is rendered with the REQUEST
+// locale, so the lesson page speaks the student's language (Arabic first).
+import { getServerT } from "@/lib/i18n-server";
 import { filterStudentLessonRows } from "@/lib/student-visibility";
 import {
   eligibleTrackScopes,
@@ -276,17 +287,64 @@ export async function GET(
       }
     | null = null;
   let requirements: unknown = null;
+  // Phase H — the canonical progression payload (state + Arabic reason +
+  // structured unmet requirements + hold + catch-up + admin override).
+  let progression: ReturnType<typeof toLessonProgressionPayload> | null = null;
+  let courseProgression: ReturnType<typeof toCourseProgressionPayload> | null = null;
   if (user.role === "STUDENT") {
     const s = await getStudentProfile(user.id);
     if (!s) return err("Student profile not found", 404);
+    // Phase H — the translator the canonical payload is rendered with. Declared
+    // INSIDE this branch on purpose: no other viewer (and no offline test
+    // double that stubs i18n) is made to depend on it.
+    const tApi = await getServerT();
 
     // AUTHORIZATION: enrollment + previous-session completion are enforced
     // here, so opening the URL directly cannot bypass the lock.
-    const access = await canAccessLesson(s.id, id);
+    const access = await canAccessLessonWithCourse(s.id, id);
     if (!access.allowed) {
-      return denyProgression(access.reason, "Lesson not found");
+      // Phase H — a refusal EXPLAINS itself. The detail is the canonical
+      // engine's own verdict for THIS lesson: stable codes plus the
+      // Arabic-first sentence, never an internal id or a DB enum. The
+      // lesson's own components are not a secret here (the tree already
+      // advertises their presence as skeleton badges) — what stays
+      // server-side is every protected field of a session the student may
+      // not open, which this response never contains at all.
+      const detail = access.status
+        ? {
+            reason: access.status.reason?.code ?? null,
+            message: access.status.reason ? tApi(access.status.reason.labelKey) : null,
+            blockers: access.status.unmet.map((u) => u.code),
+          }
+        : null;
+      return denyProgression(access.reason, "Lesson not found", detail);
     }
-    requirements = access.status;
+    // Phase H — the canonical, human-readable progression payload.
+    progression = access.status ? toLessonProgressionPayload(access.status, tApi) : null;
+    courseProgression = access.course ? toCourseProgressionPayload(access.course, tApi) : null;
+    // Kept for backwards compatibility with older consumers of this route:
+    // the same verdict in the historical shape (the engine is the source).
+    requirements = access.status
+      ? {
+          completed: access.status.completed,
+          unlocked: access.status.unlocked,
+          video: {
+            required: access.status.requirements.video.required,
+            done: access.status.requirements.video.done,
+            value: access.status.requirements.video.value,
+          },
+          quiz: {
+            required: access.status.requirements.quiz.required,
+            done: access.status.requirements.quiz.done,
+            value: access.status.requirements.quiz.value,
+          },
+          assignment: {
+            required: access.status.requirements.homework.required,
+            done: access.status.requirements.homework.done,
+            value: access.status.requirements.homework.value,
+          },
+        }
+      : null;
 
     // Phase C — the workspace content summary aggregates in the student's
     // OWN audience. Reached only AFTER the lesson gate, so a locked /
@@ -449,6 +507,12 @@ export async function GET(
       : null,
     progress,
     requirements,
+    // Phase H — the canonical progression authority, serialized once here and
+    // consumed by the workspace (state, reason, unmet, hold, catch-up,
+    // override). The legacy `requirements` block above stays for older
+    // consumers and is derived from the SAME verdict.
+    progression,
+    courseProgression,
     // Phase C — serialized Lesson Content Summary (video / material / quiz /
     // homework states + counts for THIS viewer). Same authority as the tree.
     content: toLessonContentPayload(contentSummary),

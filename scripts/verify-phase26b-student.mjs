@@ -1221,14 +1221,18 @@ const gateStart = await call("POST", `/api/quizzes/${gateQuizId}/start`, { body:
 eq(gateStart.status, 200, "gate quiz attempt starts");
 const gateGet = await call("GET", `/api/quizzes/${gateQuizId}`, { cookie: AR });
 const gateQs = gateGet.json?.questions ?? [];
+// PHASE H: progression is satisfied by a PASS, never by an attempt. The gate
+// quiz is therefore answered CORRECTLY here: an attempt alone no longer opens
+// the next session (the approved Phase H rule, exercised end to end by
+// tests/phase-h-progression.test.js).
 const gateSubmit = await call("POST", `/api/quizzes/${gateQuizId}/submit`, {
-  body: { answers: gateQs.map((q) => ({ questionId: q.id, selected: "1" })) }, // WRONG answer — attempted suffices for progression
+  body: { answers: gateQs.map((q) => ({ questionId: q.id, selected: "0" })) }, // "0" is the stored correct option
   cookie: AR,
 });
 eq(gateSubmit.status, 200, "gate quiz submits");
-eq(gateSubmit.json?.passed, false, "wrong answer → not passed (attempted IS the requirement)");
+eq(gateSubmit.json?.passed, true, "the correct answer passes the gate quiz");
 const lesson4Open = await call("GET", `/api/lessons/${L4}`, { cookie: AR });
-eq(lesson4Open.status, 200, "lesson 4 UNLOCKED after the attempt (passed-or-attempted rule)");
+eq(lesson4Open.status, 200, "lesson 4 UNLOCKED after the quiz is PASSED (Phase H rule)");
 matrixRow("STUDENT-17", "Progression", "video+quiz+homework complete lesson 1 → lesson 2 unlocks; unfinished component gates the NEXT lesson; attempt (even failed) satisfies quiz requirement", "L2 unlocked; L4 refused while L3 quiz open; L4 opened after an attempted (failed) quiz", "PASS", "canAccessLesson chain + quiz submit")
 
 // ===========================================================================

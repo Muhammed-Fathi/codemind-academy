@@ -39,6 +39,7 @@ import {
   Lock,
   ListChecks,
   Circle,
+  ShieldAlert,
 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 // Phase B — the ONE student video player (same heartbeat / resume /
@@ -129,6 +130,30 @@ type LessonView = {
   } | null;
   /** Phase 16 — server-computed unlock requirements (video/quiz/assignment). */
   requirements?: SessionRequirements | null;
+  /**
+   * Phase H — the canonical verdict for THIS session (state, Arabic reason,
+   * ordered unmet requirements, next action, admin override).
+   */
+  progression?: {
+    state: "LOCKED" | "UNLOCKED" | "COMPLETED";
+    stateLabel: string;
+    reason: { code: string; text: string } | null;
+    unmet: { code: string; text: string; action: string }[];
+    nextAction: string | null;
+    override: { id: string; reason: string; expiresAt: string | null; valid: boolean } | null;
+  } | null;
+  /**
+   * Phase H — the canonical COURSE verdict, which is where the absence hold
+   * and its catch-up live (a hold is a course-level boundary fact).
+   */
+  courseProgression?: {
+    catchUp: {
+      lessonId: string | null;
+      satisfied: boolean;
+      unmet: { code: string; text: string; action: string }[];
+    } | null;
+    hold: { active: boolean; status: string; blocks: boolean } | null;
+  } | null;
   /** Phase C — the shared Lesson Content Summary (same authority as the tree). */
   content?: {
     video: { state: "ABSENT" | "AVAILABLE" | "LOCKED"; count: number };
@@ -166,6 +191,9 @@ export function StudentLessonView() {
   >("error");
   const [completing, setCompleting] = React.useState(false);
   const [bookmarked, setBookmarked] = React.useState(false);
+  // Phase H — the catch-up resolution spinner. Declared with the other hooks
+  // (above the early returns below), never after them.
+  const [resolving, setResolving] = React.useState(false);
 
   const checkBookmark = React.useCallback(() => {
     if (!activeLessonId) return;
@@ -333,6 +361,44 @@ export function StudentLessonView() {
       toast.error(t("course.054"));
     } finally {
       setCompleting(false);
+    }
+  };
+
+  // -------------------------------------------------------------------------
+  // Phase H — the absence-hold catch-up.
+  //
+  // The SERVER owns every decision here: which hold applies, what its catch-up
+  // needs (only requirements that actually exist — a session with no quiz
+  // never asks for a quiz pass) and whether it is satisfied. The button only
+  // reports "I finished"; it cannot force a resolution, and a double click is
+  // idempotent (the endpoint answers ALREADY_RESOLVED instead of acting twice).
+  // -------------------------------------------------------------------------
+  const resolveCatchUp = async () => {
+    setResolving(true);
+    try {
+      const res = await fetch("/api/students/me/catch-up", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(t("course.054"));
+        return;
+      }
+      const message: string = body.message || "";
+      if (body.resolution === "NOT_SATISFIED") toast.warning(message);
+      else toast.success(message);
+      // Re-read the canonical verdict — the server is the only authority on
+      // whether the block is gone, so the page never guesses.
+      const fresh = await fetch(
+        `/api/lessons/${encodeURIComponent(activeLessonId ?? "")}`
+      );
+      if (fresh.ok) setData(await fresh.json());
+    } catch {
+      toast.error(t("course.054"));
+    } finally {
+      setResolving(false);
     }
   };
 
@@ -812,6 +878,85 @@ export function StudentLessonView() {
               </Card>
             </motion.div>
           )}
+
+          {/* Phase H — the absence hold and its catch-up. Rendered from the
+              canonical course verdict: the hold blocks FORWARD progression
+              only, so this session and its content stay open — that is what
+              makes catching up possible at all. The list can only ever
+              contain requirements that exist, so the student is never asked
+              to complete something the session does not have. */}
+          {data.courseProgression?.hold?.active ||
+          (data.courseProgression?.catchUp &&
+            !data.courseProgression.catchUp.satisfied) ? (
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.18 }}
+            >
+              <Card className="glass border-amber-500/40">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <ShieldAlert className="w-5 h-5 text-amber-500" />
+                    {t("progression.catchup.title")}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <p className="text-sm text-muted-foreground">
+                    {t("progression.hold.banner")}
+                  </p>
+                  {data.courseProgression?.catchUp &&
+                  data.courseProgression.catchUp.unmet.length > 0 ? (
+                    <ul className="space-y-1.5">
+                      {data.courseProgression.catchUp.unmet.map((u) => (
+                        <li
+                          key={u.code}
+                          className="flex items-start gap-2 text-sm"
+                        >
+                          <Circle className="mt-1.5 w-2.5 h-2.5 shrink-0 text-amber-500" />
+                          <span className="text-start">
+                            {u.text}
+                            <span className="block text-xs text-muted-foreground">
+                              {u.action}
+                            </span>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  <Button
+                    onClick={resolveCatchUp}
+                    disabled={resolving || !!data.courseProgression?.catchUp?.satisfied}
+                    variant="outline"
+                  >
+                    {resolving ? (
+                      <Loader2 className="w-4 h-4 animate-spin ms-1.5" />
+                    ) : (
+                      <CheckCircle2 className="w-4 h-4 ms-1.5" />
+                    )}
+                    {t("progression.catchup.cta")}
+                  </Button>
+                </CardContent>
+              </Card>
+            </motion.div>
+          ) : null}
+
+          {/* Phase H — an Admin override is stated out loud, so the student
+              never mistakes an exception for completed work. */}
+          {data.progression?.override?.valid ? (
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.19 }}
+            >
+              <Card className="glass border-primary/30 bg-primary/5">
+                <CardContent className="py-3">
+                  <p className="text-xs text-muted-foreground">
+                    {t("progression.override.banner")}
+                  </p>
+                </CardContent>
+              </Card>
+            </motion.div>
+          ) : null}
 
           {/* Prev / Next */}
           <div className="flex items-center justify-between gap-2 pt-2">

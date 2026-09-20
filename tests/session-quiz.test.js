@@ -689,20 +689,31 @@ ok(
 // ---------------------------------------------------------------------------
 section("E. Baseline protections still in place (Phase 4 carry-over)");
 
-const sessionProgress = read("src/lib/session-progress.ts");
+// PHASE H: the universe and the requirement matrix moved into the canonical
+// modules (`session-progress.ts` is a facade that re-exports/delegates). The
+// pins follow the code, unchanged in intent.
+const universeSrc = read("src/lib/progression-universe.ts");
+const engineSrc = read("src/lib/progression-engine.ts");
 ok(
-  /OR:\s*\[\s*\{\s*unit:\s*\{\s*part:\s*\{\s*courseId\s*\}\s*\}\s*\},\s*\{\s*topic:/.test(
-    sessionProgress
-  ),
-  "progression universe still matches both chains"
+  /\{ unit: \{ part: \{ courseId \} \} \}/.test(universeSrc) &&
+    /\{ topic: \{ unit: \{ part: \{ courseId \} \} \} \}/.test(universeSrc) &&
+    /OR: \[/.test(universeSrc),
+  "progression universe still matches both chains (canonical Unit chain OR legacy Topic chain)"
+);
+// Phase H (approved decision #2): a quiz requirement is satisfied by a PASS,
+// not by an attempt. The engine reads the stored `passed` verdict of a FINISHED
+// attempt — the grading itself still belongs to the quiz authority.
+ok(
+  /a\.passed === true/.test(engineSrc) && /finishedAt/.test(engineSrc),
+  "quiz completion requirement is a PASS on a finished attempt (Phase H)"
 );
 ok(
-  /attemptedQuizzes\.has/.test(sessionProgress),
-  "quiz completion requirement unchanged (finished attempt exists)"
+  /passedCount >= quizzes\.length/.test(engineSrc),
+  "every required quiz of the session must be PASSED"
 );
 ok(
-  /VIDEO_COMPLETION_THRESHOLD/.test(sessionProgress),
-  "95% video threshold unchanged"
+  /VIDEO_COMPLETION_THRESHOLD/.test(engineSrc),
+  "95% video threshold unchanged (canonical constant, re-exported by the facade)"
 );
 
 // ---------------------------------------------------------------------------

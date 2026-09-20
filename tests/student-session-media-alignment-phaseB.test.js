@@ -816,12 +816,16 @@ test("Phase B: student session media alignment", async () => {
   const m3 = await POST_JSON(R.lessonProgress, `http://t/api/lessons/${L1.id}/progress`, { completed: true }, { id: L1.id });
   eq(m3.status, 200, "M2: completion of a modern lesson is not blocked by the video world");
   // Source pins: the progression engine and the 95% gate are UNCHANGED.
-  const engine = read("src/lib/session-progress.ts");
-  ok(/const hasVideo = !!lesson\.videoUrl;/.test(engine), "M3: the engine still derives the video requirement from Lesson.videoUrl only");
+  // PHASE H: the rule lives in the canonical engine now (`session-progress.ts`
+  // is a facade). Phase H also kept the SAME representation — a modern
+  // recording is content, never a new progression requirement — which is
+  // exactly what this pin exists to protect.
+  const engine = read("src/lib/progression-engine.ts");
+  ok(/if \(!lesson\.videoUrl\)/.test(engine), "M3: the engine still derives the video requirement from Lesson.videoUrl only");
   const progressRoute = read("src/app/api/lessons/[id]/progress/route.ts");
   ok(/!lesson\.videoUrl \|\|/.test(progressRoute), "M3: the 95% completion gate expression is unchanged");
-  const progressLib = read("src/lib/progress.ts");
-  ok(/videoUrl: \{ not: null \}/.test(progressLib), "M3: the legacy video-progress summary filter is unchanged");
+  const progressLib = read("src/lib/progression-universe.ts");
+  ok(/videoUrl: \{ not: null \}/.test(progressLib), "M3: the legacy video-progress summary filter is unchanged (shared universe helper)");
 
   // ===========================================================================
   // N. Course tree — the video indicator recognises modern SessionVideo rows

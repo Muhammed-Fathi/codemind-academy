@@ -81,6 +81,9 @@ export const VIEWS_BY_ROLE: Record<string, string[]> = {
     // pre-existing entries on purpose: earlier suites pin the ADMIN list's
     // tail order, and a new view must never reshuffle it.
     "admin-live-sessions",
+    // Phase H — the progression-override console. ADMIN ONLY by design: no
+    // teacher, parent or student may lift a progression boundary.
+    "admin-progression",
   ],
 };
 

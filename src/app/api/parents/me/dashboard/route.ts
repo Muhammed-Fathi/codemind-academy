@@ -7,11 +7,16 @@ import type { ParentSubscriptionPayload } from "@/lib/parent-subscription";
 import { getVideoProgressForStudents } from "@/lib/progress";
 import { attemptsInCurriculumUniverse } from "@/lib/parent-access";
 import { trackScopeWhere } from "@/lib/track-scope";
+import { EXCLUDE_ARCHIVED_LESSON, lessonCourseChainOr } from "@/lib/progression-universe";
+// Phase H — the CANONICAL progression authority. This screen used to read the
+// historical `getCourseSessionProgress` shape (which now delegates to the same
+// engine); it reads the canonical verdict directly so a parent sees the SAME
+// state, reason and blocked-by codes the student's own screens show — never a
+// second interpretation computed for the parent surface.
 import {
-  EXCLUDE_ARCHIVED_LESSON,
-  getCourseSessionProgress,
-  lessonCourseChainOr,
-} from "@/lib/session-progress";
+  evaluateCourseProgression,
+  toCourseProgressionPayload,
+} from "@/lib/progression-engine";
 
 // GET /api/parents/me/dashboard
 // Returns aggregated analytics for the current parent's children.
@@ -223,19 +228,40 @@ export async function GET(_req: NextRequest) {
         locked: number;
         currentLessonId: string | null;
         currentLessonTitle: string | null;
+        /** Phase H — why the next session is not open (null when it is). */
+        blockedReason: { code: string; text: string } | null;
+        /** Phase H — the absence hold behind the boundary, if any. */
+        hold: {
+          status: string;
+          active: boolean;
+          blocks: boolean;
+          lessonId: string | null;
+        } | null;
       } | null = null;
       if (sessionCourseId) {
-        const engine = await getCourseSessionProgress(
-          student.id,
-          sessionCourseId
-        );
-        const completedSessions = engine.sessions.filter(
-          (s) => s.completed
-        ).length;
-        const unlockedSessions = engine.sessions.filter(
-          (s) => s.unlocked
-        ).length;
+        const engine = await evaluateCourseProgression({
+          studentId: student.id,
+          courseId: sessionCourseId,
+        });
+        const completedSessions = engine.lessons.filter((s) => s.completed).length;
+        const unlockedSessions = engine.lessons.filter((s) => s.unlocked).length;
         let currentLessonTitle: string | null = null;
+        // Phase H — the parent sees the child's canonical boundary: why the
+        // next session is not open yet, and whether an absence hold (with its
+        // catch-up path) is the reason. Student-facing sentences, same engine.
+        const localized = toCourseProgressionPayload(engine, tApi);
+        let progressionBlockedReason: {
+          code: string;
+          text: string;
+        } | null = localized.boundary?.reason ?? null;
+        let progressionHold = localized.hold
+          ? {
+              status: localized.hold.status,
+              active: localized.hold.active,
+              blocks: localized.hold.blocks,
+              lessonId: localized.hold.lessonId,
+            }
+          : null;
         if (engine.currentLessonId) {
           const current = await db.lesson.findUnique({
             where: { id: engine.currentLessonId },
@@ -246,12 +272,16 @@ export async function GET(_req: NextRequest) {
             : null;
         }
         sessionProgressPayload = {
-          total: engine.sessions.length,
+          total: engine.lessons.length,
           completed: completedSessions,
           unlocked: unlockedSessions,
-          locked: engine.sessions.length - unlockedSessions,
+          locked: engine.lessons.length - unlockedSessions,
           currentLessonId: engine.currentLessonId,
           currentLessonTitle,
+          // Phase H — "why is my child stuck", in the child's own locale, from
+          // the one authority. Codes are stable; no ids, no DB enums.
+          blockedReason: progressionBlockedReason,
+          hold: progressionHold,
         };
       }
 

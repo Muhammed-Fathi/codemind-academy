@@ -222,6 +222,16 @@ function insertFixtures(db) {
        VALUES ('p21-ah1','p21-ar1','p21-s2','p21-ls1','ACTIVE','UNEXCUSED_ABSENCE',?)`, T3);
   run(`INSERT INTO "AttendanceCorrection" ("id","attendanceId","sessionId","studentId","previousStatus","newStatus","reason","correctedByUserId","correctedAt")
        VALUES ('p21-ac1','p21-at2','p21-ls1','p21-s2','PRESENT','ABSENT','teacher corrected the register after the lock','p21-u-admin',?)`, T3);
+
+  // ---- Phase H — the Admin progression override. One row, fully attributed
+  // (actor + mandatory reason + optional expiry) and one REVOKED row, so the
+  // rehearsal proves the table and its FK/index surface survive the provider
+  // switch with real rows in it (and that revocation is a column update, never
+  // a delete — the audit history stays copyable).
+  run(`INSERT INTO "ProgressionOverride" ("id","studentId","courseId","lessonId","reason","createdByUserId","createdAt","expiresAt")
+       VALUES ('p21-po1','p21-s2','p21-c1','p21-l1','استثناء إداري: تعويض الجلسة الأولى','p21-u-admin',?,?)`, T3, FUTURE);
+  run(`INSERT INTO "ProgressionOverride" ("id","studentId","courseId","lessonId","reason","createdByUserId","createdAt","revokedAt","revokedByUserId","revokeReason")
+       VALUES ('p21-po2','p21-s1','p21-c1','p21-l1','استثناء مؤقت','p21-u-admin',?,?, 'p21-u-admin','انتهى السبب')`, T2, T3);
   run(`INSERT INTO "LessonPlanTemplate" ("id","teacherId","title","titleAr","duration","objectives","materials","activities","isPublic","createdAt","updatedAt")
        VALUES ('p21-tpl1','p21-t1','AI intro plan','خطة مقدمة الذكاء',90,'Objectives','Materials','Activities',1,?,?)`, T0, T0);
 

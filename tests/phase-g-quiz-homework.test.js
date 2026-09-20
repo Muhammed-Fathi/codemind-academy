@@ -9,7 +9,11 @@ const quiz=read("src/app/api/teacher/quizzes/route.ts"), qpub=read("src/app/api/
 const qdup=read("src/app/api/teacher/quizzes/[id]/duplicate/route.ts"), qprev=read("src/app/api/teacher/quizzes/[id]/preview/route.ts");
 const hw=read("src/app/api/teacher/homework/route.ts"), hpub=read("src/app/api/teacher/homework/[id]/publish/route.ts"), hclose=read("src/app/api/teacher/homework/[id]/close/route.ts");
 const grade=read("src/app/api/teacher/homework/[id]/grade/route.ts"), media=read("src/app/api/media/[id]/route.ts");
+// PHASE H: the requirement matrix moved from `session-progress.ts` (now a
+// facade) into the canonical modules. The pins below read the canonical engine
+// / universe, so they still guard the shipped behaviour.
 const sp=read("src/lib/session-progress.ts"), content=read("src/lib/lesson-content.ts");
+const universe=read("src/lib/progression-universe.ts"), engine=read("src/lib/progression-engine.ts");
 const qpatch=read("src/app/api/teacher/questions/[id]/route.ts"), qappend=read("src/app/api/teacher/quizzes/[id]/questions/route.ts");
 const migration=read("prisma/migrations/20260919180000_phase_g_quiz_homework_workflow/migration.sql");
 // 01-08 schema/lifecycle
@@ -40,7 +44,7 @@ ok(grade.includes('gradedById'),'22 grader recorded');
 ok(grade.includes('gradedAt'),'23 grade timestamp recorded');
 ok(hw.includes('deadline'),'24 original deadline retained');
 // 25-31 visibility/progression
-ok(sp.includes('status: { not: "DRAFT" }'),'25 draft excluded from requirements');
+ok(universe.includes('status: { not: "DRAFT" }'),'25 draft excluded from requirements');
 ok(sp.includes('status !== "PUBLISHED"'),'26 quiz access requires published');
 ok(sp.includes('status === "DRAFT"'),'27 homework draft gate');
 ok(content.includes('rowLifecycleVisible'),'28 shared visibility authority');

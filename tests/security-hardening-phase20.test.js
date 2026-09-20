@@ -240,7 +240,10 @@ section("3. Authorization matrix — every content route × the 10 checks");
     "src/app/api/lessons/[id]/progress/route.ts",
     "src/app/api/lessons/[id]/video-progress/route.ts",
   ]) {
-    ok(/canAccessLesson\s*\(/.test(read(rel)), `${rel} gates through canAccessLesson`);
+    // PHASE H: the lesson page gates through the CANONICAL engine
+    // (`canAccessLessonWithCourse`); the other two still call `canAccessLesson`,
+    // which delegates to the same engine. One definition either way.
+    ok(/canAccessLesson\s*\(|canAccessLessonWithCourse\s*\(/.test(read(rel)), `${rel} gates through the canonical lesson gate`);
   }
   for (const rel of [
     "src/app/api/quizzes/[id]/route.ts",
@@ -256,10 +259,13 @@ section("3. Authorization matrix — every content route × the 10 checks");
     "material download gates through authorizeMaterialDownload (10-check contract)");
 
   // The 10 checks live in one place each (no second implementation).
-  const sp = read("src/lib/session-progress.ts");
+  // PHASE H: `session-progress.ts` is a facade; the checks live in the canonical
+  // engine / universe modules. Same checks, one definition.
+  const sp = read("src/lib/progression-engine.ts");
+  const uni = read("src/lib/progression-universe.ts");
   ok(/isStudentVisibleStatus/.test(sp), "check #7 (lifecycle) enforced in the shared gate");
   ok(/canAccessTrackScope/.test(sp), "check #5 (track) enforced in the shared gate");
-  ok(/trackScopeWhere/.test(sp), "the universe query narrows by track (check #5)");
+  ok(/trackScopeWhere/.test(uni), "the universe query narrows by track (check #5)");
   ok(/group:\s*\{\s*select:\s*\{\s*courseId: true,\s*isActive: true/.test(sp) || /isActive/.test(sp),
     "check #3 (enrollment) = active group bound to the course");
   ok(/resolveLessonCourseId/.test(sp), "check #4/#6 (course + session-in-course) via chain resolution");
@@ -287,9 +293,9 @@ section("4. IDOR — sequential / guessed / foreign ids deny without existence l
   const deny = read("src/lib/api.ts");
   ok(/LESSON_NOT_FOUND/.test(deny) && /404/.test(deny), "denyProgression maps LESSON_NOT_FOUND → 404");
 
-  const sp = read("src/lib/session-progress.ts");
+  const sp = read("src/lib/progression-engine.ts");
   ok(/reason: \"LESSON_NOT_FOUND\"/.test(sp), "track/lifecycle refusal is LESSON_NOT_FOUND (non-oracle)");
-  ok(/lesson\)\s*\{\s*return \{ allowed: false, reason: \"LESSON_NOT_FOUND\"/.test(sp) || /!lesson\) return \{ allowed: false, reason: \"LESSON_NOT_FOUND\"/.test(sp),
+  ok(/!lesson\) return denied\("LESSON_NOT_FOUND"\)/.test(sp),
     "missing lesson id is indistinguishable from an out-of-scope id");
 
   const sm = read("src/lib/session-materials.ts");
@@ -328,8 +334,9 @@ section("5. Cross-track / cross-course / premature access");
   ok(/status: \"PUBLISHED\"/.test(lifecycle), "student universe = PUBLISHED only (premature access)");
   ok(/function isStudentVisibleStatus/.test(lifecycle), "single lifecycle-availability predicate");
 
-  const sp = read("src/lib/session-progress.ts");
-  ok(/unlocked: previousCompleted/.test(sp), "progression = sequential unlock (premature access)");
+  const sp = read("src/lib/progression-engine.ts");
+  ok(/let previousCompleted = true;/.test(sp) && /boundaryAllowed/.test(sp),
+    "progression = sequential unlock (premature access)");
   ok(/EXCLUDE_ARCHIVED_LESSON/.test(sp), "archived lessons are excluded from the universe");
 
   // Cross-course: the material authorizer resolves the owning course.

@@ -204,6 +204,9 @@ type Child = {
     }[];
   };
   // Session unlock state from the Phase 4 engine; null when unenrolled.
+  // Phase H — the engine now also names WHY the child is stopped, in the
+  // request locale (`blockedReason.text` is translated server-side), plus the
+  // absence hold when one applies. The card renders that sentence verbatim.
   sessionProgress?: {
     total: number;
     completed: number;
@@ -211,6 +214,8 @@ type Child = {
     locked: number;
     currentLessonId: string | null;
     currentLessonTitle: string | null;
+    blockedReason?: { code: string; text: string } | null;
+    hold?: { active: boolean; status: string; blocks: boolean } | null;
   } | null;
 };
 
@@ -703,6 +708,14 @@ function ProgressRingCard({
             <div className="text-[11px] mt-2 leading-snug">
               <span className="text-muted-foreground">Current: </span>
               <span className="font-semibold">{session.currentLessonTitle}</span>
+            </div>
+          ) : null}
+          {/* Phase H — the child is stopped for a REASON, and the parent is
+              told what it is (Arabic-first, translated by the server). The
+              sentence is the engine's own — the card never builds one. */}
+          {session?.blockedReason?.text ? (
+            <div className="text-[11px] mt-1 leading-snug text-amber-600 dark:text-amber-400">
+              {session.blockedReason.text}
             </div>
           ) : null}
         </div>

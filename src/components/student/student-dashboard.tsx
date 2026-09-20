@@ -109,6 +109,18 @@ type DashboardData = {
       homework: { state: "ABSENT" | "AVAILABLE" | "LOCKED"; count: number };
     } | null;
     courseSlug: string;
+    /**
+     * Phase H — the canonical verdict for THIS session: state, the Arabic-first
+     * reason, what remains and the exact next action. The card renders it; it
+     * never derives an unlock rule of its own.
+     */
+    progression?: {
+      state: "LOCKED" | "UNLOCKED" | "COMPLETED";
+      stateLabel: string;
+      reason: { code: string; text: string } | null;
+      unmet: { code: string; text: string; action: string }[];
+      nextAction: string | null;
+    } | null;
   } | null;
   nextSession: {
     id: string;
@@ -465,6 +477,33 @@ function DashboardHome({
                       </div>
                     )}
                   </div>
+                  {/* Phase H — what the student has to do to move on, in
+                      their own language. The sentence (and the ordered list
+                      behind it) is the server's canonical verdict — the
+                      dashboard never invents a rule, and it never shows a
+                      bare "locked" without saying why. */}
+                  {data.continueLesson.progression?.nextAction ? (
+                    <div className="rounded-lg border border-border/60 bg-muted/30 p-2.5 text-start">
+                      <div className="text-[11px] text-muted-foreground">
+                        {t("progression.next.title")}
+                      </div>
+                      <div className="text-xs font-medium leading-snug">
+                        {data.continueLesson.progression.nextAction}
+                      </div>
+                      {data.continueLesson.progression.unmet.length > 1 ? (
+                        <ul className="mt-1 space-y-0.5">
+                          {data.continueLesson.progression.unmet.map((u) => (
+                            <li
+                              key={u.code}
+                              className="text-[11px] text-muted-foreground"
+                            >
+                              • {u.text}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </div>
+                  ) : null}
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-muted-foreground">

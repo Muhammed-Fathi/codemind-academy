@@ -861,10 +861,33 @@ test("Phase C: lesson content aggregation", async () => {
     ok(!/from "@\/lib\/session-progress"|require\("@\/lib\/session-progress"\)/.test(libSrc), "T: the authority never imports the progression module (callers keep their gates)");
 
     // T/U: the engines are byte-intact where Phase C is concerned.
-    ok(/const hasVideo = !!lesson\.videoUrl;/.test(engine), "T: the progression engine still derives video REQUIRED-ness from the legacy column only");
-    ok(/const hasQuiz = lesson\.quizzes\.length > 0;/.test(engine), "T: the progression engine quiz requirement unchanged");
-    ok(/const hasHomework = lesson\.homeworks\.length > 0;/.test(engine), "T: the progression engine homework requirement unchanged");
-    ok(/VIDEO_COMPLETION_THRESHOLD = 95/.test(read("src/lib/progress.ts")), "T: the 95% threshold literal untouched");
+    //
+    // Phase H: `session-progress.ts` became a FACADE over the canonical engine,
+    // so these pins moved with the rule they protect: the video/quiz/homework
+    // REQUIRED-ness derivation now lives in `progression-engine.ts` and the
+    // threshold literal in `progression-requirements.ts`. The property is
+    // unchanged — a session with no video / no quiz / no homework has NO such
+    // requirement, so a student can never be locked on content it lacks, and
+    // the bar stays exactly 95 % (one constant, re-exported, never restated).
+    const engineCore = read("src/lib/progression-engine.ts");
+    const matrix = read("src/lib/progression-requirements.ts");
+    ok(
+      /function videoFactsFor\([^)]*\)[^{]*\{\s*if \(!lesson\.videoUrl\)/.test(engineCore),
+      "T: the canonical engine still derives video REQUIRED-ness from the legacy column only"
+    );
+    ok(
+      /function quizFactsFor\([^)]*\)[^{]*\{[\s\S]{0,80}if \(!quizzes\.length\)/.test(engineCore),
+      "T: the canonical engine quiz requirement is presence-based (no quiz ⇒ no requirement)"
+    );
+    ok(
+      /function homeworkFactsFor\([^)]*\)[^{]*\{[\s\S]{0,80}if \(!homeworks\.length\)/.test(engineCore),
+      "T: the canonical engine homework requirement is presence-based (no homework ⇒ no requirement)"
+    );
+    ok(
+      /VIDEO_COMPLETION_THRESHOLD = 95/.test(matrix) &&
+        /export \{ VIDEO_COMPLETION_THRESHOLD \}/.test(read("src/lib/progress.ts")),
+      "T: the 95% threshold is one constant in the matrix, re-exported (never restated)"
+    );
     ok(/DRAFT → READY/.test(lifecycle), "U: the lifecycle module is untouched (readiness contract intact)");
     ok(!/lesson-content/.test(lifecycle), "U: the lifecycle module does not import the authority (no readiness coupling)");
 

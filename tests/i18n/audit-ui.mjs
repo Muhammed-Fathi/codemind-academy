@@ -68,6 +68,10 @@ const VIEWS = {
     // Phase F — the live-operations console (kept LAST: the admin navigation
     // order is pinned by the Phase 15 suite).
     "admin-live-sessions",
+    // Phase H — the progression-override console. Kept LAST for the same
+    // reason: a view that renders but is never audited is a view whose
+    // Arabic, console errors and layout are unverified.
+    "admin-progression",
   ],
 };
 

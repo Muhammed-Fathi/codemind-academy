@@ -32,6 +32,8 @@ import {
   StudentLiveSessionsView,
 } from "@/components/student/live-sessions-view";
 import { AdminLiveOpsView } from "@/components/admin/live-ops-view";
+// Phase H — the admin progression-override console.
+import { ProgressionOverridesView } from "@/components/admin/progression-overrides-view";
 import { AdminDashboard } from "@/components/admin/admin-dashboard";
 // SHARED role → view whitelist (single definition, also used by the
 // notifications panel): stale/illegal persisted views redirect safely
@@ -286,6 +288,11 @@ function renderView(view: string, role?: string | null) {
     // absence decisions, locked-register corrections, repeated-absence flags).
     case "admin-live-sessions":
       return <AdminLiveOpsView />;
+    // Phase H — the admin progression-override console. Deliberately NOT part
+    // of AdminDashboard: the legacy admin shell is pinned byte-for-byte by
+    // earlier suites, so a new surface gets its own component like Phase F's.
+    case "admin-progression":
+      return <ProgressionOverridesView />;
     default:
       return fallback;
   }

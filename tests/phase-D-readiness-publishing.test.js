@@ -1129,8 +1129,12 @@ section("6. Normal MARK READY is rejected when ANY requirement is missing");
     absent(lessonContent, /from ["']@\/lib\/session-lifecycle/, "17.1 Phase C authority imports no lifecycle/readiness module (U pin)");
     absent(lifecycleSrc, /from ["']@\/lib\/lesson-content/, "17.2 the lifecycle module imports no Phase C authority (no readiness coupling)");
     ok(/DRAFT → READY/.test(lifecycleSrc), "17.3 the lifecycle state machine text is intact");
-    const progress = fs.readFileSync(path.join(REPO, "src/lib/session-progress.ts"), "utf8");
-    ok(/LESSON_STUDENT_STATUS_FILTER/.test(progress), "17.4 progression still filters the student universe by lifecycle status");
+    // PHASE H: `session-progress.ts` is a facade; the universe lives in
+    // `progression-universe.ts` and the LOCKED/UNLOCKED derivation in
+    // `progression-engine.ts`. Both pins follow the code they guard.
+    const universeSrc = fs.readFileSync(path.join(REPO, "src/lib/progression-universe.ts"), "utf8");
+    const progress = fs.readFileSync(path.join(REPO, "src/lib/progression-engine.ts"), "utf8");
+    ok(/LESSON_STUDENT_STATUS_FILTER/.test(universeSrc), "17.4 progression still filters the student universe by lifecycle status");
     absent(progress, /openLessonWithOverride/, "17.5 progression never references the override");
     ok(/LOCKED/.test(progress), "17.6 progression semantics (LOCKED/UNLOCKED derivation) stay in the progression engine, untouched");
     absent(lifecycleSrc, /from ["']@\/lib\/session-progress/, "17.7 the lifecycle engine imports no progression module (the two dimensions stay orthogonal)");

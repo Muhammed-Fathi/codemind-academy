@@ -61,6 +61,7 @@ import {
   Home,
   UserCircle,
   Rocket,
+  KeyRound,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -120,6 +121,9 @@ const NAV_BY_ROLE: Record<string, NavItem[]> = {
     { key: "admin-notifications", label: "shell.005", icon: Bell },
     { key: "admin-settings", label: "shell.015", icon: Settings },
     { key: "admin-live-sessions", label: "shell.f4", icon: CalendarClock },
+    // Phase H — kept LAST: the admin navigation order is pinned by the
+    // Phase 15 suite.
+    { key: "admin-progression", label: "shell.h1", icon: KeyRound },
   ],
 };
 

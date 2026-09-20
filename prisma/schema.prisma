@@ -68,6 +68,10 @@ model Student {
   /// Phase F — administrative absence cases + their holds (see AbsenceReview).
   absenceReviews    AbsenceReview[]
   absenceHolds      AbsenceHold[]
+  /// Phase H — Admin-issued progression exceptions targeting this student.
+  /// An override is an OVERLAY: it never fabricates a quiz pass, a homework
+  /// submission, a video completion or an attendance fact.
+  progressionOverrides ProgressionOverride[]
   quizAttempts      QuizAttempt[]
   /// Phase 26D — Admin-issued retry permissions targeting this student.
   retryGrants       QuizRetryGrant[]
@@ -320,6 +324,10 @@ model Lesson {
   /// the state Phase 17 notification fan-out consumes). Optional: a lesson
   /// that has never been opened through the ceremony has none.
   publication   SessionPublication?
+  /// Phase H — Admin progression exceptions whose boundary sits BEFORE this
+  /// lesson. `onDelete: Cascade`: an override is meaningless without the
+  /// lesson it refers to, and leaving one behind would silently widen access.
+  progressionOverrides ProgressionOverride[]
 
   @@index([topicId])
   @@index([unitId, order])
@@ -698,6 +706,60 @@ model AbsenceHold {
 
   @@index([studentId, status])
   @@index([sessionId])
+}
+
+/// ProgressionOverride — the Phase H ADMIN exception over the progression
+/// BOUNDARY. The authoritative academic facts (video watch time, quiz
+/// attempts, homework submissions, attendance, holds) are NEVER rewritten by
+/// an override; the row only says "this student may continue past the
+/// boundary that would otherwise stop them here".
+///
+/// WHY A TABLE AND NOT A FLAG
+///   * the reason is MANDATORY and must survive the admin who typed it;
+///   * the actor, the instant, the student and the affected lesson must all be
+///     attributable (mirrored into the platform `AuditLog` on every write);
+///   * the exception must be able to EXPIRE (`expiresAt`) and be REVOKED
+///     (`revokedAt` + actor + reason) without destroying the history of the
+///     decision — a revoked row stays as the record of what happened.
+///
+/// WHAT IT MAY NEVER DO (approved decision #11)
+///   * fabricate a quiz pass / homework submission / video completion;
+///   * rewrite attendance history or an AbsenceHold (a hold stays ACTIVE and
+///     visible to Admin/Teacher/Parent while an override is in force);
+///   * rewrite a historical COMPLETED state.
+/// The canonical engine CONSIDERS a currently-valid row when deciding whether
+/// progression/access may continue; nothing underneath it changes.
+///
+/// IDEMPOTENCY: at most ONE currently-valid row per (student, lesson) — the
+/// write path returns the existing row instead of stacking duplicates, so a
+/// double-click or a retried request cannot create a second exception.
+model ProgressionOverride {
+  id              String    @id @default(cuid())
+  studentId       String
+  /// The course the boundary belongs to, recorded for scoping/audit. Nullable:
+  /// it is derived from the lesson at write time and a legacy row may predate
+  /// the column; the lesson is the authoritative anchor either way.
+  courseId        String?
+  /// The lesson whose BOUNDARY is overridden — i.e. the lesson the student may
+  /// open even though the boundary before it is not satisfied.
+  lessonId        String
+  /// MANDATORY, server-validated (never empty, length-bounded).
+  reason          String
+  createdByUserId String
+  createdAt       DateTime  @default(now())
+  /// Optional expiry: NULL = valid until revoked. An expired row stops
+  /// applying WITHOUT being deleted (the history of the decision survives).
+  expiresAt       DateTime?
+  revokedAt       DateTime?
+  revokedByUserId String?
+  revokeReason    String?
+  lesson  Lesson  @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([studentId, lessonId])
+  @@index([studentId, revokedAt])
+  @@index([lessonId])
+  @@index([expiresAt])
 }
 
 model Quiz {

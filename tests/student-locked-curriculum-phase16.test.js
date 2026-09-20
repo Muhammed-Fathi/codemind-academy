@@ -492,7 +492,10 @@ async function main() {
 
   const lessonRoute = read("src/app/api/lessons/[id]/route.ts");
   pinned(lessonRoute, /officialCode: lesson\.officialCode \?\? null,/, "G1: session identity is serialised");
-  pinned(lessonRoute, /canAccessLesson\(s\.id, id\)/, "G2: the student gate is still canAccessLesson");
+  // PHASE H: the lesson page is gated by the canonical engine
+  // (`session-progress.canAccessLesson` now delegates to it). Same rule, one
+  // implementation — the pin follows the call.
+  pinned(lessonRoute, /canAccessLessonWithCourse\(s\.id, id\)/, "G2: the student gate is the canonical progression engine (canAccessLesson)");
   pinned(lessonRoute, /denyProgression\(access\.reason/, "G3: denial still funnels through denyProgression");
   pinned(lessonRoute, /isParentLessonPreviewAllowed\(\s*user\.id,/, "G4: parents still preview through the shared predicate");
   pinned(lessonRoute, /\.\.\.LESSON_STUDENT_STATUS_FILTER,/, "G5: prev/next still walks the PUBLISHED chain only");

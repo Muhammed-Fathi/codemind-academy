@@ -644,7 +644,11 @@ async function main() {
   // -------------------------------------------------------------------------
   {
     const enr = read("src/lib/enrollment.ts");
-    const sp = read("src/lib/session-progress.ts");
+    // PHASE H: `session-progress.ts` is a facade over the canonical engine, so
+    // the entitlement decision points now live in `progression-engine.ts` —
+    // still exactly two (the lesson gate and the batch unlock gate), still the
+    // same shared policy.
+    const sp = read("src/lib/progression-engine.ts");
     ok(/subscription-entitlement/.test(enr) && /evaluateAccessDecision\s*\(/.test(enr), "getEnrollment delegates to the shared policy");
     ok(/subscription-entitlement/.test(sp) && /evaluateAccessDecision\s*\(/.test(sp), "canAccessLesson + getUnlockedLessonIds delegate to the shared policy");
     ok((sp.match(/evaluateAccessDecision\s*\(/g) || []).length === 2, "exactly two decision points inside the progression module (lesson gate + batch gate) — one policy, applied centrally");
@@ -710,7 +714,11 @@ async function main() {
     // Phase F appended one authorized additive migration (the live-session
     // lifecycle) at the END of the history; the PR2a-era ordering asserted by
     // the neighbouring checks is unchanged.
-    ok(migrations.length === 13, `migration history: exactly 13 migrations (found ${migrations.length}) — the 10 PR2a-era migrations, the Phase 26B group-audience migration, the Phase 26D quiz attempt-architecture migration, and the Phase F live-session lifecycle`);
+    // Phase G appended two authorized additive migrations (quiz/homework
+    // workflow + camera policy) and Phase H one (the progression authority), so
+    // the history is now 16. The invariant this gate protects is "no migration
+    // was silently removed or reordered", not a literal number.
+    ok(migrations.length === 16, `migration history: exactly 16 migrations (found ${migrations.length}) — the 10 PR2a-era migrations, the Phase 26B group-audience migration, the Phase 26D quiz attempt-architecture migration, the Phase F live-session lifecycle, the two Phase G migrations and the Phase H progression authority`);
     ok(migrations.includes("20260914120000_payment_lifecycle_redesign"), "PR1's ledger migration remains in history");
     ok(migrations.includes("20260915120000_phase26b_group_track_scope"), "the Phase 26B group-audience migration is in history");
   }

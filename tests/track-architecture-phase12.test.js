@@ -545,10 +545,13 @@ async function main() {
   W.lessons["L-LANG"].quizzes = [{ id: "Q-LANG-OWN" }];
   W.lessons["L-LANG"].homeworks = [{ id: "H-LANG-OWN" }];
   W.lessonProgress.push({ studentId: "ar-student", lessonId: "L-SHARED", videoPercent: 100, videoCompleted: true, isCompleted: true });
-  W.quizAttempts.push({ id: "att-1", quizId: "Q-SHARED", studentId: "ar-student", finishedAt: new Date() });
+  // Phase H: progression is satisfied by a PASS, so the fixture that is meant
+  // to COMPLETE the first lesson records a passed attempt. (The suite asserts
+  // Phase 12 track scope, not the quiz rule — the Phase H suite owns that.)
+  W.quizAttempts.push({ id: "att-1", quizId: "Q-SHARED", studentId: "ar-student", finishedAt: new Date(), passed: true, percentage: 100 });
   W.homeworkSubmissions.push({ homeworkId: "H-SHARED", studentId: "ar-student", submittedAt: new Date() });
   W.lessonProgress.push({ studentId: "lang-student", lessonId: "L-SHARED", videoPercent: 100, videoCompleted: true, isCompleted: true });
-  W.quizAttempts.push({ id: "att-2", quizId: "Q-SHARED", studentId: "lang-student", finishedAt: new Date() });
+  W.quizAttempts.push({ id: "att-2", quizId: "Q-SHARED", studentId: "lang-student", finishedAt: new Date(), passed: true, percentage: 100 });
   W.homeworkSubmissions.push({ homeworkId: "H-SHARED", studentId: "lang-student", submittedAt: new Date() });
 
   const lessonMatrix = [
@@ -1035,10 +1038,14 @@ async function main() {
   ok(/v\.isPublished/.test(mediaRoute), "media still requires the video to be published");
   ok(/v\.batchId === student\.batchId/.test(mediaRoute), "media still requires batch membership");
 
-  const engine = read("src/lib/session-progress.ts");
-  ok(/\.\.\.trackScopeWhere\(resolvedSchoolType\)/.test(engine), "the progression universe is track-filtered");
-  ok(/canAccessTrackScope\(schoolType, lesson\.trackScope\)/.test(engine), "canAccessLesson has an explicit track gate");
-  ok(/gateTrackedResource/.test(engine), "quiz/homework gating shares one track implementation");
+  // PHASE H: `session-progress.ts` is now a facade; the rules it used to hold
+  // live in the canonical modules. The assertions are unchanged — only the
+  // files they read moved with the code.
+  const universeSrc = read("src/lib/progression-universe.ts");
+  const engineSrc = read("src/lib/progression-engine.ts");
+  ok(/\.\.\.trackScopeWhere\(schoolType\)/.test(universeSrc), "the progression universe is track-filtered");
+  ok(/canAccessTrackScope\(schoolType, lesson\.trackScope\)/.test(engineSrc), "canAccessLesson has an explicit track gate");
+  ok(/gateTrackedResource/.test(engineSrc), "quiz/homework gating shares one track implementation");
 
   const teacherQuiz = read("src/app/api/teacher/quizzes/route.ts");
   ok(/trackScope: quizTrackScope/.test(teacherQuiz), "teacher quiz creation stores an explicit trackScope");

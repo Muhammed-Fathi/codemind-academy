@@ -69,6 +69,15 @@ fs.writeFileSync(
       path.join(REPO, "src/lib/track-scope.ts"),
       path.join(REPO, "src/lib/school-type.ts"),
       path.join(REPO, "src/lib/enrollment.ts"),
+      // Phase H: session-progress is now a FACADE over the canonical engine.
+      // The engine (and the modules it owns) must be emitted too, and
+      // `@/lib/absence-review` is stubbed below so the suite stays free of the
+      // notification/mailer graph.
+      path.join(REPO, "src/lib/progression-requirements.ts"),
+      path.join(REPO, "src/lib/progression-universe.ts"),
+      path.join(REPO, "src/lib/progression-holds.ts"),
+      path.join(REPO, "src/lib/progression-overrides.ts"),
+      path.join(REPO, "src/lib/progression-engine.ts"),
     ],
   })
 );
@@ -290,13 +299,19 @@ const fakeDb = {
     findMany: ({ where }) =>
       [...state.attemptedQuizzes]
         .filter((q) => where.quizId.in.includes(q))
-        .map((quizId) => ({ quizId, percentage: 100 })),
+        // Phase H: progression is satisfied by a PASS, never by an attempt.
+        // The historical fixture means "the quiz was passed" (percentage 100
+        // against the fixture pass marks), so `passed` defaults to true and the
+        // dedicated Phase H suite covers the submitted-but-failed case.
+        .map((quizId) => ({ quizId, percentage: 100, passed: state.quizPassed?.[quizId] ?? true, finishedAt: new Date("2026-09-20T12:00:00.000Z") })),
   },
   homeworkSubmission: {
     findMany: ({ where }) =>
       [...state.submittedHomeworks]
         .filter((h) => where.homeworkId.in.includes(h))
-        .map((homeworkId) => ({ homeworkId })),
+        // Phase H: a SUBMISSION (submittedAt) is what satisfies progression;
+        // grading is irrelevant, which is why `grade` stays null here.
+        .map((homeworkId) => ({ homeworkId, submittedAt: new Date("2026-09-20T12:00:00.000Z"), grade: null })),
   },
   student: {
     findUnique: () => ({
@@ -324,6 +339,15 @@ const fakeDb = {
         : null;
     },
   },
+  // Phase H — the tables the canonical engine reads that this fixture does not
+  // model. Empty is the honest default: no hold, no override, no batch
+  // recording, so every historical assertion below is decided by the SAME rules
+  // as before (missing rows are never requirements).
+  absenceHold: { findMany: () => [] },
+  liveSession: { findMany: () => [] },
+  progressionOverride: { findMany: () => [] },
+  sessionVideo: { findMany: () => [] },
+  sessionVideoView: { findMany: () => [] },
 };
 
 fs.writeFileSync(
@@ -332,9 +356,17 @@ fs.writeFileSync(
 );
 globalThis.__P4_FAKE_DB__ = { db: fakeDb };
 
+fs.writeFileSync(
+  path.join(OUT, "fake-absence-review.js"),
+  "module.exports = { resolveAbsenceHoldForCatchUp: async () => ({ holdId: null, reviewId: null, studentId: null, resolved: false, alreadyResolved: false, skipped: true }) };\n"
+);
+
 const realResolve = Module._resolveFilename;
 Module._resolveFilename = function (request, ...rest) {
   if (request === "@/lib/db") return path.join(OUT, "fake-db.js");
+  // Phase H: the catch-up RESOLUTION writer (never called by a read) is
+  // stubbed so this suite stays offline and notification-free.
+  if (request === "@/lib/absence-review") return path.join(OUT, "fake-absence-review.js");
   // Any other aliased sibling of the module under test resolves to its own
   // compiled output in the temp dir (e.g. `@/lib/progress`).
   const m = /^@\/lib\/([\w-]+)$/.exec(request);
@@ -656,29 +688,40 @@ async function main() {
   ok(!/requirements: access\.status/.test(lessonRoute), "the lesson 403 no longer echoes access.status");
 
   section("20. Source invariants: the progression universe covers BOTH chains");
+  // PHASE H: `src/lib/session-progress.ts` is now a FACADE (it re-exports the
+  // universe helpers and delegates every verdict to the canonical engine), so
+  // these pins follow the code into the modules that own it. Every assertion is
+  // unchanged — only the file it reads moved.
   const sp = read("src/lib/session-progress.ts");
-  ok(/\{ unit: \{ part: \{ courseId \} \} \}/.test(sp), "the universe query follows the canonical Unit chain");
-  ok(/\{ topic: \{ unit: \{ part: \{ courseId \} \} \} \}/.test(sp), "the universe query still follows the legacy Topic chain");
-  ok(/OR: \[/.test(sp), "both chains are combined with OR (one query, one system)");
+  const uni = read("src/lib/progression-universe.ts");
+  const eng = read("src/lib/progression-engine.ts");
+  ok(/\{ unit: \{ part: \{ courseId \} \} \}/.test(uni), "the universe query follows the canonical Unit chain");
+  ok(/\{ topic: \{ unit: \{ part: \{ courseId \} \} \} \}/.test(uni), "the universe query still follows the legacy Topic chain");
+  ok(/OR: \[/.test(uni), "both chains are combined with OR (one query, one system)");
   ok(
-    /const found = await db\.lesson\.findMany\(\{\s*where: \{\s*\.\.\.LESSON_STUDENT_STATUS_FILTER,\s*\.\.\.EXCLUDE_ARCHIVED_LESSON,/.test(sp),
+    /const found = await db\.lesson\.findMany\(\{\s*where: \{\s*\.\.\.LESSON_STUDENT_STATUS_FILTER,\s*\.\.\.EXCLUDE_ARCHIVED_LESSON,/.test(uni),
     "the universe query is lifecycle-scoped first and excludes archived lessons (Phases 11 + 13)"
   );
   ok(
-    !/const found = await db\.lesson\.findMany\(\{\s*where: \{\s*isPublished:/.test(sp),
+    !/const found = await db\.lesson\.findMany\(\{\s*where: \{\s*isPublished:/.test(uni),
     "the universe no longer reads the demoted isPublished mirror"
   );
-  ok(sp.includes("orderCourseLessons(found, courseId)"), "ordering is applied explicitly, not left to SQL");
-  ok(!/orderBy: \[\s*\{ topic:/.test(sp), "the old topic-only orderBy is gone");
-  ok(/lesson\.unit\?\.part\.courseId \?\?/.test(sp), "canAccessLesson resolves the course canonical-first");
-  // Phase 12: `canAccessLesson` still builds its row from the SHARED chain
-  // select (so both paths see the same lesson) and additionally reads the
-  // lesson's trackScope for the track gate. The assertion is tightened, not
-  // relaxed: it now pins both facts.
+  ok(uni.includes("orderCourseLessons(\n    found as unknown as UniverseLesson[],"), "ordering is applied explicitly, not left to SQL");
+  ok(!/orderBy: \[\s*\{ topic:/.test(uni), "the old topic-only orderBy is gone");
+  ok(/lesson\.unit\?\.part\.courseId \?\?/.test(uni), "the course is resolved canonical-first");
+  // Phase 12: the direct gate still builds its row from the SHARED chain select
+  // (so both paths see the same lesson) and additionally reads the lesson's
+  // trackScope for the track gate. The assertion is tightened, not relaxed: it
+  // now pins both facts.
   ok(
-    /select: \{\s*\.\.\.LESSON_CHAIN_SELECT,\s*trackScope: true,\s*status: true,\s*curriculumStatus: true,/.test(sp),
+    /select: \{\s*\.\.\.LESSON_CHAIN_SELECT,\s*trackScope: true,\s*status: true,\s*curriculumStatus: true,/.test(eng),
     "the chain shape is shared, so both paths see the same lesson — and it now also carries the lifecycle state the gate reads"
   );
+  // Phase H: there is exactly ONE implementation. The facade must contain no
+  // rule of its own: no universe query, no requirement arithmetic, no gate.
+  ok(!/db\.lesson\.findMany/.test(sp), "the facade carries no universe query of its own");
+  ok(!/db\.lessonProgress\.findMany/.test(sp), "the facade carries no requirement query of its own");
+  ok(/progression-engine/.test(sp), "the facade delegates to the canonical engine");
 
   section("21. Source invariants: the course tree redacts locked sessions");
   const courseRoute = read("src/app/api/courses/[slug]/route.ts");

@@ -52,8 +52,8 @@ section("1. Lesson/course routes enforce server-side authorization");
   for (const rel of gated) {
     const src = read(rel);
     ok(
-      /canAccessLesson\s*\(/.test(src),
-      `${rel} calls canAccessLesson (backend gating, not UI-only)`
+      /canAccessLesson\s*\(|canAccessLessonWithCourse\s*\(/.test(src),
+      `${rel} calls the canonical lesson gate (backend gating, not UI-only)`
     );
     ok(
       /requireUser\s*\(/.test(src),
@@ -70,9 +70,12 @@ section("1. Lesson/course routes enforce server-side authorization");
     /NOT_ENROLLED/.test(courseSrc) && /403/.test(courseSrc),
     "courses/[slug] returns 403 NOT_ENROLLED for an unenrolled student"
   );
+  // PHASE H: the tree reads the CANONICAL progression engine directly (the
+  // historical `getCourseSessionProgress` now delegates to it) so it can also
+  // show WHY a session is locked.
   ok(
-    /getCourseSessionProgress\s*\(/.test(courseSrc),
-    "courses/[slug] derives lock state from the shared progression service"
+    /evaluateCourseProgression\s*\(/.test(courseSrc),
+    "courses/[slug] derives lock state from the canonical progression engine"
   );
 }
 
@@ -136,22 +139,26 @@ section("2. 95% video rule cannot be bypassed");
 section("3. Session locking treats missing components as not-required");
 // ---------------------------------------------------------------------------
 {
-  const src = read("src/lib/session-progress.ts");
-  ok(/const hasVideo = !!lesson\.videoUrl;/.test(src), "video presence is detected");
+  // PHASE H: the rule matrix lives in the canonical modules now — the pure
+  // matrix (`progression-requirements.ts`) and the engine that feeds it
+  // (`progression-engine.ts`). Every assertion below is unchanged in meaning.
+  const src = read("src/lib/progression-engine.ts");
+  const matrix = read("src/lib/progression-requirements.ts");
+  ok(/if \(!lesson\.videoUrl\)/.test(src), "video presence is detected");
   ok(
-    /const videoDone = hasVideo[\s\S]{0,120}: true;/.test(src),
+    /required: false,[\s\S]{0,120}source: "NONE"/.test(src),
     "a lesson with NO video does not require a video (no permanent lock)"
   );
   ok(
-    /const quizDone = hasQuiz[\s\S]{0,140}: true;/.test(src),
+    /if \(!quizzes\.length\)[\s\S]{0,220}required: false/.test(src),
     "a lesson with NO quiz does not require a quiz"
   );
   ok(
-    /const assignmentDone = hasHomework[\s\S]{0,160}: true;/.test(src),
+    /if \(!homeworks\.length\)[\s\S]{0,220}required: false/.test(src),
     "a lesson with NO assignment does not require an assignment"
   );
   ok(
-    /completed = videoDone && quizDone && assignmentDone/.test(src),
+    /unmet\.length === 0/.test(matrix) && /evaluateRequirements/.test(src),
     "a session completes only when all REQUIRED components are done"
   );
   ok(
@@ -159,11 +166,11 @@ section("3. Session locking treats missing components as not-required");
     "the first lesson is always unlocked"
   );
   ok(
-    /unlocked: previousCompleted/.test(src),
+    /const boundaryAllowed = boundaryCodes\.length === 0/.test(src),
     "lesson N+1 unlocks only when lesson N is complete"
   );
   ok(
-    /videoPercent >= VIDEO_COMPLETION_THRESHOLD/.test(src),
+    /VIDEO_COMPLETION_THRESHOLD/.test(src) && /percent >= VIDEO_COMPLETION_THRESHOLD/.test(src),
     "the unlock rule uses the same 95% threshold"
   );
 }
@@ -173,7 +180,8 @@ section("4. Enrollment definition is consistent across authorization paths");
 // ---------------------------------------------------------------------------
 {
   const enrollment = read("src/lib/enrollment.ts");
-  const sessionProgress = read("src/lib/session-progress.ts");
+  // PHASE H: `canAccessLesson` is implemented by the canonical engine.
+  const sessionProgress = read("src/lib/progression-engine.ts");
 
   ok(
     /group\?\.isActive/.test(enrollment) || /group\.isActive/.test(enrollment),

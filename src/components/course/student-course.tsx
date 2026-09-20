@@ -88,6 +88,19 @@ type LessonItem = {
   } | null;
   quiz: { id: string; title: string; titleAr: string } | null;
   homework: { id: string; title: string; titleAr: string } | null;
+  /**
+   * Phase H — the CANONICAL verdict for this session. A locked row carries
+   * the state + the Arabic-first reason and its ordered unmet codes (and
+   * nothing else: no requirement breakdown, no identity — the Phase 4/16
+   * redaction contract is untouched). `reason.text` is already translated by
+   * the server with the request locale, so the tree never re-derives a
+   * sentence and can never disagree with what the backend enforces.
+   */
+  progression?: {
+    state: "LOCKED" | "UNLOCKED" | "COMPLETED";
+    reason: { code: string; text: string } | null;
+    unmet: { code: string; text: string }[];
+  } | null;
 };
 
 type TopicItem = {
@@ -445,9 +458,18 @@ function LessonRow({ lesson }: { lesson: LessonItem }) {
 
   const isLocked = lesson.status === "locked";
 
+  // Phase H — when the server explained WHY this session is locked, that
+  // sentence is what the student is answered with. `course.044` stays the
+  // fallback for a row the engine did not evaluate (a legacy/anonymous read),
+  // so the tree never invents a reason of its own.
+  const lockReason =
+    isLocked && lesson.progression?.reason?.text
+      ? lesson.progression.reason.text
+      : tr("course.044");
+
   const open = () => {
     if (isLocked) {
-      toast.warning(tr("course.044"));
+      toast.warning(lockReason);
       return;
     }
     setView("student-lesson");
@@ -539,6 +561,16 @@ function LessonRow({ lesson }: { lesson: LessonItem }) {
               />
             ) : null}
           </span>
+          {/* Phase H — a locked session says WHY, in Arabic, on the row
+              itself: a tooltip is invisible on mobile and a bare padlock
+              tells the student nothing about what to do next. The text is the
+              server's canonical sentence — the component never builds one. */}
+          {isLocked && lesson.progression?.reason?.text ? (
+            <span className="mt-1 flex items-start gap-1 text-[11px] text-muted-foreground">
+              <Lock className="mt-0.5 w-3 h-3 shrink-0" />
+              <span className="text-start">{lesson.progression.reason.text}</span>
+            </span>
+          ) : null}
         </div>
       </div>
       {lesson.isCompleted && (
@@ -560,7 +592,10 @@ function LessonRow({ lesson }: { lesson: LessonItem }) {
       <li>
         <Tooltip>
           <TooltipTrigger asChild>{inner}</TooltipTrigger>
-          <TooltipContent side="top">{tr("course.046")}</TooltipContent>
+          {/* Phase H — the canonical reason, not a generic "locked" string. */}
+          <TooltipContent side="top">
+            {lesson.progression?.reason?.text ?? tr("course.046")}
+          </TooltipContent>
         </Tooltip>
       </li>
     );

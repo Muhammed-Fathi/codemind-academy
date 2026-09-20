@@ -801,6 +801,111 @@ export async function decideAbsence(params: {
 }
 
 // ---------------------------------------------------------------------------
+// Phase H bridge — CATCH-UP resolution of a hold (the ABSENCE authority stays
+// the only writer of the hold)
+// ---------------------------------------------------------------------------
+//
+// Phase H decides ACADEMIC catch-up (did the student complete the missed
+// session's own requirements?) but the roadmap forbids it from mutating or
+// bypassing the Phase F absence lifecycle. So Phase H calls THIS function,
+// which lives next to the code that created the hold and writes it exactly
+// once:
+//
+//   * only an ACTIVE hold is resolved (a RESOLVED one is a no-op, so a retried
+//     request or a double-click can never produce a second audit row);
+//   * the AbsenceReview STATUS IS NEVER TOUCHED — an UNEXCUSED decision stays
+//     UNEXCUSED forever (history preserved), the hold merely stops blocking;
+//   * the resolution is recorded with an actor + instant + reason, and is
+//     mirrored into the platform AuditLog exactly once.
+//
+// `actorUserId` is NULLABLE on purpose: when the student's own academic work
+// satisfied the catch-up there is no human actor, and inventing one would
+// corrupt the audit trail.
+export type CatchUpResolutionResult = {
+  holdId: string | null;
+  reviewId: string | null;
+  studentId: string | null;
+  /** True when THIS call moved the hold to RESOLVED. */
+  resolved: boolean;
+  /** True when the hold was already resolved beforehand (idempotent no-op). */
+  alreadyResolved: boolean;
+  /** True when a no-hold-to-resolve situation was found (nothing to do). */
+  skipped: boolean;
+};
+
+export const HOLD_RESOLUTION_CATCH_UP = "CATCH_UP_COMPLETED";
+
+export async function resolveAbsenceHoldForCatchUp(params: {
+  studentId: string;
+  holdId?: string | null;
+  /** Restrict the search to the hold raised for THIS academic lesson. */
+  lessonId?: string | null;
+  actorUserId?: string | null;
+  resolution?: string;
+  now?: Date;
+  client?: Client;
+}): Promise<CatchUpResolutionResult> {
+  const client = params.client ?? db;
+  const now = params.now ?? new Date();
+
+  const hold = (await (client as any).absenceHold.findFirst({
+    where: { studentId: params.studentId, status: "ACTIVE" },
+    select: { id: true, status: true, absenceReviewId: true, studentId: true },
+    orderBy: { createdAt: "asc" },
+  })) as { id: string; status: string; absenceReviewId: string; studentId: string } | null;
+
+  if (!hold) return { holdId: null, reviewId: null, studentId: null, resolved: false, alreadyResolved: false, skipped: true };
+  if (String(hold.status ?? "").toUpperCase() !== "ACTIVE") {
+    return {
+      holdId: hold.id,
+      reviewId: hold.absenceReviewId ?? null,
+      studentId: hold.studentId,
+      resolved: false,
+      alreadyResolved: true,
+      skipped: false,
+    };
+  }
+
+  await (client as any).absenceHold.update({
+    where: { id: hold.id },
+    data: {
+      status: "RESOLVED",
+      resolvedAt: now,
+      resolvedByUserId: params.actorUserId ?? null,
+      resolution: params.resolution ?? HOLD_RESOLUTION_CATCH_UP,
+    },
+  });
+
+  await (client as any).auditLog
+    .create({
+      data: {
+        userId: params.actorUserId ?? hold.studentId,
+        action: "ABSENCE_HOLD_RESOLVED_CATCH_UP",
+        entity: "AbsenceHold",
+        entityId: hold.id,
+        details: JSON.stringify({
+          holdId: hold.id,
+          reviewId: hold.absenceReviewId ?? null,
+          studentId: hold.studentId,
+          lessonId: params.lessonId ?? null,
+          resolution: params.resolution ?? HOLD_RESOLUTION_CATCH_UP,
+          actorUserId: params.actorUserId ?? null,
+        }).slice(0, 1000),
+      },
+    })
+    .catch(() => undefined);
+
+  return {
+    holdId: hold.id,
+    reviewId: hold.absenceReviewId ?? null,
+    studentId: hold.studentId,
+    resolved: true,
+    alreadyResolved: false,
+    skipped: false,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Attendance correction → the case is VOIDED (never silently deleted)
 // ---------------------------------------------------------------------------
 

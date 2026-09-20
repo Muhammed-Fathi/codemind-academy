@@ -12,11 +12,18 @@ import {
   buildLessonContentSummaries,
   toLessonContentPayload,
 } from "@/lib/lesson-content";
+import { EXCLUDE_ARCHIVED_LESSON } from "@/lib/progression-universe";
+import { orderCourseLessons } from "@/lib/progression-universe";
+// Phase H — the CANONICAL progression authority. `getUnlockedLessonIds` below
+// delegates to the same engine; the dashboard ALSO reads the canonical verdict
+// so the Continue Learning card can name the next action, the absence hold and
+// the catch-up path from the ONE source of truth.
 import {
-  EXCLUDE_ARCHIVED_LESSON,
+  evaluateCourseProgression,
   getUnlockedLessonIds,
-  orderCourseLessons,
-} from "@/lib/session-progress";
+  toCourseProgressionPayload,
+  toLessonProgressionPayload,
+} from "@/lib/progression-engine";
 import { fetchStudentPayments } from "@/lib/payment-submission";
 import { resolveStudentEntitlement } from "@/lib/subscription-entitlement";
 
@@ -168,6 +175,30 @@ export async function GET(_req: NextRequest) {
       continueLessonContent = toLessonContentPayload(
         summaries.get(continueLesson.id) ?? null
       );
+    }
+  }
+
+  // ----- Phase H: canonical progression summary -----
+  // The dashboard used to describe progression only through `completedLessons`
+  // (a stored flag) and an unlocked-id set. Phase H adds the engine's own
+  // verdict — what the student must do NEXT, which absence hold applies and
+  // what its catch-up needs — so the dashboard, the course tree and the lesson
+  // page are three views of one evaluation, never three opinions.
+  let progressionPayload:
+    | import("@/lib/progression-engine").CourseProgressionPayload
+    | null = null;
+  let continueProgression:
+    | import("@/lib/progression-engine").LessonProgressionPayload
+    | null = null;
+  if (courseId && student.group?.isActive) {
+    const courseProgression = await evaluateCourseProgression({
+      studentId: student.id,
+      courseId,
+    });
+    progressionPayload = toCourseProgressionPayload(courseProgression, tApi);
+    if (continueLesson) {
+      const row = courseProgression.byLessonId.get(continueLesson.id);
+      continueProgression = row ? toLessonProgressionPayload(row, tApi) : null;
     }
   }
 
@@ -424,6 +455,19 @@ export async function GET(_req: NextRequest) {
           // lesson workspace; replaces no progression data.
           content: continueLessonContent,
           courseSlug: continuePart?.course?.slug ?? null,
+          // Phase H — the canonical verdict for THIS session: state, the
+          // Arabic-first reason, what remains and the exact next action. The
+          // client renders it, it never derives an unlock rule of its own.
+          progression: continueProgression
+            ? {
+                state: continueProgression.state,
+                stateLabel: continueProgression.stateLabel,
+                reason: continueProgression.reason,
+                unmet: continueProgression.unmet,
+                nextAction: continueProgression.nextAction,
+                requirements: continueProgression.requirements,
+              }
+            : null,
         }
       : null,
     nextSession: nextSession
@@ -497,5 +541,16 @@ export async function GET(_req: NextRequest) {
         : null,
     },
     recentActivity,
+    // Phase H — the canonical course progression: where the boundary is, which
+    // absence hold blocks it (and what the catch-up needs), and the session the
+    // student should continue with. Shared with the course tree + lesson page.
+    progression: progressionPayload
+      ? {
+          currentLessonId: progressionPayload.currentLessonId,
+          boundary: progressionPayload.boundary,
+          hold: progressionPayload.hold,
+          catchUp: progressionPayload.catchUp,
+        }
+      : null,
   });
 }

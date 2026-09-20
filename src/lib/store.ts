@@ -53,7 +53,11 @@ export type ViewKey =
   | "admin-session-videos"
   | "admin-mock-exams"
   | "admin-quiz-review"
-  | "admin-settings";
+  | "admin-settings"
+  // Phase H — the admin progression-override console. Appended LAST: the
+  // ViewKey union is a plain type, but keeping it in the same order as the
+  // navigation lists is what makes the four wiring sites reviewable at a glance.
+  | "admin-progression";
 
 type SessionUser = {
   id: string;

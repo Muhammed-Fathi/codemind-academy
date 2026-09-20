@@ -64,6 +64,8 @@ const MIG_26D = "20260915180000_phase26d_quiz_attempt_architecture";
 const MIG_PHASE_F = "20260919120000_phase_f_live_session_lifecycle";
 const MIG_PHASE_G = "20260919180000_phase_g_quiz_homework_workflow";
 const MIG_CAMERA = "20260919190000_phase_g_camera_policy";
+// Phase H — the canonical progression authority (the ProgressionOverride table).
+const MIG_PHASE_H = "20260920120000_phase_h_progression_authority";
 
 let pass = 0;
 const failures = [];
@@ -90,6 +92,8 @@ const sha256 = (p) => {
 };
 /** SQL text with -- comments removed (for scanning CODE, not prose). */
 const stripSqlComments = (sql) => sql.split("\n").filter((l) => !l.trim().startsWith("--")).join("\n");
+/** Backtick identifier quoting (SQLite/MySQL style) — banned in every edition. */
+const BACKTICK = /\u0060/;
 const listMigrationDirs = (dir) =>
   fs.readdirSync(dir).filter((f) => /^\d+_/.test(f) || f === "0_init").sort();
 
@@ -103,11 +107,11 @@ function partA() {
   // A1 — layout contract
   const sqliteMigrations = listMigrationDirs(SQLITE_MIGRATIONS);
   const pgMigrations = listMigrationDirs(PG_MIGRATIONS);
-  ok(sqliteMigrations.length === 15, `SQLite migrations dir carries all 15 historical migrations (got ${sqliteMigrations.length})`);
-  ok(pgMigrations.length === 5, `PG migrations dir carries the provider chain plus camera policy (got ${pgMigrations.length})`);
+  ok(sqliteMigrations.length === 16, `SQLite migrations dir carries all 16 historical migrations (got ${sqliteMigrations.length})`);
+  ok(pgMigrations.length === 6, `PG migrations dir carries the provider chain plus camera policy and Phase H (got ${pgMigrations.length})`);
   ok(
-    pgMigrations[0] === "0_init" && pgMigrations[1] === MIG_26D && pgMigrations[2] === MIG_PHASE_F && pgMigrations[3] === MIG_PHASE_G && pgMigrations[4] === MIG_CAMERA,
-    "PG migrations are 0_init, Phase 26D, Phase F, Phase G, in order"
+    pgMigrations[0] === "0_init" && pgMigrations[1] === MIG_26D && pgMigrations[2] === MIG_PHASE_F && pgMigrations[3] === MIG_PHASE_G && pgMigrations[4] === MIG_CAMERA && pgMigrations[5] === MIG_PHASE_H,
+    "PG migrations are 0_init, Phase 26D, Phase F, Phase G, camera policy, Phase H, in order"
   );
   ok(fs.existsSync(PG_SCHEMA), "prisma/postgres/schema.prisma exists (PG schema owns its own directory)");
   ok(!fs.existsSync(OLD_PG_SCHEMA), "prisma/schema.postgresql.prisma does NOT exist (must never share prisma/ with SQLite again)");
@@ -161,11 +165,15 @@ function partA() {
     "20260919120000_phase_f_live_session_lifecycle": "480a5327e1ebeb488b2723ab4e263778530d141577315d38ac48cf3728f94ac3",
     "20260919180000_phase_g_quiz_homework_workflow": "d86e31ee0774403354c33084437e0f550b45b1595ab8faf4341e114bc80922b3",
     "20260919190000_phase_g_camera_policy": "b34ddf74f0cd88fedf41baec4dc6d6dcb305a4a9da47989e918e19d89460ed24",
+    // Phase H — pinned from the commit that introduces it (it is applied by
+    // this branch, so its bytes are frozen from here on like every other one).
+    "20260920120000_phase_h_progression_authority": "30cef8a20577453b3585b48730fc1b21e4cc3d7a4feb5a7aed6d353537c00e70",
     // PostgreSQL history (frozen from this commit on):
     "0_init": "c7f5d3fa76931d02e48c5cd2c4bfdb972c0f25e528e3c0c116736d3729cefa80",
     "PG:20260915180000_phase26d_quiz_attempt_architecture": "2c1bdde167f7dfff9b79a61f116da3dbd93b13c6aa27825404a79312ec7be104",
     "PG:20260919120000_phase_f_live_session_lifecycle": "186f921f184b21bafc5c65ffa514bd526dd614f21227a4afd2462ca5d971d388",
     "PG:20260919180000_phase_g_quiz_homework_workflow": "e16d1b6d454af5dd332727e869400ffa281d6f953b934007bc5e968e2fb05099",
+    "PG:20260920120000_phase_h_progression_authority": "4a6e710227bc58dfdbf4a00ce48c919345bbf299fe384ae8ee37a76df65b3419",
   };
   for (const [name, checksum] of Object.entries(PINNED)) {
     const isPg = name.startsWith("PG:") || name === "0_init";
@@ -250,19 +258,18 @@ function partA() {
     return out;
   };
   const want = parseInventory(read(BASELINE_SQL));
-  const got = merge(
-    merge(
-      merge(
-        merge(
-          parseInventory(read(path.join(PG_MIGRATIONS, "0_init", "migration.sql"))),
-          parseInventory(read(path.join(PG_MIGRATIONS, MIG_26D, "migration.sql")))
-        ),
-        parseInventory(read(path.join(PG_MIGRATIONS, MIG_PHASE_F, "migration.sql")))
-      ),
-      parseInventory(read(path.join(PG_MIGRATIONS, MIG_PHASE_G, "migration.sql")))
-    ),
-    parseInventory(read(path.join(PG_MIGRATIONS, MIG_CAMERA, "migration.sql")))
-  );
+  // The whole PostgreSQL chain is folded in ledger order — one merge step per
+  // migration — so a migration added later can never be left out of the
+  // structural convergence proof.
+  const pgChain = [
+    "0_init",
+    MIG_26D,
+    MIG_PHASE_F,
+    MIG_PHASE_G,
+    MIG_CAMERA,
+    MIG_PHASE_H,
+  ].map((name) => parseInventory(read(path.join(PG_MIGRATIONS, name, "migration.sql"))));
+  const got = pgChain.reduce((acc, inv) => merge(acc, inv));
   {
     const diffs = [];
     for (const e of want.enums) if (!got.enums.has(e)) diffs.push(`missing enum ${e}`);
@@ -354,7 +361,35 @@ function partA() {
       "Phase G is additive in both providers (no table/column drop, no row delete)");
   }
 
-  // A6 — fresh SQLite through the repo's own harness: base DDL + 15 migrations.
+  // A5d — Phase H adds the ONE new table (the Admin progression exception)
+  // in both providers, additively, with the canonical constraint + index
+  // names the generated baseline uses.
+  {
+    const sqliteH = read(path.join(SQLITE_MIGRATIONS, MIG_PHASE_H, "migration.sql"));
+    const pgH = read(path.join(PG_MIGRATIONS, MIG_PHASE_H, "migration.sql"));
+    for (const sql of [sqliteH, pgH]) {
+      const code = stripSqlComments(sql);
+      ok(/CREATE TABLE "ProgressionOverride"/.test(code), "Phase H creates the ProgressionOverride table");
+      ok(/CREATE INDEX "ProgressionOverride_studentId_lessonId_idx"/.test(code), "Phase H creates the student+lesson index");
+      ok(/CREATE INDEX "ProgressionOverride_studentId_revokedAt_idx"/.test(code), "Phase H creates the revocation index");
+      ok(/CREATE INDEX "ProgressionOverride_lessonId_idx"/.test(code), "Phase H creates the lesson index");
+      ok(/CREATE INDEX "ProgressionOverride_expiresAt_idx"/.test(code), "Phase H creates the expiry index");
+      ok(/"reason" TEXT NOT NULL/.test(code), "the Admin reason is a mandatory column (never nullable)");
+      ok(/"createdByUserId" TEXT NOT NULL/.test(code), "the actor is a mandatory column");
+      ok(/"expiresAt"/.test(code) && /"revokedAt"/.test(code), "expiry and revocation are recorded");
+      ok(!/DROP TABLE|DROP COLUMN|DELETE FROM/i.test(code), "Phase H is additive (no table/column drop, no row delete)");
+    }
+    for (const fkey of ["ProgressionOverride_lessonId_fkey", "ProgressionOverride_studentId_fkey"]) {
+      ok(new RegExp(`"${fkey}"`).test(pgH), `PG edition creates ${fkey} with the canonical name`);
+    }
+    ok(/DATETIME/.test(stripSqlComments(sqliteH)) && !/DATETIME/.test(stripSqlComments(pgH)), "the SQLite edition keeps DATETIME, the PG edition does not");
+    ok(/TIMESTAMPTZ\(3\)/.test(pgH), "the PG edition uses TIMESTAMPTZ(3)");
+    // Backtick identifier quoting (SQLite/MySQL style) is banned in both
+    // editions — the same denylist A3 applies to every PG migration.
+    ok(!BACKTICK.test(stripSqlComments(sqliteH)) && !BACKTICK.test(stripSqlComments(pgH)), "Phase H uses no backtick identifier quoting");
+  }
+
+  // A6 — fresh SQLite through the repo's own harness: base DDL + 16 migrations.
   {
     const { DatabaseSync } = require("node:sqlite");
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cm-mig-providers-"));
@@ -362,8 +397,8 @@ function partA() {
     const mig = require(path.join(REPO, "scripts", "lib", "migrate-sqlite.mjs"));
     const db = new DatabaseSync(dbPath);
     const applied = mig.applyMigrations(db, { withBaseSchema: true });
-    ok(applied.length === 15, `fresh SQLite applies all 15 migrations (got ${applied.length})`);
-    ok(applied[applied.length - 1] === MIG_CAMERA, "the last applied SQLite migration is the camera-policy migration");
+    ok(applied.length === 16, `fresh SQLite applies all 16 migrations (got ${applied.length})`);
+    ok(applied[applied.length - 1] === MIG_PHASE_H, "the last applied SQLite migration is the Phase H progression-authority migration");
     for (const [tbl, cols] of [
       ["Quiz", ["quizMode", "questionCount", "maxAttempts", "shuffleOptions", "difficultyPlan"]],
       ["QuizAttempt", ["attemptNumber", "status", "retryGrantId"]],
@@ -397,10 +432,15 @@ function partA() {
       const present = new Set(db.prepare(`PRAGMA table_info("${tbl}")`).all().map((r) => r.name));
       ok(cols.every((c) => present.has(c)), `fresh SQLite schema carries ${tbl} Phase G columns`);
     }
+    ok(!!db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`).get("ProgressionOverride"), "fresh SQLite schema carries the Phase H ProgressionOverride table");
+    for (const tbl of ["ProgressionOverride"]) {
+      const cols = new Set(db.prepare(`PRAGMA table_info("${tbl}")`).all().map((r) => r.name));
+      ok(["studentId", "courseId", "lessonId", "reason", "createdByUserId", "createdAt", "expiresAt", "revokedAt", "revokedByUserId", "revokeReason"].every((c) => cols.has(c)), `fresh SQLite ${tbl} carries every Phase H column`);
+    }
     // the harness ledger records the very checksums pinned in A2
     const rows = db.prepare('SELECT migration_name, checksum FROM "_prisma_migrations"').all();
     const pinned = rows.every((r) => r.checksum === PINNED[r.migration_name]);
-    ok(pinned && rows.length === 15, "fresh SQLite ledger carries exactly the pinned applied checksums");
+    ok(pinned && rows.length === 16, "fresh SQLite ledger carries exactly the pinned applied checksums");
     db.close();
     fs.rmSync(tmp, { recursive: true, force: true });
   }
@@ -704,7 +744,7 @@ async function partC() {
     const query2 = async (t, p) => pool2.query(t, p);
     const snap = await catalogSnapshot(query2);
     const ledger = await query2(`SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NOT NULL ORDER BY migration_name`);
-    const expectedPgLedger = ["0_init", MIG_26D, MIG_PHASE_F, MIG_PHASE_G, MIG_CAMERA];
+    const expectedPgLedger = ["0_init", MIG_26D, MIG_PHASE_F, MIG_PHASE_G, MIG_CAMERA, MIG_PHASE_H];
     ok(JSON.stringify(ledger.rows.map((x) => x.migration_name)) === JSON.stringify(expectedPgLedger),
       "engine: fresh deploy ledger contains exactly the complete PostgreSQL chain (never the SQLite names)");
     ok(ledger.rows.every((x) => expectedPgLedger.includes(x.migration_name)),

@@ -70,7 +70,15 @@ try {
 // NOTE: the JSON import drags tsc's inferred rootDir up to the repo root,
 // so the emit lands under OUT/src/lib (not OUT/ like the other suites).
 const EMIT = path.join(OUT, "src", "lib");
-for (const f of ["official-curriculum.js", "session-progress.js", "progress.js"]) {
+// Phase H: `session-progress.ts` is now a facade over the canonical engine, and
+// the universe query it used to own lives in `progression-universe.ts` — which
+// is part of the same compiled graph, so it is emitted too.
+for (const f of [
+  "official-curriculum.js",
+  "session-progress.js",
+  "progression-universe.js",
+  "progress.js",
+]) {
   if (!fs.existsSync(path.join(EMIT, f))) {
     throw new Error(`tsc did not emit ${f}`);
   }
@@ -680,11 +688,15 @@ function legacyLesson(topicId, overrides = {}) {
       JSON.stringify(UNIVERSE),
     "the student universe filter is exactly { status: \"PUBLISHED\" }"
   );
+  // Phase H: the pin is unchanged in MEANING — the progression universe is
+  // built with the student-visible lifecycle state, never with a mirror
+  // column — but the read now lives in the module that owns the universe
+  // (`progression-universe.ts`), which `session-progress.ts` re-exports.
   ok(
     /LESSON_STUDENT_STATUS_FILTER/.test(
-      fs.readFileSync(path.join(EMIT, "session-progress.js"), "utf8")
+      fs.readFileSync(path.join(EMIT, "progression-universe.js"), "utf8")
     ),
-    "and the progression engine really applies it"
+    "and the progression universe really applies it"
   );
   // Simulate the progression-universe query over the reconciled legacy DB.
   let universeRows = await legacy.lesson.findMany({

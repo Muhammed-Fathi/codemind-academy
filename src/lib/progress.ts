@@ -8,12 +8,18 @@
 // of students) — no N+1 loops, no "fetch everything then filter in JS".
 
 import { db } from "@/lib/db";
-import { LESSON_STUDENT_STATUS_FILTER } from "@/lib/session-lifecycle";
 import { canAccessTrackScope } from "@/lib/track-scope";
 import { normalizeSchoolType, type SchoolType } from "@/lib/school-type";
+// Phase H — the threshold has ONE definition (the canonical requirement
+// matrix) and the video universe has ONE definition (the canonical
+// progression universe). This module re-exports the threshold for its
+// historical importers and reads the universe instead of re-deriving it, so a
+// dashboard, a report, a certificate and the progression engine can never
+// disagree about which lessons carry a video.
+import { VIDEO_COMPLETION_THRESHOLD } from "@/lib/progression-requirements";
+import { loadVideoLessonsForCourses } from "@/lib/progression-universe";
 
-/** Minimum watched share of a video before it counts as completed. */
-export const VIDEO_COMPLETION_THRESHOLD = 95;
+export { VIDEO_COMPLETION_THRESHOLD };
 
 export type VideoProgressSummary = {
   studentId: string;
@@ -63,49 +69,32 @@ async function videoLessonIdsByStudent(
     return result;
   }
 
-  const groups = await db.group.findMany({
+  // Explicitly typed: the shared universe helper takes `readonly string[]`, and
+  // an inferred (client-typed) row shape must not be able to widen or narrow
+  // the set of courses this denominator is measured over.
+  const groups = (await db.group.findMany({
     where: { id: { in: groupIds } },
     select: { id: true, courseId: true },
-  });
+  })) as Array<{ id: string; courseId: string }>;
   const courseByGroup = new Map(groups.map((g) => [g.id, g.courseId]));
-  const courseIds = [...new Set(groups.map((g) => g.courseId))];
+  const courseIds = [...new Set(groups.map((g) => g.courseId))] as string[];
 
-  // One query for all courses at once. Both curriculum chains (official
-  // lessons are unit-linked) with archived history excluded — the same
-  // predicate as lessonCoursesChainOr + EXCLUDE_ARCHIVED_LESSON in
-  // session-progress.ts, kept inline to avoid a progress ↔ session-progress
-  // import cycle (that module imports VIDEO_COMPLETION_THRESHOLD from here).
-  // Phase 13: `status: "PUBLISHED"` replaces the legacy `isPublished` flag as
-  // the lifecycle clause (the same predicate the progression universe uses).
-  // A staged (DRAFT/READY) lesson is not a video a student is measured on, so
-  // counting it would inflate the denominator of every dashboard, report and
-  // certificate that reads through this helper.
-  const lessons = await db.lesson.findMany({
-    where: {
-      ...LESSON_STUDENT_STATUS_FILTER,
-      curriculumStatus: { not: "ARCHIVED" },
-      videoUrl: { not: null },
-      OR: [
-        { unit: { part: { courseId: { in: courseIds } } } },
-        { topic: { unit: { part: { courseId: { in: courseIds } } } } },
-      ],
-    },
-    select: {
-      id: true,
-      // Phase 19: carried so the per-student slice below can apply the SAME
-      // track predicate as the progression universe without a second query.
-      trackScope: true,
-      unit: { select: { part: { select: { courseId: true } } } },
-      topic: { select: { unit: { select: { part: { select: { courseId: true } } } } } },
-    },
-  });
+  // ONE query for all courses at once, through the CANONICAL universe
+  // (src/lib/progression-universe.ts): lifecycle PUBLISHED, archived history
+  // excluded, both curriculum chains, and only lessons that actually carry a
+  // video. Phase H removed this module's private copy of that predicate — a
+  // second definition of "which lessons have a video" is exactly the drift
+  // that lets a dashboard measure a student on a lesson the engine never
+  // gates. `trackScope` is carried back so the per-student slice below still
+  // applies the SAME track predicate, without a second query.
+  const lessons = await loadVideoLessonsForCourses({ courseIds });
 
   const lessonsByCourse = new Map<
     string,
     { id: string; trackScope: unknown }[]
   >();
   for (const l of lessons) {
-    const cid = l.unit?.part.courseId ?? l.topic?.unit.part.courseId;
+    const cid = l.courseId;
     if (!cid) continue;
     const arr = lessonsByCourse.get(cid) || [];
     arr.push({ id: l.id, trackScope: l.trackScope });

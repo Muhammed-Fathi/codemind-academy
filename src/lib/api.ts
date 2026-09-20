@@ -97,6 +97,24 @@ export type ProgressionDenial =
   | "PREVIOUS_SESSION_INCOMPLETE";
 
 /**
+ * The human half of a progression refusal (Phase H).
+ *
+ * A student must never be answered with a bare LOCKED state: the payload
+ * carries an Arabic-first sentence plus the stable codes of what still has to
+ * happen. `blockers` holds MACHINE CODES only (VIDEO / QUIZ / HOMEWORK /
+ * PREVIOUS_LESSON / ABSENCE_HOLD) — never an internal id, a database enum or
+ * the protected content of another session.
+ */
+export type ProgressionDenialDetail = {
+  /** Stable code for the headline sentence (null when there is none). */
+  reason?: string | null;
+  /** Arabic-first human sentence for the headline. */
+  message?: string | null;
+  /** Stable codes, in the order the student should act on them. */
+  blockers?: readonly string[];
+};
+
+/**
  * Uniform denial for a resource gated by session progression (quiz, homework,
  * lesson content, video progress).
  *
@@ -105,13 +123,16 @@ export type ProgressionDenial =
  *     response never confirms that an id is real.
  *   * anything else -> 403 with a machine-readable `code`.
  *
- * Deliberately carries NO requirement metadata: a status row describes which
- * components (video / quiz / assignment) a session the caller may not open
- * yet contains, which is exactly the kind of leak this gate exists to prevent.
+ * Phase H: callers MAY pass the canonical engine's human detail, which is the
+ * ONLY thing this function ever adds to the body. It never serialises a
+ * status row of a session the caller may not open: a status row names which
+ * components (video / quiz / assignment) that session contains, which is
+ * exactly the kind of leak this gate exists to prevent.
  */
 export async function denyProgression(
   reason: ProgressionDenial | null | undefined,
-  notFoundMessage = "Not found"
+  notFoundMessage = "Not found",
+  detail?: ProgressionDenialDetail | null
 ) {
   const tApi = await getServerT();
   if (reason === "LESSON_NOT_FOUND") return err(notFoundMessage, 404);
@@ -121,13 +142,19 @@ export async function denyProgression(
     reason === "NOT_ENROLLED" || reason === "PREVIOUS_SESSION_INCOMPLETE"
       ? reason
       : "PREVIOUS_SESSION_INCOMPLETE";
-  return NextResponse.json(
-    {
-      error: code === "NOT_ENROLLED" ? tApi("api.208") : tApi("api.209"),
-      code,
-    },
-    { status: 403 }
-  );
+  const body: Record<string, unknown> = {
+    error: code === "NOT_ENROLLED" ? tApi("api.208") : tApi("api.209"),
+    code,
+  };
+  if (detail && code === "PREVIOUS_SESSION_INCOMPLETE") {
+    // Only a PROGRESSION refusal explains itself: an enrollment refusal has
+    // nothing academic to disclose, and adding the fields there would widen
+    // the surface for no benefit.
+    body.reason = detail.reason ?? null;
+    body.message = detail.message ?? null;
+    body.blockers = detail.blockers ? [...detail.blockers] : [];
+  }
+  return NextResponse.json(body, { status: 403 });
 }
 
 export async function requireUser() {
