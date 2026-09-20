@@ -105,7 +105,7 @@ export function QuizRunner() {
   const setNavParam = useApp((s) => s.setNavParam);
   const navParam = useApp((s) => s.navParam);
   const quizId = useApp((s) => s.quizId);
-  const activeQuizId = quizId ?? navParam;
+  const activeQuizId = quizId;
 
   const [quiz, setQuiz] = React.useState<QuizData | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -186,8 +186,8 @@ export function QuizRunner() {
   );
 
   const load = React.useCallback(() => {
-    if (!navParam) {
-      setError(t("course.001"));
+      if (!activeQuizId) {
+        setError(t("course.001"));
       setLoading(false);
       return;
     }
@@ -345,7 +345,7 @@ export function QuizRunner() {
         <>
       {/* Live camera indicator. Rendered only when the student opted in and an
           attempt row exists to attach the snapshots to. */}
-      {cameraAllowed && attemptId && navParam && (
+      {cameraAllowed && attemptId && activeQuizId && (
         <div className="flex justify-end">
           <QuizCameraMonitor
             quizId={activeQuizId}
