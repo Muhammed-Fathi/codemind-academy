@@ -637,6 +637,8 @@ export function StudentLessonView() {
                           className="w-full"
                           onClick={() => {
                             setView("student-quiz");
+                            // Preserve the owning Lesson while switching the active entity to Quiz.
+                            if (activeLessonId) setLessonId(activeLessonId);
                             setQuizId(q.id);
                             setNavParam(q.id);
                           }}

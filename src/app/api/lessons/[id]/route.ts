@@ -134,7 +134,10 @@ export async function GET(
   // opened). Staff keeps the full lists for preview/authoring. Filtering HERE
   // covers every downstream consumer of these arrays (payload lists, the
   // attempted-set lookup, the content summary input).
-  if (contentViewer.role !== "STAFF") {
+  // Filter before serialization using the authenticated role itself. The
+  // contentViewer summary is populated later for Students, so it cannot be
+  // the gate for lifecycle visibility at this point.
+  if (user.role === "STUDENT" || user.role === "PARENT") {
     lesson.quizzes = filterStudentLessonRows(lesson.quizzes);
     lesson.homeworks = filterStudentLessonRows(lesson.homeworks);
   }
