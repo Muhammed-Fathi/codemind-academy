@@ -88,6 +88,21 @@ type LessonItem = {
   } | null;
   quiz: { id: string; title: string; titleAr: string } | null;
   homework: { id: string; title: string; titleAr: string } | null;
+  /**
+   * Phase H — the canonical engine row for this session. Unlocked rows carry
+   * the full matrix; LOCKED rows carry the safe subset only (state, Arabic
+   * reason + code, structured unmet) — never a bare LOCKED, never an oracle.
+   */
+  requirements?: {
+    lessonId?: string;
+    order?: number;
+    state?: string | null;
+    completed?: boolean;
+    unlocked?: boolean;
+    reason?: string | null;
+    reasonCode?: string | null;
+    unmet?: { kind: string; label?: string | null }[] | null;
+  } | null;
 };
 
 type TopicItem = {
@@ -444,10 +459,15 @@ function LessonRow({ lesson }: { lesson: LessonItem }) {
   const setNavParam = useApp((s) => s.setNavParam);
 
   const isLocked = lesson.status === "locked";
+  // Phase H — the server-computed Arabic reason travels with the row, so a
+  // locked (or current) session always names its exact next action. The
+  // generic strings stay as fallbacks for stale payloads only.
+  const lockReason = lesson.requirements?.reason ?? null;
+  const unmet = lesson.requirements?.unmet ?? [];
 
   const open = () => {
     if (isLocked) {
-      toast.warning(tr("course.044"));
+      toast.warning(lockReason || tr("course.044"));
       return;
     }
     setView("student-lesson");
@@ -540,6 +560,26 @@ function LessonRow({ lesson }: { lesson: LessonItem }) {
             ) : null}
           </span>
         </div>
+        {/* Phase H — the canonical next action, rendered verbatim from the
+            engine row. Locked rows name why they are locked; the current row
+            names what finishes it. Completed rows stay clean. */}
+        {(isLocked || lesson.status === "current") && lockReason && (
+          <div className="text-[11px] text-amber-600 dark:text-amber-400 leading-snug mt-1">
+            {lockReason}
+          </div>
+        )}
+        {isLocked && unmet.length > 0 && (
+          <div className="flex items-center gap-1 flex-wrap mt-1">
+            {unmet.slice(0, 3).map((u, i) => (
+              <span
+                key={`${u.kind}-${i}`}
+                className="inline-flex items-center h-5 px-1.5 rounded-md text-[10px] font-semibold bg-amber-400/15 text-amber-600 dark:text-amber-400"
+              >
+                {u.label || u.kind}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
       {lesson.isCompleted && (
         <Badge
@@ -560,7 +600,9 @@ function LessonRow({ lesson }: { lesson: LessonItem }) {
       <li>
         <Tooltip>
           <TooltipTrigger asChild>{inner}</TooltipTrigger>
-          <TooltipContent side="top">{tr("course.046")}</TooltipContent>
+          <TooltipContent side="top">
+            {lockReason || tr("course.046")}
+          </TooltipContent>
         </Tooltip>
       </li>
     );

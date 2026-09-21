@@ -21,6 +21,8 @@ import {
 } from "@/lib/media";
 import { assertVolumeQuota } from "@/lib/storage-quotas";
 import { extFromHomeworkFileMime } from "@/lib/homework-files";
+import { syncDerivedCompletion } from "@/lib/progression";
+import { maybeResolveCatchup } from "@/lib/catchup";
 
 /** Longest accepted free-text answer. Generous, but not an upload channel. */
 const MAX_ANSWER_CHARS = 4000;
@@ -204,7 +206,14 @@ export async function POST(req: NextRequest) {
 
   // Server-side progression gate — the same rule that unlocks the session.
   const access = await canAccessHomework(s.id, homeworkId);
-  if (!access.allowed) return denyProgression(access.reason, "Homework not found");
+  if (!access.allowed)
+    return denyProgression(access.reason, "Homework not found", {
+      state: access.evaluation?.state ?? null,
+      reason: access.evaluation?.reason ?? null,
+      reasonCode: access.evaluation?.reasonCode ?? null,
+      unmet: access.evaluation?.unmet ?? [],
+      holdBlocked: access.reason === "ABSENCE_HOLD",
+    });
 
   const homework = await db.homework.findUnique({
     where: { id: homeworkId },
@@ -315,6 +324,11 @@ export async function POST(req: NextRequest) {
       },
     },
   });
+
+  // Phase H — a submission may complete its lesson or complete a catch-up.
+  // Best-effort, never throws: the submission already committed.
+  await syncDerivedCompletion(s.id, homework.lessonId);
+  await maybeResolveCatchup(s.id, user.id);
 
   return ok({
     message: tApi("api.225"),

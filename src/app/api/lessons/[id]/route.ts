@@ -280,11 +280,19 @@ export async function GET(
     const s = await getStudentProfile(user.id);
     if (!s) return err("Student profile not found", 404);
 
-    // AUTHORIZATION: enrollment + previous-session completion are enforced
-    // here, so opening the URL directly cannot bypass the lock.
+    // AUTHORIZATION: the canonical engine (enrollment + sequential chain +
+    // hold boundary + overrides) is enforced here, so opening the URL
+    // directly cannot bypass the lock. A denial carries the Arabic reason +
+    // structured unmet requirements — never a bare LOCKED.
     const access = await canAccessLesson(s.id, id);
     if (!access.allowed) {
-      return denyProgression(access.reason, "Lesson not found");
+      return denyProgression(access.reason, "Lesson not found", {
+        state: access.status?.state ?? null,
+        reason: access.status?.reason ?? null,
+        reasonCode: access.status?.reasonCode ?? null,
+        unmet: access.status?.unmet ?? [],
+        holdBlocked: access.reason === "ABSENCE_HOLD",
+      });
     }
     requirements = access.status;
 
@@ -325,6 +333,14 @@ export async function GET(
           lastViewedAt: new Date(),
         },
       });
+      // Phase H display convergence (no write): the workspace badge and the
+      // Mark-as-Complete card read `progress.isCompleted`, so it mirrors the
+      // canonical engine verdict — exactly what the tree and the dashboard
+      // show — instead of the legacy client-touchable flag (which stays
+      // preserved for historical aggregates).
+      if (progress) {
+        progress = { ...progress, isCompleted: access.status?.completed ?? progress.isCompleted };
+      }
     }
   }
 

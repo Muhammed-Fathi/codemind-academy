@@ -28,6 +28,8 @@ import {
   rateLimitedResponse,
 } from "@/lib/api";
 import { canAccessLesson } from "@/lib/session-progress";
+import { syncDerivedCompletion } from "@/lib/progression";
+import { maybeResolveCatchup } from "@/lib/catchup";
 
 const MAX_CREDIT_PER_BEAT_SEC = 60;
 
@@ -74,7 +76,14 @@ export async function POST(
   // less legacy rows skip the gate (no lesson exists to authorize against).
   if (video.lessonId) {
     const lessonAccess = await canAccessLesson(student.id, video.lessonId);
-    if (!lessonAccess.allowed) return err("Forbidden", 403);
+    if (!lessonAccess.allowed) {
+      // Phase H: a hold refuses FORWARD recordings only; the missed lesson's
+      // own recording stays accessible, so recovery watch time accrues.
+      if (lessonAccess.reason === "ABSENCE_HOLD") {
+        return err("عندك غياب محتاج تعويض", 403);
+      }
+      return err("Forbidden", 403);
+    }
   }
 
   const body = await req.json().catch(() => ({}));
@@ -121,6 +130,14 @@ export async function POST(
       lastHeartbeatAt: now,
     },
   });
+
+  // Phase H — on the transition to completion only (bounded: once per
+  // video): converge the linked lesson's legacy marker and sweep catch-up.
+  // Best-effort, never throws — the heartbeat already committed.
+  if (isCompleted && !wasCompleted && video.lessonId) {
+    await syncDerivedCompletion(student.id, video.lessonId);
+    await maybeResolveCatchup(student.id, user.id);
+  }
 
   return ok({
     percent: view.percent,

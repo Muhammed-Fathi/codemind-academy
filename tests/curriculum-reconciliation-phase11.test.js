@@ -680,9 +680,12 @@ function legacyLesson(topicId, overrides = {}) {
       JSON.stringify(UNIVERSE),
     "the student universe filter is exactly { status: \"PUBLISHED\" }"
   );
+  // Phase H: the universe clause is applied by the canonical engine; the
+  // adapter only delegates (the compiled adapter must not carry its own
+  // copy of the filter).
   ok(
     /LESSON_STUDENT_STATUS_FILTER/.test(
-      fs.readFileSync(path.join(EMIT, "session-progress.js"), "utf8")
+      fs.readFileSync(path.join(EMIT, "progression.js"), "utf8")
     ),
     "and the progression engine really applies it"
   );

@@ -231,6 +231,14 @@ const fakeDb = {
   lessonProgress: { findMany: () => Promise.resolve([]) },
   quizAttempt: { findMany: () => Promise.resolve([]) },
   homeworkSubmission: { findMany: () => Promise.resolve([]) },
+  // Canonical progression-engine reads (empty world: no videos served,
+  // no holds, no overrides — the suite's lessons carry no requirements
+  // beyond L1's unwatched videoUrl).
+  sessionVideo: { findMany: () => Promise.resolve([]) },
+  sessionVideoView: { findMany: () => Promise.resolve([]) },
+  question: { findMany: () => Promise.resolve([]) },
+  absenceHold: { findMany: () => Promise.resolve([]) },
+  progressionOverride: { findMany: () => Promise.resolve([]) },
   batch: { findMany: () => Promise.resolve([]), findFirst: () => Promise.resolve(null) },
   group: { findMany: async () => store.groups.map((g) => ({ id: g.id, name: g.name, isActive: g.isActive })) },
   subscriptionPlan: { findMany: async () => [{ id: "plan-req", name: "plan-req", nameAr: null }] },

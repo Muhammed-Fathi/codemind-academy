@@ -689,19 +689,31 @@ ok(
 // ---------------------------------------------------------------------------
 section("E. Baseline protections still in place (Phase 4 carry-over)");
 
-const sessionProgress = read("src/lib/session-progress.ts");
+// Phase H: the progression rules moved into the canonical engine
+// (src/lib/progression.ts); the adapter only delegates. The universe,
+// threshold and chain invariants are pinned at their single home.
+const engine = read("src/lib/progression.ts");
 ok(
-  /OR:\s*\[\s*\{\s*unit:\s*\{\s*part:\s*\{\s*courseId\s*\}\s*\}\s*\},\s*\{\s*topic:/.test(
-    sessionProgress
-  ),
+  /lessonCourseChainOr/.test(engine) &&
+    /\{\s*unit:\s*\{\s*part:\s*\{\s*courseId/.test(engine) &&
+    /\{\s*topic:\s*\{\s*unit:\s*\{\s*part:\s*\{\s*courseId/.test(engine),
   "progression universe still matches both chains"
 );
 ok(
-  /attemptedQuizzes\.has/.test(sessionProgress),
-  "quiz completion requirement unchanged (finished attempt exists)"
+  /from "@\/lib\/progression"/.test(read("src/lib/session-progress.ts")),
+  "the adapter delegates to the canonical engine (no second universe)"
+);
+// Phase H product decision (explicit rule change, not a regression): a quiz
+// requirement is satisfied by a PASSED finished attempt — attempted-but-failed
+// no longer unlocks. The student must genuinely pass (or receive an admin
+// retry grant / progression override).
+ok(
+  /finishedAt:\s*\{\s*not:\s*null\s*\}/.test(engine) &&
+    /passed:\s*true/.test(engine),
+  "quiz requirement = PASSED finished attempt (attempted-but-failed no longer unlocks)"
 );
 ok(
-  /VIDEO_COMPLETION_THRESHOLD/.test(sessionProgress),
+  /VIDEO_COMPLETION_THRESHOLD/.test(engine),
   "95% video threshold unchanged"
 );
 

@@ -142,6 +142,8 @@ const MODULES = [
   "src/app/api/admin/payments/route.ts",
   "src/app/api/admin/payments/[id]/approve/route.ts",
   "src/app/api/admin/payments/[id]/reject/route.ts",
+  // Phase H: the STUDENT-17 pass-rule proof needs a real retry grant.
+  "src/app/api/admin/quiz-retries/route.ts",
 ];
 fs.writeFileSync(
   path.join(OUT, "tsconfig.json"),
@@ -367,6 +369,7 @@ const ROUTES = [
   ["GET", /^\/api\/admin\/payments$/, () => route("admin/payments/route.js").GET],
   ["POST", /^\/api\/admin\/payments\/([^/]+)\/approve$/, () => route("admin/payments/[id]/approve/route.js").POST, (m) => ({ id: m[1] })],
   ["POST", /^\/api\/admin\/payments\/([^/]+)\/reject$/, () => route("admin/payments/[id]/reject/route.js").POST, (m) => ({ id: m[1] })],
+  ["POST", /^\/api\/admin\/quiz-retries$/, () => route("admin/quiz-retries/route.js").POST],
 ];
 
 function buildRequest({ method, url, headers, body, cookieHeader }) {
@@ -1222,14 +1225,36 @@ eq(gateStart.status, 200, "gate quiz attempt starts");
 const gateGet = await call("GET", `/api/quizzes/${gateQuizId}`, { cookie: AR });
 const gateQs = gateGet.json?.questions ?? [];
 const gateSubmit = await call("POST", `/api/quizzes/${gateQuizId}/submit`, {
-  body: { answers: gateQs.map((q) => ({ questionId: q.id, selected: "1" })) }, // WRONG answer — attempted suffices for progression
+  body: { answers: gateQs.map((q) => ({ questionId: q.id, selected: "1" })) }, // WRONG answer
   cookie: AR,
 });
 eq(gateSubmit.status, 200, "gate quiz submits");
-eq(gateSubmit.json?.passed, false, "wrong answer → not passed (attempted IS the requirement)");
+eq(gateSubmit.json?.passed, false, "wrong answer → not passed");
+// Phase H product decision: a quiz requirement is satisfied by a PASS, not a
+// mere attempt — the failed attempt must NOT unlock the next lesson.
+const lesson4StillLocked = await call("GET", `/api/lessons/${L4}`, { cookie: AR });
+eq(lesson4StillLocked.status, 403, "lesson 4 STAYS LOCKED after a failed attempt (PASS rule)");
+// A genuine pass opens the chain: an admin retry grant permits one fresh
+// attempt (a terminal attempt never auto-retries), then answer correctly.
+const arStudent = studentRowOf("qa26b-ar@local.test");
+const grant = await call("POST", "/api/admin/quiz-retries", {
+  body: { studentId: arStudent.id, quizId: gateQuizId },
+  cookie: ADMIN_COOKIE,
+});
+eq(grant.status, 201, "admin retry grant issued after the failed attempt");
+const gateStart2 = await call("POST", `/api/quizzes/${gateQuizId}/start`, { body: { cameraStatus: "DENIED" }, cookie: AR });
+eq(gateStart2.status, 200, "gate quiz retry starts");
+const gateGet2 = await call("GET", `/api/quizzes/${gateQuizId}`, { cookie: AR });
+const gateQs2 = gateGet2.json?.questions ?? [];
+const gateSubmit2 = await call("POST", `/api/quizzes/${gateQuizId}/submit`, {
+  body: { answers: gateQs2.map((q) => ({ questionId: q.id, selected: "0" })) }, // CORRECT answer
+  cookie: AR,
+});
+eq(gateSubmit2.status, 200, "gate quiz retry submits");
+eq(gateSubmit2.json?.passed, true, "correct answer → passed");
 const lesson4Open = await call("GET", `/api/lessons/${L4}`, { cookie: AR });
-eq(lesson4Open.status, 200, "lesson 4 UNLOCKED after the attempt (passed-or-attempted rule)");
-matrixRow("STUDENT-17", "Progression", "video+quiz+homework complete lesson 1 → lesson 2 unlocks; unfinished component gates the NEXT lesson; attempt (even failed) satisfies quiz requirement", "L2 unlocked; L4 refused while L3 quiz open; L4 opened after an attempted (failed) quiz", "PASS", "canAccessLesson chain + quiz submit")
+eq(lesson4Open.status, 200, "lesson 4 UNLOCKED after the PASS (PASS rule)");
+matrixRow("STUDENT-17", "Progression", "video+quiz+homework complete lesson 1 → lesson 2 unlocks; unfinished component gates the NEXT lesson; a failed attempt does NOT satisfy the quiz requirement — only a PASS unlocks", "L2 unlocked; L4 refused while L3 quiz open; L4 still refused after a failed attempt; L4 opened after a pass", "PASS", "canAccessLesson chain + quiz submit")
 
 // ===========================================================================
 section("STUDENT-14 — Materials (allowed / locked / private delivery)");

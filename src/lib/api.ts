@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getServerT } from "@/lib/i18n-server";
 import type { Role } from "@prisma/client";
+import type { ProgressionUnmetEntry } from "@/lib/progression";
 import { checkRateLimit, logSecurityEvent } from "@/lib/security";
 import {
   enforceRateLimit,
@@ -87,14 +88,30 @@ export function rateLimitedResponse(
 }
 
 /**
- * Reasons produced by the shared progression gate (`src/lib/session-progress`).
- * Kept as plain string literals here so this module never has to import the
- * progression service at runtime.
+ * Reasons produced by the canonical progression engine (`src/lib/progression`,
+ * via the `src/lib/session-progress` adapter). Kept as plain string literals
+ * here so this module never has to import the progression service at runtime.
  */
 export type ProgressionDenial =
   | "NOT_ENROLLED"
   | "LESSON_NOT_FOUND"
-  | "PREVIOUS_SESSION_INCOMPLETE";
+  | "PREVIOUS_SESSION_INCOMPLETE"
+  | "ABSENCE_HOLD";
+
+/**
+ * Optional Arabic-first explanation attached to a 403 progression denial.
+ * Safe by design: stable unmet codes + a human-readable reason + the
+ * progression state. Never quiz answers, never media URLs, never protected
+ * identities — component PRESENCE on a locked lesson is public skeleton
+ * (the course tree already shows it), not protected content.
+ */
+export type ProgressionDenialDetails = {
+  state?: string | null;
+  reason?: string | null;
+  reasonCode?: string | null;
+  unmet?: readonly ProgressionUnmetEntry[] | null;
+  holdBlocked?: boolean;
+} | null | undefined;
 
 /**
  * Uniform denial for a resource gated by session progression (quiz, homework,
@@ -103,28 +120,49 @@ export type ProgressionDenial =
  *   * `LESSON_NOT_FOUND` -> 404. The resource either does not exist or is not
  *     attached to a course the gate can verify; both look identical so the
  *     response never confirms that an id is real.
+ *   * `ABSENCE_HOLD` -> 403 with the Arabic catch-up message: an active
+ *     absence hold blocks forward progression until the student catches up.
  *   * anything else -> 403 with a machine-readable `code`.
  *
- * Deliberately carries NO requirement metadata: a status row describes which
- * components (video / quiz / assignment) a session the caller may not open
- * yet contains, which is exactly the kind of leak this gate exists to prevent.
+ * Phase H: a denial is never a bare LOCKED. Callers that hold the canonical
+ * evaluation pass `details` so the student sees WHAT to do next (Arabic
+ * reason + structured unmet requirements) instead of a generic refusal.
  */
 export async function denyProgression(
   reason: ProgressionDenial | null | undefined,
-  notFoundMessage = "Not found"
+  notFoundMessage = "Not found",
+  details: ProgressionDenialDetails = null
 ) {
   const tApi = await getServerT();
   if (reason === "LESSON_NOT_FOUND") return err(notFoundMessage, 404);
   // A denial with no reason is a programming error, not an authorization
   // decision — it still refuses the request (403) rather than falling open.
   const code: ProgressionDenial =
-    reason === "NOT_ENROLLED" || reason === "PREVIOUS_SESSION_INCOMPLETE"
+    reason === "NOT_ENROLLED" ||
+    reason === "PREVIOUS_SESSION_INCOMPLETE" ||
+    reason === "ABSENCE_HOLD"
       ? reason
       : "PREVIOUS_SESSION_INCOMPLETE";
+  const error =
+    code === "NOT_ENROLLED"
+      ? tApi("api.208")
+      : code === "ABSENCE_HOLD"
+        ? "عندك غياب محتاج تعويض"
+        : tApi("api.209");
   return NextResponse.json(
     {
-      error: code === "NOT_ENROLLED" ? tApi("api.208") : tApi("api.209"),
+      error,
       code,
+      // Arabic-first explanation (safe subset only — see the type contract).
+      ...(details
+        ? {
+            state: details.state ?? null,
+            reason: details.reason ?? null,
+            reasonCode: details.reasonCode ?? null,
+            unmet: details.unmet ? [...details.unmet] : [],
+            holdBlocked: details.holdBlocked ?? code === "ABSENCE_HOLD",
+          }
+        : {}),
     },
     { status: 403 }
   );

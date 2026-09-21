@@ -22,6 +22,8 @@ import {
 } from "@/lib/api";
 import { VIDEO_COMPLETION_THRESHOLD } from "@/lib/progress";
 import { canAccessLesson } from "@/lib/session-progress";
+import { syncDerivedCompletion } from "@/lib/progression";
+import { maybeResolveCatchup } from "@/lib/catchup";
 import { getServerT } from "@/lib/i18n-server";
 
 /** Heartbeats further apart than this are treated as a resumed session. */
@@ -48,10 +50,13 @@ export async function POST(
   if (!student) return err(tApi("api.095"), 404);
 
   // Backend authorization — a locked lesson cannot accrue progress.
+  // (Phase H: the missed lesson itself stays accessible under a hold, so
+  // recovery watch time accrues; only forward content is refused.)
   const access = await canAccessLesson(student.id, id);
   if (!access.allowed) {
     if (access.reason === "NOT_ENROLLED") return err(tApi("api.208"), 403);
     if (access.reason === "LESSON_NOT_FOUND") return err("Lesson not found", 404);
+    if (access.reason === "ABSENCE_HOLD") return err("عندك غياب محتاج تعويض", 403);
     return err(tApi("api.209"), 403);
   }
 
@@ -110,6 +115,15 @@ export async function POST(
       progress: Math.max(existing?.progress ?? 0, percent),
     },
   });
+
+  // Phase H — on the transition to completion only (bounded: once per
+  // lesson): converge the legacy marker to the canonical derivation and
+  // sweep catch-up. Best-effort, never throws — the heartbeat already
+  // committed.
+  if (videoCompleted && !alreadyCompleted) {
+    await syncDerivedCompletion(student.id, id);
+    await maybeResolveCatchup(student.id, user.id);
+  }
 
   return ok({
     lessonId: id,

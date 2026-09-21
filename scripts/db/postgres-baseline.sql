@@ -807,6 +807,22 @@ CREATE TABLE "ParentStudentLink" (
   CONSTRAINT "ParentStudentLink_parentId_fkey" FOREIGN KEY ("parentId") REFERENCES "Parent" ("id") ON UPDATE CASCADE ON DELETE CASCADE
 );
 
+CREATE TABLE "ProgressionOverride" (
+  "id" TEXT NOT NULL,
+  "studentId" TEXT NOT NULL,
+  "lessonId" TEXT NOT NULL,
+  "reason" TEXT NOT NULL,
+  "createdByUserId" TEXT NOT NULL,
+  "createdAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "expiresAt" TIMESTAMPTZ(3),
+  "revokedAt" TIMESTAMPTZ(3),
+  "revokedByUserId" TEXT,
+  "revokeReason" TEXT,
+  CONSTRAINT "ProgressionOverride_pkey" PRIMARY KEY ("id"),
+  CONSTRAINT "ProgressionOverride_studentId_fkey" FOREIGN KEY ("studentId") REFERENCES "Student" ("id") ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT "ProgressionOverride_lessonId_fkey" FOREIGN KEY ("lessonId") REFERENCES "Lesson" ("id") ON UPDATE CASCADE ON DELETE CASCADE
+);
+
 CREATE TABLE "QuizRetryGrant" (
   "id" TEXT NOT NULL,
   "studentId" TEXT NOT NULL,
@@ -1065,6 +1081,9 @@ CREATE INDEX "LessonNote_studentId_idx" ON "LessonNote" ("studentId");
 CREATE INDEX "LessonProgress_studentId_idx" ON "LessonProgress" ("studentId");
 CREATE INDEX "LessonProgress_lessonId_idx" ON "LessonProgress" ("lessonId");
 CREATE INDEX "LessonProgress_videoCompleted_idx" ON "LessonProgress" ("videoCompleted");
+CREATE INDEX "ProgressionOverride_studentId_idx" ON "ProgressionOverride" ("studentId");
+CREATE INDEX "ProgressionOverride_lessonId_idx" ON "ProgressionOverride" ("lessonId");
+CREATE INDEX "ProgressionOverride_studentId_lessonId_idx" ON "ProgressionOverride" ("studentId", "lessonId");
 CREATE INDEX "QuizRetryGrant_studentId_quizId_idx" ON "QuizRetryGrant" ("studentId", "quizId");
 CREATE INDEX "QuizRetryGrant_quizId_idx" ON "QuizRetryGrant" ("quizId");
 CREATE INDEX "QuizRetryGrant_grantedByUserId_idx" ON "QuizRetryGrant" ("grantedByUserId");

@@ -595,7 +595,10 @@ async function main() {
   // Phase F appended one authorized additive migration (the live-session
   // lifecycle); the ledger migration's POSITION (10th) is asserted just below
   // and is unaffected by an append at the end.
-  ok(migs.length === 13, `13 migrations in history (found ${migs.length}) — Phase 26B added the group-audience migration, Phase 26D the quiz attempt-architecture migration, Phase F the live-session lifecycle`);
+  // Phase G appended two workflow migrations and Phase H the audited
+  // progression-override table — all authorized, all additive, all after F.
+  ok(migs.length === 16, `16 migrations in history (found ${migs.length}) — Phase 26B added the group-audience migration, Phase 26D the quiz attempt-architecture migration, Phase F the live-session lifecycle, Phase G two workflow migrations, Phase H the override table`);
+  ok(migs[migs.length - 1] === "20260920120000_phase_h_progression_override", "the Phase H override migration sorts last (append-only history)");
   ok(migs.includes(MIGRATION_DIR), `new migration '${MIGRATION_DIR}' present`);
   ok(migs[9] === MIGRATION_DIR, "ledger migration still applies after its 9 predecessors (10th position)");
   ok(migs.includes("20260915120000_phase26b_group_track_scope"), "the Phase 26B group-audience migration is present (Phase 26D appended a later one)");

@@ -179,6 +179,11 @@ function makeDb(seed = {}) {
     auditLog: [],
     student: new Map(),
     parent: new Map(),
+    // Phase H engine reads: empty unless a section seeds them.
+    question: [],
+    absenceHold: [],
+    progressionOverride: [],
+    batch: [],
   };
   const writes = { updateMany: 0, create: 0, upsert: 0, deleteMany: 0 };
   const tx = { started: 0, rolledBack: 0 };
@@ -459,6 +464,32 @@ function makeDb(seed = {}) {
     sessionVideoView: {
       findMany: async ({ where } = {}) =>
         (t.sessionVideoView ?? []).filter((r) => match(r, where, "sessionVideoView")),
+    },
+    // Phase H: the canonical engine's remaining reads (batch reconciliation,
+    // batch recordings, holds, overrides). Empty tables answer empty.
+    batch: {
+      findFirst: async ({ where } = {}) =>
+        (t.batch ?? []).filter((r) => match(r, where, "batch"))[0] ?? null,
+      findUnique: async ({ where } = {}) =>
+        (t.batch ?? []).find((r) => match(r, where, "batch")) ?? null,
+      findMany: async ({ where } = {}) =>
+        (t.batch ?? []).filter((r) => match(r, where, "batch")),
+    },
+    question: {
+      findMany: async ({ where } = {}) =>
+        (t.question ?? []).filter((r) => match(r, where, "question")),
+    },
+    sessionVideo: {
+      findMany: async ({ where } = {}) =>
+        (t.sessionVideo ?? []).filter((r) => match(r, where, "sessionVideo")),
+    },
+    absenceHold: {
+      findMany: async ({ where } = {}) =>
+        (t.absenceHold ?? []).filter((r) => match(r, where, "absenceHold")),
+    },
+    progressionOverride: {
+      findMany: async ({ where } = {}) =>
+        (t.progressionOverride ?? []).filter((r) => match(r, where, "progressionOverride")),
     },
   };
   const scalarKeys = (row) =>
@@ -1287,8 +1318,10 @@ section("8. the ceremony — MARK_READY requires readiness");
   {
     // Re-derive the compiled engine's universe filter with the clause removed
     // and prove the fake-db universe widens — i.e. that the assertions above
-    // are guards and not decoration.
-    const src = fs.readFileSync(path.join(EMIT, "session-progress.js"), "utf8");
+    // are guards and not decoration. Phase H: the clause lives in the
+    // canonical engine (progression.js); the adapter delegates, so a neutered
+    // engine copy widens the adapter's universe too.
+    const src = fs.readFileSync(path.join(EMIT, "progression.js"), "utf8");
     ok(
       /LESSON_STUDENT_STATUS_FILTER/.test(src),
       "the compiled progression engine references the lifecycle clause"
@@ -1298,8 +1331,25 @@ section("8. the ceremony — MARK_READY requires readiness");
       .replace(/(?<![\w$.])LESSON_STUDENT_STATUS_FILTER/g, "{}");
     ok(neutered !== src, "and the clause can actually be removed from it");
     ok(!/LESSON_STUDENT_STATUS_FILTER/.test(neutered), "…leaving no trace of it (the control is real)");
-    fs.writeFileSync(path.join(EMIT, "session-progress-neutered.js"), neutered);
-    const NEUTERED = require(path.join(EMIT, "session-progress-neutered.js"));
+    const NEUTRAL_DIR = `${EMIT}-neutered`;
+    fs.rmSync(NEUTRAL_DIR, { recursive: true, force: true });
+    fs.cpSync(EMIT, NEUTRAL_DIR, { recursive: true });
+    fs.writeFileSync(path.join(NEUTRAL_DIR, "progression.js"), neutered);
+    // The adapter imports the engine through the `@/lib/progression` alias,
+    // which the module patch would resolve back to the GUARDED emit dir —
+    // rewire the copy to its neutered sibling. (@/lib/db still resolves
+    // through the patch, so it reads the same fake db global.)
+    const neuteredAdapterPath = path.join(NEUTRAL_DIR, "session-progress.js");
+    const neuteredAdapterSrc = fs.readFileSync(neuteredAdapterPath, "utf8");
+    ok(
+      neuteredAdapterSrc.includes('require("@/lib/progression")'),
+      "the compiled adapter imports the engine through the alias (rewire point)"
+    );
+    fs.writeFileSync(
+      neuteredAdapterPath,
+      neuteredAdapterSrc.replace('require("@/lib/progression")', 'require("./progression")')
+    );
+    const NEUTERED = require(neuteredAdapterPath);
     const db = makeDb({
       lessons: {
         L1: { order: 1, status: "PUBLISHED", videoUrl: "https://cdn/1.mp4" },
@@ -1322,7 +1372,7 @@ section("8. the ceremony — MARK_READY requires readiness");
       ["L1", "L2"],
       "without it: the staged lesson enters the universe — so the guard is what stops the leak"
     );
-    fs.rmSync(path.join(EMIT, "session-progress-neutered.js"), { force: true });
+    fs.rmSync(NEUTRAL_DIR, { recursive: true, force: true });
   }
 
   // -------------------------------------------------------------------------

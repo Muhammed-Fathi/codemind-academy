@@ -119,6 +119,12 @@ function makeMockDb() {
     // to the legacy-videoUrl-only presence exactly like the pre-Phase-C card.
     batch: [],
     sessionVideo: [],
+    // Phase H: the canonical engine's remaining reads (holds, overrides,
+    // batch watch rows). Empty → no holds, no overrides, no batch videos.
+    sessionVideoView: [],
+    absenceHold: [],
+    absenceReview: [],
+    progressionOverride: [],
   };
   const clone = (v) => (v === undefined ? v : structuredClone(v));
   const byId = (arr, id) => arr.find((r) => r.id === id) || null;
@@ -661,23 +667,23 @@ async function seed() {
 
   // --- Quizzes (session quizzes on official + one on archived history) ------
   T.quiz.push(
-    { id: "q11", trackScope: "SHARED", lessonId: "l-1-1", title: "Quiz 1-1", titleAr: "كويز 1-1", description: null, passMark: 60, timeLimit: null, order: 0 },
-    { id: "q12", trackScope: "SHARED", lessonId: "l-1-2", title: "Quiz 1-2", titleAr: "كويز 1-2", description: null, passMark: 60, timeLimit: null, order: 0 },
-    { id: "q14a", trackScope: "ARABIC", lessonId: "l-1-4", title: "Quiz 1-4 AR", titleAr: "كويز 1-4 عربي", description: null, passMark: 60, timeLimit: null, order: 0 },
-    { id: "q21l", trackScope: "LANGUAGE", lessonId: "l-2-1", title: "Quiz 2-1 LG", titleAr: "كويز 2-1 لغات", description: null, passMark: 60, timeLimit: null, order: 0 },
-    { id: "q31", trackScope: "SHARED", lessonId: "l-3-1", title: "Quiz 3-1", titleAr: "كويز 3-1", description: null, passMark: 60, timeLimit: null, order: 0 },
-    { id: "lq1", trackScope: "SHARED", lessonId: "lx1", title: "Legacy Quiz", titleAr: "كويز قديم", description: null, passMark: 60, timeLimit: null, order: 0 },
-    { id: "qc2", trackScope: "SHARED", lessonId: "dl1", title: "Decoy Quiz", titleAr: "كويز ك2", description: null, passMark: 60, timeLimit: null, order: 0 },
+    { id: "q11", status: "PUBLISHED", trackScope: "SHARED", lessonId: "l-1-1", title: "Quiz 1-1", titleAr: "كويز 1-1", description: null, passMark: 60, timeLimit: null, order: 0 },
+    { id: "q12", status: "PUBLISHED", trackScope: "SHARED", lessonId: "l-1-2", title: "Quiz 1-2", titleAr: "كويز 1-2", description: null, passMark: 60, timeLimit: null, order: 0 },
+    { id: "q14a", status: "PUBLISHED", trackScope: "ARABIC", lessonId: "l-1-4", title: "Quiz 1-4 AR", titleAr: "كويز 1-4 عربي", description: null, passMark: 60, timeLimit: null, order: 0 },
+    { id: "q21l", status: "PUBLISHED", trackScope: "LANGUAGE", lessonId: "l-2-1", title: "Quiz 2-1 LG", titleAr: "كويز 2-1 لغات", description: null, passMark: 60, timeLimit: null, order: 0 },
+    { id: "q31", status: "PUBLISHED", trackScope: "SHARED", lessonId: "l-3-1", title: "Quiz 3-1", titleAr: "كويز 3-1", description: null, passMark: 60, timeLimit: null, order: 0 },
+    { id: "lq1", status: "PUBLISHED", trackScope: "SHARED", lessonId: "lx1", title: "Legacy Quiz", titleAr: "كويز قديم", description: null, passMark: 60, timeLimit: null, order: 0 },
+    { id: "qc2", status: "PUBLISHED", trackScope: "SHARED", lessonId: "dl1", title: "Decoy Quiz", titleAr: "كويز ك2", description: null, passMark: 60, timeLimit: null, order: 0 },
   );
 
   // --- Homework (official + one on archived history) ------------------------
   T.homework.push(
-    { id: "h11", trackScope: "SHARED", lessonId: "l-1-1", title: "HW 1-1", titleAr: "واجب 1-1", instructions: "do", deadline: FUT(5), maxMarks: 10, createdAt: D(10) },
-    { id: "h12", trackScope: "SHARED", lessonId: "l-1-2", title: "HW 1-2", titleAr: "واجب 1-2", instructions: "do", deadline: FUT(6), maxMarks: 10, createdAt: D(10) },
-    { id: "h14a", trackScope: "ARABIC", lessonId: "l-1-4", title: "HW 1-4 AR", titleAr: "واجب 1-4 عربي", instructions: "do", deadline: FUT(7), maxMarks: 20, createdAt: D(10) },
-    { id: "h21l", trackScope: "LANGUAGE", lessonId: "l-2-1", title: "HW 2-1 LG", titleAr: "واجب 2-1 لغات", instructions: "do", deadline: FUT(8), maxMarks: 10, createdAt: D(10) },
-    { id: "h31", trackScope: "SHARED", lessonId: "l-3-1", title: "HW 3-1", titleAr: "واجب 3-1", instructions: "do", deadline: FUT(9), maxMarks: 10, createdAt: D(10) },
-    { id: "hx", trackScope: "SHARED", lessonId: "lx1", title: "Legacy HW", titleAr: "واجب قديم", instructions: "do", deadline: FUT(10), maxMarks: 10, createdAt: D(30) },
+    { id: "h11", status: "PUBLISHED", trackScope: "SHARED", lessonId: "l-1-1", title: "HW 1-1", titleAr: "واجب 1-1", instructions: "do", deadline: FUT(5), maxMarks: 10, createdAt: D(10) },
+    { id: "h12", status: "PUBLISHED", trackScope: "SHARED", lessonId: "l-1-2", title: "HW 1-2", titleAr: "واجب 1-2", instructions: "do", deadline: FUT(6), maxMarks: 10, createdAt: D(10) },
+    { id: "h14a", status: "PUBLISHED", trackScope: "ARABIC", lessonId: "l-1-4", title: "HW 1-4 AR", titleAr: "واجب 1-4 عربي", instructions: "do", deadline: FUT(7), maxMarks: 20, createdAt: D(10) },
+    { id: "h21l", status: "PUBLISHED", trackScope: "LANGUAGE", lessonId: "l-2-1", title: "HW 2-1 LG", titleAr: "واجب 2-1 لغات", instructions: "do", deadline: FUT(8), maxMarks: 10, createdAt: D(10) },
+    { id: "h31", status: "PUBLISHED", trackScope: "SHARED", lessonId: "l-3-1", title: "HW 3-1", titleAr: "واجب 3-1", instructions: "do", deadline: FUT(9), maxMarks: 10, createdAt: D(10) },
+    { id: "hx", status: "PUBLISHED", trackScope: "SHARED", lessonId: "lx1", title: "Legacy HW", titleAr: "واجب قديم", instructions: "do", deadline: FUT(10), maxMarks: 10, createdAt: D(30) },
   );
 
   // --- Students / parents / links --------------------------------------------
@@ -883,30 +889,40 @@ async function main() {
     // Total = 20, NOT 21 (DRAFT 7-3 excluded), NOT 22 (language lessons 2-1,
     // 5-1 excluded), NOT 24 (archived lx1/lx2, decoy course excluded).
     eq(saDashboard.courseProgress.totalLessons, ARABIC_UNIVERSE, "ARABIC student sees exactly the 20-lesson track universe");
-    eq(saDashboard.courseProgress.completedLessons, 2, "archived-completion inflation removed from completed count");
-    eq(saDashboard.courseProgress.percentage, 10, "progress percentage = completed / official universe");
+    // Phase H: completion is engine-derived (video ≥95% + every required
+    // quiz PASSED + every required homework SUBMITTED) AND effective
+    // (completed + unlocked). Only 1-1 qualifies: 1-2's unwatched video
+    // breaks the chain, so the 15 downstream auto-completes are factually
+    // done but effectively LOCKED and uncounted. Archived history stays
+    // outside the universe (the totals above), so no inflation is possible
+    // by construction.
+    eq(saDashboard.courseProgress.completedLessons, 1, "completed = effective engine-derived completion (1-1 only)");
+    eq(saDashboard.courseProgress.percentage, 5, "progress percentage = completed / official universe");
     // continueLesson must be the engine's current session, ordered
     // canonically, and open to the student (1-2).
     eq(saDashboard.continueLesson?.id, "l-1-2", "continueLesson = first unlocked incomplete official session");
     ok(saDashboard.continueLesson?.videoUrl === "https://videos/1-2", "open session carries its video URL");
     ok(saDashboard.continueLesson?.part === "Part 1" || saDashboard.continueLesson?.part === "الجزء الأول", "continueLesson resolves the canonical Part chain");
-    // Pending homework respects the Phase 4 gating chain: a session is
-    // unlocked iff the PREVIOUS session completed, and component-less
-    // sessions auto-complete — so 1-2 (current), 1-4 and 3-1 are open for
-    // sa, but 1-3/2-2/3-2 stay locked. Of the open sessions' homework, h11
-    // and h14a already carry submissions → h12 + h31 remain pending.
-    eq(saDashboard.pendingHomework.count, 2, "pending homework = open in-track sessions without a submission");
+    // Pending homework respects the canonical gating chain: a session opens
+    // iff EVERY previous session completed (strict sequentiality — a
+    // completed-but-locked session reopens nothing downstream). 1-2 is the
+    // current session and everything after it stays locked, so of the open
+    // sessions' homework only the unsubmitted h12 (1-2) remains pending —
+    // h11 is submitted and h31's session is locked.
+    eq(saDashboard.pendingHomework.count, 1, "pending homework = open in-track sessions without a submission");
     eq(
       saDashboard.pendingHomework.items.map((h) => h.id),
-      ["h12", "h31"],
-      "pending = current session's HW + the open 3-1 HW (locked 1-3/2-2/3-2 hidden)"
+      ["h12"],
+      "pending = current session's HW only (locked sessions' homework hidden)"
     );
 
     // LANGUAGE student: different universe, same curriculum.
     await loginAs("u-sb");
     const outB = await bodyOf(await studentDashboardRoute.GET(req()));
     eq(outB.body.courseProgress.totalLessons, LANGUAGE_UNIVERSE, "LANGUAGE student sees exactly the 19-lesson track universe");
-    eq(outB.body.courseProgress.completedLessons, 2, "LANGUAGE completed count in-universe only");
+    // Phase H derived + effective: 1-1 done and open, 1-2's unwatched video
+    // breaks the chain — downstream auto-completes are locked and uncounted.
+    eq(outB.body.courseProgress.completedLessons, 1, "LANGUAGE completed count in-universe only");
 
     // Read-only guarantee.
     eq(global.__WRITES__.length, 0, "student dashboards perform no writes");
@@ -992,13 +1008,13 @@ async function main() {
 
     // Session progression from the Phase 4 engine: official universe sizes.
     eq(childA.sessionProgress.total, ARABIC_UNIVERSE, "engine universe for ARABIC child = 20");
-    // Engine semantics (Phase 4, unchanged): component-less sessions
-    // auto-complete; gating is previous-session-completed. sa: fully gated
-    // 1-1 done, 1-2/1-4/3-1/4-1 incomplete, 15 empty sessions auto-pass.
-    eq(childA.sessionProgress.completed, 16, "engine completion = 1-1 + auto-completed component-less sessions");
+    // Parent payload (Phase H effective semantics): `completed` counts
+    // completed + unlocked only — sa's 15 downstream auto-completes are
+    // locked behind 1-2's unwatched video, so 1-1 stands alone.
+    eq(childA.sessionProgress.completed, 1, "engine completion = effective (1-1 only; locked auto-completes uncounted)");
     eq(childA.sessionProgress.currentLessonId, "l-1-2", "engine current = 1-2 (first unlocked incomplete)");
     eq(childB.sessionProgress.total, LANGUAGE_UNIVERSE, "engine universe for LANGUAGE child = 19");
-    eq(childB.sessionProgress.completed, 17, "sb: 1-1 + 2-1 gated + empties = 17");
+    eq(childB.sessionProgress.completed, 1, "sb: effective completion (1-1 only; locked auto-completes uncounted)");
     eq(childB.sessionProgress.currentLessonId, "l-1-2", "LANGUAGE child also resumes at 1-2");
 
     // Strong/weak: canonical UNIT grouping (official lessons have no topic).

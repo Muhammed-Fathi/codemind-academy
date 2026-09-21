@@ -92,6 +92,11 @@ model Student {
   /// Phase F — administrative absence cases + their holds (see AbsenceReview).
   absenceReviews    AbsenceReview[]
   absenceHolds      AbsenceHold[]
+  /// Phase H — admin-issued progression overrides targeting this student.
+  /// An override is an access EXCEPTION (an overlay on the canonical engine),
+  /// never a rewrite of academic facts: quiz passes, homework submissions,
+  /// video completion and attendance history are untouched by it.
+  progressionOverrides ProgressionOverride[]
   quizAttempts      QuizAttempt[]
   /// Phase 26D — Admin-issued retry permissions targeting this student.
   retryGrants       QuizRetryGrant[]
@@ -344,6 +349,8 @@ model Lesson {
   /// the state Phase 17 notification fan-out consumes). Optional: a lesson
   /// that has never been opened through the ceremony has none.
   publication   SessionPublication?
+  /// Phase H — admin progression overrides granting access to this lesson.
+  progressionOverrides ProgressionOverride[]
 
   @@index([topicId])
   @@index([unitId, order])
@@ -722,6 +729,63 @@ model AbsenceHold {
 
   @@index([studentId, status])
   @@index([sessionId])
+}
+
+/// ProgressionOverride — the Phase H ADMIN-ONLY progression exception.
+///
+/// WHY THIS TABLE EXISTS
+///   The canonical progression engine (`src/lib/progression.ts`) derives
+///   LOCKED / UNLOCKED / COMPLETED per student per lesson from academic facts
+///   (video watch, quiz passes, homework submissions) sequenced over the
+///   published, track-eligible curriculum, minus active absence holds. That
+///   derivation is final for every role — except that an ADMIN may grant a
+///   named student access to a named lesson as an audited, expirable, revocable
+///   EXCEPTION, without rewriting any underlying fact.
+///
+/// WHAT IT IS
+///   * ONE row grants access to ONE lesson for ONE student. It unlocks the
+///     named lesson only: earlier lessons keep their own states, later lessons
+///     still wait for the named lesson's derived completion.
+///   * An override BYPASSES the sequential gate and an active absence-hold
+///     boundary for the named lesson. It NEVER bypasses track isolation
+///     (the grant route refuses a lesson outside the student's track), the
+///     publication lifecycle (DRAFT/READY/archived lessons are ungrantable) or
+///     enrollment/entitlement.
+///   * It NEVER fabricates academic facts: no quiz pass, no homework
+///     submission, no video completion, no attendance rewrite, no hold
+///     destruction, no historical COMPLETED rewrite. The engine reports the
+///     facts unchanged and marks the access as override-granted.
+///
+/// LIFECYCLE
+///   ACTIVE  = revokedAt IS NULL AND (expiresAt IS NULL OR expiresAt > now).
+///   EXPIRED = expiresAt <= now (evaluated at read time; no sweeper rewrites).
+///   REVOKED = revokedAt IS NOT NULL (append-only; rows are never deleted).
+///   Creation is idempotent per (student, lesson): re-granting an already
+///   active override replays the existing row instead of duplicating it.
+///
+/// ACTOR COLUMNS (createdByUserId / revokedByUserId) are plain columns, NOT
+/// relations — deleting a user must never rewrite override history (the same
+/// policy as `SessionPublication.publishedByUserId` and the Phase F actor
+/// columns). Every grant and revocation is mirrored into `AuditLog`.
+model ProgressionOverride {
+  id              String    @id @default(cuid())
+  studentId       String
+  lessonId        String
+  /// Mandatory explicit reason, validated server-side (3..500 chars).
+  reason          String
+  createdByUserId String
+  createdAt       DateTime  @default(now())
+  /// Optional expiry. NULL = no expiry. Evaluated at read time.
+  expiresAt       DateTime?
+  revokedAt       DateTime?
+  revokedByUserId String?
+  revokeReason    String?
+  student         Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  lesson          Lesson    @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@index([studentId])
+  @@index([lessonId])
+  @@index([studentId, lessonId])
 }
 
 model Quiz {

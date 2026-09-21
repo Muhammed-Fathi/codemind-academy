@@ -109,6 +109,16 @@ type DashboardData = {
       homework: { state: "ABSENT" | "AVAILABLE" | "LOCKED"; count: number };
     } | null;
     courseSlug: string;
+    /**
+     * Phase H — the canonical engine row for the continue target (state,
+     * Arabic reason + code, structured unmet). Powers the "next step" line.
+     */
+    progression?: {
+      state: string;
+      reason: string | null;
+      reasonCode: string | null;
+      unmet: { kind: string; label?: string | null }[];
+    } | null;
   } | null;
   nextSession: {
     id: string;
@@ -168,7 +178,33 @@ type DashboardData = {
     rejected: StudentPaymentRequestView | null;
   };
   recentActivity: ActivityItem[];
+  /**
+   * Phase H — absence catch-up plan. Every ACTIVE hold with its missed
+   * session, its own engine explanation, and whether it is eligible for
+   * resolution. Empty when no hold exists.
+   */
+  catchup?: {
+    holds: {
+      holdId: string;
+      lessonId: string | null;
+      lessonTitle: string | null;
+      courseId: string | null;
+      inUniverse: boolean;
+      requirements: {
+        video: { required: boolean; done: boolean; value: number };
+        quiz: { required: boolean; done: boolean; value: number };
+        assignment: { required: boolean; done: boolean; value: number };
+      } | null;
+      unmet: { kind: string; label?: string | null }[];
+      reason: string | null;
+      eligible: boolean;
+    }[];
+  } | null;
 };
+
+type CatchupHoldView = NonNullable<
+  NonNullable<DashboardData["catchup"]>["holds"]
+>[number];
 
 // ============================================================
 // Helpers
@@ -278,6 +314,128 @@ export function StudentDashboard() {
 }
 
 // ============================================================
+// Phase H — absence catch-up banner
+// ============================================================
+/**
+ * Renders the student's ACTIVE absence holds from the dashboard's `catchup`
+ * plan (the same evaluation the catch-up route resolves). Every hold names
+ * its missed session + the Arabic recovery action verbatim from the server;
+ * eligible holds resolve through one POST, then the dashboard reloads so the
+ * banner, the counts, and Continue Learning move together.
+ */
+function CatchupBanner({
+  holds,
+  onResolved,
+  onOpenLesson,
+}: {
+  holds: CatchupHoldView[];
+  onResolved: () => void;
+  onOpenLesson: (lessonId: string) => void;
+}) {
+  const t = useT();
+  const [working, setWorking] = React.useState(false);
+  if (holds.length === 0) return null;
+  const eligibleCount = holds.filter((h) => h.eligible).length;
+
+  const resolve = async () => {
+    setWorking(true);
+    try {
+      const r = await fetch("/api/students/me/catchup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const j = (await r.json().catch(() => null)) as {
+        resolvedCount?: number;
+        error?: string;
+      } | null;
+      if (!r.ok) {
+        toast.error(j?.error || t("student.116"));
+      } else if ((j?.resolvedCount ?? 0) >= holds.length) {
+        toast.success(t("phaseh.catchupDone"));
+      } else if ((j?.resolvedCount ?? 0) > 0) {
+        toast.warning(t("phaseh.catchupPartial"));
+      } else {
+        toast.warning(t("phaseh.catchupNoneNew"));
+      }
+    } catch {
+      toast.error(t("student.116"));
+    } finally {
+      setWorking(false);
+      onResolved();
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, delay: 0.03 }}
+    >
+      <Card className="glass border-amber-500/30">
+        <CardContent className="py-4">
+          <div className="flex flex-col md:flex-row md:items-start gap-3">
+            <div className="grid place-items-center w-10 h-10 rounded-lg bg-amber-400/15 text-amber-500 shrink-0">
+              <AlertTriangle className="w-5 h-5" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-bold">{t("phaseh.catchupTitle")}</div>
+              <div className="text-xs text-muted-foreground">
+                {t("phaseh.catchupSub")}
+              </div>
+              <div className="mt-2 space-y-1.5">
+                {holds.map((h) => (
+                  <div
+                    key={h.holdId}
+                    className="flex items-center gap-2 flex-wrap text-xs rounded-lg border border-border/60 bg-muted/30 px-2.5 py-1.5"
+                  >
+                    <span className="font-semibold truncate min-w-0 max-w-full">
+                      {h.lessonTitle || h.lessonId || h.holdId}
+                    </span>
+                    {h.reason && (
+                      <span className="text-amber-600 dark:text-amber-400">
+                        {h.reason}
+                      </span>
+                    )}
+                    <Badge
+                      variant="outline"
+                      className={
+                        h.eligible
+                          ? "border-emerald-500/30 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 text-[10px]"
+                          : "border-amber-500/30 text-amber-600 dark:text-amber-400 bg-amber-400/10 text-[10px]"
+                      }
+                    >
+                      {h.eligible ? t("phaseh.ready") : t("phaseh.pending")}
+                    </Badge>
+                    {h.lessonId && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-xs h-7 px-2"
+                        onClick={() => onOpenLesson(h.lessonId!)}
+                      >
+                        {t("phaseh.openLesson")}
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <Button
+              onClick={resolve}
+              disabled={working || eligibleCount === 0}
+              className="shrink-0"
+            >
+              {working ? t("phaseh.catchupWorking") : t("phaseh.catchupCta")}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
+}
+
+// ============================================================
 // Dashboard home
 // ============================================================
 function DashboardHome({
@@ -364,6 +522,13 @@ function DashboardHome({
         />
       </motion.div>
 
+      {/* ===== Phase H: absence catch-up (hidden when no hold exists) ===== */}
+      <CatchupBanner
+        holds={data.catchup?.holds ?? []}
+        onResolved={onRetry}
+        onOpenLesson={openLesson}
+      />
+
       {/* ===== Payment: entitlement (primary) + request state (PR3) ===== */}
       <StudentPaymentPanel
         subscription={data.subscription}
@@ -417,6 +582,18 @@ function DashboardHome({
                     <div className="text-lg font-semibold leading-snug">
                       {data.continueLesson.title}
                     </div>
+                    {/* Phase H — the canonical next step for the continue
+                        target, verbatim from the engine row (hidden when the
+                        session is complete or the payload predates Phase H). */}
+                    {!data.continueLesson.isCompleted &&
+                      data.continueLesson.progression?.reason && (
+                        <div className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                          <span className="font-semibold">
+                            {t("phaseh.nextAction")}:{" "}
+                          </span>
+                          {data.continueLesson.progression.reason}
+                        </div>
+                      )}
                     {/* Phase C — content indicator chips from the SAME
                         aggregation authority as the course tree; icons only,
                         localized accessible labels, no raw ids. */}

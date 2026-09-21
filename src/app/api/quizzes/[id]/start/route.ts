@@ -121,7 +121,13 @@ export async function POST(
   // reached. Without this a student could pre-open (and later pre-finish) the
   // quiz of every future session.
   const access = await canAccessQuiz(student.id, id);
-  if (!access.allowed) return denyProgression(access.reason, "Quiz not found");
+  if (!access.allowed) return denyProgression(access.reason, "Quiz not found", {
+      state: access.evaluation?.state ?? null,
+      reason: access.evaluation?.reason ?? null,
+      reasonCode: access.evaluation?.reasonCode ?? null,
+      unmet: access.evaluation?.unmet ?? [],
+      holdBlocked: access.reason === "ABSENCE_HOLD",
+    });
 
   // Phase 12 — the student's own school type decides which questions are
   // eligible. Read from their row, never from the request.

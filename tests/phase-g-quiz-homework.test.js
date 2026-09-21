@@ -40,7 +40,11 @@ ok(grade.includes('gradedById'),'22 grader recorded');
 ok(grade.includes('gradedAt'),'23 grade timestamp recorded');
 ok(hw.includes('deadline'),'24 original deadline retained');
 // 25-31 visibility/progression
-ok(sp.includes('status: { not: "DRAFT" }'),'25 draft excluded from requirements');
+// Phase H: the requirement filters moved into the canonical engine as
+// allowlists (quizzes PUBLISHED-only, homework PUBLISHED-or-CLOSED) — DRAFT
+// is excluded by construction, with no second filter in the adapter.
+const eng=read("src/lib/progression.ts");
+ok(eng.includes('where: { status: "PUBLISHED" }')&&eng.includes('status: { in: ["PUBLISHED", "CLOSED"] }'),'25 draft excluded from requirements');
 ok(sp.includes('status !== "PUBLISHED"'),'26 quiz access requires published');
 ok(sp.includes('status === "DRAFT"'),'27 homework draft gate');
 ok(content.includes('rowLifecycleVisible'),'28 shared visibility authority');

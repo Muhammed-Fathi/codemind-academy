@@ -464,9 +464,15 @@ async function main() {
   pinned(lessonContentLib, /includeProtected: true,/, "F5: presence is computed over the unredacted descriptor list");
   pinned(courseRoute, /materials: locked \? \[\] : materials,/, "F6: locked sessions still get an empty descriptor list");
   // Phase 4 redaction re-asserted: every protected field stays locked→null.
-  for (const field of ["videoUrl", "pdfUrl", "summary", "description", "quiz", "homework", "requirements"]) {
+  for (const field of ["videoUrl", "pdfUrl", "summary", "description", "quiz", "homework"]) {
     pinned(courseRoute, new RegExp(`${field}: locked \\? null`), `F7: redaction kept for ${field}`);
   }
+  // PHASE H SUPERSESSION: a locked session is never a bare LOCKED — the tree
+  // sends the safe canonical subset (state, Arabic reason + code, structured
+  // unmet) via lockedRequirements(); the full requirement matrix stays
+  // server-side for locked rows.
+  pinned(courseRoute, /requirements: lockedRequirements\(lesson\.id\),/, "F7: locked sessions carry the safe canonical subset");
+  absent(courseRoute, /requirements: locked \? null/, "F7-neg: locked sessions are no longer bare nulls", "      requirements: locked ? null,");
   // The Phase 4 split-count contract still holds inside the mapper.
   {
     const dtoStart = courseRoute.indexOf("const toLesson = (lesson: LessonRow) => {");

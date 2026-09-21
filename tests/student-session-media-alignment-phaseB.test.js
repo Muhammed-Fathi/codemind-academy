@@ -502,6 +502,9 @@ test("Phase B: student session media alignment", async () => {
   });
 
   // L5 carries a quiz → it stays incomplete (no attempt) → L6 is LOCKED.
+  // (The gate quiz is question-less: PUBLISHED + track-eligible is a
+  // requirement regardless of pool state — pool problems fail loud through
+  // the quiz path, never silently drop out of progression.)
   await client.quiz.create({
     data: { lessonId: L5.id, title: "L5 quiz", titleAr: "كوييز 1-5", trackScope: "SHARED" },
   });
@@ -815,11 +818,16 @@ test("Phase B: student session media alignment", async () => {
   eq(m2.json.requirements?.video?.required, false, "M2: a modern video creates NO progression video requirement");
   const m3 = await POST_JSON(R.lessonProgress, `http://t/api/lessons/${L1.id}/progress`, { completed: true }, { id: L1.id });
   eq(m3.status, 200, "M2: completion of a modern lesson is not blocked by the video world");
-  // Source pins: the progression engine and the 95% gate are UNCHANGED.
-  const engine = read("src/lib/session-progress.ts");
-  ok(/const hasVideo = !!lesson\.videoUrl;/.test(engine), "M3: the engine still derives the video requirement from Lesson.videoUrl only");
+  // Source pins: the video rule lives in the canonical engine (Phase H
+  // relocation) and still derives requiredness from Lesson.videoUrl ONLY —
+  // recordings never create a requirement. The adapter owns no rule.
+  const engine = read("src/lib/progression.ts");
+  ok(/const videoRequired = lesson\.hasLegacyVideo;/.test(engine), "M3: the engine still derives the video requirement from Lesson.videoUrl only");
+  ok(/hasLegacyVideo: !!l\.videoUrl,/.test(engine), "M3: the legacy column feeds the video rule");
+  ok(!/batchVideos/.test(engine), "M3: recordings are not progression inputs (no batch-video rule)");
+  ok(!/const videoRequired/.test(read("src/lib/session-progress.ts")), "M3: the adapter owns no video rule (delegation only)");
   const progressRoute = read("src/app/api/lessons/[id]/progress/route.ts");
-  ok(/!lesson\.videoUrl \|\|/.test(progressRoute), "M3: the 95% completion gate expression is unchanged");
+  ok(/access\.status\?\.completed === true/.test(progressRoute), "M3: the completion gate derives from the canonical engine");
   const progressLib = read("src/lib/progress.ts");
   ok(/videoUrl: \{ not: null \}/.test(progressLib), "M3: the legacy video-progress summary filter is unchanged");
 

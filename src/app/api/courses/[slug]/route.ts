@@ -336,11 +336,14 @@ export async function GET(
     viewer: contentViewer,
   });
 
-  // Determine locked / current / completed statuses from the SHARED session
-  // progression service, so the UI mirrors exactly what the backend enforces:
-  // a session is complete only when its video (>=95%), quiz and assignment
-  // requirements are all satisfied; missing components are not required.
-  const requirementsByLesson = new Map<string, unknown>();
+  // Determine locked / current / completed statuses from the CANONICAL
+  // progression engine, so the UI mirrors exactly what the backend enforces:
+  // a session is complete only when its video (>=95%), quiz (PASSED) and
+  // assignment (submitted) requirements are all satisfied; missing components
+  // are not required; an active absence hold draws the forward boundary.
+  // Phase H: for students the engine ALSO drives the displayed completion —
+  // the tree, the dashboard and the lesson page agree by construction.
+  const requirementsByLesson = new Map<string, import("@/lib/session-progress").SessionStatusRow>();
   if (studentId) {
     const sessionProgress = await getCourseSessionProgress(studentId, course.id);
     for (const row of sessionProgress.sessions) {
@@ -352,6 +355,22 @@ export async function GET(
       if (!req) {
         f.status = f.isCompleted ? "completed" : "available";
         continue;
+      }
+      // Canonical display: the legacy client-touchable flag no longer drives
+      // what the student sees here (it stays preserved for historical
+      // aggregates — certificate, gamification, reports, exports).
+      // EFFECTIVE completion: a factually complete but locked lesson counts
+      // nowhere as done — the header, part bars and badges all read this or
+      // the lock-gated per-row serialization below.
+      f.isCompleted = req.completed && req.unlocked;
+      const entry = progressMap[f.lesson.id];
+      if (entry) entry.isCompleted = req.completed;
+      else {
+        progressMap[f.lesson.id] = {
+          progress: 0,
+          isCompleted: req.completed,
+          lastViewedAt: null,
+        };
       }
       if (!req.unlocked) {
         f.status = "locked";
@@ -394,6 +413,25 @@ export async function GET(
           const scope = normalizeTrackScope(r.trackScope);
           return scope !== null && viewerEligibleScopes.includes(scope);
         });
+
+  // Phase H — locked-display requirements: the safe canonical subset (state,
+  // Arabic reason + code, structured unmet). The per-dimension matrix stays
+  // redacted for locked sessions; unlocked sessions carry the full row.
+  const lockedRequirements = (lessonId: string) => {
+    const req = requirementsByLesson.get(lessonId) ?? null;
+    if (!req) return null;
+    if (statusById.get(lessonId) !== "locked") return req;
+    return {
+      lessonId: req.lessonId,
+      order: req.order,
+      state: req.state ?? "LOCKED",
+      completed: false,
+      unlocked: false,
+      reason: req.reason ?? null,
+      reasonCode: req.reasonCode ?? null,
+      unmet: req.unmet ?? [],
+    };
+  };
 
   const toLesson = (lesson: LessonRow) => {
     const locked = statusById.get(lesson.id) === "locked";
@@ -458,7 +496,11 @@ export async function GET(
       progress: locked ? 0 : lp?.progress || 0,
       isCompleted: locked ? false : !!lp?.isCompleted,
       status: statusById.get(lesson.id) ?? "available",
-      requirements: locked ? null : requirementsByLesson.get(lesson.id) ?? null,
+      // Phase H: a locked session is never a bare LOCKED. The full
+      // requirement matrix stays server-side (redacted), but the student sees
+      // the Arabic reason + structured unmet requirements + state — the safe
+      // subset the canonical engine designed for locked display.
+      requirements: lockedRequirements(lesson.id),
       // Presence flags only — enough for the "Quiz"/"Homework" badges in the
       // course tree, without naming or linking the protected items.
       // Phase C — track-filtered through the shared authority: the other

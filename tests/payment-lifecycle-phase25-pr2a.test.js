@@ -188,6 +188,14 @@ const fakeDb = {
   lessonProgress: { findMany: () => Promise.resolve([]) },
   quizAttempt: { findMany: () => Promise.resolve([]) },
   homeworkSubmission: { findMany: () => Promise.resolve([]) },
+  // Canonical progression-engine reads (empty world: no videos served,
+  // no holds, no overrides — the suite's lessons carry no requirements
+  // beyond L1's unwatched videoUrl).
+  sessionVideo: { findMany: () => Promise.resolve([]) },
+  sessionVideoView: { findMany: () => Promise.resolve([]) },
+  question: { findMany: () => Promise.resolve([]) },
+  absenceHold: { findMany: () => Promise.resolve([]) },
+  progressionOverride: { findMany: () => Promise.resolve([]) },
   batch: { findMany: () => Promise.resolve([]), findFirst: () => Promise.resolve(null) },
 };
 globalThis.__P25_FAKE_DB__ = { db: fakeDb };
@@ -647,7 +655,13 @@ async function main() {
     const sp = read("src/lib/session-progress.ts");
     ok(/subscription-entitlement/.test(enr) && /evaluateAccessDecision\s*\(/.test(enr), "getEnrollment delegates to the shared policy");
     ok(/subscription-entitlement/.test(sp) && /evaluateAccessDecision\s*\(/.test(sp), "canAccessLesson + getUnlockedLessonIds delegate to the shared policy");
-    ok((sp.match(/evaluateAccessDecision\s*\(/g) || []).length === 2, "exactly two decision points inside the progression module (lesson gate + batch gate) — one policy, applied centrally");
+    // Phase H moved the LESSON gate into the canonical engine
+    // (src/lib/progression.ts); the façade keeps the BATCH gate. One policy,
+    // applied centrally — exactly two decision points across the stack.
+    const eng = read("src/lib/progression.ts");
+    ok((sp.match(/evaluateAccessDecision\s*\(/g) || []).length === 1, "batch gate: exactly one decision point in the progression façade (getUnlockedLessonIds)");
+    ok((eng.match(/evaluateAccessDecision\s*\(/g) || []).length === 1, "lesson gate: exactly one decision point in the canonical engine (evaluateLessonAccess)");
+    ok(/subscription-entitlement/.test(eng), "the canonical engine delegates to the shared policy");
 
     // The list surfaces that DO NOT go through canAccessLesson inherit via
     // getEnrollment / getUnlockedLessonIds — verified they still only read
@@ -710,9 +724,17 @@ async function main() {
     // Phase F appended one authorized additive migration (the live-session
     // lifecycle) at the END of the history; the PR2a-era ordering asserted by
     // the neighbouring checks is unchanged.
-    ok(migrations.length === 13, `migration history: exactly 13 migrations (found ${migrations.length}) — the 10 PR2a-era migrations, the Phase 26B group-audience migration, the Phase 26D quiz attempt-architecture migration, and the Phase F live-session lifecycle`);
+    // Phase G appended two authorized additive migrations (the quiz/homework
+    // workflow + the camera policy); Phase H appended one (the audited
+    // progression-override table). The invariant this gate protects is "no
+    // migration was silently removed or reordered", not a frozen number.
+    ok(migrations.length === 16, `migration history: exactly 16 migrations (found ${migrations.length}) — the 10 PR2a-era migrations, Phase 26B, Phase 26D, Phase F, two Phase G workflow migrations, and the Phase H override migration`);
+    ok(migrations.includes("20260919180000_phase_g_quiz_homework_workflow"), "the Phase G quiz/homework workflow migration is in history");
+    ok(migrations.includes("20260919190000_phase_g_camera_policy"), "the Phase G camera-policy migration is in history");
+    ok(migrations.includes("20260920120000_phase_h_progression_override"), "the Phase H progression-override migration is in history");
     ok(migrations.includes("20260914120000_payment_lifecycle_redesign"), "PR1's ledger migration remains in history");
     ok(migrations.includes("20260915120000_phase26b_group_track_scope"), "the Phase 26B group-audience migration is in history");
+    ok(migrations.indexOf("20260920120000_phase_h_progression_override") === migrations.length - 1, "the Phase H migration is the newest entry (append-only history)");
   }
 
   section("\n" + "=".repeat(60));

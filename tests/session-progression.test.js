@@ -121,20 +121,39 @@ const state = {
   studentGroup: { courseId: COURSE, isActive: true },
   /** Phase 12: the student's own school type, as stored on their row. */
   studentSchoolType: "ARABIC",
+  /** Phase H: the reconciled batch id (the fake answers it, so the engine
+      never calls syncStudentBatch here — that path has its own suite). */
+  studentBatchId: "B1",
   /** lessonId -> { videoPercent, videoCompleted, isCompleted } */
   lessonProgress: {},
-  /** finished quiz ids */
+  /** Phase H: finished AND grader-passed quiz ids (the canonical pass fact). */
+  passedQuizzes: new Set(),
+  /** finished but NOT passed quiz ids (satisfies nothing). */
   attemptedQuizzes: new Set(),
   /** submitted homeworks ids */
   submittedHomeworks: new Set(),
+  /** Phase H: batch video rows { id, lessonId, batchId, isPublished, requiredPercent }. */
+  batchVideos: [],
+  /** Phase H: sessionVideoId -> { percent, isCompleted }. */
+  batchViews: {},
+  /** Phase H: ACTIVE absence-hold rows (engine shape, incl. absenceReview). */
+  activeHolds: [],
+  /** Phase H: progression-override rows. */
+  overrides: [],
 };
 
 function reset() {
   state.studentGroup = { courseId: COURSE, isActive: true };
   state.studentSchoolType = "ARABIC";
+  state.studentBatchId = "B1";
   state.lessonProgress = {};
+  state.passedQuizzes = new Set();
   state.attemptedQuizzes = new Set();
   state.submittedHomeworks = new Set();
+  state.batchVideos = [];
+  state.batchViews = {};
+  state.activeHolds = [];
+  state.overrides = [];
 }
 
 const components = (id) => ({
@@ -277,7 +296,36 @@ function matchesWhere(lesson, where) {
 
 const fakeDb = {
   lesson: {
-    findMany: ({ where }) => CATALOGUE.filter((l) => matchesWhere(l, where)),
+    // Phase H: the engine selects requirement CANDIDATES with nested
+    // lifecycle filters (quizzes PUBLISHED, homeworks PUBLISHED/CLOSED).
+    // Statuses resolve LIVE from state (so the DRAFT/CLOSED tests below
+    // work), while catalogue-level overrides (section 11's empty L1) stick
+    // because enrichment maps the row's OWN arrays.
+    findMany: ({ where, select }) =>
+      CATALOGUE.filter((l) => matchesWhere(l, where)).map((l) => {
+        const quizStatusWhere = select?.quizzes?.where?.status;
+        const quizzes = (l.quizzes || [])
+          .map((q) => ({
+            id: q.id,
+            trackScope: q.trackScope ?? "SHARED",
+            status: state.quizStatus?.[q.id] ?? q.status ?? "PUBLISHED",
+          }))
+          .filter((q) => !quizStatusWhere || q.status === quizStatusWhere);
+        const hwStatusWhere = select?.homeworks?.where?.status;
+        const homeworks = (l.homeworks || [])
+          .map((h) => ({
+            id: h.id,
+            trackScope: h.trackScope ?? "SHARED",
+            status: state.homeworkStatus?.[h.id] ?? h.status ?? "PUBLISHED",
+          }))
+          .filter((h) => {
+            if (!hwStatusWhere) return true;
+            return typeof hwStatusWhere === "object" && hwStatusWhere !== null && "in" in hwStatusWhere
+              ? hwStatusWhere.in.includes(h.status)
+              : h.status === hwStatusWhere;
+          });
+        return { ...l, quizzes, homeworks };
+      }),
     findUnique: ({ where }) => byId(where.id),
   },
   lessonProgress: {
@@ -287,10 +335,42 @@ const fakeDb = {
         .map(([lessonId, p]) => ({ lessonId, ...p })),
   },
   quizAttempt: {
+    // Phase H: the engine queries finishedAt != null AND passed = true. The
+    // fake honors the pass filter strictly — a finished-but-failed attempt
+    // (attemptedQuizzes) satisfies nothing.
     findMany: ({ where }) =>
-      [...state.attemptedQuizzes]
+      [...state.passedQuizzes]
         .filter((q) => where.quizId.in.includes(q))
-        .map((quizId) => ({ quizId, percentage: 100 })),
+        .filter(() => where.passed === undefined || where.passed === true)
+        .map((quizId) => ({
+          id: `ATT:${quizId}`,
+          quizId,
+          percentage: 100,
+          finishedAt: new Date("2026-09-01T10:00:00.000Z"),
+        })),
+  },
+  // Phase H: batch video delivery (empty unless a test stages rows).
+  sessionVideo: {
+    findMany: ({ where }) =>
+      state.batchVideos.filter(
+        (v) =>
+          v.batchId === where.batchId &&
+          where.lessonId.in.includes(v.lessonId) &&
+          v.isPublished === where.isPublished
+      ),
+  },
+  sessionVideoView: {
+    findMany: ({ where }) =>
+      where.sessionVideoId.in
+        .filter((id) => state.batchViews[id])
+        .map((id) => ({ sessionVideoId: id, ...state.batchViews[id] })),
+  },
+  // Phase H: absence holds + overrides (empty unless staged).
+  absenceHold: {
+    findMany: () => state.activeHolds,
+  },
+  progressionOverride: {
+    findMany: () => state.overrides,
   },
   homeworkSubmission: {
     findMany: ({ where }) =>
@@ -302,7 +382,10 @@ const fakeDb = {
     findUnique: () => ({
       id: "S1",
       schoolType: state.studentSchoolType,
+      batchId: state.studentBatchId,
       group: state.studentGroup,
+      // No Subscription row: legacy grandfathered access (allowed).
+      subscription: null,
     }),
   },
   quiz: {
@@ -391,7 +474,7 @@ async function main() {
   ok(prog.sessions[1].unlocked === false, "session 2 still locked without the quiz");
 
   section("5. Video + assignment + quiz unlocks the next session");
-  state.attemptedQuizzes.add("Q1");
+  state.passedQuizzes.add("Q1"); // Phase H: a PASS, not a mere attempt
   prog = await SP.getCourseSessionProgress("S1", COURSE);
   ok(prog.sessions[0].completed === true, "session 1 complete when all three are satisfied");
   ok(prog.sessions[1].unlocked === true, "SESSION 2 UNLOCKS");
@@ -407,6 +490,13 @@ async function main() {
   prog = await SP.getCourseSessionProgress("S1", COURSE);
   ok(prog.sessions[0].quiz.done === false, "an un-finished attempt does not satisfy the quiz gate");
   ok(prog.sessions[1].unlocked === false, "session 2 stays locked");
+  // Phase H: a finished-but-FAILED attempt satisfies nothing either — the
+  // canonical quiz fact is a grader-marked PASS.
+  state.attemptedQuizzes.add("Q1");
+  prog = await SP.getCourseSessionProgress("S1", COURSE);
+  ok(prog.sessions[0].quiz.done === false, "a finished-but-FAILED attempt does not satisfy the quiz gate");
+  ok(prog.sessions[1].unlocked === false, "session 2 stays locked after a failed attempt");
+  state.attemptedQuizzes.clear();
 
   section("7. canAccessLesson (official lesson)");
   reset();
@@ -449,11 +539,12 @@ async function main() {
   ok((await SP.canAccessHomework("S1", "H2")).allowed === false, "Phase G: CLOSED homework keeps its progression verdict (locked here)");
   state.lessonProgress.L1 = { videoPercent: 100, videoCompleted: true, isCompleted: true };
   state.submittedHomeworks.add("H1");
-  state.attemptedQuizzes.add("Q1");
+  state.passedQuizzes.add("Q1"); // Phase H: a PASS, not a mere attempt
   ok((await SP.canAccessHomework("S1", "H2")).allowed === true, "Phase G: CLOSED homework stays accessible once its session is open");
   state.homeworkStatus = {};
   state.lessonProgress = {};
   state.submittedHomeworks.clear();
+  state.passedQuizzes.clear();
   state.attemptedQuizzes.clear();
 
   let h = await SP.canAccessHomework("S1", "H1");
@@ -465,7 +556,7 @@ async function main() {
   section("9. Completing L1 opens L2's resources, not L3's");
   state.lessonProgress.L1 = { videoPercent: 100, videoCompleted: true, isCompleted: true };
   state.submittedHomeworks.add("H1");
-  state.attemptedQuizzes.add("Q1");
+  state.passedQuizzes.add("Q1"); // Phase H: a PASS, not a mere attempt
   ok((await SP.canAccessQuiz("S1", "Q2")).allowed === true, "L2 quiz reachable once L1 is complete");
   ok((await SP.canAccessQuiz("S1", "Q3")).allowed === false, "L3 quiz still unreachable");
   ok((await SP.canAccessHomework("S1", "H2")).allowed === true, "L2 assignment reachable once L1 is complete");
@@ -525,7 +616,7 @@ async function main() {
   // the same completion sequence unlocks the next legacy session
   state.lessonProgress.LG1 = { videoPercent: 100, videoCompleted: true, isCompleted: true };
   state.submittedHomeworks.add("LH1");
-  state.attemptedQuizzes.add("LQ1");
+  state.passedQuizzes.add("LQ1"); // Phase H: a PASS, not a mere attempt
   prog = await SP.getCourseSessionProgress("S1", LEGACY_COURSE);
   ok(prog.sessions[0].completed === true, "legacy session 1 completes on all three requirements");
   ok(prog.sessions[1].unlocked === true, "legacy session 2 unlocks");
@@ -556,7 +647,7 @@ async function main() {
   // completing MX-C (the only one with components) opens MX-B
   state.lessonProgress["MX-C"] = { videoPercent: 100, videoCompleted: true, isCompleted: true };
   state.submittedHomeworks.add("MH1");
-  state.attemptedQuizzes.add("MQ1");
+  state.passedQuizzes.add("MQ1"); // Phase H: a PASS, not a mere attempt
   prog = await SP.getCourseSessionProgress("S1", MIXED_COURSE);
   ok(prog.sessions[0].completed === true, "the canonical session of a mixed unit completes normally");
   ok(prog.sessions[1].unlocked === true, "the next session of a mixed unit unlocks");
@@ -648,35 +739,50 @@ async function main() {
     ok(/if \(!access\.allowed\) return denyProgression/.test(src), `${label} denies through denyProgression`);
   }
 
-  section("19. Source invariants: the denial response leaks nothing");
+  section("19. Source invariants: the denial explains without leaking (Phase H)");
   const api = read("src/lib/api.ts");
   ok(/export async function denyProgression/.test(api), "denyProgression exists");
-  ok(!/requirements/.test(api), "denyProgression never serialises a requirement/status row");
+  // Phase H SUPERSESSION: a denial is never a bare LOCKED. denyProgression
+  // now carries the canonical explanation — the SAFE SUBSET only (state,
+  // Arabic reason + code, structured unmet, hold flag). It still serialises
+  // no content, no media, no answers, no requirement matrix.
+  ok(/export type ProgressionDenialDetails = \{/.test(api), "the denial details contract is a named type");
+  ok(/reason: details\.reason \?\? null,/.test(api), "denyProgression serialises the Arabic reason");
+  ok(/unmet: details\.unmet \? \[\.\.\.details\.unmet\] : \[\],/.test(api), "denyProgression serialises the structured unmet subset");
+  ok(!/videoUrl|pdfUrl|promptAr|correctAnswer/.test(api), "denyProgression still serialises no content or answers");
+  ok(!/requirements: access\.status/.test(api), "denyProgression never echoes a full status row");
   const lessonRoute = read("src/app/api/lessons/[id]/route.ts");
   ok(!/requirements: access\.status/.test(lessonRoute), "the lesson 403 no longer echoes access.status");
 
   section("20. Source invariants: the progression universe covers BOTH chains");
+  // Phase H: the universe query lives in the canonical engine
+  // (src/lib/progression.ts); session-progress.ts is a delegation-only
+  // adapter that re-exports the contract and owns no query of its own.
+  const engine = read("src/lib/progression.ts");
   const sp = read("src/lib/session-progress.ts");
-  ok(/\{ unit: \{ part: \{ courseId \} \} \}/.test(sp), "the universe query follows the canonical Unit chain");
-  ok(/\{ topic: \{ unit: \{ part: \{ courseId \} \} \} \}/.test(sp), "the universe query still follows the legacy Topic chain");
-  ok(/OR: \[/.test(sp), "both chains are combined with OR (one query, one system)");
+  ok(/\{ unit: \{ part: \{ courseId \} \} \}/.test(engine), "the universe query follows the canonical Unit chain");
+  ok(/\{ topic: \{ unit: \{ part: \{ courseId \} \} \} \}/.test(engine), "the universe query still follows the legacy Topic chain");
+  ok(/OR: lessonCourseChainOr\(courseId\),/.test(engine), "both chains are combined with OR (one query, one system)");
   ok(
-    /const found = await db\.lesson\.findMany\(\{\s*where: \{\s*\.\.\.LESSON_STUDENT_STATUS_FILTER,\s*\.\.\.EXCLUDE_ARCHIVED_LESSON,/.test(sp),
+    /const found = \(await db\.lesson\.findMany\(\{\s*where: \{\s*\.\.\.LESSON_STUDENT_STATUS_FILTER,\s*\.\.\.EXCLUDE_ARCHIVED_LESSON,/.test(engine),
     "the universe query is lifecycle-scoped first and excludes archived lessons (Phases 11 + 13)"
   );
   ok(
-    !/const found = await db\.lesson\.findMany\(\{\s*where: \{\s*isPublished:/.test(sp),
+    !/const found = \(await db\.lesson\.findMany\(\{\s*where: \{\s*isPublished:/.test(engine),
     "the universe no longer reads the demoted isPublished mirror"
   );
-  ok(sp.includes("orderCourseLessons(found, courseId)"), "ordering is applied explicitly, not left to SQL");
-  ok(!/orderBy: \[\s*\{ topic:/.test(sp), "the old topic-only orderBy is gone");
-  ok(/lesson\.unit\?\.part\.courseId \?\?/.test(sp), "canAccessLesson resolves the course canonical-first");
+  ok(engine.includes("orderCourseLessons(found, courseId)"), "ordering is applied explicitly, not left to SQL");
+  ok(!/orderBy: \[\s*\{ topic:/.test(engine), "the old topic-only orderBy is gone");
+  ok(/lesson\.unit\?\.part\.courseId \?\?/.test(engine), "canAccessLesson resolves the course canonical-first");
+  ok(!/db\.lesson\.findMany/.test(sp), "the adapter issues no lesson query of its own (delegation only)");
+  ok(sp.includes("loadCourseProgression") && sp.includes("evaluateLessonAccess"), "the adapter delegates to the canonical engine");
+  ok(sp.includes("lessonCourseChainOr"), "the adapter re-exports the universe contract");
   // Phase 12: `canAccessLesson` still builds its row from the SHARED chain
   // select (so both paths see the same lesson) and additionally reads the
   // lesson's trackScope for the track gate. The assertion is tightened, not
   // relaxed: it now pins both facts.
   ok(
-    /select: \{\s*\.\.\.LESSON_CHAIN_SELECT,\s*trackScope: true,\s*status: true,\s*curriculumStatus: true,/.test(sp),
+    /select: \{\s*\.\.\.LESSON_CHAIN_SELECT,\s*trackScope: true,\s*status: true,\s*curriculumStatus: true,/.test(engine),
     "the chain shape is shared, so both paths see the same lesson — and it now also carries the lifecycle state the gate reads"
   );
 
@@ -697,7 +803,14 @@ async function main() {
   ok(/hasQuiz: \(content\?\.quiz\.count \?\? 0\) > 0/.test(courseRoute), "course tree keeps a quiz PRESENCE flag");
   ok(/hasAssignment: \(content\?\.homework\.count \?\? 0\) > 0/.test(courseRoute), "course tree keeps an assignment PRESENCE flag");
   ok(/rowScopeEligible\(/.test(read("src/lib/lesson-content.ts")), "the authority track-filters quiz/homework presence");
-  ok(/requirements: locked \? null/.test(courseRoute), "course tree redacts the requirement breakdown");
+  // Phase H SUPERSESSION: a locked session is never a bare LOCKED. The tree
+  // sends the safe canonical subset (state, Arabic reason + code, structured
+  // unmet) via lockedRequirements(); the full requirement matrix stays
+  // server-side for locked rows.
+  ok(/requirements: lockedRequirements\(lesson\.id\),/.test(courseRoute), "course tree sends the safe canonical subset for locked sessions");
+  ok(/state: req\.state \?\? "LOCKED",/.test(courseRoute), "the locked subset carries the state");
+  ok(/reason: req\.reason \?\? null,/.test(courseRoute), "the locked subset carries the Arabic reason");
+  ok(!/requirements: locked \? null/.test(courseRoute), "locked sessions are no longer bare nulls");
 
   section("22. Source invariants: the course tree represents BOTH chains");
   // Phase 11: both fetches additionally exclude archived lessons (the legacy
@@ -784,10 +897,17 @@ async function main() {
   ok(/existing\?\.status === "GRADED"/.test(hwRoute), "a graded assignment is immutable");
   ok(/homeworkId_studentId/.test(hwRoute), "submission upserts on the (homeworkId, studentId) unique pair");
 
-  section("25. Source invariants: the progress routes still enforce the 95% rule");
+  section("25. Source invariants: completion is derived, never claimed (Phase H)");
   const progressRoute = read("src/app/api/lessons/[id]/progress/route.ts");
-  ok(/videoSatisfied/.test(progressRoute), "the progress route still consults the video threshold");
-  ok(/progressValue >= 100/.test(progressRoute) && /if \(!videoSatisfied\)/.test(progressRoute), "progress:100 cannot complete an unwatched lesson");
+  // Phase H SUPERSESSION: the route no longer self-certifies with a local
+  // video guard — the canonical engine is the verdict (video ≥ threshold,
+  // every required quiz PASSED, every required homework SUBMITTED), and a
+  // premature claim is refused with the Arabic reason + structured unmet.
+  ok(progressRoute.includes("canAccessLesson"), "the progress route still gates on the canonical lesson verdict");
+  ok(/access\.status\?\.completed === true/.test(progressRoute), "completion is the engine derivation, not the client flag");
+  ok(/REQUIREMENTS_UNMET/.test(progressRoute), "a premature claim is refused with REQUIREMENTS_UNMET");
+  ok(/progressValue >= 100/.test(progressRoute) && /if \(!engineCompleted\) return refusePremature\(\);/.test(progressRoute), "progress:100 cannot complete an underived lesson");
+  ok(!/data\.isCompleted = completedFlag/.test(progressRoute), "the client flag never writes the marker directly");
   const videoRoute = read("src/app/api/lessons/[id]/video-progress/route.ts");
   ok(/MAX_CREDIT_PER_BEAT_SEC/.test(videoRoute), "heartbeat credit is still wall-clock capped");
   ok(/Math\.max\(previousWatched/.test(videoRoute), "watched time is still monotonic");

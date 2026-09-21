@@ -229,8 +229,10 @@ export async function GET(_req: NextRequest) {
           student.id,
           sessionCourseId
         );
+        // EFFECTIVE completion: factually complete but locked sessions are
+        // not currently done (they still count as `locked` below).
         const completedSessions = engine.sessions.filter(
-          (s) => s.completed
+          (s) => s.completed && s.unlocked
         ).length;
         const unlockedSessions = engine.sessions.filter(
           (s) => s.unlocked

@@ -12,6 +12,8 @@ import {
 } from "@/lib/session-quiz";
 import { getStudentSchoolType } from "@/lib/enrollment";
 import { createNotificationIfAllowed } from "@/lib/notify";
+import { syncDerivedCompletion } from "@/lib/progression";
+import { maybeResolveCatchup } from "@/lib/catchup";
 
 // POST /api/quizzes/[id]/submit
 // Body: { answers: { questionId, selected }[] }
@@ -73,7 +75,13 @@ export async function POST(
   if (!quiz) return err("Quiz not found", 404);
 
   const access = await canAccessQuiz(s.id, id);
-  if (!access.allowed) return denyProgression(access.reason, "Quiz not found");
+  if (!access.allowed) return denyProgression(access.reason, "Quiz not found", {
+      state: access.evaluation?.state ?? null,
+      reason: access.evaluation?.reason ?? null,
+      reasonCode: access.evaluation?.reasonCode ?? null,
+      unmet: access.evaluation?.unmet ?? [],
+      holdBlocked: access.reason === "ABSENCE_HOLD",
+    });
 
   // Phase 12 — grading uses the SAME track rule as selection, so a question
   // the student was never served can never be graded into their score.
@@ -289,6 +297,14 @@ export async function POST(
       }).catch(() => {})));
     }
   }
+
+  // Phase H — a submitted quiz may complete its lesson (pass) or complete a
+  // catch-up (hold resolution). Both syncs are best-effort and never throw:
+  // grading already committed, and a sync failure must not fail the submit.
+  // The legacy `isCompleted` marker converges to the canonical derivation,
+  // and eligible holds resolve through the Phase F authority.
+  await syncDerivedCompletion(s.id, quiz.lessonId);
+  await maybeResolveCatchup(s.id, user.id);
 
   return ok({
     attemptId: attempt.id,

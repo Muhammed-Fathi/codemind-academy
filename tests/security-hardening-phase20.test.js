@@ -256,10 +256,14 @@ section("3. Authorization matrix — every content route × the 10 checks");
     "material download gates through authorizeMaterialDownload (10-check contract)");
 
   // The 10 checks live in one place each (no second implementation).
+  // Phase H: the shared gate is the canonical engine; session-progress.ts is
+  // a thin adapter that must only delegate.
   const sp = read("src/lib/session-progress.ts");
-  ok(/isStudentVisibleStatus/.test(sp), "check #7 (lifecycle) enforced in the shared gate");
+  const eng = read("src/lib/progression.ts");
+  ok(/isStudentVisibleStatus/.test(eng), "check #7 (lifecycle) enforced in the shared gate");
   ok(/canAccessTrackScope/.test(sp), "check #5 (track) enforced in the shared gate");
-  ok(/trackScopeWhere/.test(sp), "the universe query narrows by track (check #5)");
+  ok(/trackScopeWhere/.test(eng), "the universe query narrows by track (check #5)");
+  ok(!/const videoDone/.test(sp) && !/previousCompleted/.test(sp), "the adapter carries no gate logic of its own");
   ok(/group:\s*\{\s*select:\s*\{\s*courseId: true,\s*isActive: true/.test(sp) || /isActive/.test(sp),
     "check #3 (enrollment) = active group bound to the course");
   ok(/resolveLessonCourseId/.test(sp), "check #4/#6 (course + session-in-course) via chain resolution");
@@ -289,7 +293,10 @@ section("4. IDOR — sequential / guessed / foreign ids deny without existence l
 
   const sp = read("src/lib/session-progress.ts");
   ok(/reason: \"LESSON_NOT_FOUND\"/.test(sp), "track/lifecycle refusal is LESSON_NOT_FOUND (non-oracle)");
-  ok(/lesson\)\s*\{\s*return \{ allowed: false, reason: \"LESSON_NOT_FOUND\"/.test(sp) || /!lesson\) return \{ allowed: false, reason: \"LESSON_NOT_FOUND\"/.test(sp),
+  // Phase H: the canonical verdict lives in the engine; the missing-id and
+  // out-of-scope answers must still be byte-identical there (non-oracle).
+  const engVerdict = read("src/lib/progression.ts");
+  ok(/!lesson\) return \{ allowed: false, reason: "LESSON_NOT_FOUND"/.test(engVerdict),
     "missing lesson id is indistinguishable from an out-of-scope id");
 
   const sm = read("src/lib/session-materials.ts");
@@ -329,7 +336,9 @@ section("5. Cross-track / cross-course / premature access");
   ok(/function isStudentVisibleStatus/.test(lifecycle), "single lifecycle-availability predicate");
 
   const sp = read("src/lib/session-progress.ts");
-  ok(/unlocked: previousCompleted/.test(sp), "progression = sequential unlock (premature access)");
+  // Phase H: strict sequential chain in the canonical engine (every previous
+  // lesson COMPLETED — a completed-but-locked lesson reopens nothing).
+  ok(/previousCompleted = previousCompleted && completed/.test(read("src/lib/progression.ts")), "progression = sequential unlock (premature access)");
   ok(/EXCLUDE_ARCHIVED_LESSON/.test(sp), "archived lessons are excluded from the universe");
 
   // Cross-course: the material authorizer resolves the owning course.
