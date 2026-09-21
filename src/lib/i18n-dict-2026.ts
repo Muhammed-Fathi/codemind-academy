@@ -2355,6 +2355,7 @@ export const DICT_2026: Record<string, DictEntry> = {
   "notif.type.absenceExcused": { ar: "تم قبول العذر", en: "Absence excused" },
   "notif.type.absenceUnexcused": { ar: "تم رفض العذر", en: "Absence not excused" },
   "notif.type.absenceReminder": { ar: "تذكير بإرسال العذر", en: "Absence reason reminder" },
+  "notif.type.readinessReminder": { ar: "تذكير بمتطلبات الدرس", en: "Lesson readiness reminder" },
   "shell.f1": { ar: "حصصي المباشرة", en: "My live sessions" },
   "shell.f2": { ar: "أعذار الغياب", en: "Absence reasons" },
   "shell.f3": { ar: "الحصص المباشرة", en: "Live sessions" },
@@ -2660,6 +2661,36 @@ export const DICT_2026: Record<string, DictEntry> = {
     ar: "اتبعت التذكير لولي الأمر",
     en: "Reminder sent to the parent",
   },
+  "teacher.readiness.remindTo": { ar: "إرسال التذكير إلى:", en: "Send the reminder to:" },
+  "teacher.readiness.remindStudent": { ar: "الطالب فقط", en: "Student only" },
+  "teacher.readiness.remindParent": { ar: "ولي الأمر فقط", en: "Parent only" },
+  "teacher.readiness.remindBoth": { ar: "الطالب وولي الأمر", en: "Student and parent" },
+  "teacher.readiness.remindSend": { ar: "إرسال التذكير", en: "Send reminder" },
+  "teacher.readiness.remindCancel": { ar: "إلغاء", en: "Cancel" },
+  "teacher.readiness.remindedStudent": {
+    ar: "اتبعت التذكير للطالب",
+    en: "Reminder sent to the student",
+  },
+  "teacher.readiness.remindedBoth": {
+    ar: "اتبعت التذكير للطالب وولي الأمر",
+    en: "Reminder sent to the student and parent",
+  },
+  "teacher.readiness.remindDuplicate": {
+    ar: "التذكير مبعوت النهاردة بالفعل",
+    en: "Reminder already sent today",
+  },
+  "teacher.readiness.remindSkipped": {
+    ar: "مقدرناش نوصل التذكير دلوقتي",
+    en: "The reminder could not be delivered right now",
+  },
+  "teacher.readiness.remindUnavailable": {
+    ar: "الطالب غير متاح للتذكير",
+    en: "The student cannot be reminded",
+  },
+  "teacher.readiness.remindNoParent": {
+    ar: "مفيش ولي أمر مربوط بالطالب",
+    en: "No parent is linked to this student",
+  },
   "teacher.readiness.video": { ar: "الفيديو", en: "Video" },
   "teacher.readiness.quiz": { ar: "الاختبار", en: "Quiz" },
   "teacher.readiness.homework": { ar: "الواجب", en: "Homework" },
@@ -2673,4 +2704,5 @@ export const DICT_2026: Record<string, DictEntry> = {
   "api.364": { ar: "وضع الغائبين يتطلب اختيار الحصة المرتبطة.", en: "Absent-only mode requires selecting the linked session." },
   "api.365": { ar: "الحصة المختارة غير صالحة لهذا الفيديو.", en: "The selected session is not valid for this video." },
   "api.366": { ar: "لا يمكن التذكير — الطالب جاهز.", en: "Cannot remind — the student is ready." },
+  "api.367": { ar: "وضع الإرسال غير صالح.", en: "Invalid reminder audience." },
 };

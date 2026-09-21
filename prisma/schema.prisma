@@ -1885,6 +1885,11 @@ enum NotificationType {
   ABSENCE_UNEXCUSED
   /// Phase F — the "still no reason" reminder (idempotent per case per day).
   ABSENCE_REMINDER
+  /// Teacher Readiness — the teacher-triggered "finish your pending lesson
+  /// requirements" nudge to the STUDENT (idempotent per student per lesson
+  /// per day; preferences + quiet hours honoured like every non-mandatory
+  /// notification — see `src/lib/readiness-reminders.ts`).
+  READINESS_REMINDER
 }
 
 /// Phase F — the ADMINISTRATIVE state machine of an absence case. Separate

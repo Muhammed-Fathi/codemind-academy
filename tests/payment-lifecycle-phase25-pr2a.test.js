@@ -729,13 +729,13 @@ async function main() {
     // workflow + the camera policy); Phase H appended one (the audited
     // progression-override table). The invariant this gate protects is "no
     // migration was silently removed or reordered", not a frozen number.
-    ok(migrations.length === 18, `migration history: exactly 18 migrations (found ${migrations.length}) — the 10 PR2a-era migrations, Phase 26B, Phase 26D, Phase F, two Phase G workflow migrations, the Phase H override migration, the session-video requirement migration, and the requirement-modes migration`);
+    ok(migrations.length === 19, `migration history: exactly 19 migrations (found ${migrations.length}) — the 10 PR2a-era migrations, Phase 26B, Phase 26D, Phase F, two Phase G workflow migrations, the Phase H override migration, the session-video requirement migration, the requirement-modes migration, and the readiness-reminder-recipients migration`);
     ok(migrations.includes("20260919180000_phase_g_quiz_homework_workflow"), "the Phase G quiz/homework workflow migration is in history");
     ok(migrations.includes("20260919190000_phase_g_camera_policy"), "the Phase G camera-policy migration is in history");
     ok(migrations.includes("20260920120000_phase_h_progression_override"), "the Phase H progression-override migration is in history");
     ok(migrations.includes("20260914120000_payment_lifecycle_redesign"), "PR1's ledger migration remains in history");
     ok(migrations.includes("20260915120000_phase26b_group_track_scope"), "the Phase 26B group-audience migration is in history");
-    ok(migrations.indexOf("20260921180000_session_video_requirement_modes") === migrations.length - 1, "the requirement-modes migration is the newest entry (append-only history)");
+    ok(migrations.indexOf("20260922090000_readiness_reminder_recipients") === migrations.length - 1, "the readiness-reminder-recipients migration is the newest entry (append-only history)");
   }
 
   section("\n" + "=".repeat(60));

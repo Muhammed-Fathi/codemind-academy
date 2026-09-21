@@ -1,0 +1,15 @@
+-- ===========================================================================
+-- Teacher Readiness — recipient choice for the readiness reminder (SQLite
+-- edition).
+--
+-- The reminder gains a controlled audience (student / parent / both). The
+-- student leg is a first-class notification of the new `READINESS_REMINDER`
+-- type, sent through the ONE idempotent insert primitive with a per-student
+-- per-lesson per-day dedupe key. SQLite stores enums as TEXT, so there is no
+-- type to alter — the value is documented here for the record:
+--   READINESS_REMINDER
+-- and the PostgreSQL twin carries the matching ALTER TYPE statement.
+--
+-- ADDITIVE ONLY. No table is created or rebuilt, no column is added or
+-- dropped, no row is written. This file is intentionally DDL-free.
+-- ===========================================================================

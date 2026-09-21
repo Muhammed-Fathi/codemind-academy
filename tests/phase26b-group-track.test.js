@@ -101,8 +101,8 @@ async function main() {
     // migrations, and no destructive SQL was introduced — are asserted below.
     eq(
       migs.length,
-      18,
-      "B1: history is 18 (10 PR-era + Phase 26B audience + Phase 26D quiz architecture + Phase F live sessions + Phase G x2 + Phase H override + session-video requirement + requirement modes)"
+      19,
+      "B1: history is 19 (10 PR-era + Phase 26B audience + Phase 26D quiz architecture + Phase F live sessions + Phase G x2 + Phase H override + session-video requirement + requirement modes + readiness-reminder recipients)"
     );
     ok(migs.includes(GROUP_TRACK_MIGRATION), "B1: the audience migration is in the history");
     ok(

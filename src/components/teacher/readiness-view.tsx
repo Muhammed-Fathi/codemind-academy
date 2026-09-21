@@ -17,6 +17,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   BellRing,
   CheckCircle2,
   Circle,
@@ -85,8 +92,12 @@ const READINESS_NO_GROUP = "__no_group__";
  * see every student of MY groups in its course with their LIVE canonical
  * requirement states (video watch % + absence applicability, quiz pass,
  * homework submission), filter by status/group, and remind a not-ready
- * student — the reminder is a teacher note to the LINKED PARENTS through the
- * existing fan-out (teachers cannot message students directly).
+ * student — the reminder goes to a CONTROLLED audience the teacher picks per
+ * send (student only / parent only / both, defaulting to both): the parent
+ * leg is a teacher note to the LINKED PARENTS through the existing fan-out,
+ * the student leg is one system notification with a lesson deep link. The
+ * request carries only the mode — every recipient stays server-derived, so
+ * there is still no free-form text and no arbitrary destination.
  *
  * States only, never content: no video bytes/urls, no quiz questions, no
  * homework attachments cross this surface.
@@ -101,6 +112,11 @@ export function TeacherReadinessView() {
   const [filter, setFilter] = React.useState<"ALL" | "READY" | "NOT_READY">("ALL");
   const [groupFilter, setGroupFilter] = React.useState("ALL");
   const [reminding, setReminding] = React.useState<string | null>(null);
+  // The recipient dialog: which student the reminder is for + the controlled
+  // audience mode (default BOTH — the request sends only this mode, never an
+  // id list; the server re-validates and derives every recipient itself).
+  const [remindTarget, setRemindTarget] = React.useState<{ studentId: string; studentName: string } | null>(null);
+  const [remindAudience, setRemindAudience] = React.useState<"STUDENT" | "PARENT" | "BOTH">("BOTH");
 
   React.useEffect(() => {
     let cancelled = false;
@@ -168,18 +184,52 @@ export function TeacherReadinessView() {
       (groupFilter === "ALL" || (s.groupName ?? "") === groupFilter)
   );
 
-  const remind = async (studentId: string) => {
+  const openRemind = (studentId: string, studentName: string) => {
     if (!lessonId || reminding) return;
+    setRemindAudience("BOTH");
+    setRemindTarget({ studentId, studentName });
+  };
+
+  // One toast per audience outcome, straight from the server's per-audience
+  // report — a partial send names what landed and what did not, never a bare
+  // "sent" when nothing new was written.
+  const sendRemind = async () => {
+    if (!lessonId || !remindTarget || reminding) return;
+    const { studentId } = remindTarget;
     setReminding(studentId);
+    setRemindTarget(null);
     try {
       const res = await fetch("/api/teacher/readiness/remind", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ studentId, lessonId }),
+        body: JSON.stringify({ studentId, lessonId, audience: remindAudience }),
       });
       const d = await res.json().catch(() => null);
       if (!res.ok) throw new Error((d && d.error) || "teacher.readiness.remind");
-      toast.success(tr("teacher.readiness.reminded"));
+      const studentStatus = String(d?.student?.status ?? "");
+      const parentStatus = String(d?.parent?.status ?? "");
+      const parentNotified = Number(d?.parent?.notified ?? 0);
+      const studentSent = studentStatus === "sent";
+      const parentDelivered = parentStatus === "sent" && parentNotified > 0;
+      const parentSavedNoLink = parentStatus === "sent" && parentNotified === 0;
+      if (studentSent && parentDelivered) {
+        toast.success(tr("teacher.readiness.remindedBoth"));
+      } else if (studentSent) {
+        toast.success(tr("teacher.readiness.remindedStudent"));
+      } else if (parentDelivered) {
+        toast.success(tr("teacher.readiness.reminded"));
+      } else if (parentSavedNoLink) {
+        toast.info(tr("teacher.readiness.remindNoParent"));
+      }
+      if (!studentSent && studentStatus !== "" && studentStatus !== "not_requested") {
+        if (studentStatus === "duplicate") {
+          toast.info(tr("teacher.readiness.remindDuplicate"));
+        } else if (studentStatus === "unavailable") {
+          toast.info(tr("teacher.readiness.remindUnavailable"));
+        } else {
+          toast.info(tr("teacher.readiness.remindSkipped"));
+        }
+      }
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : tr("teacher.readiness.remind"));
     } finally {
@@ -332,7 +382,7 @@ export function TeacherReadinessView() {
                       size="sm"
                       variant="outline"
                       disabled={reminding === s.studentId}
-                      onClick={() => remind(s.studentId)}
+                      onClick={() => openRemind(s.studentId, s.studentName)}
                     >
                       <BellRing className="w-3.5 h-3.5 me-1.5" />
                       {tr("teacher.readiness.remind")}
@@ -449,6 +499,50 @@ export function TeacherReadinessView() {
           ))}
         </div>
       )}
+
+      <Dialog open={remindTarget !== null} onOpenChange={(v) => { if (!v) setRemindTarget(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <BellRing className="w-4 h-4 text-primary" />
+              {tr("teacher.readiness.remind")}
+            </DialogTitle>
+            {remindTarget && (
+              <DialogDescription>{remindTarget.studentName}</DialogDescription>
+            )}
+          </DialogHeader>
+          <div className="space-y-3">
+            <Label>{tr("teacher.readiness.remindTo")}</Label>
+            <div className="flex flex-col gap-2" role="group" aria-label={tr("teacher.readiness.remindTo")}>
+              {(
+                [
+                  { value: "STUDENT", label: tr("teacher.readiness.remindStudent") },
+                  { value: "PARENT", label: tr("teacher.readiness.remindParent") },
+                  { value: "BOTH", label: tr("teacher.readiness.remindBoth") },
+                ] as const
+              ).map((o) => (
+                <Button
+                  key={o.value}
+                  variant={remindAudience === o.value ? "default" : "outline"}
+                  onClick={() => setRemindAudience(o.value)}
+                  className="justify-start"
+                >
+                  {o.label}
+                </Button>
+              ))}
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setRemindTarget(null)}>
+                {tr("teacher.readiness.remindCancel")}
+              </Button>
+              <Button onClick={sendRemind} disabled={reminding !== null}>
+                <BellRing className="w-3.5 h-3.5 me-1.5" />
+                {tr("teacher.readiness.remindSend")}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
