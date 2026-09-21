@@ -70,7 +70,7 @@ export async function POST(
   const tApi = await getServerT();
   const quiz = await db.quiz.findUnique({
     where: { id },
-    select: { id: true, title: true, titleAr: true, passMark: true, timeLimit: true },
+    select: { id: true, lessonId: true, title: true, titleAr: true, passMark: true, timeLimit: true },
   });
   if (!quiz) return err("Quiz not found", 404);
 
@@ -274,7 +274,7 @@ export async function POST(
     // Course -> Group -> Teacher ownership chain. No client teacher id is
     // accepted, and the attempt id makes replay delivery idempotent.
     const lesson = await db.lesson.findUnique({
-      where: { id: (await db.quiz.findUnique({ where: { id }, select: { lessonId: true } }))?.lessonId ?? "" },
+      where: { id: quiz.lessonId },
       select: {
         unit: { select: { part: { select: { courseId: true } } } },
         topic: { select: { unit: { select: { part: { select: { courseId: true } } } } } },

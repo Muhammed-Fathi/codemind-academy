@@ -219,6 +219,7 @@ export async function POST(req: NextRequest) {
     where: { id: homeworkId },
     select: {
       id: true,
+      lessonId: true,
       title: true,
       titleAr: true,
       deadline: true,
