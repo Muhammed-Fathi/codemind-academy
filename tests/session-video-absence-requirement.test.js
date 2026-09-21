@@ -1104,7 +1104,13 @@ test("SessionVideo requirement modes + attendance-aware gating (T1–T31)", asyn
   {
     const adminSrc = read("src/components/admin/session-videos-view.tsx");
     ok(!/text-gray-|bg-white|bg-gray-|text-black|border-gray-/.test(adminSrc), "T29: zero hardcoded palette classes in the admin view");
-    ok(/text-foreground/.test(adminSrc) && /text-muted-foreground/.test(adminSrc) && /border-input/.test(adminSrc), "T29: the selector styles with theme tokens");
+    // The selectors are the themed ui/select (token-driven popover), never
+    // native: a native option popup ignores the dark theme. Comments may
+    // name the forbidden tags while explaining the rule, so strip them.
+    const adminCode = adminSrc.replace(/\/\*[\s\S]*?\*\//g, "");
+    ok(adminSrc.includes('from "@/components/ui/select"'), "T29: the selector uses the themed Select component");
+    ok(adminSrc.includes("SelectTrigger") && adminSrc.includes("SelectContent") && adminSrc.includes("SelectItem"), "T29: the selector renders trigger + content + items");
+    ok(!/<select[\s>]/.test(adminCode) && !/<option[\s>]/.test(adminCode) && !/<optgroup[\s>]/.test(adminCode), "T29: no native select/option popups (dark-mode hostile)");
   }
 
   // ===========================================================================

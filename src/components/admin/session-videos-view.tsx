@@ -35,6 +35,15 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Users,
   Upload,
   Link2,
@@ -101,7 +110,7 @@ type SessionVideo = {
   viewers: number;
 };
 
-/** Lessons grouped for the picker — one <optgroup> per group; the label is
+/** Lessons grouped for the picker — one SelectGroup per group; the label is
     formatted in the component (i18n) from the pure group data. */
 type LessonGroupView = {
   key: string;
@@ -847,6 +856,10 @@ function PublishVideoCard({
             <BookOpen className="w-3.5 h-3.5" />
             {tr("admin.586")}
           </Label>
+          {/* Themed Select (never native): a native option popup ignores
+              the dark theme; option groups render as SelectGroup. Kept
+              OUTSIDE the parenthesized branches below: a leading JSX
+              comment there parses as an object literal and breaks it. */}
           {lessonsLoading ? (
             <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -868,24 +881,28 @@ function PublishVideoCard({
           ) : lessonGroups.length === 0 ? (
             <div className="mt-1 text-xs text-muted-foreground">{tr("admin.589")}</div>
           ) : (
-            <select
-              id="sv-lesson"
-              value={lessonId}
-              onChange={(e) => setLessonId(e.target.value)}
+            <Select
+              value={lessonId || SV_NO_LESSON}
+              onValueChange={(v) => setLessonId(v === SV_NO_LESSON ? "" : v)}
               disabled={busy}
-              className="flex h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] dark:bg-input/30 md:text-sm"
             >
-              <option value="">{tr("admin.587")}</option>
-              {lessonGroups.map((g) => (
-                <optgroup key={g.key} label={g.label}>
-                  {g.lessons.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {lessonOptionLabel(l, tr)}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
+              <SelectTrigger id="sv-lesson" className="w-full min-w-0">
+                <SelectValue placeholder={tr("admin.587")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={SV_NO_LESSON}>{tr("admin.587")}</SelectItem>
+                {lessonGroups.map((g) => (
+                  <SelectGroup key={g.key}>
+                    <SelectLabel>{g.label}</SelectLabel>
+                    {g.lessons.map((l) => (
+                      <SelectItem key={l.id} value={l.id}>
+                        {lessonOptionLabel(l, tr)}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                ))}
+              </SelectContent>
+            </Select>
           )}
           <p className="mt-1 text-[11px] text-muted-foreground">{tr("admin.583")}</p>
         </div>
@@ -1068,6 +1085,14 @@ function PublishVideoCard({
 
 /** A LiveSession the ABSENT_STUDENTS picker may offer (see
     GET /api/admin/session-videos/eligible-sessions). */
+
+/**
+ * Sentinel item values: Radix Select items need non-empty values, while the
+ * lesson/session pickers legitimately clear to "" — the sentinels
+ * round-trip through onValueChange so the state shape never changes.
+ */
+const SV_NO_LESSON = "__no_lesson__";
+const SV_NO_SESSION = "__no_session__";
 type EligibleSession = {
   id: string;
   title: string;
@@ -1171,27 +1196,33 @@ function RequirementModeSelector({
         <div className="space-y-1">
           <p className="text-[11px] text-muted-foreground">{tr("admin.638")}</p>
           <Label htmlFor={`${idPrefix}-session`}>{tr("admin.639")}</Label>
-          <select
-            id={`${idPrefix}-session`}
-            value={liveSessionId}
-            onChange={(e) => onSessionChange(e.target.value)}
+          {/* Themed Select (never native): a native option popup ignores
+              the dark theme. The placeholder rides a sentinel so clearing
+              the session keeps working exactly as before. */}
+          <Select
+            value={liveSessionId || SV_NO_SESSION}
+            onValueChange={(v) => onSessionChange(v === SV_NO_SESSION ? "" : v)}
             disabled={disabled || !absentEnabled}
-            className="flex h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] dark:bg-input/30 md:text-sm"
           >
-            <option value="">{tr("admin.639")}</option>
-            {showCurrentSession && (
-              <option value={showCurrentSession.id} disabled>
-                {showCurrentSession.titleAr || showCurrentSession.title}
-              </option>
-            )}
-            {sessions.map((s) => (
-              <option key={s.id} value={s.id}>
-                {(s.titleAr || s.title) +
-                  (s.groupName ? ` — ${s.groupName}` : "") +
-                  ` — ${new Date(s.startAt).toLocaleDateString()}`}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger id={`${idPrefix}-session`} className="w-full min-w-0">
+              <SelectValue placeholder={tr("admin.639")} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={SV_NO_SESSION}>{tr("admin.639")}</SelectItem>
+              {showCurrentSession && (
+                <SelectItem value={showCurrentSession.id} disabled>
+                  {showCurrentSession.titleAr || showCurrentSession.title}
+                </SelectItem>
+              )}
+              {sessions.map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  {(s.titleAr || s.title) +
+                    (s.groupName ? ` — ${s.groupName}` : "") +
+                    ` — ${new Date(s.startAt).toLocaleDateString()}`}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       )}
     </div>

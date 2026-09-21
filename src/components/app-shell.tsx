@@ -255,13 +255,15 @@ function renderView(view: string, role?: string | null) {
     case "teacher-homework":
     case "teacher-templates":
     case "teacher-analytics":
-    // Lesson readiness (states-only per-student requirement view + parent
-    // reminders). Kept OUT of TeacherDashboard — the same precedent as
-    // teacher-sessions, so the legacy dashboard file stays byte-identical.
-    case "teacher-readiness":
-      return <TeacherReadinessView />;
     case "teacher-notifications":
       return <TeacherDashboard />;
+    // Lesson readiness (states-only per-student requirement view + parent
+    // reminders). Standalone case with its OWN return — it must NEVER join
+    // the fall-through group above: sharing that group once swept the
+    // dashboard, attendance, quiz, homework, template and analytics keys
+    // into this return (manual-QA navigation regression).
+    case "teacher-readiness":
+      return <TeacherReadinessView />;
     // Phase E — the teacher Session workspace (sessions list + per-lesson
     // workspace). Kept OUT of TeacherDashboard so the legacy tabs are
     // byte-for-byte untouched, and so the Phase 18 pins over that file stay

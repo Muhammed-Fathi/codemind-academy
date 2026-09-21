@@ -10,6 +10,13 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Label } from "@/components/ui/label";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   BellRing,
   CheckCircle2,
   Circle,
@@ -64,6 +71,14 @@ type LessonOption = {
   titleAr: string;
   officialCode: string | null;
 };
+
+/**
+ * Sentinel item values: Radix Select items need non-empty values, while the
+ * lesson/group filters legitimately clear to "" — the sentinel round-trips
+ * through onValueChange so the state shape never changes.
+ */
+const READINESS_NO_LESSON = "__no_lesson__";
+const READINESS_NO_GROUP = "__no_group__";
 
 /**
  * Teacher lesson-readiness (view `teacher-readiness`): pick one of MY lessons,
@@ -194,41 +209,55 @@ export function TeacherReadinessView() {
         <CardContent className="space-y-3">
           <div>
             <Label htmlFor="readiness-lesson">{tr("teacher.readiness.pickLesson")}</Label>
+            {/* Themed Select (never native): a native option popup ignores
+                the dark theme. The placeholder stays re-selectable through
+                a sentinel, so clearing the lesson keeps working exactly as
+                before. (Kept OUTSIDE the parenthesized branch below: a
+                leading JSX comment there parses as an object literal and
+                breaks the following element.) */}
             {lessonsLoading ? (
               <Skeleton className="mt-1 h-9 w-full" />
             ) : (
-              <select
-                id="readiness-lesson"
-                value={lessonId}
-                onChange={(e) => setLessonId(e.target.value)}
-                className="flex h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] dark:bg-input/30 md:text-sm mt-1"
+              <Select
+                value={lessonId || READINESS_NO_LESSON}
+                onValueChange={(v) => setLessonId(v === READINESS_NO_LESSON ? "" : v)}
               >
-                <option value="">{tr("teacher.readiness.pickLesson")}</option>
-                {lessons.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {(l.officialCode ? `${l.officialCode} — ` : "") + (l.titleAr || l.title)}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger id="readiness-lesson" className="mt-1 w-full min-w-0">
+                  <SelectValue placeholder={tr("teacher.readiness.pickLesson")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={READINESS_NO_LESSON}>{tr("teacher.readiness.pickLesson")}</SelectItem>
+                  {lessons.map((l) => (
+                    <SelectItem key={l.id} value={l.id}>
+                      {(l.officialCode ? `${l.officialCode} — ` : "") + (l.titleAr || l.title)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             )}
           </div>
           {data && (
             <div className="flex flex-wrap items-end gap-3">
               <div>
                 <Label htmlFor="readiness-group">{tr("teacher.readiness.pickGroup")}</Label>
-                <select
-                  id="readiness-group"
-                  value={groupFilter}
-                  onChange={(e) => setGroupFilter(e.target.value)}
-                  className="flex h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] dark:bg-input/30 md:text-sm mt-1"
+                {/* Themed Select; an unnamed group ("") rides a sentinel so the
+                    empty value keeps filtering exactly as before. */}
+                <Select
+                  value={groupFilter || READINESS_NO_GROUP}
+                  onValueChange={(v) => setGroupFilter(v === READINESS_NO_GROUP ? "" : v)}
                 >
-                  <option value="ALL">{tr("teacher.readiness.filterAll")}</option>
-                  {groups.map((g) => (
-                    <option key={g} value={g}>
-                      {g || tr("teacher.readiness.filterAll")}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger id="readiness-group" className="mt-1 w-full min-w-0">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">{tr("teacher.readiness.filterAll")}</SelectItem>
+                    {groups.map((g) => (
+                      <SelectItem key={g} value={g || READINESS_NO_GROUP}>
+                        {g || tr("teacher.readiness.filterAll")}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="flex gap-1.5" role="group" aria-label={tr("teacher.readiness.title")}>
                 {(
