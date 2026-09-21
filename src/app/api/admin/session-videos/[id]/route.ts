@@ -11,8 +11,11 @@ import { deletePrivateFile, isManagedPrivateStorage } from "@/lib/media";
 import { getServerT } from "@/lib/i18n-server";
 import {
   SESSION_VIDEO_LINK_ERRORS,
+  SESSION_VIDEO_REQUIREMENT_ERRORS,
+  parseSessionVideoRequirement,
   validateSessionVideoLink,
   type SessionVideoLinkCode,
+  type SessionVideoRequirementCode,
 } from "@/lib/session-video-link";
 
 /** Localized message + machine code, same shape as the POST route. */
@@ -21,6 +24,18 @@ function sessionVideoLinkError(
   code: SessionVideoLinkCode
 ): NextResponse {
   const meta = SESSION_VIDEO_LINK_ERRORS[code];
+  return NextResponse.json({ error: tApi(meta.i18n), code }, { status: meta.status });
+}
+
+/**
+ * One response shape for every progression-requirement refusal: a LOCALIZED
+ * admin-facing message plus the MACHINE-READABLE contract code (422).
+ */
+function sessionVideoRequirementError(
+  tApi: (key: string) => string,
+  code: SessionVideoRequirementCode
+): NextResponse {
+  const meta = SESSION_VIDEO_REQUIREMENT_ERRORS[code];
   return NextResponse.json({ error: tApi(meta.i18n), code }, { status: meta.status });
 }
 
@@ -33,7 +48,12 @@ export async function PATCH(
   if (error) return error;
 
   const { id } = await params;
-  const video = await db.sessionVideo.findUnique({ where: { id } });
+  const video = await db.sessionVideo.findUnique({
+    where: { id },
+    // The requirement edit needs the row's storage (trackability decides
+    // whether REQUIRED is even expressible); nothing else changes shape.
+    include: { media: { select: { storage: true } } },
+  });
   if (!video) return err(tApi("api.214"), 404);
 
   const body = await req.json().catch(() => ({}));
@@ -60,8 +80,28 @@ export async function PATCH(
       data.lessonId = link.lessonId;
     }
   }
-  if (body.requiredPercent !== undefined)
-    data.requiredPercent = Math.min(100, Math.max(50, Number(body.requiredPercent)));
+  if (body.isRequiredForProgression !== undefined || body.requiredPercent !== undefined) {
+    // The edit validates the RESULTING state through the shared requirement
+    // contract: each field falls back to the stored value, so a percent-only
+    // edit cannot clear requiredness and a flag-only edit keeps the stored
+    // threshold. The range rule (50–100) is the pre-existing PATCH rule, now
+    // shared; garbage percents are refused (422) instead of reaching Prisma.
+    const parsed = parseSessionVideoRequirement(
+      {
+        isRequiredForProgression:
+          body.isRequiredForProgression !== undefined
+            ? body.isRequiredForProgression
+            : video.isRequiredForProgression,
+        requiredPercent:
+          body.requiredPercent !== undefined ? body.requiredPercent : video.requiredPercent,
+      },
+      { storage: video.media.storage }
+    );
+    if (!parsed.ok) return sessionVideoRequirementError(tApi, parsed.code);
+    if (body.isRequiredForProgression !== undefined)
+      data.isRequiredForProgression = parsed.isRequired;
+    if (body.requiredPercent !== undefined) data.requiredPercent = parsed.requiredPercent;
+  }
   if (typeof body.isPublished === "boolean") {
     data.isPublished = body.isPublished;
     data.publishedAt = body.isPublished ? video.publishedAt || new Date() : null;

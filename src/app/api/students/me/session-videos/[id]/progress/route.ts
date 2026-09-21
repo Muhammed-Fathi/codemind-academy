@@ -28,6 +28,7 @@ import {
   rateLimitedResponse,
 } from "@/lib/api";
 import { canAccessLesson } from "@/lib/session-progress";
+import { isManagedPrivateStorage } from "@/lib/media";
 import { syncDerivedCompletion } from "@/lib/progression";
 import { maybeResolveCatchup } from "@/lib/catchup";
 
@@ -62,6 +63,8 @@ export async function POST(
       requiredPercent: true,
       // Phase B (fix) — needed for the lesson gate below.
       lessonId: true,
+      // Trackability gate below: only managed storage accrues watch %.
+      media: { select: { storage: true } },
     },
   });
   if (!video || !video.isPublished) return err("Not found", 404);
@@ -84,6 +87,15 @@ export async function POST(
       }
       return err("Forbidden", 403);
     }
+  }
+
+  // Untrackable media (EXTERNAL_URL — embeds AND direct files alike) accrues
+  // NOTHING: the student-visible contract (course.227 / course.243) promises
+  // exactly this, and only managed private bytes the server meters can become
+  // academic facts. The refusal stores no row, like every other denial here.
+  // (Literal Arabic: this route's convention for student-facing blocks.)
+  if (!isManagedPrivateStorage(video.media?.storage)) {
+    return err("الفيديو ده بيشتغل من مصدر خارجي، فمش بيتسجل منه نسبة مشاهدة.", 409);
   }
 
   const body = await req.json().catch(() => ({}));
@@ -142,6 +154,10 @@ export async function POST(
   return ok({
     percent: view.percent,
     isCompleted: view.isCompleted,
+    // LIVE satisfaction (the engine's rule): kept alongside the sticky flag
+    // so REQUIRED-video UI never contradicts the requirements card after a
+    // retroactive threshold change. Always trackable here (refused above).
+    satisfied: view.percent >= video.requiredPercent,
     requiredPercent: video.requiredPercent,
   });
 }

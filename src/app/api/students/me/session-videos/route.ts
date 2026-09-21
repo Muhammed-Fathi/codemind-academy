@@ -49,6 +49,7 @@ import { VIDEO_COMPLETION_THRESHOLD } from "@/lib/progress";
 import { videoTrackFilter } from "@/lib/track-scope";
 import { LESSON_STUDENT_STATUS_FILTER } from "@/lib/session-lifecycle";
 import { canAccessLesson } from "@/lib/session-progress";
+import { isManagedPrivateStorage } from "@/lib/media";
 
 export async function GET(req: NextRequest) {
   const user = await requireUser();
@@ -143,12 +144,19 @@ export async function GET(req: NextRequest) {
     threshold: VIDEO_COMPLETION_THRESHOLD,
     videos: videos.map((v) => {
       const view = v.views[0];
+      const percent = view?.percent ?? 0;
+      // Trackability is the storage contract, not a guess: only managed
+      // private bytes (LOCAL_PRIVATE / S3) accrue server-verified watch %
+      // through the heartbeat. EXTERNAL_URL rows never accrue.
+      const trackable = isManagedPrivateStorage(v.media.storage);
       return {
         id: v.id,
         title: v.title,
         titleAr: v.titleAr,
         description: v.description,
         lesson: v.lesson,
+        isRequiredForProgression: v.isRequiredForProgression,
+        trackable,
         requiredPercent: v.requiredPercent,
         publishedAt: v.publishedAt,
         // Uploaded media is served only through the authorized route.
@@ -158,9 +166,15 @@ export async function GET(req: NextRequest) {
             : `/api/media/${v.media.id}`,
         isExternal: v.media.storage === "EXTERNAL_URL",
         progress: {
-          percent: view?.percent ?? 0,
+          percent,
+          // Sticky history (never rewritten): enrichment for OPTIONAL videos.
           isCompleted: view?.isCompleted ?? false,
           watchedSec: view?.watchedSec ?? 0,
+          // LIVE satisfaction of THIS video's own threshold — the engine's
+          // rule, not the sticky flag. The UI checks THIS for REQUIRED
+          // videos, so a retroactive threshold change reflects without
+          // rewriting history.
+          satisfied: trackable && percent >= v.requiredPercent,
         },
       };
     }),

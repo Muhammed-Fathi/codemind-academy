@@ -1,0 +1,24 @@
+-- ===========================================================================
+-- SessionVideo progression requirement (SQLite).
+--
+-- ADDITIVE ONLY. One new column with a static default. No table is rebuilt,
+-- no row is deleted, no value is backfilled: every pre-existing SessionVideo
+-- row reads isRequiredForProgression = false (OPTIONAL) the moment this
+-- migration lands, which preserves the historical engine behaviour
+-- (optional recordings are never progression inputs) byte-for-byte.
+--
+-- WHAT IT IS
+--   The per-video explicit REQUIRED-vs-OPTIONAL flag the canonical
+--   progression engine (src/lib/progression.ts) reads. A REQUIRED video that
+--   is published + track/batch-eligible + trackable (managed storage) joins
+--   the lesson's video requirement: ALL such videos must satisfy
+--   watchPercent >= requiredPercent. OPTIONAL videos never participate.
+--
+-- WHAT IT IS NOT
+--   Not a second requirement model: requiredness is one boolean on the row
+--   the engine already joins, enforced through the existing publication /
+--   track / batch / storage gates. EXTERNAL_URL (untrackable) rows can never
+--   be required — refused at every write path, never silently converted.
+-- ===========================================================================
+
+ALTER TABLE "SessionVideo" ADD COLUMN "isRequiredForProgression" BOOLEAN NOT NULL DEFAULT false;

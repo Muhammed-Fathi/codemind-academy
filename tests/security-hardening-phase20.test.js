@@ -278,7 +278,11 @@ section("3. Authorization matrix — every content route × the 10 checks");
   ok(/isManagedPrivateStorage,/.test(sm) && /from \"@\/lib\/media\"/.test(sm), "material check #10 uses the shared storage predicate from lib/media");
   ok(/!asset\.storageKey/.test(sm), "material check #10 still requires a storageKey");
   ok(/asset\.isPrivate !== true/.test(sm), "material check #10 still requires isPrivate");
-  ok(/MANAGED_PRIVATE_STORAGE_VALUES = \[\s*\"LOCAL_PRIVATE\",\s*\"S3\",\s*\]/.test(read("src/lib/media.ts")), "managed private storage is exactly LOCAL_PRIVATE + S3 (EXTERNAL_URL excluded)");
+  // The canonical set moved to the client-safe predicate module (the
+  // session-video requirement validator ships to the browser); lib/media
+  // re-exports it, so every gate still resolves the SAME single definition.
+  ok(/MANAGED_PRIVATE_STORAGE_VALUES = \[\s*\"LOCAL_PRIVATE\",\s*\"S3\",\s*\]/.test(read("src/lib/media-storage.ts")), "managed private storage is exactly LOCAL_PRIVATE + S3 (EXTERNAL_URL excluded)");
+  ok(/MANAGED_PRIVATE_STORAGE_VALUES,/.test(read("src/lib/media.ts")), "lib/media re-exports the canonical managed set (single definition)");
   ok(/isActive/.test(sm), "material check #9 (active material)");
 }
 

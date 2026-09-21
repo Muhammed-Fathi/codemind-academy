@@ -27,8 +27,10 @@
 //      accessible.
 // Plus one latent-deadlock FIX that only ever unblocks: cross-track
 // quiz/homework rows on a SHARED lesson are excluded from requirements.
-// (Recordings stay NON-INPUTS per Phase B M2: publishing or watching a batch
-// SessionVideo can neither create nor satisfy a requirement.)
+// (OPTIONAL recordings stay NON-INPUTS per Phase B M2, revised: publishing or
+// watching an OPTIONAL batch video neither creates nor satisfies a
+// requirement. REQUIRED videos gate through the engine's video rule, which
+// this facade only re-serialises — it owns no rule of its own.)
 
 import { db } from "@/lib/db";
 import {
@@ -44,6 +46,7 @@ import {
   type CanonicalAccessReason,
   type LessonEvaluation,
   type ProgressionUnmetEntry,
+  type ProgressionVideoItem,
 } from "@/lib/progression";
 
 // The universe contract lives in the canonical engine; re-exported so every
@@ -58,12 +61,21 @@ export {
   type LessonChain,
 } from "@/lib/progression";
 
+/** One REQUIRED video inside a lesson's video requirement (re-exported). */
+export type RequiredVideoItem = ProgressionVideoItem;
+
 export type SessionRequirement = {
   /** Whether this lesson actually has the component at all. */
   required: boolean;
   done: boolean;
   /** 0-100 where meaningful (video), else 0/100. */
   value: number;
+  /** Video only: how many REQUIRED videos gate this lesson. */
+  requiredCount?: number;
+  /** Video only: how many of them currently satisfy their own threshold. */
+  completedCount?: number;
+  /** Video only: the per-video decomposition (REQUIRED videos only). */
+  items?: RequiredVideoItem[];
 };
 
 export type SessionStatusRow = {

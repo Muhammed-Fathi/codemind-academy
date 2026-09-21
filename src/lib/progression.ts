@@ -99,8 +99,9 @@ import {
   isStudentVisibleStatus,
 } from "@/lib/session-lifecycle";
 import { VIDEO_COMPLETION_THRESHOLD } from "@/lib/progress";
-import { canAccessTrackScope, trackScopeWhere } from "@/lib/track-scope";
+import { canAccessTrackScope, trackScopeWhere, videoTrackFilter } from "@/lib/track-scope";
 import { normalizeSchoolType, type SchoolType } from "@/lib/school-type";
+import { isManagedPrivateStorage } from "@/lib/media";
 import { evaluateAccessDecision } from "@/lib/subscription-entitlement";
 
 // ---------------------------------------------------------------------------
@@ -308,12 +309,37 @@ export function toUnmetEntries(
   }));
 }
 
+/**
+ * One REQUIRED video inside a lesson's video requirement (the requirement
+ * decomposition). Identity + threshold + trackability ride along as evidence
+ * passthrough — the loader populates them from the rows it already read;
+ * the core appends the LIVE completion verdict per video.
+ */
+export type ProgressionVideoItem = {
+  id: string;
+  title: string;
+  titleAr: string;
+  /** THIS video's own threshold (50–100, default 95). */
+  requiredPercent: number;
+  /** Managed storage (measurable) vs external (fail-closed, unsatisfiable). */
+  trackable: boolean;
+  /** Live server percent (SessionVideoView.percent); 0 when unwatched. */
+  currentPercent: number;
+  completed: boolean;
+};
+
 export type ProgressionRequirement = {
   /** Whether this lesson actually has the component in the student's audience. */
   required: boolean;
   done: boolean;
   /** 0-100 where meaningful (video), else 0/100. */
   value: number;
+  /** Video only: how many REQUIRED videos gate this lesson. */
+  requiredCount?: number;
+  /** Video only: how many of them currently satisfy their own threshold. */
+  completedCount?: number;
+  /** Video only: the per-video decomposition (REQUIRED videos only). */
+  items?: ProgressionVideoItem[];
 };
 
 export type ProgressionEvidence = {
@@ -401,6 +427,12 @@ export type ProgressionCoreLesson = {
   id: string;
   order: number;
   hasLegacyVideo: boolean;
+  /**
+   * REQUIRED SessionVideos gating THIS lesson for THIS student (published,
+   * own batch, track-eligible — sliced by the loader through the SAME
+   * predicates the student list applies). Absent = none (legacy-only).
+   */
+  requiredVideos?: Omit<ProgressionVideoItem, "currentPercent" | "completed">[];
   /** Quizzes that are requirements for THIS student (published, track-eligible). */
   quizIds: string[];
   /** Homework that are requirements for THIS student (published/closed, eligible). */
@@ -414,6 +446,13 @@ export type ProgressionCoreFacts = {
   passedAttemptByQuiz: Map<string, { attemptId: string; percentage: number; passedAt: string | null }>;
   submittedHomeworkIds: Set<string>;
   submissionByHomework: Map<string, { submittedAt: string | null; status: string | null }>;
+  /**
+   * LIVE server watch percent per REQUIRED SessionVideo (THIS student's
+   * SessionVideoView rows). The engine compares live percent against each
+   * video's OWN threshold — the sticky isCompleted flag is history, never an
+   * input, so a retroactive threshold raise bites without rewriting rows.
+   */
+  videoWatchPercent?: Map<string, number>;
 };
 
 export type ProgressionCoreHold = ActiveHoldRef;
@@ -469,13 +508,44 @@ export function evaluateProgressionCore(input: {
   lessons.forEach((lesson, i) => {
     const legacy = facts.legacyVideoByLesson.get(lesson.id);
     const legacyDone = !!legacy?.completed || (legacy?.percent ?? 0) >= VIDEO_COMPLETION_THRESHOLD;
-    // Phase B M2 (restored contract): `Lesson.videoUrl` is the ONLY video
-    // progression authority. Recordings are content + telemetry, never
-    // progression inputs — requiredness AND satisfaction derive from the
-    // legacy column alone, exactly as before Phase H.
-    const videoRequired = lesson.hasLegacyVideo;
-    const videoDone = !videoRequired || legacyDone;
-    const videoValue = !videoRequired ? 100 : (legacy?.percent ?? 0);
+    // Session-video requirements (the Phase B M2 revision): OPTIONAL
+    // recordings stay content + telemetry (never inputs), but a REQUIRED
+    // recording that is published + track/batch-eligible joins the lesson's
+    // video requirement with its OWN threshold. BOTH sources feed ONE
+    // canonical video verdict — conjunction, no precedence games:
+    //   videoRequired = legacy present OR >=1 required recording;
+    //   videoDone     = every required source satisfied.
+    // Satisfaction is LIVE percent >= threshold per TRACKABLE source — the
+    // sticky completion flags are history, never inputs (a retroactive
+    // threshold change reflects without rewriting a single row). A required-
+    // but-untrackable row (unreachable via the app — every write path
+    // refuses it) fails CLOSED here even with a frozen legacy percent on
+    // record: unmeasurable, never satisfied, loudly unmet.
+    const requiredVideos = lesson.requiredVideos ?? [];
+    const watchPercent = facts.videoWatchPercent;
+    const modernDone = requiredVideos.every(
+      (v) => v.trackable && (watchPercent?.get(v.id) ?? 0) >= v.requiredPercent
+    );
+    const videoRequired = lesson.hasLegacyVideo || requiredVideos.length > 0;
+    const videoDone = !videoRequired || ((!lesson.hasLegacyVideo || legacyDone) && modernDone);
+    const modernPercents = requiredVideos.map((v) => watchPercent?.get(v.id) ?? 0);
+    // The bottleneck across the required sources (legacy-only lessons keep
+    // their exact historical value: the legacy percent, untouched).
+    const videoValue = !videoRequired
+      ? 100
+      : Math.min(...(lesson.hasLegacyVideo ? [legacy?.percent ?? 0] : []), ...modernPercents);
+    const videoItems: ProgressionVideoItem[] = requiredVideos.map((v) => {
+      const currentPercent = watchPercent?.get(v.id) ?? 0;
+      return {
+        id: v.id,
+        title: v.title,
+        titleAr: v.titleAr,
+        requiredPercent: v.requiredPercent,
+        trackable: v.trackable,
+        currentPercent,
+        completed: v.trackable && currentPercent >= v.requiredPercent,
+      };
+    });
 
     const quizRequired = lesson.quizIds.length > 0;
     const quizDone =
@@ -537,7 +607,20 @@ export function evaluateProgressionCore(input: {
       state,
       completed,
       unlocked,
-      video: { required: videoRequired, done: videoDone, value: videoValue },
+      video: {
+        required: videoRequired,
+        done: videoDone,
+        value: videoValue,
+        // The decomposition rides only when required recordings exist —
+        // legacy-only lessons keep their exact historical payload shape.
+        ...(requiredVideos.length > 0
+          ? {
+              requiredCount: requiredVideos.length,
+              completedCount: videoItems.filter((it) => it.completed).length,
+              items: videoItems,
+            }
+          : {}),
+      },
       quiz: {
         required: quizRequired,
         done: quizDone,
@@ -623,12 +706,15 @@ export async function loadCourseProgression(
 ): Promise<CourseProgression> {
   const now = opts.now ?? new Date();
 
-  // NOTE: the engine reads NO batch state. Recordings are never progression
-  // inputs (Phase B M2), so no batch audience — and no lazy batch reconcile
-  // (a potential write) — belongs on this path. The engine is read-only.
+  // NOTE: the engine reads the student's batchId (audience scoping for
+  // REQUIRED recordings — the Phase B M2 revision) but NEVER reconciles it:
+  // no lazy batch attach (a potential write) belongs on this path. The
+  // engine stays read-only; a student with no batch simply resolves no
+  // recording audience (and the heartbeat refuses their beats too, so no
+  // video fact could exist for them anyway).
   const student = await db.student.findUnique({
     where: { id: studentId },
-    select: { schoolType: true },
+    select: { schoolType: true, batchId: true },
   });
   const schoolType = normalizeSchoolType(
     opts.schoolType !== undefined ? opts.schoolType : (student?.schoolType ?? null)
@@ -688,7 +774,36 @@ export async function loadCourseProgression(
   const requiredQuizIds = [...new Set([...requiredQuizByLesson.values()].flat())];
   const requiredHomeworkIds = [...new Set([...requiredHomeworkByLesson.values()].flat())];
 
-  const [progressRows, attemptRows, submissionRows, holdRows, overrideRows] =
+  // Required recordings — the SAME eligibility the student list applies (own
+  // batch + published + track via videoTrackFilter), PLUS the explicit
+  // REQUIRED flag, PLUS the universe's lesson scoping (lessonId ∈ course
+  // lessons — lifecycle + course + archive slicing inherited by
+  // construction). ONE batched query regardless of lesson count; a student
+  // with no batch resolves no audience and reads none.
+  const studentBatchId = student?.batchId ?? null;
+  const requiredVideoRows =
+    studentBatchId && lessonIds.length > 0
+      ? await db.sessionVideo.findMany({
+          where: {
+            batchId: studentBatchId,
+            isPublished: true,
+            isRequiredForProgression: true,
+            lessonId: { in: lessonIds },
+            ...videoTrackFilter(schoolType),
+          },
+          select: {
+            id: true,
+            lessonId: true,
+            title: true,
+            titleAr: true,
+            requiredPercent: true,
+            media: { select: { storage: true } },
+          },
+        })
+      : [];
+  const requiredVideoIds = [...new Set(requiredVideoRows.map((v) => v.id))];
+
+  const [progressRows, attemptRows, submissionRows, holdRows, overrideRows, videoViewRows] =
     await Promise.all([
       lessonIds.length > 0
         ? db.lessonProgress.findMany({
@@ -746,12 +861,44 @@ export async function loadCourseProgression(
           revokedAt: true,
         },
       }),
+      // Live watch percent per required recording (percent ONLY — the sticky
+      // isCompleted flag is history and is deliberately never selected).
+      requiredVideoIds.length > 0
+        ? db.sessionVideoView.findMany({
+            where: { studentId, sessionVideoId: { in: requiredVideoIds } },
+            select: { sessionVideoId: true, percent: true },
+          })
+        : Promise.resolve([] as { sessionVideoId: string; percent: number }[]),
     ]);
+
+  const requiredVideosByLesson = new Map<
+    string,
+    { id: string; title: string; titleAr: string; requiredPercent: number; trackable: boolean }[]
+  >();
+  for (const v of requiredVideoRows) {
+    if (!v.lessonId) continue;
+    const list = requiredVideosByLesson.get(v.lessonId) ?? [];
+    list.push({
+      id: v.id,
+      title: v.title,
+      titleAr: v.titleAr,
+      requiredPercent: v.requiredPercent ?? VIDEO_COMPLETION_THRESHOLD,
+      trackable: isManagedPrivateStorage(
+        (v.media as { storage: unknown } | null)?.storage
+      ),
+    });
+    requiredVideosByLesson.set(v.lessonId, list);
+  }
+  // Deterministic item order regardless of storage order.
+  for (const list of requiredVideosByLesson.values()) {
+    list.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  }
 
   const coreLessons: ProgressionCoreLesson[] = lessons.map((l) => ({
     id: l.id,
     order: l.order,
     hasLegacyVideo: !!l.videoUrl,
+    requiredVideos: requiredVideosByLesson.get(l.id) ?? [],
     quizIds: requiredQuizByLesson.get(l.id) ?? [],
     homeworkIds: requiredHomeworkByLesson.get(l.id) ?? [],
   }));
@@ -776,6 +923,9 @@ export async function loadCourseProgression(
         passedAt: a.finishedAt ? new Date(a.finishedAt).toISOString() : null,
       },
     ])
+  );
+  const videoWatchPercent = new Map<string, number>(
+    videoViewRows.map((w) => [w.sessionVideoId, w.percent ?? 0])
   );
   const submittedHomeworkIds = new Set<string>(submissionRows.map((s) => s.homeworkId));
   const submissionByHomework = new Map<string, { submittedAt: string | null; status: string | null }>(
@@ -825,6 +975,7 @@ export async function loadCourseProgression(
     lessons: coreLessons,
     facts: {
       legacyVideoByLesson,
+      videoWatchPercent,
       passedQuizIds,
       passedAttemptByQuiz,
       submittedHomeworkIds,

@@ -59,6 +59,8 @@ export async function POST(req: NextRequest) {
     titleAr: body.titleAr,
     description: body.description,
     publish: body.publish,
+    isRequiredForProgression: body.isRequiredForProgression,
+    requiredPercent: body.requiredPercent,
     // Shared / LESSON_PDF payload:
     lessonId: body.lessonId,
     trackScope: body.trackScope,

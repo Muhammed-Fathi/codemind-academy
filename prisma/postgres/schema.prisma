@@ -1491,6 +1491,11 @@ model SessionVideo {
   description  String?
   /// Minimum watched percentage required to consider the video complete.
   requiredPercent Int             @default(95)
+  /// Explicit per-video progression gate. When true — AND the video is
+  /// published, track/batch-eligible and trackable (managed storage) — the
+  /// canonical engine requires watchPercent >= requiredPercent. Default
+  /// false: every pre-existing row stays OPTIONAL (additive-only, no backfill).
+  isRequiredForProgression Boolean @default(false)
   isPublished  Boolean            @default(false)
   publishedAt  DateTime?
   createdAt    DateTime           @default(now())

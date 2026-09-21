@@ -85,11 +85,13 @@ function main() {
   ok(lessonView.includes('t("course.242")'), "T2b: the lesson header bar uses the video-progress label");
   ok(dashView.includes('t("course.242")') && dashView.includes('t("student.126")'), "T2c: Continue Learning labels the bar, completed keeps its own label");
   ok(!dashView.includes(': "Progress"'), "T2d: the unlabeled whole-lesson Progress string is gone");
-  // T3: authority pins — video = Lesson.videoUrl, recordings display-only.
-  ok(engine.includes("const videoRequired = lesson.hasLegacyVideo;"), "T3a: video requiredness is the legacy column only");
+  // T3: authority pins — video = Lesson.videoUrl OR >=1 REQUIRED recording
+  // (Phase B M2, revised); OPTIONAL recordings display-only.
+  ok(engine.includes("const videoRequired = lesson.hasLegacyVideo || requiredVideos.length > 0;"), "T3a: video requiredness is legacy-OR-required-recordings");
   ok(engine.includes("hasLegacyVideo: !!l.videoUrl,"), "T3b: the loader maps it from Lesson.videoUrl presence");
-  ok(!/sessionvideo/i.test(stripComments(engine)), "T3c: the engine references no SessionVideo in code (telemetry/display only)");
-  ok(!/sessionvideo/i.test(stripComments(facade)), "T3d: the façade references no SessionVideo in code either");
+  ok(/db\.sessionVideo\.findMany/.test(stripComments(engine)) && stripComments(engine).includes("isRequiredForProgression: true"), "T3c: the engine reads SessionVideo ONLY through the required-input scan");
+  ok(!/batchVideos|batchViewByVideo/.test(stripComments(engine)), "T3c: no legacy batch-video concept in the engine");
+  ok(!/sessionvideo/i.test(stripComments(facade)), "T3d: the façade references no SessionVideo in code (re-serialises the engine verdict only)");
   // T4: quiz PASS + homework SUBMITTED semantics untouched.
   ok(engine.includes("lesson.quizIds.every((q) => facts.passedQuizIds.has(q))"), "T4a: quiz completion is still every-required-quiz PASSED");
   ok(engine.includes("lesson.homeworkIds.every((h) => facts.submittedHomeworkIds.has(h))"), "T4b: homework completion is still every-required-homework SUBMITTED");

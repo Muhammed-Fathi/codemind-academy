@@ -410,6 +410,7 @@ CREATE TABLE "SessionVideo" (
   "titleAr" TEXT NOT NULL,
   "description" TEXT,
   "requiredPercent" INTEGER NOT NULL DEFAULT 95,
+  "isRequiredForProgression" BOOLEAN NOT NULL DEFAULT FALSE,
   "isPublished" BOOLEAN NOT NULL DEFAULT FALSE,
   "publishedAt" TIMESTAMPTZ(3),
   "createdAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,

@@ -56,6 +56,7 @@ fs.writeFileSync(
       module: "commonjs",
       strict: false,
       skipLibCheck: true,
+      esModuleInterop: true,
       types: ["node"],
       typeRoots: [path.join(REPO, "node_modules/@types")],
       baseUrl: REPO,

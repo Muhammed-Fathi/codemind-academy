@@ -164,14 +164,18 @@ section("3. Session locking treats missing components as not-required");
     !/const hasVideo =/.test(src) && !/previousCompleted/.test(src),
     "the adapter carries no gating logic of its own"
   );
-  // Restored contract (relocated to the engine): Lesson.videoUrl is the
-  // ONLY video progression authority — recordings never create a
-  // requirement (Phase B M2).
+  // Restored contract (relocated to the engine), session-video-requirement
+  // revision: video REQUIRED-ness is Lesson.videoUrl OR >=1 REQUIRED
+  // recording — OPTIONAL recordings never create a requirement (Phase B
+  // M2, revised).
   ok(
-    /const videoRequired = lesson\.hasLegacyVideo;/.test(eng),
-    "video REQUIRED-ness derives from the legacy column only"
+    /const videoRequired = lesson\.hasLegacyVideo \|\| requiredVideos\.length > 0;/.test(eng),
+    "video REQUIRED-ness derives from legacy-OR-required-recordings"
   );
-  ok(!/batchVideos/.test(eng), "recordings are not progression inputs");
+  ok(
+    /isRequiredForProgression: true/.test(eng),
+    "only REQUIRED recordings are progression inputs"
+  );
   ok(
     /const videoDone = !videoRequired \|\|/.test(eng),
     "a lesson with NO video does not require a video (no permanent lock)"

@@ -73,6 +73,8 @@ const CHAIN = [
   // comparison would report the newer objects as missing. This script is the
   // canonical full-chain proof from Phase H onward.
   "20260920120000_phase_h_progression_override",
+  // Session-video progression requirement — one additive boolean column.
+  "20260921120000_session_video_progression_requirement",
 ];
 const read = (p) => fs.readFileSync(p, "utf8");
 const stmts = (p) => splitSqlStatements(read(p));

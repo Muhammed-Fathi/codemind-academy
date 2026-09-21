@@ -30,6 +30,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -43,6 +44,7 @@ import {
   CheckCircle2,
   BookOpen,
   AlertTriangle,
+  Pencil,
 } from "lucide-react";
 import { uploadFailureMessage } from "@/lib/upload-error-text";
 import {
@@ -86,6 +88,7 @@ type SessionVideo = {
   /** The academic session this video belongs to (Phase A). null = legacy row. */
   lesson: SessionVideoLesson | null;
   requiredPercent: number;
+  isRequiredForProgression: boolean;
   isPublished: boolean;
   publishedAt: string | null;
   source: "URL" | "UPLOAD";
@@ -157,6 +160,8 @@ export function SessionVideosView() {
   });
   const [activeBatchId, setActiveBatchId] = React.useState<string | null>(null);
   const [videos, setVideos] = React.useState<SessionVideo[]>([]);
+  /** The row currently showing the inline edit form (null = none). */
+  const [editingId, setEditingId] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [loadingVideos, setLoadingVideos] = React.useState(false);
 
@@ -418,7 +423,26 @@ export function SessionVideosView() {
                       >
                         {tr(v.isPublished ? "admin.211" : "admin.212")}
                       </Badge>
+                      {v.isRequiredForProgression && (
+                        <Badge
+                          variant="outline"
+                          className="border-primary/40 bg-primary/10 text-primary text-[10px]"
+                        >
+                          {tr("admin.632")}
+                        </Badge>
+                      )}
                       <div className="flex items-center gap-1.5">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          aria-label={tr("admin.629")}
+                          onClick={() =>
+                            setEditingId((prev) => (prev === v.id ? null : v.id))
+                          }
+                        >
+                          <Pencil className="w-3.5 h-3.5 me-1" />
+                          {tr("admin.629")}
+                        </Button>
                         <Button
                           size="sm"
                           variant="outline"
@@ -448,6 +472,18 @@ export function SessionVideosView() {
                           <Trash2 className="w-4 h-4 text-destructive" />
                         </Button>
                       </div>
+                      {editingId === v.id && (
+                        <div className="basis-full">
+                          <EditVideoForm
+                            video={v}
+                            onCancel={() => setEditingId(null)}
+                            onSaved={() => {
+                              setEditingId(null);
+                              loadVideos(activeBatch.id);
+                            }}
+                          />
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -487,6 +523,10 @@ function PublishVideoCard({
   const [description, setDescription] = React.useState("");
   const [videoUrl, setVideoUrl] = React.useState("");
   const [file, setFile] = React.useState<File | null>(null);
+  // Progression requirement: OPTIONAL by default (false), threshold 95 —
+  // the same defaults the server applies when the fields are absent.
+  const [isRequired, setIsRequired] = React.useState(false);
+  const [requiredPercent, setRequiredPercent] = React.useState("95");
   const [saving, setSaving] = React.useState(false);
   // The lesson the video belongs to — REQUIRED (Phase A). Preselected when
   // the admin deep-linked here from the lesson's detail page.
@@ -538,6 +578,8 @@ function PublishVideoCard({
     setVideoUrl("");
     setFile(null);
     setLessonId("");
+    setIsRequired(false);
+    setRequiredPercent("95");
   };
 
   /** One place turns an upload result into what the admin sees. */
@@ -609,6 +651,18 @@ function PublishVideoCard({
       toast.error(tr("api.219"));
       return;
     }
+    // Progression requirement, told BEFORE any request (the server
+    // re-enforces on every creation path): the threshold keeps the existing
+    // 50–100 range rule; REQUIRED on an external URL is unexpressible (no
+    // verified watch %) so the toggle is disabled for that method and the
+    // payload forces OPTIONAL there.
+    const percentNum = Number(requiredPercent);
+    if (!Number.isFinite(percentNum)) {
+      toast.error(tr("api.361"));
+      return;
+    }
+    const threshold = Math.min(100, Math.max(50, Math.round(percentNum)));
+    const requiredForProgression = method === "UPLOAD" && isRequired;
     lastPublishRef.current = publish;
 
     if (method === "UPLOAD") {
@@ -629,6 +683,8 @@ function PublishVideoCard({
             titleAr: titleAr || title,
             description,
             publish,
+            isRequiredForProgression: requiredForProgression,
+            requiredPercent: threshold,
           },
           // No browser-side hash for videos: a 512 MB buffer just to hash it
           // is worse than skipping the optional integrity proof.
@@ -642,6 +698,8 @@ function PublishVideoCard({
           form.set("titleAr", titleAr || title);
           form.set("description", description);
           form.set("publish", String(publish));
+          form.set("isRequiredForProgression", String(requiredForProgression));
+          form.set("requiredPercent", String(threshold));
           form.set("file", f);
           try {
             const r = await fetch("/api/admin/session-videos", {
@@ -682,6 +740,8 @@ function PublishVideoCard({
           description,
           videoUrl,
           publish,
+          isRequiredForProgression: requiredForProgression,
+          requiredPercent: threshold,
         }),
       });
       const d = await res.json();
@@ -865,6 +925,39 @@ function PublishVideoCard({
           />
         </div>
 
+        {/* Progression requirement — explicit REQUIRED-vs-OPTIONAL per video.
+            The threshold keeps the existing 50–100 range rule (default 95).
+            REQUIRED on an external URL is unexpressible (no verified watch
+            %), so the toggle is disabled for that method — stated in the
+            form, re-enforced by the server on every creation path. */}
+        <div className="space-y-2 rounded-lg border border-border/60 p-3">
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="sv-required"
+              checked={method === "UPLOAD" && isRequired}
+              onCheckedChange={(c) => setIsRequired(c === true)}
+              disabled={busy || method !== "UPLOAD"}
+            />
+            <Label htmlFor="sv-required">{tr("admin.625")}</Label>
+          </div>
+          {method !== "UPLOAD" && (
+            <p className="text-[11px] text-muted-foreground">{tr("admin.628")}</p>
+          )}
+          <div>
+            <Label htmlFor="sv-percent">{tr("admin.626")}</Label>
+            <Input
+              id="sv-percent"
+              value={requiredPercent}
+              onChange={(e) => setRequiredPercent(e.target.value)}
+              inputMode="numeric"
+              dir="ltr"
+              disabled={busy}
+              className="mt-1 w-24"
+            />
+            <p className="mt-1 text-[11px] text-muted-foreground">{tr("admin.627")}</p>
+          </div>
+        </div>
+
         {/* Real upload state — the same panel the session-PDF screen renders:
             preparing → uploading (MB / MB — %) → confirming → success/failure.
             "Completed" is only ever shown AFTER the server confirmed the save. */}
@@ -889,5 +982,140 @@ function PublishVideoCard({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+/** Per-row edit form: metadata + the progression requirement. The REQUIRED
+    toggle is disabled for URL-source rows (untrackable) with the same
+    explainer the publish form states; the server re-enforces on PATCH. */
+function EditVideoForm({
+  video,
+  onCancel,
+  onSaved,
+}: {
+  video: SessionVideo;
+  onCancel: () => void;
+  onSaved: () => void;
+}) {
+  const tr = useT();
+  const [title, setTitle] = React.useState(video.title);
+  const [titleAr, setTitleAr] = React.useState(video.titleAr);
+  const [description, setDescription] = React.useState(video.description ?? "");
+  const [percent, setPercent] = React.useState(String(video.requiredPercent));
+  const [isRequired, setIsRequired] = React.useState(
+    video.isRequiredForProgression
+  );
+  const [saving, setSaving] = React.useState(false);
+  // Trackability is the row's storage, reached here as the list's `source`
+  // (URL = EXTERNAL_URL = untrackable, UPLOAD = managed = measurable).
+  const trackable = video.source !== "URL";
+
+  const save = async () => {
+    if (!title.trim()) {
+      toast.error(tr("admin.580"));
+      return;
+    }
+    const n = Number(percent);
+    if (!Number.isFinite(n)) {
+      toast.error(tr("api.361"));
+      return;
+    }
+    const threshold = Math.min(100, Math.max(50, Math.round(n)));
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/admin/session-videos/${video.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: title.trim(),
+          titleAr: titleAr.trim() || title.trim(),
+          description,
+          requiredPercent: threshold,
+          isRequiredForProgression: trackable && isRequired,
+        }),
+      });
+      const d = await res.json().catch(() => null);
+      if (!res.ok) throw new Error((d && d.error) || tr("admin.001"));
+      toast.success(tr("admin.633"));
+      onSaved();
+    } catch (e: any) {
+      toast.error(e.message || tr("admin.001"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3 rounded-lg border border-primary/30 bg-primary/[0.03] p-3">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <Label htmlFor={`edit-title-${video.id}`}>{tr("admin.235")} (EN)</Label>
+          <Input
+            id={`edit-title-${video.id}`}
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            disabled={saving}
+            className="mt-1"
+          />
+        </div>
+        <div>
+          <Label htmlFor={`edit-title-ar-${video.id}`}>{tr("admin.235")} (AR)</Label>
+          <Input
+            id={`edit-title-ar-${video.id}`}
+            value={titleAr}
+            onChange={(e) => setTitleAr(e.target.value)}
+            disabled={saving}
+            className="mt-1"
+          />
+        </div>
+      </div>
+      <div>
+        <Label htmlFor={`edit-desc-${video.id}`}>{tr("admin.249")}</Label>
+        <Textarea
+          id={`edit-desc-${video.id}`}
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          rows={2}
+          disabled={saving}
+          className="mt-1"
+        />
+      </div>
+      <div className="flex flex-wrap items-end gap-4">
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id={`edit-required-${video.id}`}
+            checked={trackable && isRequired}
+            onCheckedChange={(c) => setIsRequired(c === true)}
+            disabled={saving || !trackable}
+          />
+          <Label htmlFor={`edit-required-${video.id}`}>{tr("admin.625")}</Label>
+        </div>
+        <div>
+          <Label htmlFor={`edit-percent-${video.id}`}>{tr("admin.626")}</Label>
+          <Input
+            id={`edit-percent-${video.id}`}
+            value={percent}
+            onChange={(e) => setPercent(e.target.value)}
+            inputMode="numeric"
+            dir="ltr"
+            disabled={saving}
+            className="mt-1 w-24"
+          />
+        </div>
+      </div>
+      {!trackable && (
+        <p className="text-[11px] text-muted-foreground">{tr("admin.628")}</p>
+      )}
+      <p className="-mt-1 text-[11px] text-muted-foreground">{tr("admin.627")}</p>
+      <div className="flex items-center gap-2">
+        <Button size="sm" onClick={save} disabled={saving}>
+          {saving && <Loader2 className="w-3.5 h-3.5 me-1.5 animate-spin" />}
+          {tr("admin.630")}
+        </Button>
+        <Button size="sm" variant="outline" onClick={onCancel} disabled={saving}>
+          {tr("admin.631")}
+        </Button>
+      </div>
+    </div>
   );
 }

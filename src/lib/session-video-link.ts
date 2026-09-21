@@ -37,6 +37,9 @@
 // NEW rows are bound to a Lesson here.
 
 import type { db } from "@/lib/db";
+// Client-safe storage predicate (NOT @/lib/media: this module ships to the
+// browser through session-video-picker, and @/lib/media is node-only).
+import { isManagedPrivateStorage } from "@/lib/media-storage";
 import { normalizeSchoolType } from "@/lib/school-type";
 import { normalizeTrackScope } from "@/lib/track-scope";
 
@@ -218,4 +221,90 @@ export function lessonFitsBatch(
   if (!schoolType) return false;
   if (!scope) return false;
   return scope === "SHARED" || scope === schoolType;
+}
+
+// ---------------------------------------------------------------------------
+// Progression requirement validation (REQUIRED-vs-OPTIONAL per video).
+// ---------------------------------------------------------------------------
+// The SINGLE server-side authority that decides whether a SessionVideo row
+// may carry `isRequiredForProgression = true` and which completion threshold
+// (`requiredPercent`) it enforces. Every write path — the buffered Admin POST
+// (multipart + JSON), the Admin PATCH edit, and the presigned-upload complete
+// — parses through `parseSessionVideoRequirement`, so the three can never
+// drift apart.
+//
+// THE RULES (fail-closed, in order — no silent correction ever):
+//   1. `requiredPercent`, when provided, must be a finite number. It is
+//      rounded (the column is an Int) and clamped to the EXISTING PATCH range
+//      rule 50–100. Absent/blank means "no opinion" → the schema default 95.
+//      Garbage (NaN, Infinity, non-numeric text) is refused, never coerced.
+//                                             → INVALID_REQUIRED_PERCENT (422)
+//   2. `isRequiredForProgression = true` is refused unless the row's media is
+//      TRACKABLE — managed private bytes (LOCAL_PRIVATE / S3) the server
+//      meters through the heartbeat. An EXTERNAL_URL row has no reliable
+//      server watch %, so a threshold requirement on it would be unpassable
+//      by construction; the refusal names that, and the row stays OPTIONAL.
+//      Untrackability is NOT silently converted into "not required": the
+//      write is rejected and the admin must choose.
+//                                             → EXTERNAL_CANNOT_BE_REQUIRED (422)
+//
+// Publication is orthogonal: a REQUIRED-but-unpublished video is staged, not
+// contradictory — publish activates the requirement, it does not define it.
+
+export const SESSION_VIDEO_REQUIREMENT_ERRORS = {
+  EXTERNAL_CANNOT_BE_REQUIRED: { status: 422, i18n: "api.360" },
+  INVALID_REQUIRED_PERCENT: { status: 422, i18n: "api.361" },
+} as const;
+
+export type SessionVideoRequirementCode =
+  keyof typeof SESSION_VIDEO_REQUIREMENT_ERRORS;
+
+export type SessionVideoRequirementResult =
+  | { ok: true; isRequired: boolean; requiredPercent: number }
+  | { ok: false; code: SessionVideoRequirementCode; status: number; message: string };
+
+/** Schema default, mirroring VIDEO_COMPLETION_THRESHOLD (95%). */
+export const SESSION_VIDEO_DEFAULT_REQUIRED_PERCENT = 95;
+/** The existing PATCH range rule (50–100), now shared by every write path. */
+export const SESSION_VIDEO_MIN_REQUIRED_PERCENT = 50;
+export const SESSION_VIDEO_MAX_REQUIRED_PERCENT = 100;
+
+export function parseSessionVideoRequirement(
+  input: { isRequiredForProgression?: unknown; requiredPercent?: unknown },
+  opts: { storage: unknown }
+): SessionVideoRequirementResult {
+  // Multipart transports carry "true" (string); JSON carries true (boolean).
+  // Both are canonical encodings of intent — anything else means OPTIONAL.
+  const flag = input.isRequiredForProgression;
+  const isRequired = flag === true || flag === "true";
+
+  let requiredPercent = SESSION_VIDEO_DEFAULT_REQUIRED_PERCENT;
+  const raw = input.requiredPercent;
+  const blankString = typeof raw === "string" && raw.trim() === "";
+  if (raw !== undefined && raw !== null && !blankString) {
+    const n = Number(raw);
+    if (!Number.isFinite(n)) {
+      return {
+        ok: false,
+        code: "INVALID_REQUIRED_PERCENT",
+        status: SESSION_VIDEO_REQUIREMENT_ERRORS.INVALID_REQUIRED_PERCENT.status,
+        message: "requiredPercent must be a finite number between 50 and 100",
+      };
+    }
+    requiredPercent = Math.min(
+      SESSION_VIDEO_MAX_REQUIRED_PERCENT,
+      Math.max(SESSION_VIDEO_MIN_REQUIRED_PERCENT, Math.round(n))
+    );
+  }
+
+  if (isRequired && !isManagedPrivateStorage(opts.storage)) {
+    return {
+      ok: false,
+      code: "EXTERNAL_CANNOT_BE_REQUIRED",
+      status: SESSION_VIDEO_REQUIREMENT_ERRORS.EXTERNAL_CANNOT_BE_REQUIRED.status,
+      message: "an external (untrackable) video cannot be required for lesson completion",
+    };
+  }
+
+  return { ok: true, isRequired, requiredPercent };
 }

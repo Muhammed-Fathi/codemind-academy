@@ -45,14 +45,31 @@ import { Textarea } from "@/components/ui/textarea";
 // external-URL contract as the standalone library). Reused here so the
 // Lesson workspace and the library can never diverge.
 import { SessionVideoPlayer } from "@/components/course/session-videos-view";
+import { SessionVideoBadges } from "@/components/course/session-videos-view";
 
 // ============================================================
 // Types
 // ============================================================
+type SessionVideoRequirementItem = {
+  id: string;
+  title: string;
+  titleAr: string;
+  requiredPercent: number;
+  trackable: boolean;
+  currentPercent: number;
+  completed: boolean;
+};
+
 type SessionRequirement = {
   required: boolean;
   done: boolean;
   value: number;
+  /** Video only: how many REQUIRED videos gate this lesson. */
+  requiredCount?: number;
+  /** Video only: how many of them currently satisfy their own threshold. */
+  completedCount?: number;
+  /** Video only: the per-video decomposition (REQUIRED videos only). */
+  items?: SessionVideoRequirementItem[];
 };
 
 type SessionRequirements = {
@@ -919,11 +936,7 @@ export function StudentLessonView() {
                   <RequirementRow
                     label={t("course.206")}
                     req={data.requirements.video}
-                    detail={
-                      data.requirements.video.required
-                        ? `${data.requirements.video.value}%`
-                        : undefined
-                    }
+                    detail={videoRequirementDetail(data.requirements.video, t)}
                   />
                   <RequirementRow
                     label={t("course.207")}
@@ -1012,6 +1025,23 @@ export function StudentLessonView() {
 // ============================================================
 // Phase 16 — Requirement checklist row + linked recordings
 // ============================================================
+/**
+ * The VIDEO row's detail badge, from the canonical payload only (no local
+ * derivation): required recordings present → «1 من 2 فيديو مكتمل» (counts);
+ * legacy-only requirement → «72%» (the legacy percent); not required → no
+ * detail (the NOT_REQUIRED badge shows instead).
+ */
+function videoRequirementDetail(
+  req: SessionRequirement,
+  t: (key: string, params?: Record<string, unknown>) => string
+): string | undefined {
+  if (!req.required) return undefined;
+  if (req.requiredCount) {
+    return t("course.246", { p1: req.completedCount ?? 0, p2: req.requiredCount });
+  }
+  return `${req.value}%`;
+}
+
 function RequirementRow({
   label,
   req,
@@ -1097,7 +1127,9 @@ type LessonVideoItem = {
   publishedAt: string | null;
   src: string | null;
   isExternal: boolean;
-  progress: { percent: number; isCompleted: boolean; watchedSec: number };
+  isRequiredForProgression: boolean;
+  trackable: boolean;
+  progress: { percent: number; isCompleted: boolean; watchedSec: number; satisfied: boolean };
 };
 
 function LessonVideoSection({
@@ -1194,13 +1226,13 @@ function LessonVideoSection({
             <SessionVideoPlayer
               key={active.id}
               video={active}
-              onProgress={(percent, isCompleted) =>
+              onProgress={(percent, isCompleted, satisfied) =>
                 setVideos((prev) =>
                   prev?.map((v) =>
                     v.id === active.id
                       ? {
                           ...v,
-                          progress: { ...v.progress, percent, isCompleted },
+                          progress: { ...v.progress, percent, isCompleted, satisfied },
                         }
                       : v
                   ) ?? prev
@@ -1228,7 +1260,7 @@ function LessonVideoSection({
                         }`}
                       >
                         <div className="grid place-items-center w-8 h-8 shrink-0 rounded-lg bg-primary/10 text-primary">
-                          {v.progress.isCompleted ? (
+                          {(v.isRequiredForProgression ? v.progress.satisfied : v.progress.isCompleted) ? (
                             <CheckCircle2 className="w-4 h-4" />
                           ) : (
                             <PlayCircle className="w-4 h-4" />
@@ -1246,14 +1278,21 @@ function LessonVideoSection({
                               {pickAuto(v.lesson.titleAr, v.lesson.title)}
                             </div>
                           )}
-                          <Progress
-                            value={v.progress.percent}
-                            className="mt-1 h-1"
-                          />
+                          <div className="mt-1">
+                            <SessionVideoBadges video={v} />
+                          </div>
+                          {v.trackable && (
+                            <Progress
+                              value={v.progress.percent}
+                              className="mt-1 h-1"
+                            />
+                          )}
                         </div>
-                        <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
-                          {v.progress.percent}%
-                        </span>
+                        {v.trackable && !v.isRequiredForProgression && (
+                          <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+                            {v.progress.percent}%
+                          </span>
+                        )}
                       </button>
                     );
                   })}

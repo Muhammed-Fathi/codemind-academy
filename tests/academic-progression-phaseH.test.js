@@ -1,20 +1,25 @@
 // CodeMind Academy — Phase H: canonical academic progression / access engine.
 //
-// 38 scenarios over the ONE authority for Lesson LOCKED / UNLOCKED /
+// 43 scenario groups over the ONE authority for Lesson LOCKED / UNLOCKED /
 // COMPLETED (`src/lib/progression.ts`), its catch-up resolution companion
 // (`src/lib/catchup.ts`, acting strictly THROUGH the Phase F authority) and
 // the thin `src/lib/session-progress.ts` adapter.
 //
-// APPROVED CONTRACT (corrective patch): video requiredness is Lesson.videoUrl
-// ONLY (recordings are never progression inputs — Phase B M2); a PUBLISHED +
-// track-eligible quiz is a requirement regardless of pool state (pool problems
-// fail loud, never silently drop); `state` is the EFFECTIVE state (never
-// COMPLETED-while-locked) while `completed` stays the historical fact.
+// APPROVED CONTRACT (corrective patch, session-video-requirement revision):
+// video requiredness is Lesson.videoUrl OR >=1 REQUIRED recording (OPTIONAL
+// recordings are never progression inputs — Phase B M2, revised); a REQUIRED
+// recording gates with its OWN threshold, satisfied by LIVE percent; a
+// PUBLISHED + track-eligible quiz is a requirement regardless of pool state
+// (pool problems fail loud, never silently drop); `state` is the EFFECTIVE
+// state (never COMPLETED-while-locked) while `completed` stays the
+// historical fact.
 //
 //   Scenarios  1–12  pure core: chain, vacuity, thresholds, requirements,
 //                     hold boundary, overrides, reasons, current lesson.
 //   Scenarios 13–19  loader: dual-chain universe, lifecycle/track slicing,
-//                     requirement candidacy (status + track only).
+//                     requirement candidacy (status + track only);
+//                     CASE 17f–17j: REQUIRED recordings (own threshold,
+//                     live satisfaction, batch isolation, fail-closed).
 //   Scenarios 20–25  single-lesson access verdicts (non-oracle, fail-closed).
 //   Scenarios 26–30  admin override grant / revoke / list (+ audit).
 //   Scenarios 31–34  catch-up eligibility + Phase F resolution.
@@ -101,7 +106,7 @@ function makeMockDb() {
     lesson: [], quiz: [], question: [], homework: [], homeworkSubmission: [],
     quizAttempt: [], lessonProgress: [], sessionVideo: [], sessionVideoView: [],
     absenceHold: [], absenceReview: [], progressionOverride: [], subscription: [],
-    auditLog: [], batch: [],
+    auditLog: [], batch: [], mediaAsset: [],
   };
   const clone = (v) => (v === undefined ? v : structuredClone(v));
   const byId = (arr, id) => arr.find((r) => r.id === id) || null;
@@ -120,6 +125,8 @@ function makeMockDb() {
       case "part.course": return byId(t.course, row.courseId);
       case "student.group": return row.groupId ? byId(t.group, row.groupId) : null;
       case "student.batch": return row.batchId ? byId(t.batch, row.batchId) : null;
+      case "sessionVideo.batch": return row.batchId ? byId(t.batch, row.batchId) : null;
+      case "sessionVideo.media": return row.mediaAssetId ? byId(t.mediaAsset, row.mediaAssetId) : null;
       case "student.subscription": return t.subscription.find((s) => s.studentId === row.id) || null;
       case "group.course": return byId(t.course, row.courseId);
       case "quiz.questions": return t.question.filter((q) => q.quizId === row.id);
@@ -131,6 +138,7 @@ function makeMockDb() {
     "lesson.unit": "unit", "lesson.topic": "topic", "lesson.quizzes": "quiz",
     "lesson.homeworks": "homework", "unit.part": "part", "topic.unit": "unit",
     "part.course": "course", "student.group": "group", "student.batch": "batch",
+    "sessionVideo.batch": "batch", "sessionVideo.media": "mediaAsset",
     "student.subscription": "subscription", "group.course": "course",
     "quiz.questions": "question", "absenceHold.absenceReview": "absenceReview",
   };
@@ -346,9 +354,9 @@ function seed() {
   });
   T.lesson.push(
     L("l1", { order: 1, videoUrl: "https://videos/l1" }),
-    L("l2", { order: 2 }), // pool-less PUBLISHED quiz (a requirement); recordings ignored
+    L("l2", { order: 2 }), // pool-less PUBLISHED quiz (a requirement); optional recordings ignored
     L("l3", { order: 3 }), // quiz + CLOSED homework
-    L("l5", { order: 4 }), // component-less (its recording is not a requirement)
+    L("l5", { order: 4 }), // component-less (its OPTIONAL recording is not a requirement)
     L("l4", { order: 1, unitId: null, topicId: "t1", videoUrl: "https://videos/l4" }),
     L("lx", { curriculumStatus: "ARCHIVED", videoUrl: "https://videos/lx" }),
     L("ld", { status: "DRAFT", isPublished: false }),
@@ -375,10 +383,19 @@ function seed() {
     { id: "b1", schoolType: "ARABIC", courseId: "c1", isActive: true, createdAt: D(30) },
     { id: "b9", schoolType: "LANGUAGE", courseId: "c1", isActive: true, createdAt: D(30) },
   );
+  // Session-video requirement revision: the seed videos are OPTIONAL (no
+  // flag — the schema default), so CASE 17a–17e pin the preserved M2
+  // behaviour for them; their media is managed (measurable) so a REQUIRED
+  // flip would be expressible.
+  T.mediaAsset.push(
+    { id: "m1", kind: "VIDEO", storage: "LOCAL_PRIVATE", isPrivate: true },
+    { id: "m5", kind: "VIDEO", storage: "LOCAL_PRIVATE", isPrivate: true },
+    { id: "m9", kind: "VIDEO", storage: "LOCAL_PRIVATE", isPrivate: true },
+  );
   T.sessionVideo.push(
-    { id: "v1", batchId: "b1", lessonId: "l2", isPublished: true, requiredPercent: 80 },
-    { id: "v5", batchId: "b1", lessonId: "l5", isPublished: true, requiredPercent: 95 },
-    { id: "v9", batchId: "b9", lessonId: "l2", isPublished: true, requiredPercent: 95 },
+    { id: "v1", batchId: "b1", lessonId: "l2", mediaAssetId: "m1", isPublished: true, requiredPercent: 80 },
+    { id: "v5", batchId: "b1", lessonId: "l5", mediaAssetId: "m5", isPublished: true, requiredPercent: 95 },
+    { id: "v9", batchId: "b9", lessonId: "l2", mediaAssetId: "m9", isPublished: true, requiredPercent: 95 },
   );
   T.group.push(
     { id: "g1", name: "G1", courseId: "c1", teacherId: null, capacity: 20, schedule: null, isActive: true, createdAt: D(60) },
@@ -607,19 +624,88 @@ async function main() {
     ok(l2.reasonCode === "QUIZ_NOT_PASSED", "CASE 16a: l2 names its unmet gate quiz");
     ok(!l3.completed && !l3.unlocked && l3.state === "LOCKED" && l3.reasonCode === "PREVIOUS_INCOMPLETE", "CASE 16b: failed + open attempts leave l3 unsatisfied AND chain-locked behind l2");
 
-    // CASE 17: recordings are NEVER requirements (Phase B M2). l2 carries
-    // two published batch videos (v1 watched 85%, v9 foreign) and l5 one
-    // (v5 unwatched) — the video dimension stays not-required throughout.
-    ok(l2.video.required === false && l2.video.done, "CASE 17a: published batch videos create no video requirement (l2)");
+    // CASE 17: OPTIONAL recordings are NEVER requirements (Phase B M2,
+    // revised). l2 carries two published OPTIONAL batch videos (v1 watched
+    // 85%, v9 foreign) and l5 one (v5 unwatched) — the video dimension
+    // stays not-required throughout.
+    ok(l2.video.required === false && l2.video.done, "CASE 17a: published OPTIONAL batch videos create no video requirement (l2)");
     const l5 = p1.byLessonId.get("l5");
-    ok(l5.video.required === false && !l5.completed, "CASE 17b: unwatched recording creates no requirement; empty l5 is incomplete (boundary)");
+    ok(l5.video.required === false && !l5.completed, "CASE 17b: unwatched OPTIONAL recording creates no requirement; empty l5 is incomplete (boundary)");
     ok(l5.state === "LOCKED" && !l5.unlocked && l5.reasonCode === "PREVIOUS_INCOMPLETE", "CASE 17c: loader-level effective state — incomplete behind the chain, state LOCKED, chain reason attached");
-    ok((db.__reads.sessionVideo || 0) === 0 && (db.__reads.sessionVideoView || 0) === 0 && (db.__reads.question || 0) === 0, "CASE 17d: the loader issues zero recording/pool reads");
-    // Retroactive publish: a recording added AFTER completion changes nothing.
+    ok(db.__reads.sessionVideo === 2 && (db.__reads.sessionVideoView || 0) === 0 && (db.__reads.question || 0) === 0, "CASE 17d: the loader scans required recordings per evaluation (2 calls above, 2 scans); views unread while nothing is required; pools never");
+    // Retroactive publish: an OPTIONAL recording added AFTER completion changes nothing.
     db.__tables.sessionVideo.push({ id: "v-late", batchId: "b1", lessonId: "l1", isPublished: true, requiredPercent: 95 });
     const pLate = await progression.loadCourseProgression("s1", "c1", { now: NOW });
-    ok(pLate.byLessonId.get("l1").completed && pLate.byLessonId.get("l1").video.required, "CASE 17e: late-published recording neither breaks l1 nor widens its video rule");
+    ok(pLate.byLessonId.get("l1").completed && pLate.byLessonId.get("l1").video.required, "CASE 17e: late-published OPTIONAL recording neither breaks l1 nor widens its video rule");
     db.__tables.sessionVideo.splice(db.__tables.sessionVideo.findIndex((v) => v.id === "v-late"), 1);
+    // CASE 17f–17j: REQUIRED recordings ARE progression inputs (the Phase B
+    // M2 revision): published + own batch + track-eligible + REQUIRED joins
+    // the lesson's video requirement with its OWN threshold, satisfied by
+    // LIVE watch percent. Fresh rows per scenario — removed afterwards, so
+    // no later case observes them.
+    const addReqVideo = ({ id, batchId, lessonId, requiredPercent, storage, title }) => {
+      db.__tables.mediaAsset.push({ id: `m-${id}`, kind: "VIDEO", storage, isPrivate: true });
+      db.__tables.sessionVideo.push({
+        id, batchId, lessonId, mediaAssetId: `m-${id}`, isPublished: true,
+        requiredPercent, isRequiredForProgression: true, title: title ?? id, titleAr: title ?? id,
+      });
+    };
+    const dropReqVideo = (id) => {
+      const vt = db.__tables.sessionVideo;
+      vt.splice(vt.findIndex((v) => v.id === id), 1);
+      const mt = db.__tables.mediaAsset;
+      mt.splice(mt.findIndex((m) => m.id === `m-${id}`), 1);
+      const wt = db.__tables.sessionVideoView;
+      for (let i = wt.length - 1; i >= 0; i--) {
+        if (wt[i].sessionVideoId === id) wt.splice(i, 1);
+      }
+    };
+    addReqVideo({ id: "v-req5", batchId: "b1", lessonId: "l5", requiredPercent: 95, storage: "LOCAL_PRIVATE", title: "Req 5" });
+    const pReq5 = await progression.loadCourseProgression("s1", "c1", { now: NOW });
+    const l5req = pReq5.byLessonId.get("l5");
+    ok(l5req.video.required === true && l5req.video.done === false, "CASE 17f: a required recording creates a video requirement (unwatched → unmet)");
+    ok(l5req.video.requiredCount === 1 && l5req.video.completedCount === 0, "CASE 17f: counts name 0 of 1");
+    ok(l5req.video.items?.length === 1 && l5req.video.items[0].id === "v-req5" && l5req.video.items[0].trackable === true && l5req.video.items[0].currentPercent === 0 && l5req.video.items[0].completed === false, "CASE 17f: the item carries identity + trackable + live verdict");
+    ok(l5req.video.items[0].title === "Req 5" && l5req.video.items[0].requiredPercent === 95, "CASE 17f: the item carries title + own threshold");
+    // l5 sits behind failed l4, so unmet names the CHAIN here (the video
+    // code itself is pinned on open l2 in CASE 17i/17j).
+    ok(l5req.completed === false, "CASE 17f: the lesson is incomplete");
+    db.__tables.sessionVideoView.push({ id: "sv-s1-v-req5", studentId: "s1", sessionVideoId: "v-req5", percent: 100, isCompleted: true });
+    const pReq5b = await progression.loadCourseProgression("s1", "c1", { now: NOW });
+    const l5sat = pReq5b.byLessonId.get("l5");
+    ok(l5sat.video.required === true && l5sat.video.done === true, "CASE 17g: a 100% live watch satisfies the required recording");
+    ok(l5sat.video.completedCount === 1 && l5sat.video.items[0].completed === true && l5sat.video.items[0].currentPercent === 100, "CASE 17g: counts + item flip to complete");
+    dropReqVideo("v-req5");
+    addReqVideo({ id: "v-req9", batchId: "b9", lessonId: "l2", requiredPercent: 95, storage: "LOCAL_PRIVATE", title: "Req 9" });
+    const pS1 = await progression.loadCourseProgression("s1", "c1", { now: NOW });
+    ok(pS1.byLessonId.get("l2").video.required === false, "CASE 17h: another batch's required recording is invisible to s1 (batch isolation)");
+    const pS2a = await progression.loadCourseProgression("s2", "c1", { now: NOW });
+    const s2l2 = pS2a.byLessonId.get("l2");
+    ok(s2l2.video.required === true && s2l2.video.done === false && (s2l2.video.items ?? []).every((it) => it.id === "v-req9"), "CASE 17h: s2's own-batch required recording gates s2 (unwatched → unmet)");
+    db.__tables.sessionVideoView.push({ id: "sv-s2-v-req9", studentId: "s2", sessionVideoId: "v-req9", percent: 96, isCompleted: true });
+    const pS2b = await progression.loadCourseProgression("s2", "c1", { now: NOW });
+    ok(pS2b.byLessonId.get("l2").video.done === true, "CASE 17h: s2 satisfies their own recording at 96%");
+    dropReqVideo("v-req9");
+    addReqVideo({ id: "v-req1", batchId: "b1", lessonId: "l2", requiredPercent: 80, storage: "LOCAL_PRIVATE", title: "Req 1" });
+    db.__tables.sessionVideoView.push({ id: "sv-s1-v-req1", studentId: "s1", sessionVideoId: "v-req1", percent: 85, isCompleted: false });
+    const pThr = await progression.loadCourseProgression("s1", "c1", { now: NOW });
+    ok(pThr.byLessonId.get("l2").video.required === true && pThr.byLessonId.get("l2").video.done === true, "CASE 17i: an 85% watch satisfies a custom 80% threshold");
+    // Retroactive raise: the SAME 85% row no longer satisfies 90% — the live
+    // comparison bites without rewriting any sticky flag.
+    db.__tables.sessionVideo.find((v) => v.id === "v-req1").requiredPercent = 90;
+    const pThr2 = await progression.loadCourseProgression("s1", "c1", { now: NOW });
+    const l2thr = pThr2.byLessonId.get("l2");
+    ok(l2thr.video.required === true && l2thr.video.done === false && l2thr.video.items[0].completed === false && l2thr.video.items[0].currentPercent === 85, "CASE 17i: raising the threshold to 90% unmets the frozen 85% row (live rule)");
+    ok(l2thr.completed === false && l2thr.unmet.includes("VIDEO_INCOMPLETE"), "CASE 17i: open l2 names the video gap as its blocker");
+    dropReqVideo("v-req1");
+    addReqVideo({ id: "v-reqx", batchId: "b1", lessonId: "l2", requiredPercent: 80, storage: "EXTERNAL_URL", title: "Req X" });
+    db.__tables.sessionVideoView.push({ id: "sv-s1-v-reqx", studentId: "s1", sessionVideoId: "v-reqx", percent: 85, isCompleted: true });
+    const pExt = await progression.loadCourseProgression("s1", "c1", { now: NOW });
+    const l2x = pExt.byLessonId.get("l2");
+    ok(l2x.video.required === true && l2x.video.done === false, "CASE 17j: a required-but-untrackable recording fails CLOSED (percent-passing yet unmet)");
+    ok(l2x.video.items[0].trackable === false && l2x.video.items[0].currentPercent === 85 && l2x.video.items[0].completed === false, "CASE 17j: the item names untrackable + frozen percent + unmet");
+    ok(l2x.completed === false && l2x.unmet.includes("VIDEO_INCOMPLETE"), "CASE 17j: the lesson stays incomplete with the video code");
+    dropReqVideo("v-reqx");
 
     // CASE 19 (before holds/overrides mutate the world): expiry + revocation.
     db.__tables.progressionOverride.push(
@@ -843,10 +929,12 @@ async function main() {
     const engSrc = read("src/lib/progression.ts");
     ok(!/(quizAttempt|homeworkSubmission|absenceHold)\.(create|update|upsert|delete)/.test(engSrc), "CASE 37c: the engine writes no academic fact (reads verdicts, never grades)");
     ok(!/eval\(|new Function\(/.test(engSrc), "CASE 37d: no dynamic code in the engine");
-    // Corrected-contract pins: videoUrl-only requiredness, no pool filter,
-    // effective state (LOCKED first), read-only evaluation.
-    ok(/const videoRequired = lesson\.hasLegacyVideo;/.test(engSrc), "CASE 37e: video requiredness is the legacy column only");
-    ok(!/batchVideos|batchViewByVideo|servableQuizIds|isQuestionEligible/.test(engSrc) && !/db\.(sessionVideo|sessionVideoView|question)\b/.test(engSrc), "CASE 37f: no recording/pool inputs anywhere in the engine (reads or rules)");
+    // Corrected-contract pins: videoUrl-OR-required-recordings requiredness,
+    // required recordings ARE inputs, pools never, effective state (LOCKED
+    // first), read-only evaluation.
+    ok(/const videoRequired = lesson\.hasLegacyVideo \|\| requiredVideos\.length > 0;/.test(engSrc), "CASE 37e: video requiredness is legacy-OR-required-recordings (the M2 revision)");
+    ok(/db\.sessionVideo\.findMany/.test(engSrc) && /db\.sessionVideoView\.findMany/.test(engSrc) && /isRequiredForProgression: true/.test(engSrc), "CASE 37f: required recordings are engine inputs (published + required + audience scan)");
+    ok(!/batchVideos|batchViewByVideo|servableQuizIds|isQuestionEligible/.test(engSrc) && !/db\.question\b/.test(engSrc), "CASE 37f: pools stay non-inputs (no question reads, no pool filters)");
     ok(/const state: ProgressionState = !unlocked/.test(engSrc), "CASE 37g: effective state derives access-first (never COMPLETED-while-locked)");
     ok(!/syncStudentBatch/.test(engSrc) && !/@\/lib\/enrollment/.test(engSrc), "CASE 37h: no batch reconcile on the evaluation path (read-only)");
 

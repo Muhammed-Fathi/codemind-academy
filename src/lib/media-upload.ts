@@ -76,7 +76,7 @@ import {
 import { acquireUploadFinalizeLock } from "@/lib/db-serialization";
 import { normalizeTrackScope, type TrackScope } from "@/lib/track-scope";
 import { assertVolumeQuota } from "@/lib/storage-quotas";
-import { validateSessionVideoLink } from "@/lib/session-video-link";
+import { parseSessionVideoRequirement, validateSessionVideoLink } from "@/lib/session-video-link";
 import {
   MAX_HOMEWORK_FILE_BYTES,
   extFromHomeworkFileMime,
@@ -474,6 +474,10 @@ export const UPLOAD_ERROR_STATUS = {
   // completion business validation
   TITLE_REQUIRED: 400,
   INVALID_TRACK_SCOPE: 400,
+  // SessionVideo progression requirement (same rule the Admin POST/PATCH
+  // enforce with 422 + api.360/api.361; the upload flow surfaces the code +
+  // message while the Admin UI pre-validates with the localized keys).
+  INVALID_VIDEO_REQUIREMENT: 422,
   // object verification
   MISSING_OBJECT: 409,
   EMPTY_OBJECT: 413,
@@ -1095,6 +1099,9 @@ export type PresignedUploadCompleteInput = {
   titleAr?: unknown;
   description?: unknown;
   publish?: unknown;
+  /** Progression requirement (SESSION_VIDEO): REQUIRED flag + threshold. */
+  isRequiredForProgression?: unknown;
+  requiredPercent?: unknown;
   // Shared / LESSON_PDF payload:
   /** NOT TRUSTED for identity (Phase A) — see `batchId`. */
   lessonId?: unknown;
@@ -1206,9 +1213,25 @@ export async function completePresignedUpload(
   //    a bad payload must never cost a verified upload its bytes).
   let title = "";
   let trackScope: TrackScope | undefined;
+  let videoRequirement = { isRequired: false, requiredPercent: 95 };
   if (payload.purpose === "SESSION_VIDEO") {
     title = asTrimmedString(input.title) ?? "";
     if (!title) return { ok: false, code: "TITLE_REQUIRED", message: "Title is required" };
+    // Progression requirement, validated in the SAME cheap pre-I/O block: a
+    // presigned completion ALWAYS records managed S3 bytes (the local backend
+    // refuses presigned init, and the finalize below hardcodes the S3 storage
+    // value), so REQUIRED is always expressible here — only the threshold is
+    // at stake. The buffered fallback enforces the SAME contract on POST.
+    const reqParse = parseSessionVideoRequirement(
+      {
+        isRequiredForProgression: input.isRequiredForProgression,
+        requiredPercent: input.requiredPercent,
+      },
+      { storage: mediaStorageValueForBackend("s3") }
+    );
+    if (!reqParse.ok)
+      return { ok: false, code: "INVALID_VIDEO_REQUIREMENT", message: reqParse.message };
+    videoRequirement = { isRequired: reqParse.isRequired, requiredPercent: reqParse.requiredPercent };
   } else if (
     payload.purpose === "HOMEWORK_ATTACHMENT" ||
     payload.purpose === "HOMEWORK_SUBMISSION"
@@ -1451,6 +1474,8 @@ export async function completePresignedUpload(
               title,
               titleAr,
               description,
+              isRequiredForProgression: videoRequirement.isRequired,
+              requiredPercent: videoRequirement.requiredPercent,
               isPublished: publish,
               publishedAt: publish ? new Date() : null,
             },
@@ -1482,6 +1507,8 @@ export async function completePresignedUpload(
             title,
             titleAr,
             description,
+            isRequiredForProgression: videoRequirement.isRequired,
+            requiredPercent: videoRequirement.requiredPercent,
             isPublished: publish,
             publishedAt: publish ? new Date() : null,
           },

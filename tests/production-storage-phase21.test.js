@@ -112,7 +112,7 @@ async function main() {
     // migration, so the frozen history is 12 + 1 + 2 + 1 = 16. Every PREVIOUS
     // migration must still be present — which is what the assertion below
     // actually protects.
-    ok(migs.length === 16, `16 migrations preserved (found ${migs.length})`);
+    ok(migs.length === 17, `17 migrations preserved (found ${migs.length})`);
     ok(
       migs.includes("20260915180000_phase26d_quiz_attempt_architecture") &&
         migs.includes("20260919120000_phase_f_live_session_lifecycle") &&

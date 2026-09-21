@@ -63,6 +63,7 @@ fs.writeFileSync(
       module: "commonjs",
       strict: false,
       skipLibCheck: true,
+      esModuleInterop: true,
       types: ["node"],
       typeRoots: [path.join(REPO, "node_modules/@types")],
       baseUrl: REPO,
@@ -728,13 +729,13 @@ async function main() {
     // workflow + the camera policy); Phase H appended one (the audited
     // progression-override table). The invariant this gate protects is "no
     // migration was silently removed or reordered", not a frozen number.
-    ok(migrations.length === 16, `migration history: exactly 16 migrations (found ${migrations.length}) — the 10 PR2a-era migrations, Phase 26B, Phase 26D, Phase F, two Phase G workflow migrations, and the Phase H override migration`);
+    ok(migrations.length === 17, `migration history: exactly 17 migrations (found ${migrations.length}) — the 10 PR2a-era migrations, Phase 26B, Phase 26D, Phase F, two Phase G workflow migrations, the Phase H override migration, and the session-video requirement migration`);
     ok(migrations.includes("20260919180000_phase_g_quiz_homework_workflow"), "the Phase G quiz/homework workflow migration is in history");
     ok(migrations.includes("20260919190000_phase_g_camera_policy"), "the Phase G camera-policy migration is in history");
     ok(migrations.includes("20260920120000_phase_h_progression_override"), "the Phase H progression-override migration is in history");
     ok(migrations.includes("20260914120000_payment_lifecycle_redesign"), "PR1's ledger migration remains in history");
     ok(migrations.includes("20260915120000_phase26b_group_track_scope"), "the Phase 26B group-audience migration is in history");
-    ok(migrations.indexOf("20260920120000_phase_h_progression_override") === migrations.length - 1, "the Phase H migration is the newest entry (append-only history)");
+    ok(migrations.indexOf("20260921120000_session_video_progression_requirement") === migrations.length - 1, "the session-video requirement migration is the newest entry (append-only history)");
   }
 
   section("\n" + "=".repeat(60));

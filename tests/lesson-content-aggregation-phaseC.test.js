@@ -902,11 +902,13 @@ test("Phase C: lesson content aggregation", async () => {
 
     // T/U: the canonical engine (Phase H relocation) owns the requirement
     // rules with the APPROVED contract; the adapter delegates and owns no
-    // rule of its own. Video: Lesson.videoUrl ONLY (Phase B M2). Quiz: every
-    // PUBLISHED track-eligible quiz — pool state never filters requirements.
-    ok(/const videoRequired = lesson\.hasLegacyVideo;/.test(engine), "T: the progression engine still derives video REQUIRED-ness from the legacy column only");
+    // rule of its own. Video: Lesson.videoUrl OR >=1 REQUIRED recording
+    // (Phase B M2, revised — OPTIONAL recordings never create a
+    // requirement). Quiz: every PUBLISHED track-eligible quiz — pool state
+    // never filters requirements.
+    ok(/const videoRequired = lesson\.hasLegacyVideo \|\| requiredVideos\.length > 0;/.test(engine), "T: the progression engine derives video REQUIRED-ness from legacy-OR-required-recordings");
     ok(/hasLegacyVideo: !!l\.videoUrl,/.test(engine), "T: the legacy column feeds the video rule");
-    ok(!/batchVideos/.test(engine), "T: recordings are not progression inputs");
+    ok(/isRequiredForProgression: true/.test(engine), "T: only REQUIRED recordings are progression inputs");
     ok(/where: \{ status: "PUBLISHED" \},/.test(engine), "T: PUBLISHED quizzes are requirement candidates (lifecycle gate)");
     ok(!/isQuestionEligible/.test(engine), "T: no pool filter on quiz requirements (misconfiguration fails loud, never silently drops)");
     ok(/where: \{ status: \{ in: \["PUBLISHED", "CLOSED"\] \} \},/.test(engine), "T: PUBLISHED + CLOSED homeworks are requirement candidates");

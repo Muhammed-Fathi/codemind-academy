@@ -680,12 +680,26 @@ test("Phase B: student session media alignment", async () => {
     { positionSec: 10, durationSec: 100 }, { id: vUnpub.id }
   );
   eq(k3.status, 404, "K3: heartbeat on an unpublished video → 404 (no oracle)");
+  // Session-video-requirement revision — JUSTIFICATION (read before touching
+  // K4): vSharedAr is an EXTERNAL_URL recording (see mkVideo). `course.227`
+  // promises the student "نسبة المشاهدة غير متاحة" for such sources — watch
+  // percent is UNAVAILABLE — so accruing server percent from its heartbeats
+  // contradicted the shipped UI contract (the old K4 pinned exactly that
+  // contradiction: 200 + a computed percent for an unmeasurable source). The
+  // heartbeat therefore refuses untrackable sources with 409 + the course.227
+  // Arabic message, while K1/K2/K3/K5's verdict order is preserved
+  // (batch → published → lesson → trackability). Managed sources still
+  // accrue — K6/K7 below pin the 200 positive cases.
   const k4 = await POST_JSON(
     R.videoProgress, `http://t/api/students/me/session-videos/${vSharedAr.id}/progress`,
     { positionSec: 30, durationSec: 100 }, { id: vSharedAr.id }
   );
-  eq(k4.status, 200, "K4: the authorized heartbeat succeeds");
-  ok(typeof k4.json.percent === "number", "K4: heartbeat returns server-computed percent");
+  eq(k4.status, 409, "K4: heartbeat on an untrackable (external) recording → 409");
+  eq(k4.json.error, "الفيديو ده بيشتغل من مصدر خارجي، فمش بيتسجل منه نسبة مشاهدة.", "K4: the refusal carries the course.227 Arabic message");
+  const k4row = await client.sessionVideoView.findFirst({
+    where: { sessionVideoId: vSharedAr.id, studentId: sAr.student.id },
+  });
+  eq(k4row, null, "K4: the refused heartbeat stored NOTHING");
   // Phase B (fix) — the heartbeat applies the SAME lesson authority:
   asUser(sAr.user);
   const k5 = await POST_JSON(
@@ -811,12 +825,15 @@ test("Phase B: student session media alignment", async () => {
   eq(l6.json.code, "NOT_ENROLLED", "L6: refusal carries the NOT_ENROLLED code");
 
   // ===========================================================================
-  // M2. Progression is READ for rendering but NOT redefined: a fully watched
-  //     batch video (SessionVideoView 100%) must NOT create a video
-  //     requirement and must NOT block completion of a modern lesson — the
-  //     SessionVideoView → progression integration is deliberately deferred.
+  // M2. Progression is READ for rendering but NOT redefined by OPTIONAL
+  //     recordings: a fully watched OPTIONAL batch video (SessionVideoView
+  //     100%) must NOT create a video requirement and must NOT block
+  //     completion of a modern lesson. (Session-video-requirement revision:
+  //     the "never inputs" rule now covers OPTIONAL recordings; REQUIRED
+  //     ones gate with their own threshold — see Phase H CASE 17f–17j.)
   // ===========================================================================
-  // (upsert: K4's authorized heartbeat already created this pair's row)
+  // (upsert: creates the pair's row directly — K4's refused heartbeat stored
+  // nothing, and the row below is seeded on purpose)
   await client.sessionVideoView.upsert({
     where: {
       sessionVideoId_studentId: {
@@ -837,7 +854,7 @@ test("Phase B: student session media alignment", async () => {
   eq(m2.status, 200, "M2: modern lesson opens");
   eq(m2.json.requirements?.video?.required, false, "M2: a modern video creates NO progression video requirement");
   const m3 = await POST_JSON(R.lessonProgress, `http://t/api/lessons/${L1.id}/progress`, { completed: true }, { id: L1.id });
-  // Manual-QA stabilization: L1 is EMPTY (modern recordings are never
+  // Manual-QA stabilization: L1 is EMPTY (OPTIONAL recordings are never
   // progression inputs — required === false pinned above), so it is a chain
   // boundary that can never complete. The claim is refused with the boundary
   // reason — NOT because a video requirement was fabricated (none was), but
@@ -847,12 +864,14 @@ test("Phase B: student session media alignment", async () => {
   eq(m3.json?.reasonCode, "NO_COMPLETION_REQUIREMENTS", "M2: the refusal names the boundary reason");
   eq(m3.json?.code, "REQUIREMENTS_UNMET", "M2: the refusal keeps the structured unmet shape");
   // Source pins: the video rule lives in the canonical engine (Phase H
-  // relocation) and still derives requiredness from Lesson.videoUrl ONLY —
-  // recordings never create a requirement. The adapter owns no rule.
+  // relocation) and derives requiredness from Lesson.videoUrl OR >=1
+  // REQUIRED recording — OPTIONAL recordings never create a requirement.
+  // The adapter owns no rule.
   const engine = read("src/lib/progression.ts");
-  ok(/const videoRequired = lesson\.hasLegacyVideo;/.test(engine), "M3: the engine still derives the video requirement from Lesson.videoUrl only");
+  ok(/const videoRequired = lesson\.hasLegacyVideo \|\| requiredVideos\.length > 0;/.test(engine), "M3: the engine derives the video requirement from legacy-OR-required-recordings");
   ok(/hasLegacyVideo: !!l\.videoUrl,/.test(engine), "M3: the legacy column feeds the video rule");
-  ok(!/batchVideos/.test(engine), "M3: recordings are not progression inputs (no batch-video rule)");
+  ok(/isRequiredForProgression: true/.test(engine), "M3: only REQUIRED recordings are engine inputs");
+  ok(!/batchVideos/.test(engine), "M3: no legacy batch-video concept in the engine");
   ok(!/const videoRequired/.test(read("src/lib/session-progress.ts")), "M3: the adapter owns no video rule (delegation only)");
   const progressRoute = read("src/app/api/lessons/[id]/progress/route.ts");
   ok(/access\.status\?\.completed === true/.test(progressRoute), "M3: the completion gate derives from the canonical engine");

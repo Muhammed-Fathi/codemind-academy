@@ -2595,4 +2595,30 @@ export const DICT_2026: Record<string, DictEntry> = {
   "phaseh.ovNoExpiry": { ar: "بدون انتهاء", en: "No expiry" },
   "phaseh.ovReasonShort": { ar: "السبب لازم يكون 3 حروف على الأقل", en: "The reason must be at least 3 characters" },
   "phaseh.ovPickLesson": { ar: "اختار الحصة الأول", en: "Pick the session first" },
+
+  // ---------- SessionVideo progression requirement (REQUIRED-vs-OPTIONAL) ----------
+  "course.243": { ar: "نسبة المشاهدة غير متاحة", en: "Watch percentage is not available" },
+  "course.244": { ar: "مطلوب لإكمال الدرس", en: "Required to complete the lesson" },
+  "course.245": { ar: "فيديو إضافي", en: "Extra video" },
+  "course.246": { ar: "{p1} من {p2} فيديو مكتمل", en: "{p1} of {p2} videos completed" },
+  "admin.625": { ar: "مطلوب لإكمال الدرس", en: "Required to complete the lesson" },
+  "admin.626": { ar: "نسبة المشاهدة المطلوبة (%)", en: "Required watch percent (%)" },
+  "admin.627": { ar: "من 50 إلى 100 — الافتراضي 95", en: "From 50 to 100 — default 95" },
+  "admin.628": {
+    ar: "الفيديو الخارجي لا يمكن أن يكون مطلوبًا — لا توجد نسبة مشاهدة موثقة",
+    en: "An external video cannot be required — no verified watch percentage exists",
+  },
+  "admin.629": { ar: "تعديل", en: "Edit" },
+  "admin.630": { ar: "حفظ", en: "Save" },
+  "admin.631": { ar: "إلغاء", en: "Cancel" },
+  "admin.632": { ar: "مطلوب", en: "Required" },
+  "admin.633": { ar: "اتحفظت التعديلات", en: "Changes saved" },
+  "api.360": {
+    ar: "لا يمكن جعل فيديو خارجي مطلوبًا لإكمال الدرس",
+    en: "An external video cannot be required for lesson completion",
+  },
+  "api.361": {
+    ar: "نسبة الإكمال يجب أن تكون رقمًا بين 50 و 100",
+    en: "The completion percent must be a number between 50 and 100",
+  },
 };
