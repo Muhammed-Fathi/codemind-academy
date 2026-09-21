@@ -40,6 +40,7 @@ import { isManagedPrivateStorage } from "@/lib/media";
 import {
   effectiveRequirementMode,
   loadVideoApplicabilityMany,
+  type ApplicabilityDb,
   type ApplicabilityReason,
   type RequirementMode,
 } from "@/lib/video-applicability";
@@ -101,24 +102,140 @@ export type ReadinessTeacherGroup = {
   }[];
 };
 
+/**
+ * Minimal db surface the readiness loader needs: the shared absence-facts
+ * triple (reused from `ApplicabilityDb` — the loader delegates to
+ * `loadVideoApplicabilityMany`, so this contract extends it) plus the eight
+ * fact-table reads.
+ *
+ * Argument shapes are NARROW on purpose: each mirrors exactly the query the
+ * loader issues (a valid Prisma args subset — same where-keys, same
+ * select-keys, literal `"ACTIVE"` for the enum filter). A broad
+ * `(args: unknown)` parameter is a REAL typing bug: the generated delegates
+ * are generic and parameter-constrained, and under contravariance a method
+ * that accepts only Prisma args is NOT assignable to an interface claiming
+ * arbitrary `unknown` — the real PrismaClient was rejected at every call
+ * site. Narrow args keep the real client (and transaction clients, whose
+ * delegates share the same signatures) assignable with zero casts.
+ */
+export type LessonReadinessDb = ApplicabilityDb & {
+  lesson: {
+    findUnique(args: {
+      where: { id: string };
+      select: {
+        id: boolean;
+        order: boolean;
+        videoUrl: boolean;
+        unitId: boolean;
+        topicId: boolean;
+        unit: {
+          select: {
+            id: boolean;
+            order: boolean;
+            part: { select: { id: boolean; order: boolean; courseId: boolean } };
+          };
+        };
+        topic: {
+          select: {
+            order: boolean;
+            unit: {
+              select: {
+                id: boolean;
+                order: boolean;
+                part: { select: { id: boolean; order: boolean; courseId: boolean } };
+              };
+            };
+          };
+        };
+        title: boolean;
+        titleAr: boolean;
+        quizzes: {
+          where: { status: string };
+          select: { id: boolean; title: boolean; titleAr: boolean; trackScope: boolean };
+        };
+        homeworks: {
+          where: { status: { in: string[] } };
+          select: { id: boolean; title: boolean; titleAr: boolean; trackScope: boolean };
+        };
+      };
+    }): Promise<unknown>;
+  };
+  sessionVideo: {
+    findMany(args: {
+      where: {
+        lessonId: string;
+        batchId: { in: string[] };
+        isPublished: boolean;
+        isRequiredForProgression: boolean;
+      };
+      select: {
+        id: boolean;
+        batchId: boolean;
+        title: boolean;
+        titleAr: boolean;
+        requiredPercent: boolean;
+        requirementMode: boolean;
+        isRequiredForProgression: boolean;
+        liveSessionId: boolean;
+        media: { select: { storage: boolean } };
+        batch: { select: { schoolType: boolean } };
+      };
+    }): Promise<Array<Record<string, unknown>>>;
+  };
+  lessonProgress: {
+    findMany(args: {
+      where: { studentId: { in: string[] }; lessonId: string };
+      select: { studentId: boolean; videoPercent: boolean; videoCompleted: boolean; videoCompletedAt: boolean };
+    }): Promise<Array<Record<string, unknown>>>;
+  };
+  quizAttempt: {
+    findMany(args: {
+      where: { studentId: { in: string[] }; quizId: { in: string[] }; finishedAt: { not: null }; passed: boolean };
+      select: { studentId: boolean; id: boolean; quizId: boolean; percentage: boolean; finishedAt: boolean };
+    }): Promise<Array<Record<string, unknown>>>;
+  };
+  homeworkSubmission: {
+    findMany(args: {
+      where: { studentId: { in: string[] }; homeworkId: { in: string[] }; submittedAt: { not: null } };
+      select: { studentId: boolean; homeworkId: boolean; submittedAt: boolean; status: boolean };
+    }): Promise<Array<Record<string, unknown>>>;
+  };
+  absenceHold: {
+    findMany(args: {
+      where: { studentId: { in: string[] }; status: "ACTIVE" };
+      select: {
+        studentId: boolean;
+        id: boolean;
+        absenceReviewId: boolean;
+        sessionId: boolean;
+        absenceReview: { select: { lessonId: boolean } };
+      };
+    }): Promise<Array<Record<string, unknown>>>;
+  };
+  progressionOverride: {
+    findMany(args: {
+      where: { studentId: { in: string[] } };
+      select: {
+        studentId: boolean;
+        id: boolean;
+        lessonId: boolean;
+        reason: boolean;
+        createdAt: boolean;
+        expiresAt: boolean;
+        revokedAt: boolean;
+      };
+    }): Promise<Array<Record<string, unknown>>>;
+  };
+  sessionVideoView: {
+    findMany(args: {
+      where: { studentId: { in: string[] }; sessionVideoId: { in: string[] } };
+      select: { studentId: boolean; sessionVideoId: boolean; percent: boolean };
+    }): Promise<Array<Record<string, unknown>>>;
+  };
+};
+
 export async function loadLessonReadiness(
-  client: {
-    lesson: { findUnique: (args: unknown) => Promise<unknown> };
-    sessionVideo: { findMany: (args: unknown) => Promise<Array<Record<string, unknown>>> };
-    lessonProgress: { findMany: (args: unknown) => Promise<Array<Record<string, unknown>>> };
-    quizAttempt: { findMany: (args: unknown) => Promise<Array<Record<string, unknown>>> };
-    homeworkSubmission: { findMany: (args: unknown) => Promise<Array<Record<string, unknown>>> };
-    absenceHold: { findMany: (args: unknown) => Promise<Array<Record<string, unknown>>> };
-    progressionOverride: { findMany: (args: unknown) => Promise<Array<Record<string, unknown>>> };
-    sessionVideoView: { findMany: (args: unknown) => Promise<Array<Record<string, unknown>>> };
-    liveSession: { findMany: (args: unknown) => Promise<Array<{ id: string; attendanceFinalizedAt: unknown }>> };
-    attendance: {
-      findMany: (args: unknown) => Promise<Array<{ sessionId: string; studentId: string; status: unknown }>>;
-    };
-    absenceReview: {
-      findMany: (args: unknown) => Promise<Array<{ sessionId: string; studentId: string; status: unknown }>>;
-    };
-  },
+  client: LessonReadinessDb,
   teacherGroups: readonly ReadinessTeacherGroup[],
   lessonId: string,
   now: Date = new Date()

@@ -152,17 +152,39 @@ export type ApplicabilityVideoRef = {
 };
 
 /**
- * Minimal db surface the loaders need (the real Prisma client satisfies it;
- * tests inject a mock). Three batched queries, no N+1: sessions, attendance
- * rows, review cases — each a single `IN` query.
+ * Minimal db surface the loaders need. Three batched queries, no N+1:
+ * sessions, attendance rows, review cases — each a single `IN` query.
+ *
+ * The argument shapes are NARROW on purpose: each one mirrors exactly the
+ * query the loader issues (a valid Prisma args subset — same where-keys,
+ * same select-keys). A broad `(args: unknown)` parameter would be a REAL
+ * typing bug: the generated delegates are generic and parameter-constrained
+ * (`findMany<T extends LiveSessionFindManyArgs>(...)`), and under
+ * contravariance a method that accepts only Prisma args is NOT assignable
+ * to an interface claiming arbitrary `unknown` — the real PrismaClient was
+ * rejected at every call site (the local typecheck failure). Narrow args keep
+ * the real client (and transaction clients, whose delegates share the same
+ * signatures) assignable with zero casts. Row shapes stay permissive
+ * (`unknown` for enum/date payloads the rule only null-checks or stringifies).
  */
 export type ApplicabilityDb = {
-  liveSession: { findMany: (args: unknown) => Promise<Array<{ id: string; attendanceFinalizedAt: unknown }>> };
+  liveSession: {
+    findMany(args: {
+      where: { id: { in: string[] } };
+      select: { id: true; attendanceFinalizedAt: true };
+    }): Promise<Array<{ id: string; attendanceFinalizedAt: unknown }>>;
+  };
   attendance: {
-    findMany: (args: unknown) => Promise<Array<{ sessionId: string; studentId: string; status: unknown }>>;
+    findMany(args: {
+      where: { studentId: { in: string[] }; sessionId: { in: string[] } };
+      select: { sessionId: true; studentId: true; status: true };
+    }): Promise<Array<{ sessionId: string; studentId: string; status: unknown }>>;
   };
   absenceReview: {
-    findMany: (args: unknown) => Promise<Array<{ sessionId: string; studentId: string; status: unknown }>>;
+    findMany(args: {
+      where: { studentId: { in: string[] }; sessionId: { in: string[] } };
+      select: { sessionId: true; studentId: true; status: true };
+    }): Promise<Array<{ sessionId: string; studentId: string; status: unknown }>>;
   };
 };
 

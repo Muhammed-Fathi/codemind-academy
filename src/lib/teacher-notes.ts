@@ -14,10 +14,21 @@
 import { createNotificationIfAllowed } from "@/lib/notify";
 
 export type TeacherNoteDb = {
-  teacherNote: { create: (args: unknown) => Promise<{ id: string; createdAt: Date }> };
-  auditLog: { create: (args: unknown) => Promise<unknown> };
+  teacherNote: {
+    create(args: {
+      data: { teacherId: string; studentId: string; note: string };
+    }): Promise<{ id: string; createdAt: Date }>;
+  };
+  auditLog: {
+    create(args: {
+      data: { userId: string; action: string; entity: string; entityId: string; details: string };
+    }): Promise<unknown>;
+  };
   parentStudentLink: {
-    findMany: (args: unknown) => Promise<
+    findMany(args: {
+      where: { studentId: string };
+      include: { parent: { include: { user: { select: { id: boolean; name: boolean } } } } };
+    }): Promise<
       Array<{ parent?: { user?: { id?: string | null } | null } | null }>
     >;
   };
