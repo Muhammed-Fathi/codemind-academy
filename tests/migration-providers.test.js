@@ -652,6 +652,77 @@ async function buildNeonSimulation(query) {
 }
 
 // ---------------------------------------------------------------------------
+// Part A5 — P1012 regression: SessionVideo <-> LiveSession is a COMPLETE
+// relation in BOTH provider schemas. Commit 197ada2 shipped the forward
+// side only (`SessionVideo.liveSession` with no back-reference), so a fresh
+// local `npm run db:generate` died with Prisma P1012 ("The relation field
+// `liveSession` on model `SessionVideo` is missing an opposite relation
+// field on the model `LiveSession`") and the shipped schema was invalid.
+// This block parses what P1012 checks — the relation pair, not just one
+// side — plus the migration/FK SetNull semantics, so it cannot ship again.
+// ---------------------------------------------------------------------------
+{
+  const modelBlock = (schema, name) => {
+    const m = schema.match(new RegExp(`^model ${name} \\{[\\s\\S]*?^\\}`, "m"));
+    return m ? m[0] : "";
+  };
+  const schemas = [
+    ["SQLite", read(SQLITE_SCHEMA)],
+    ["PostgreSQL", read(PG_SCHEMA)],
+  ];
+  for (const [provider, schema] of schemas) {
+    const video = modelBlock(schema, "SessionVideo");
+    const session = modelBlock(schema, "LiveSession");
+    ok(
+      video.length > 0 && /^\s*liveSessionId String\?\s*$/m.test(video),
+      `${provider}: SessionVideo owns the nullable liveSessionId FK column`
+    );
+    ok(
+      /^\s*liveSession\s+LiveSession\?\s+@relation\(fields: \[liveSessionId\], references: \[id\], onDelete: SetNull\)\s*$/m.test(
+        video
+      ),
+      `${provider}: SessionVideo.liveSession is the optional SetNull forward relation`
+    );
+    ok(
+      session.length > 0 && /^\s*sessionVideos SessionVideo\[\]\s*$/m.test(session),
+      `${provider}: LiveSession owns the inverse sessionVideos collection (P1012 opposite field)`
+    );
+  }
+  // The relation is unambiguous (exactly one SessionVideo<->LiveSession
+  // pair), so Prisma needs no explicit relation name on either side.
+  const sqliteSchema = read(SQLITE_SCHEMA);
+  const forwardCount = (sqliteSchema.match(/^\s*liveSession\s+LiveSession\?/gm) || []).length;
+  const inverseCount = (sqliteSchema.match(/^\s*sessionVideos SessionVideo\[\]/gm) || []).length;
+  ok(
+    forwardCount === 1 && inverseCount >= 1,
+    "exactly one SessionVideo.liveSession forward field (no ambiguous pair, no @relation name needed)",
+    `forward=${forwardCount} inverse-name-occurrences=${inverseCount}`
+  );
+  // Migration/FK semantics: PG carries a real SetNull FK, SQLite carries
+  // the nullable column + covering index (ALTER TABLE ... ADD COLUMN cannot
+  // declare a FOREIGN KEY — the Phase G attachmentId/gradedById columns set
+  // the same precedent), and the derived baseline converges on SetNull.
+  const pgModes = stripSqlComments(read(path.join(PG_MIGRATIONS, MIG_SV_MODES, "migration.sql")));
+  ok(
+    pgModes.includes('ALTER TABLE "SessionVideo" ADD COLUMN "liveSessionId" TEXT') &&
+      pgModes.includes('CONSTRAINT "SessionVideo_liveSessionId_fkey" FOREIGN KEY ("liveSessionId") REFERENCES "LiveSession"("id") ON DELETE SET NULL'),
+    "PG requirement-modes migration carries the liveSessionId column and the ON DELETE SET NULL FK"
+  );
+  const liteModes = stripSqlComments(read(path.join(SQLITE_MIGRATIONS, MIG_SV_MODES, "migration.sql")));
+  ok(
+    liteModes.includes('ALTER TABLE "SessionVideo" ADD COLUMN "liveSessionId" TEXT') &&
+      liteModes.includes('CREATE INDEX "SessionVideo_liveSessionId_idx" ON "SessionVideo"("liveSessionId")'),
+    "SQLite requirement-modes migration carries the nullable liveSessionId column and its covering index"
+  );
+  ok(
+    stripSqlComments(read(BASELINE_SQL)).includes(
+      'CONSTRAINT "SessionVideo_liveSessionId_fkey" FOREIGN KEY ("liveSessionId") REFERENCES "LiveSession" ("id") ON UPDATE CASCADE ON DELETE SET NULL'
+    ),
+    "derived postgres baseline converges on the SetNull liveSessionId FK"
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Part B — real PostgreSQL (disposable), SQL-level
 // ---------------------------------------------------------------------------
 

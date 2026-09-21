@@ -566,6 +566,11 @@ model LiveSession {
   attendance   Attendance[]
   attendanceCorrections AttendanceCorrection[]
   absenceReviews AbsenceReview[]
+  /// SessionVideo requirement modes — the recordings that name THIS session
+  /// as their explicit absence source (`SessionVideo.liveSessionId`). The
+  /// forward side owns the nullable FK with `onDelete: SetNull`: deleting a
+  /// session unlinks its recordings, never deletes them.
+  sessionVideos SessionVideo[]
   lesson       Lesson?       @relation(fields: [lessonId], references: [id])
   teacher      Teacher?      @relation(fields: [teacherId], references: [id])
   substituteTeacher Teacher? @relation("LiveSessionSubstitute", fields: [substituteTeacherId], references: [id], onDelete: SetNull)

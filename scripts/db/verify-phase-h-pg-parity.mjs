@@ -75,6 +75,9 @@ const CHAIN = [
   "20260920120000_phase_h_progression_override",
   // Session-video progression requirement — one additive boolean column.
   "20260921120000_session_video_progression_requirement",
+  // Session-video requirement modes — the requirementMode enum column plus
+  // the explicit liveSessionId absence source (SetNull FK + index).
+  "20260921180000_session_video_requirement_modes",
 ];
 const read = (p) => fs.readFileSync(p, "utf8");
 const stmts = (p) => splitSqlStatements(read(p));
