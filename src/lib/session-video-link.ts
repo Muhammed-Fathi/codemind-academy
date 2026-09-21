@@ -234,11 +234,16 @@ export function lessonFitsBatch(
 // drift apart.
 //
 // THE RULES (fail-closed, in order — no silent correction ever):
-//   1. `requiredPercent`, when provided, must be a finite number. It is
-//      rounded (the column is an Int) and clamped to the EXISTING PATCH range
-//      rule 50–100. Absent/blank means "no opinion" → the schema default 95.
-//      Garbage (NaN, Infinity, non-numeric text) is refused, never coerced.
-//                                             → INVALID_REQUIRED_PERCENT (422)
+//   1. `requiredPercent`, when provided, must be a finite number from 50
+//      through 100 inclusive. Out-of-range values are REFUSED — never
+//      clamped, never rounded into validity (49.9 and 100.1 are 422s, not
+//      50 and 100): the threshold drives progression and the platform must
+//      never silently rewrite an admin's threshold. Absent/blank means "no
+//      opinion" → the schema default 95. Garbage (NaN, Infinity, non-numeric
+//      text) is refused, never coerced.  → INVALID_REQUIRED_PERCENT (422)
+//      In-range decimals (e.g. 85.4) round half-up AFTER passing the range
+//      gate — the column is an Int, so this representation rule is the only
+//      transformation the parser performs, and it is documented here.
 //   2. `isRequiredForProgression = true` is refused unless the row's media is
 //      TRACKABLE — managed private bytes (LOCAL_PRIVATE / S3) the server
 //      meters through the heartbeat. An EXTERNAL_URL row has no reliable
@@ -283,18 +288,20 @@ export function parseSessionVideoRequirement(
   const blankString = typeof raw === "string" && raw.trim() === "";
   if (raw !== undefined && raw !== null && !blankString) {
     const n = Number(raw);
-    if (!Number.isFinite(n)) {
-      return {
-        ok: false,
-        code: "INVALID_REQUIRED_PERCENT",
-        status: SESSION_VIDEO_REQUIREMENT_ERRORS.INVALID_REQUIRED_PERCENT.status,
-        message: "requiredPercent must be a finite number between 50 and 100",
-      };
+    const refusePercent = {
+      ok: false as const,
+      code: "INVALID_REQUIRED_PERCENT" as const,
+      status: SESSION_VIDEO_REQUIREMENT_ERRORS.INVALID_REQUIRED_PERCENT.status,
+      message: "requiredPercent must be a number between 50 and 100",
+    };
+    if (!Number.isFinite(n)) return refusePercent;
+    // NO CLAMPING, NO rescue rounding: the range gate runs on the RAW value,
+    // so 49, 101, 49.9 and 100.1 are all refused. Only values already inside
+    // [50, 100] reach the documented Int rounding below.
+    if (n < SESSION_VIDEO_MIN_REQUIRED_PERCENT || n > SESSION_VIDEO_MAX_REQUIRED_PERCENT) {
+      return refusePercent;
     }
-    requiredPercent = Math.min(
-      SESSION_VIDEO_MAX_REQUIRED_PERCENT,
-      Math.max(SESSION_VIDEO_MIN_REQUIRED_PERCENT, Math.round(n))
-    );
+    requiredPercent = Math.round(n);
   }
 
   if (isRequired && !isManagedPrivateStorage(opts.storage)) {

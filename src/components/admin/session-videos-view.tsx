@@ -651,17 +651,21 @@ function PublishVideoCard({
       toast.error(tr("api.219"));
       return;
     }
-    // Progression requirement, told BEFORE any request (the server
-    // re-enforces on every creation path): the threshold keeps the existing
-    // 50–100 range rule; REQUIRED on an external URL is unexpressible (no
-    // verified watch %) so the toggle is disabled for that method and the
-    // payload forces OPTIONAL there.
+    // Progression requirement: the SERVER is authoritative (50–100, no
+    // clamping — an out-of-range threshold is a 422, never a silent rewrite).
+    // The client only fails fast on non-numeric input with the IDENTICAL
+    // api.361 copy (no request, value preserved for correction); REQUIRED on
+    // an external URL is unexpressible (no verified watch %) so the toggle is
+    // disabled for that method and the payload forces OPTIONAL there.
+    // The RAW string rides every creation path (presigned completeFields +
+    // buffered fallback + URL JSON) so the server validates exactly what the
+    // admin typed; a 422 surfaces its Arabic `error` with the value intact.
     const percentNum = Number(requiredPercent);
     if (!Number.isFinite(percentNum)) {
       toast.error(tr("api.361"));
       return;
     }
-    const threshold = Math.min(100, Math.max(50, Math.round(percentNum)));
+    const threshold = requiredPercent;
     const requiredForProgression = method === "UPLOAD" && isRequired;
     lastPublishRef.current = publish;
 
@@ -685,7 +689,7 @@ function PublishVideoCard({
             publish,
             isRequiredForProgression: requiredForProgression,
             requiredPercent: threshold,
-          },
+          }, // raw string — the complete route validates, never coerces
           // No browser-side hash for videos: a 512 MB buffer just to hash it
           // is worse than skipping the optional integrity proof.
           sha256: null,
@@ -947,6 +951,9 @@ function PublishVideoCard({
             <Label htmlFor="sv-percent">{tr("admin.626")}</Label>
             <Input
               id="sv-percent"
+              type="number"
+              min={50}
+              max={100}
               value={requiredPercent}
               onChange={(e) => setRequiredPercent(e.target.value)}
               inputMode="numeric"
@@ -1015,12 +1022,16 @@ function EditVideoForm({
       toast.error(tr("admin.580"));
       return;
     }
+    // Server-authoritative threshold (no clamping): fail fast on
+    // non-numeric input with the identical api.361 copy, otherwise PATCH the
+    // RAW value — a 422 toasts its Arabic `error` and every field keeps its
+    // entered value for correction (nothing resets on failure).
     const n = Number(percent);
     if (!Number.isFinite(n)) {
       toast.error(tr("api.361"));
       return;
     }
-    const threshold = Math.min(100, Math.max(50, Math.round(n)));
+    const threshold = percent;
     setSaving(true);
     try {
       const res = await fetch(`/api/admin/session-videos/${video.id}`, {
@@ -1094,6 +1105,9 @@ function EditVideoForm({
           <Label htmlFor={`edit-percent-${video.id}`}>{tr("admin.626")}</Label>
           <Input
             id={`edit-percent-${video.id}`}
+            type="number"
+            min={50}
+            max={100}
             value={percent}
             onChange={(e) => setPercent(e.target.value)}
             inputMode="numeric"

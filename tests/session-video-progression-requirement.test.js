@@ -8,8 +8,8 @@
 //
 // PINNED BEHAVIOR (A–N):
 //   A. admin create: required persists (upload), defaults false/95, external+
-//      required → 422, percent clamped 50–100, garbage percent → 422, nothing
-//      written on refusal.
+//      required → 422, boundaries 50/95/100 accepted, out-of-range +
+//      non-numeric → 422 (NEVER clamped), nothing written on refusal.
 //   B. admin edit: flag/percent edits persist independently, external flip
 //      refused (row unchanged), admin list serialises the flags.
 //   C. fixture setup for the multi/threshold/isolation legs (no pins).
@@ -329,11 +329,13 @@ const PATCH_JSON = (r, url, body, params) => call(r.PATCH, jsonReq(url, body), p
 // ---------------------------------------------------------------------------
 test("SessionVideo progression requirement (REQUIRED-vs-OPTIONAL)", async () => {
   // ===========================================================================
-  // Seed — one course, two batches (ARABIC + LANGUAGE), two students, four lessons:
+  // Seed — one course, two batches (ARABIC + LANGUAGE), two students, five lessons:
   //   Lreq   (order 1) — one REQUIRED recording (admin-created in A1)
   //   Lmulti (order 2) — two REQUIRED recordings (95 + custom 60)
   //   Lleg   (order 3) — LEGACY videoUrl only
   //   Lopt   (order 4) — OPTIONAL recordings only (empty until section J)
+  //   Lbound (order 5) — threshold-boundary target: admin-validation rows only,
+  //     chain-locked behind uncompletable Lopt, never in a student flow
   // ===========================================================================
   const course = await client.course.create({
     data: { slug: "svreq-a", name: "Course A", nameAr: "كورس أ", description: "svreq" },
@@ -362,6 +364,7 @@ test("SessionVideo progression requirement (REQUIRED-vs-OPTIONAL)", async () => 
     videoUrl: "https://www.youtube.com/watch?v=legacySvreq",
   });
   const Lopt = await mkLesson({ order: 4, officialCode: "1-4", title: "Optional session", titleAr: "حصة إضافية" });
+  const Lbound = await mkLesson({ order: 5, officialCode: "1-5", title: "Boundary session", titleAr: "حصة الحدود" });
 
   const batchAr = await client.batch.create({
     data: { name: "Batch AR", nameAr: "دفعة عربي", schoolType: "ARABIC", courseId: course.id },
@@ -406,8 +409,9 @@ test("SessionVideo progression requirement (REQUIRED-vs-OPTIONAL)", async () => 
 
   // ===========================================================================
   // A. Admin create — the upload flow persists the requirement; the external
-  //    flow refuses REQUIRED; percents clamp; garbage refuses; refusals write
-  //    nothing.
+  //    flow refuses REQUIRED; boundaries 50/95/100 accepted exactly;
+  //    out-of-range + non-numeric refused (422, NEVER clamped); refusals
+  //    write nothing.
   // ===========================================================================
   asUser(admin);
   const a1 = await POST_FORM(
@@ -448,17 +452,25 @@ test("SessionVideo progression requirement (REQUIRED-vs-OPTIONAL)", async () => 
   eq(await client.sessionVideo.count({}), videosBefore, "A3: the refused create wrote NO video row");
   eq(await client.mediaAsset.count({}), mediaBefore, "A3: the refused create wrote NO media row");
 
-  const a4 = await POST_JSON(R.adminVideos, "http://t/api/admin/session-videos", {
-    batchId: batchAr.id,
-    lessonId: Lopt.id,
-    title: "External clamped",
-    videoUrl: "https://cdn.example.com/clamped.mp4",
-    publish: true,
-    isRequiredForProgression: false,
-    requiredPercent: 30,
-  });
-  eq(a4.status, 200, "A4: external + optional + 30% → 200 (the range rule clamps, not refuses)");
-  eq(a4.json.video.requiredPercent, 50, "A4: 30% is clamped to the 50 floor");
+  // Threshold boundaries: omitted → 95; 50/95/100 accepted EXACTLY (uploads
+  // on the validation-only Lbound lesson — REQUIRED rows must be managed).
+  const a4omit = await POST_FORM(
+    R.adminVideos, "http://t/api/admin/session-videos",
+    uploadForm({ lessonId: Lbound.id, required: "true" })
+  );
+  eq(a4omit.status, 200, "A4: omitted threshold + required → 200");
+  eq(a4omit.json.video.requiredPercent, 95, "A4: the omitted threshold defaults to 95");
+  for (const [tag, pct] of [["floor", "50"], ["mid", "95"], ["cap", "100"]]) {
+    const r = await POST_FORM(
+      R.adminVideos, "http://t/api/admin/session-videos",
+      uploadForm({ lessonId: Lbound.id, required: "true", percent: pct })
+    );
+    eq(r.status, 200, `A4: required + ${pct}% → 200 (${tag} boundary)`);
+    eq(r.json.video.requiredPercent, Number(pct), `A4: ${pct}% persists EXACTLY (no clamp, no rewrite)`);
+    const row = await client.sessionVideo.findUnique({ where: { id: r.json.video.id } });
+    eq(row.requiredPercent, Number(pct), `A4: the PERSISTED row keeps ${pct}%`);
+    eq(row.isRequiredForProgression, true, `A4: the PERSISTED row is required`);
+  }
 
   const a5 = await POST_JSON(R.adminVideos, "http://t/api/admin/session-videos", {
     batchId: batchAr.id,
@@ -470,7 +482,44 @@ test("SessionVideo progression requirement (REQUIRED-vs-OPTIONAL)", async () => 
   eq(a5.status, 200, "A5: external + optional → 200 (untrackable is servable, just never required)");
   eq(a5.json.video.isRequiredForProgression, false, "A5: external rows stay OPTIONAL");
 
-  const a6 = await POST_JSON(R.adminVideos, "http://t/api/admin/session-videos", {
+  // Out-of-range + non-numeric: 422, zero writes. The range rule is
+  // flag-independent — even an OPTIONAL row must not store a threshold the
+  // platform would never honor (a later flip to REQUIRED would inherit it).
+  const beforeRefusals = await client.sessionVideo.count({});
+  const beforeRefusalsMedia = await client.mediaAsset.count({});
+  const a6a = await POST_FORM(
+    R.adminVideos, "http://t/api/admin/session-videos",
+    uploadForm({ lessonId: Lbound.id, required: "true", percent: "49" })
+  );
+  eq(a6a.status, 422, "A6: required + 49% → 422 (below the floor, not clamped to 50)");
+  eq(a6a.json.code, "INVALID_REQUIRED_PERCENT", "A6: the machine code names the contract");
+  eq(a6a.json.error, "نسبة الإكمال يجب أن تكون رقمًا بين 50 و 100", "A6: the Arabic message is exact (api.361)");
+  const a6b = await POST_FORM(
+    R.adminVideos, "http://t/api/admin/session-videos",
+    uploadForm({ lessonId: Lbound.id, required: "true", percent: "101" })
+  );
+  eq(a6b.status, 422, "A6: required + 101% → 422 (above the cap, not clamped to 100)");
+  eq(a6b.json.code, "INVALID_REQUIRED_PERCENT", "A6: the 101 refusal names the contract");
+  const a6c = await POST_JSON(R.adminVideos, "http://t/api/admin/session-videos", {
+    batchId: batchAr.id,
+    lessonId: Lopt.id,
+    title: "Optional thirty",
+    videoUrl: "https://cdn.example.com/thirty.mp4",
+    publish: true,
+    isRequiredForProgression: false,
+    requiredPercent: 30,
+  });
+  eq(a6c.status, 422, "A6: optional + 30% → 422 (the no-clamp rule covers every write)");
+  const a6d = await POST_FORM(
+    R.adminVideos, "http://t/api/admin/session-videos",
+    uploadForm({ lessonId: Lbound.id, required: "true", percent: "xyz" })
+  );
+  eq(a6d.status, 422, "A6: required + non-numeric → 422");
+  eq(a6d.json.code, "INVALID_REQUIRED_PERCENT", "A6: the garbage refusal names the contract");
+  eq(await client.sessionVideo.count({}), beforeRefusals, "A6: the four refused creates wrote NO video rows");
+  eq(await client.mediaAsset.count({}), beforeRefusalsMedia, "A6: the refused creates wrote NO media rows");
+
+  const a7 = await POST_JSON(R.adminVideos, "http://t/api/admin/session-videos", {
     batchId: batchAr.id,
     lessonId: Lopt.id,
     title: "Garbage percent",
@@ -478,10 +527,10 @@ test("SessionVideo progression requirement (REQUIRED-vs-OPTIONAL)", async () => 
     publish: true,
     requiredPercent: "abc",
   });
-  eq(a6.status, 422, "A6: a non-numeric percent → 422");
-  eq(a6.json.code, "INVALID_REQUIRED_PERCENT", "A6: the machine code names the contract");
-  eq(a6.json.error, "نسبة الإكمال يجب أن تكون رقمًا بين 50 و 100", "A6: the Arabic message is exact (api.361)");
-  eq(await client.sessionVideo.count({}), videosBefore + 2, "A6: only the two accepted creates persisted");
+  eq(a7.status, 422, "A7: a non-numeric percent (external path) → 422");
+  eq(a7.json.code, "INVALID_REQUIRED_PERCENT", "A7: the machine code names the contract");
+  eq(a7.json.error, "نسبة الإكمال يجب أن تكون رقمًا بين 50 و 100", "A7: the Arabic message is exact (api.361)");
+  eq(await client.sessionVideo.count({}), videosBefore + 5, "A7: only the five accepted creates persisted (A4×4 + A5)");
 
   // ===========================================================================
   // B. Admin edit — flag and percent persist independently; the external flip
@@ -523,6 +572,18 @@ test("SessionVideo progression requirement (REQUIRED-vs-OPTIONAL)", async () => 
   eq(b4.json.code, "INVALID_REQUIRED_PERCENT", "B4: the machine code names the contract");
   const b4row = await client.sessionVideo.findUnique({ where: { id: a1.json.video.id } });
   eq(b4row.requiredPercent, 90, "B4: the refused edit left the threshold at 90");
+  eq(b4row.isRequiredForProgression, true, "B4: the refused edit left requiredness untouched");
+  const b4b = await PATCH_JSON(
+    R.adminVideo, `http://t/api/admin/session-videos/${a1.json.video.id}`,
+    { requiredPercent: 49 }, { id: a1.json.video.id }
+  );
+  eq(b4b.status, 422, "B4: an out-of-range percent edit → 422");
+  const b4brow = await client.sessionVideo.findUnique({ where: { id: a1.json.video.id } });
+  eq(
+    { p: b4brow.requiredPercent, r: b4brow.isRequiredForProgression },
+    { p: 90, r: true },
+    "B4: the invalid edit left the requirement fields byte-for-byte unchanged"
+  );
   const b5 = await GET(R.adminVideos, `http://t/api/admin/session-videos?batchId=${batchAr.id}`, {});
   eq(b5.status, 200, "B5: the admin list 200s");
   const b5a1 = b5.json.videos.find((v) => v.id === a1.json.video.id);
@@ -915,6 +976,9 @@ test("SessionVideo progression requirement (REQUIRED-vs-OPTIONAL)", async () => 
   ok(/INVALID_VIDEO_REQUIREMENT/.test(completeLib), "N3: the presigned completion refuses garbage requirements");
   const completeRoute = read("src/app/api/admin/media-uploads/complete/route.ts");
   ok(completeRoute.includes("isRequiredForProgression: body.isRequiredForProgression,"), "N3: the complete route passes the flag through");
+  ok(completeRoute.includes('if (result.code === "INVALID_VIDEO_REQUIREMENT") {'), "N3: the complete route special-cases the threshold refusal");
+  ok(completeRoute.includes('{ error: tApi("api.361"), code: result.code }'), "N3: the presigned refusal speaks api.361 Arabic (never the English validator text)");
+  ok(/INVALID_VIDEO_REQUIREMENT[\s\S]{0,200}\{ status: 422 \}/.test(completeRoute), "N3: the presigned threshold refusal is a 422");
   // The shared link/requirement validator ships to the BROWSER through
   // session-video-picker — it must never import the node-only @/lib/media
   // (fs/crypto), only the client-safe predicate module. The production build
@@ -928,6 +992,11 @@ test("SessionVideo progression requirement (REQUIRED-vs-OPTIONAL)", async () => 
   const adminView = read("src/components/admin/session-videos-view.tsx");
   ok(adminView.includes("const [isRequired, setIsRequired] = React.useState(false);"), "N4: the Required toggle defaults OFF");
   ok(adminView.includes('const [requiredPercent, setRequiredPercent] = React.useState("95");'), "N4: the threshold defaults to 95");
+  ok((adminView.match(/min=\{50\}/g) || []).length === 2, "N4: BOTH threshold inputs carry min=50 (create + edit)");
+  ok((adminView.match(/max=\{100\}/g) || []).length === 2, "N4: BOTH threshold inputs carry max=100 (create + edit)");
+  ok(!/Math\.min\(100, Math\.max\(50/.test(adminView), "N4: the UI never clamps a threshold (server authoritative)");
+  ok(adminView.includes("const threshold = requiredPercent;"), "N4: create sends the RAW typed value");
+  ok(adminView.includes("const threshold = percent;"), "N4: edit sends the RAW typed value");
   ok(adminView.includes('disabled={busy || method !== "UPLOAD"}'), "N4: the toggle is disabled for external URLs");
   ok(adminView.includes('const requiredForProgression = method === "UPLOAD" && isRequired;'), "N4: the payload forces OPTIONAL for URLs");
   ok(adminView.includes('tr("admin.625")') && adminView.includes('tr("admin.626")'), "N4: the toggle + threshold labels are localised");
