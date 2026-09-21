@@ -15,7 +15,6 @@ import {
 import {
   EXCLUDE_ARCHIVED_LESSON,
   getCourseSessionProgress,
-  getUnlockedLessonIds,
   orderCourseLessons,
 } from "@/lib/session-progress";
 import { evaluateStudentCatchup, toCatchupHoldView } from "@/lib/progression";
@@ -89,6 +88,7 @@ export async function GET(_req: NextRequest) {
   // client-touchable `isCompleted` flag (which stays preserved for
   // historical aggregates — certificate, gamification, reports, exports).
   const engineCompleted = new Set<string>();
+  const unlockedLessonIds = new Set<string>();
   const engineReasonByLesson = new Map<string, { reason: string | null; reasonCode: string | null; unmet: { kind: string; label?: string | null }[]; state: string }>();
   {
     const engineCourseId = student.group?.course?.id ?? null;
@@ -99,6 +99,10 @@ export async function GET(_req: NextRequest) {
         // the access truth — a factually complete but locked lesson is not
         // currently done and counts nowhere as complete.
         if (row.completed && row.unlocked) engineCompleted.add(row.lessonId);
+        // Manual-QA stabilization: the open-set derives from THIS SAME
+        // evaluation (identical predicate to the retired second
+        // `getUnlockedLessonIds` call) — one canonical engine load/request.
+        if (row.unlocked) unlockedLessonIds.add(row.lessonId);
         engineReasonByLesson.set(row.lessonId, {
           reason: row.reason ?? null,
           reasonCode: row.reasonCode ?? null,
@@ -119,11 +123,7 @@ export async function GET(_req: NextRequest) {
   // unlocked. `continueLesson` used to fall back to the FIRST not-completed
   // lesson, which is a LOCKED session as soon as the previous one is watched
   // but not finished — and it carried that session's videoUrl with it.
-  const courseId = student.group?.course?.id ?? null;
-  const unlockedLessonIds =
-    courseId && student.group?.isActive
-      ? await getUnlockedLessonIds(student.id, courseId)
-      : new Set<string>();
+  // (`unlockedLessonIds` is computed once with the engine block above.)
   const isOpen = (lessonId: string) => unlockedLessonIds.has(lessonId);
 
   // last viewed lesson — only when the student may still open it

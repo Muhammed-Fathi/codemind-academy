@@ -185,8 +185,14 @@ section("3. Session locking treats missing components as not-required");
     "a lesson with NO assignment does not require an assignment"
   );
   ok(
-    /completed = videoDone && quizDone && homeworkDone/.test(eng),
+    /hasAnyRequirement && videoDone && quizDone && homeworkDone/.test(eng),
     "a session completes only when all REQUIRED components are done"
+  );
+  // Manual-QA stabilization: completion additionally requires ≥1 requirement
+  // to exist — a zero-requirement lesson is a chain boundary, never done.
+  ok(
+    /const hasAnyRequirement = videoRequired \|\| quizRequired \|\| homeworkRequired;/.test(eng),
+    "completion needs at least one requirement (no vacuous completion)"
   );
   ok(
     /let previousCompleted = true;/.test(eng),

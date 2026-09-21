@@ -645,7 +645,10 @@ function DashboardHome({
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-muted-foreground">
-                        {data.continueLesson.isCompleted ? t("student.126") : "Progress"}
+                        {/* Manual-QA stabilization: this bar is the
+                            server-tracked VIDEO percent, labeled as such —
+                            never an unlabeled whole-lesson "Progress". */}
+                        {data.continueLesson.isCompleted ? t("student.126") : t("course.242")}
                       </span>
                       <span className="font-semibold">
                         {data.continueLesson.progress}%

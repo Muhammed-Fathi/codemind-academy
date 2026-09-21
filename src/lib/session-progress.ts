@@ -25,9 +25,10 @@
 //      locked until catch-up resolution, while the missed lesson itself, its
 //      recovery content, its recording, and historical COMPLETED lessons stay
 //      accessible.
-// Plus two latent-deadlock FIXES that only ever unblock: cross-track
-// quiz/homework rows on a SHARED lesson are excluded from requirements, and
-// batch SessionVideo watch now counts toward the video requirement.
+// Plus one latent-deadlock FIX that only ever unblocks: cross-track
+// quiz/homework rows on a SHARED lesson are excluded from requirements.
+// (Recordings stay NON-INPUTS per Phase B M2: publishing or watching a batch
+// SessionVideo can neither create nor satisfy a requirement.)
 
 import { db } from "@/lib/db";
 import {
@@ -68,7 +69,7 @@ export type SessionRequirement = {
 export type SessionStatusRow = {
   lessonId: string;
   order: number;
-  /** true when every REQUIRED condition of this lesson is satisfied. */
+  /** true when the lesson has ≥1 requirement AND all are satisfied. */
   completed: boolean;
   /** true when the student is allowed to open this lesson. */
   unlocked: boolean;

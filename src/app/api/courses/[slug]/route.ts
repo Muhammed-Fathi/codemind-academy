@@ -286,10 +286,25 @@ export async function GET(
   }
 
   const lessonIds = flat.map((f) => f.lesson.id);
+  // Manual-QA stabilization (perf): the three independent reads below —
+  // legacy progress rows, the Phase C content summaries, and the canonical
+  // engine evaluation — issue CONCURRENTLY. Same queries, same merge order
+  // afterwards; latency only, no behavior change.
+  const [progresses, contentByLesson, sessionProgress] = await Promise.all([
+    studentId && lessonIds.length
+      ? db.lessonProgress.findMany({
+          where: { studentId, lessonId: { in: lessonIds } },
+        })
+      : Promise.resolve([]),
+    buildLessonContentSummaries({
+      lessons: flat.map((f) => f.lesson),
+      viewer: contentViewer,
+    }),
+    studentId
+      ? getCourseSessionProgress(studentId, course.id)
+      : Promise.resolve(null),
+  ]);
   if (studentId && lessonIds.length) {
-    const progresses = await db.lessonProgress.findMany({
-      where: { studentId, lessonId: { in: lessonIds } },
-    });
     for (const p of progresses) {
       progressMap[p.lessonId] = {
         progress: p.progress,
@@ -331,21 +346,21 @@ export async function GET(
   // route through it, and a PUBLISHED + LOCKED session still shows its
   // skeleton badges while every protected field stays redacted below
   // (the Phase 4/16 redaction contract is untouched).
-  const contentByLesson = await buildLessonContentSummaries({
-    lessons: flat.map((f) => f.lesson),
-    viewer: contentViewer,
-  });
+  // (`contentByLesson` resolved in the concurrent block above.)
 
   // Determine locked / current / completed statuses from the CANONICAL
   // progression engine, so the UI mirrors exactly what the backend enforces:
   // a session is complete only when its video (>=95%), quiz (PASSED) and
   // assignment (submitted) requirements are all satisfied; missing components
-  // are not required; an active absence hold draws the forward boundary.
+  // are not required — but a session with NO requirements at all is never
+  // complete (it is a chain boundary, surfaced as the current session with
+  // its own Arabic reason); an active absence hold draws the forward boundary.
   // Phase H: for students the engine ALSO drives the displayed completion —
   // the tree, the dashboard and the lesson page agree by construction.
   const requirementsByLesson = new Map<string, import("@/lib/session-progress").SessionStatusRow>();
-  if (studentId) {
-    const sessionProgress = await getCourseSessionProgress(studentId, course.id);
+  // (`sessionProgress` resolved in the concurrent block above; non-student
+  // viewers get null and the unchanged unlocked preview below.)
+  if (sessionProgress) {
     for (const row of sessionProgress.sessions) {
       requirementsByLesson.set(row.lessonId, row);
     }

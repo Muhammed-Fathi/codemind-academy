@@ -1196,10 +1196,39 @@ section("STUDENT-17 — Progression: components → completion → next unlocked
 // ===========================================================================
 const lesson2AfterComponents = await call("GET", `/api/lessons/${L2}`, { cookie: AR });
 ok(lesson2AfterComponents.status === 200, "lesson 2 UNLOCKED after video+quiz+homework all done", String(lesson2AfterComponents.status));
-// Lesson 2 carries NO components → it is complete by design ("a component
-// that does not exist is NOT required"), so lesson 3 is unlocked too. The
-// bypass-refusal proof needs a REAL requirement: a quiz on lesson 3 gates
-// lesson 4.
+// Manual-QA stabilization: lesson 2 carries NO components → it is an EMPTY
+// lesson, i.e. a chain BOUNDARY the engine no longer auto-completes. Pin the
+// boundary over real HTTP (lesson 3 locked behind it)…
+const lesson3BehindBoundary = await call("GET", `/api/lessons/${L3}`, { cookie: AR });
+eq(lesson3BehindBoundary.status, 403, "lesson 3 LOCKED behind the empty lesson 2 (boundary, not auto-complete)");
+// …then satisfy the chain the honest way: the teacher authors REAL homework
+// against lesson 2 through the real API and the student submits it — lesson
+// 2 genuinely completes, and the gate-quiz scenario below runs on an
+// honestly open chain. The bypass-refusal proof still needs a REAL
+// requirement: a quiz on lesson 3 gates lesson 4.
+const teacherHw2 = await call("POST", "/api/teacher/homework", {
+  body: {
+    lessonId: L2,
+    title: "QA26B Homework 2",
+    titleAr: "واجب الدرس الثاني",
+    instructions: "اكتب إجابتك هنا",
+    deadline: new Date(NOW + 7 * 86400000).toISOString(),
+    maxMarks: 10,
+    trackScope: "SHARED",
+  },
+  cookie: TEACHER_COOKIE,
+});
+ok(teacherHw2.status === 200, "teacher authors REAL homework against lesson 2 (real requirement, real API)");
+const hw2Id = teacherHw2.json?.homework?.id;
+ok(Boolean(hw2Id), "lesson-2 homework id returned");
+const pubHw2 = await call("POST", `/api/teacher/homework/${hw2Id}/publish`, { body: {}, cookie: TEACHER_COOKIE });
+ok(pubHw2.status === 200, "lesson-2 homework published (Phase G lifecycle)");
+const hw2Submit = await call("POST", "/api/students/me/homework", { body: { homeworkId: hw2Id, content: "إجابتي هنا" }, cookie: AR });
+ok(hw2Submit.status === 200, "student submits the lesson-2 homework");
+const lesson2Genuine = await call("GET", `/api/lessons/${L2}`, { cookie: AR });
+eq(lesson2Genuine.json?.requirements?.completed, true, "lesson 2 genuinely COMPLETED (submitted requirement, not vacuity)");
+const lesson3AfterL2 = await call("GET", `/api/lessons/${L3}`, { cookie: AR });
+eq(lesson3AfterL2.status, 200, "lesson 3 opens once lesson 2 genuinely completes");
 const L4 = byCode["1-4"];
 ok(Boolean(L4), "lesson 1-4 exists");
 const gateQuiz = await call("POST", "/api/teacher/quizzes", {
@@ -1217,7 +1246,7 @@ const gateQuizId = gateQuiz.json?.quiz?.id;
 const pubGate = await call("POST", `/api/teacher/quizzes/${gateQuizId}/publish`, { body: {}, cookie: TEACHER_COOKIE });
 ok(pubGate.status === 200, "gate quiz published (Phase G lifecycle)");
 const lesson3Open = await call("GET", `/api/lessons/${L3}`, { cookie: AR });
-eq(lesson3Open.status, 200, "lesson 3 open (lesson 2 auto-completed by design)");
+eq(lesson3Open.status, 200, "lesson 3 open (lesson 2 genuinely completed above)");
 const lesson4Locked = await call("GET", `/api/lessons/${L4}`, { cookie: AR });
 eq(lesson4Locked.status, 403, "lesson 4 LOCKED while lesson 3's quiz is unfinished (bypass refused)");
 const gateStart = await call("POST", `/api/quizzes/${gateQuizId}/start`, { body: { cameraStatus: "DENIED" }, cookie: AR });

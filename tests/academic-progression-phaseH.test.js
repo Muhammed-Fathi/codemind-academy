@@ -438,23 +438,29 @@ async function main() {
   seed();
   const db = global.__MOCK_DB__;
 
-  section("Pure core — chain, vacuity, thresholds, requirements");
+  section("Pure core — chain, empty-lesson boundary, thresholds, requirements");
   {
-    // CASE 1: a lesson with no requirements is COMPLETED (vacuous truth).
+    // CASE 1 (manual-QA stabilization): a lesson with ZERO requirements is
+    // NEVER completed. The first reachable empty lesson is UNLOCKED +
+    // incomplete (the boundary, with its reason); the next stays LOCKED.
     let r = progression.evaluateProgressionCore({
       lessons: [coreLesson("a", 1), coreLesson("b", 2)],
       facts: coreFacts(), holds: [], overrides: [],
     });
-    ok(r.lessons.every((l) => l.completed && l.unlocked && l.state === "COMPLETED"), "CASE 1: component-less lessons vacuous-complete");
+    const e1 = new Map(r.lessons.map((l) => [l.lessonId, l]));
+    ok(e1.get("a").unlocked && !e1.get("a").completed && e1.get("a").state === "UNLOCKED", "CASE 1a: first reachable empty lesson is UNLOCKED + incomplete");
+    ok(e1.get("a").reasonCode === "NO_COMPLETION_REQUIREMENTS" && /متطلبات إكمال/.test(e1.get("a").reason || ""), "CASE 1b: the boundary carries its Arabic reason + stable code");
+    ok(!e1.get("b").unlocked && !e1.get("b").completed && e1.get("b").state === "LOCKED" && e1.get("b").reasonCode === "PREVIOUS_INCOMPLETE", "CASE 1c: the lesson after an empty predecessor stays LOCKED");
+    ok(r.currentLessonId === "a", "CASE 1d: the empty boundary is the current lesson");
 
     // CASE 2: strict chain — L3 locked while L2 incomplete, even with L3's own facts done.
     r = progression.evaluateProgressionCore({
       lessons: [
-        coreLesson("a", 1),
+        coreLesson("a", 1, { quizIds: ["qa"] }),
         coreLesson("b", 2, { quizIds: ["qb"] }),
         coreLesson("c", 3, { quizIds: ["qc"] }),
       ],
-      facts: coreFacts({ passedQuizIds: new Set(["qc"]) }),
+      facts: coreFacts({ passedQuizIds: new Set(["qa", "qc"]) }),
       holds: [], overrides: [],
     });
     const byId = new Map(r.lessons.map((l) => [l.lessonId, l]));
@@ -474,8 +480,8 @@ async function main() {
       holds: [], overrides: [],
     });
     const m = new Map(r.lessons.map((l) => [l.lessonId, l]));
-    ok(!m.get("a").completed && m.get("b").completed && m.get("c").completed, "CASE 3a: downstream vacuous-complete while L1 incomplete");
-    ok(m.get("a").unlocked && !m.get("b").unlocked && !m.get("c").unlocked, "CASE 3b: completed-but-locked lessons reopen nothing (no skip via shrinkage)");
+    ok(!m.get("a").completed && !m.get("b").completed && !m.get("c").completed, "CASE 3a: downstream empty lessons are incomplete while L1 is incomplete (no vacuous completion)");
+    ok(m.get("a").unlocked && !m.get("b").unlocked && !m.get("c").unlocked, "CASE 3b: locked lessons reopen nothing downstream (no skip via shrinkage)");
 
     // CASE 4: legacy video threshold is exactly 95 (94 incomplete, 95 complete).
     const vid = (pct) => coreFacts({ legacyVideoByLesson: new Map([["a", { percent: pct, completed: false, completedAt: null }]]) });
@@ -484,10 +490,13 @@ async function main() {
     ok(!at94.lessons[0].completed && at95.lessons[0].completed, "CASE 4: 94% incomplete, 95% complete");
 
     // CASE 5: no videoUrl → NO video requirement (required false, done true,
-    // value 100). Recordings are not a core input at all — a SessionVideo-only
-    // lesson is completable without any watch (loader proof in CASE 17).
+    // value 100). Recordings are not a core input at all. (The lesson carries
+    // a passed quiz so the case still proves completability without video —
+    // a fully empty lesson is a boundary per CASE 1, loader proof in CASE 17.)
     r = progression.evaluateProgressionCore({
-      lessons: [coreLesson("a", 1)], facts: coreFacts(), holds: [], overrides: [],
+      lessons: [coreLesson("a", 1, { quizIds: ["q"] })],
+      facts: coreFacts({ passedQuizIds: new Set(["q"]) }),
+      holds: [], overrides: [],
     });
     ok(r.lessons[0].video.required === false && r.lessons[0].video.done && r.lessons[0].video.value === 100 && r.lessons[0].completed, "CASE 5: videoUrl-less lesson has no video requirement");
 
@@ -518,17 +527,17 @@ async function main() {
 
   section("Pure core — holds, overrides, reasons, current lesson");
   {
-    const three = [coreLesson("a", 1), coreLesson("b", 2, { quizIds: ["q"] }), coreLesson("c", 3)];
+    const three = [coreLesson("a", 1, { quizIds: ["qa"] }), coreLesson("b", 2, { quizIds: ["q"] }), coreLesson("c", 3)];
     // CASE 9: hold boundary — missed lesson open, after locked, completed-before stays accessible.
     let r = progression.evaluateProgressionCore({
-      lessons: three, facts: coreFacts(), holds: [{ holdId: "h", reviewId: "r", sessionId: "s", lessonId: "a" }], overrides: [],
+      lessons: three, facts: coreFacts({ passedQuizIds: new Set(["qa"]) }), holds: [{ holdId: "h", reviewId: "r", sessionId: "s", lessonId: "a" }], overrides: [],
     });
     let m = new Map(r.lessons.map((l) => [l.lessonId, l]));
-    ok(m.get("a").unlocked && m.get("a").reasonCode === null, "CASE 9a: the missed lesson itself stays open");
+    ok(m.get("a").unlocked && !m.get("a").unmet.includes("ABSENCE_HOLD"), "CASE 9a: the missed lesson itself stays open (no hold unmet on it)");
     ok(!m.get("b").unlocked && m.get("b").reasonCode === "ABSENCE_HOLD", "CASE 9b: lessons after the missed one lock with ABSENCE_HOLD");
     r = progression.evaluateProgressionCore({
-      lessons: [coreLesson("a", 1), coreLesson("b", 2)],
-      facts: coreFacts(),
+      lessons: [coreLesson("a", 1, { quizIds: ["qa"] }), coreLesson("b", 2, { quizIds: ["qb"] })],
+      facts: coreFacts({ passedQuizIds: new Set(["qa", "qb"]) }),
       holds: [{ holdId: "h", reviewId: "r", sessionId: "s", lessonId: "a" }],
       overrides: [],
     });
@@ -542,7 +551,7 @@ async function main() {
       overrides: [{ overrideId: "o", lessonId: "b", reason: "makeup", grantedAt: NOW.toISOString(), expiresAt: null }],
     });
     m = new Map(r.lessons.map((l) => [l.lessonId, l]));
-    ok(m.get("b").unlocked && m.get("b").override?.overrideId === "o", "CASE 10a: the named lesson opens by exception");
+    ok(m.get("b").unlocked && m.get("b").override?.overrideId === "o" && !m.get("b").completed && m.get("b").state === "UNLOCKED", "CASE 10a: the named lesson opens by exception — access only, facts untouched");
     ok(!m.get("c").unlocked, "CASE 10b: the override grants one lesson — downstream stays locked");
 
     // CASE 11: Arabic reasons on locked, null when open; primary code first.
@@ -553,13 +562,17 @@ async function main() {
     m = new Map(r.lessons.map((l) => [l.lessonId, l]));
     ok(typeof m.get("a").reason === "string" && m.get("a").reason.length > 0 && m.get("a").reasonCode === "QUIZ_NOT_PASSED", "CASE 11a: open-but-incomplete lesson names its unmet requirement in Arabic");
     ok(m.get("b").reasonCode === "PREVIOUS_INCOMPLETE" && /اللي قبله/.test(m.get("b").reason), "CASE 11b: locked lesson leads with the chain reason");
-    r = progression.evaluateProgressionCore({ lessons: [coreLesson("a", 1)], facts: coreFacts(), holds: [], overrides: [] });
-    ok(r.lessons[0].reason === null && r.lessons[0].reasonCode === null && r.lessons[0].unmet.length === 0, "CASE 11c: nothing blocks → null reason, empty unmet");
+    r = progression.evaluateProgressionCore({
+      lessons: [coreLesson("a", 1, { quizIds: ["q"] })],
+      facts: coreFacts({ passedQuizIds: new Set(["q"]) }),
+      holds: [], overrides: [],
+    });
+    ok(r.lessons[0].completed && r.lessons[0].reason === null && r.lessons[0].reasonCode === null && r.lessons[0].unmet.length === 0, "CASE 11c: satisfied lesson → null reason, empty unmet");
 
     // CASE 12: current lesson = first unlocked-incomplete.
     r = progression.evaluateProgressionCore({
-      lessons: [coreLesson("a", 1), coreLesson("b", 2, { quizIds: ["q"] }), coreLesson("c", 3)],
-      facts: coreFacts(), holds: [], overrides: [],
+      lessons: [coreLesson("a", 1, { quizIds: ["qa"] }), coreLesson("b", 2, { quizIds: ["q"] }), coreLesson("c", 3)],
+      facts: coreFacts({ passedQuizIds: new Set(["qa"]) }), holds: [], overrides: [],
     });
     ok(r.currentLessonId === "b", "CASE 12: current lesson skips completed, stops at first open incomplete");
   }
@@ -599,8 +612,8 @@ async function main() {
     // (v5 unwatched) — the video dimension stays not-required throughout.
     ok(l2.video.required === false && l2.video.done, "CASE 17a: published batch videos create no video requirement (l2)");
     const l5 = p1.byLessonId.get("l5");
-    ok(l5.video.required === false && l5.completed, "CASE 17b: unwatched recording does not block l5 (vacuous-complete)");
-    ok(l5.state === "LOCKED" && !l5.unlocked && l5.reasonCode === "PREVIOUS_INCOMPLETE", "CASE 17c: loader-level effective state — fact COMPLETED, state LOCKED, chain reason attached");
+    ok(l5.video.required === false && !l5.completed, "CASE 17b: unwatched recording creates no requirement; empty l5 is incomplete (boundary)");
+    ok(l5.state === "LOCKED" && !l5.unlocked && l5.reasonCode === "PREVIOUS_INCOMPLETE", "CASE 17c: loader-level effective state — incomplete behind the chain, state LOCKED, chain reason attached");
     ok((db.__reads.sessionVideo || 0) === 0 && (db.__reads.sessionVideoView || 0) === 0 && (db.__reads.question || 0) === 0, "CASE 17d: the loader issues zero recording/pool reads");
     // Retroactive publish: a recording added AFTER completion changes nothing.
     db.__tables.sessionVideo.push({ id: "v-late", batchId: "b1", lessonId: "l1", isPublished: true, requiredPercent: 95 });
@@ -741,7 +754,7 @@ async function main() {
     ok(ph.byLessonId.get("l1").unlocked, "CASE 18a: missed lesson itself open");
     ok(!ph.byLessonId.get("l2").unlocked && ph.byLessonId.get("l2").reasonCode === "ABSENCE_HOLD" && ph.byLessonId.get("l2").state === "LOCKED", "CASE 18b: incomplete l2 locks past the boundary (effective LOCKED)");
     const l5h = ph.byLessonId.get("l5");
-    ok(!l5h.unlocked && l5h.completed && l5h.state === "LOCKED" && l5h.reasonCode === "PREVIOUS_INCOMPLETE" && l5h.unmet.includes("ABSENCE_HOLD"), "CASE 18c: completed l5 chain-locked past the hold (chain leads, hold trails)");
+    ok(!l5h.unlocked && !l5h.completed && l5h.state === "LOCKED" && l5h.reasonCode === "PREVIOUS_INCOMPLETE" && l5h.unmet.includes("ABSENCE_HOLD"), "CASE 18c: incomplete l5 chain-locked past the hold (chain leads, hold trails)");
     ok(ph.boundary.holdBlockedFromLessonId === "l2", "CASE 18d: boundary pointer names l2");
     const holdAccess = await progression.evaluateLessonAccess("s1", "l2", { now: NOW });
     ok(!holdAccess.allowed && holdAccess.reason === "ABSENCE_HOLD", "CASE 18e: hold-blocked access answers ABSENCE_HOLD");
@@ -846,6 +859,92 @@ async function main() {
     await progression.evaluateStudentCatchup("s1", { now: NOW });
     await facade.getUnlockedLessonIds("s1", "c1");
     ok(db.__writes.length === 0, "CASE 38b: evaluation paths perform zero writes");
+  }
+
+  section("Empty-lesson boundary, trichotomy, state contract (manual-QA stabilization)");
+  {
+    // CASE 39: the Admin override intentionally crosses an empty boundary —
+    // access only, facts untouched, expiry/revoke restore the lock.
+    let r = progression.evaluateProgressionCore({
+      lessons: [coreLesson("a", 1), coreLesson("b", 2)],
+      facts: coreFacts(), holds: [],
+      overrides: [{ overrideId: "o", lessonId: "b", reason: "admin call", grantedAt: NOW.toISOString(), expiresAt: null }],
+    });
+    let m = new Map(r.lessons.map((l) => [l.lessonId, l]));
+    ok(m.get("b").unlocked && m.get("b").state === "UNLOCKED", "CASE 39a: override opens the lesson past the empty boundary");
+    ok(!m.get("b").completed && m.get("b").video.required === false && m.get("b").quiz.required === false && m.get("b").assignment.required === false, "CASE 39b: the override fabricates no requirement and no completion fact");
+    ok(!m.get("a").completed && m.get("a").reasonCode === "NO_COMPLETION_REQUIREMENTS", "CASE 39c: the empty lesson itself still names its boundary reason");
+    r = progression.evaluateProgressionCore({
+      lessons: [coreLesson("a", 1), coreLesson("b", 2)],
+      facts: coreFacts(), holds: [], overrides: [],
+    });
+    m = new Map(r.lessons.map((l) => [l.lessonId, l]));
+    ok(!m.get("b").unlocked && m.get("b").state === "LOCKED", "CASE 39d: without the override the boundary holds (revoke/expiry restores the lock)");
+
+    // CASE 40: configuring requirements later corrupts no history — the same
+    // lesson flips boundary → satisfied, and earlier completions stand.
+    const before = progression.evaluateProgressionCore({
+      lessons: [coreLesson("a", 1, { quizIds: ["qa"] }), coreLesson("b", 2)],
+      facts: coreFacts({ passedQuizIds: new Set(["qa"]) }),
+      holds: [], overrides: [],
+    });
+    const mb = new Map(before.lessons.map((l) => [l.lessonId, l]));
+    ok(mb.get("a").completed && mb.get("a").state === "COMPLETED" && !mb.get("b").completed && mb.get("b").unlocked, "CASE 40a: completed history + open empty boundary");
+    const after = progression.evaluateProgressionCore({
+      lessons: [
+        coreLesson("a", 1, { quizIds: ["qa"] }),
+        coreLesson("b", 2, { hasLegacyVideo: true }),
+      ],
+      facts: coreFacts({
+        passedQuizIds: new Set(["qa"]),
+        legacyVideoByLesson: new Map([["b", { percent: 96, completed: true, completedAt: NOW.toISOString() }]]),
+      }),
+      holds: [], overrides: [],
+    });
+    const ma = new Map(after.lessons.map((l) => [l.lessonId, l]));
+    ok(ma.get("a").completed && ma.get("a").state === "COMPLETED", "CASE 40b: earlier completion survives the later configuration");
+    ok(ma.get("b").video.required && ma.get("b").video.done && ma.get("b").completed && ma.get("b").state === "COMPLETED", "CASE 40c: the configured-then-satisfied lesson completes honestly");
+
+    // CASE 41: track + lifecycle still gate empty lessons (the boundary never
+    // leaks across audiences or stages).
+    const pu = await progression.loadCourseProgression("s1", "c1", { now: NOW });
+    const ids = pu.lessons.map((l) => l.lessonId);
+    ok(!ids.includes("ld") && !ids.includes("lx") && !ids.includes("lg"), "CASE 41a: empty DRAFT / ARCHIVED / cross-track lessons stay out of the universe");
+    const l5u = pu.byLessonId.get("l5");
+    ok(l5u.video.required === false && l5u.quiz.required === false && l5u.assignment.required === false && !l5u.completed, "CASE 41b: in-universe empty lesson exposes the all-absent requirement matrix");
+
+    // CASE 42: the requirement trichotomy the UI renders (required × done).
+    const tri = await progression.loadCourseProgression("s1", "c1", { now: NOW });
+    const t1 = tri.byLessonId.get("l1"), t2 = tri.byLessonId.get("l2"), t3 = tri.byLessonId.get("l3"), t5 = tri.byLessonId.get("l5");
+    ok(t1.video.required && t1.video.done && t1.quiz.required && t1.quiz.done && t1.assignment.required && t1.assignment.done, "CASE 42a: satisfied lesson — every dimension REQUIRED_COMPLETE");
+    ok(t2.quiz.required && !t2.quiz.done && t2.video.required === false, "CASE 42b: gate quiz REQUIRED_INCOMPLETE; absent video NOT_REQUIRED");
+    ok(t3.quiz.required && !t3.quiz.done && t3.assignment.required && !t3.assignment.done, "CASE 42c: failed quiz + unsubmitted CLOSED homework are REQUIRED_INCOMPLETE");
+    ok(!t5.video.required && !t5.quiz.required && !t5.assignment.required, "CASE 42d: empty lesson — every dimension NOT_REQUIRED");
+
+    // CASE 43: the state truth table holds for EVERY lesson of a mixed chain
+    // (contract: unlocked=false → LOCKED; unlocked+completed → COMPLETED;
+    // unlocked+incomplete → UNLOCKED; COMPLETED-with-unlocked=false never).
+    const mix = progression.evaluateProgressionCore({
+      lessons: [
+        coreLesson("done", 1, { quizIds: ["q"] }),
+        coreLesson("empty", 2),
+        coreLesson("open", 3, { quizIds: ["q3"] }),
+        coreLesson("gated", 4, { quizIds: ["q4"] }),
+      ],
+      facts: coreFacts({ passedQuizIds: new Set(["q"]) }),
+      holds: [],
+      overrides: [{ overrideId: "o", lessonId: "gated", reason: "x", grantedAt: NOW.toISOString(), expiresAt: null }],
+    });
+    let tableOk = true, neverBadCombo = true;
+    for (const l of mix.lessons) {
+      const want = !l.unlocked ? "LOCKED" : l.completed ? "COMPLETED" : "UNLOCKED";
+      if (l.state !== want) tableOk = false;
+      if (l.state === "COMPLETED" && !l.unlocked) neverBadCombo = false;
+    }
+    ok(tableOk, "CASE 43a: every lesson's state matches the (unlocked, completed) truth table");
+    ok(neverBadCombo, "CASE 43b: COMPLETED with unlocked=false is never emitted");
+    const mm = new Map(mix.lessons.map((l) => [l.lessonId, l]));
+    ok(mm.get("done").state === "COMPLETED" && mm.get("empty").state === "UNLOCKED" && mm.get("open").state === "LOCKED" && mm.get("gated").state === "UNLOCKED", "CASE 43c: mixed-chain states (complete / boundary / chain-locked / override-island)");
   }
 
   console.log(`\nacademic progression (phase H): ${pass} passed, ${fail} failed`);

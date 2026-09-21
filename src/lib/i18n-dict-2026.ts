@@ -1956,6 +1956,14 @@ export const DICT_2026: Record<string, DictEntry> = {
     ar: "المواضيع: {p1} · الدروس: {p2}",
     en: "Topics: {p1} · Lessons: {p2}",
   },
+  // Manual-QA stabilization: the lesson header bar renders the server-tracked
+  // VIDEO watch percent (`LessonProgress.progress`), not whole-lesson
+  // progress — it must be labeled as video progress so `Completed + 0%`
+  // can never read as a contradiction.
+  "course.242": {
+    ar: "تقدم الفيديو",
+    en: "Video progress",
+  },
 
   // ---------- Mock Exam: RANDOM/FIXED pool & manual Question Bank ----------
   // A published exam whose eligible pool is empty is a configuration problem

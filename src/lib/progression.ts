@@ -274,7 +274,8 @@ export type ProgressionUnmetCode =
   | "QUIZ_NOT_PASSED"
   | "HOMEWORK_NOT_SUBMITTED"
   | "PREVIOUS_INCOMPLETE"
-  | "ABSENCE_HOLD";
+  | "ABSENCE_HOLD"
+  | "NO_COMPLETION_REQUIREMENTS";
 
 /** Arabic-first human-readable reason per code (RTL, no tech jargon). */
 export const PROGRESSION_REASON_AR: Record<ProgressionUnmetCode, string> = {
@@ -283,6 +284,7 @@ export const PROGRESSION_REASON_AR: Record<ProgressionUnmetCode, string> = {
   HOMEWORK_NOT_SUBMITTED: "سلّم الـHomework الأول",
   PREVIOUS_INCOMPLETE: "خلّص الدرس اللي قبله الأول",
   ABSENCE_HOLD: "عندك غياب محتاج تعويض",
+  NO_COMPLETION_REQUIREMENTS: "لا توجد متطلبات إكمال لهذا الدرس",
 };
 
 /**
@@ -339,7 +341,10 @@ export type LessonEvaluation = {
   lessonId: string;
   order: number;
   state: ProgressionState;
-  /** True when every REQUIRED condition of this lesson is satisfied. */
+  /**
+   * True when the lesson has ≥1 requirement AND every required condition is
+   * satisfied. A zero-requirement lesson is NEVER completed (boundary).
+   */
   completed: boolean;
   /** True when the student is allowed to open this lesson. */
   unlocked: boolean;
@@ -481,7 +486,11 @@ export function evaluateProgressionCore(input: {
       !homeworkRequired ||
       lesson.homeworkIds.every((h) => facts.submittedHomeworkIds.has(h));
 
-    const completed = videoDone && quizDone && homeworkDone;
+    // Empty lessons (no video, quiz, or homework requirement) are chain
+    // BOUNDARIES, never auto-completed: completion needs ≥1 requirement.
+    const hasAnyRequirement = videoRequired || quizRequired || homeworkRequired;
+    const completed =
+      hasAnyRequirement && videoDone && quizDone && homeworkDone;
     const chainUnlocked = previousCompleted;
     const holdBlocked =
       holdBoundaryIndex !== null && i > holdBoundaryIndex;
@@ -502,9 +511,13 @@ export function evaluateProgressionCore(input: {
       if (!chainUnlocked) unmet.push("PREVIOUS_INCOMPLETE");
       if (holdBlocked) unmet.push("ABSENCE_HOLD");
     } else if (!completed) {
-      if (!videoDone) unmet.push("VIDEO_INCOMPLETE");
-      if (!quizDone) unmet.push("QUIZ_NOT_PASSED");
-      if (!homeworkDone) unmet.push("HOMEWORK_NOT_SUBMITTED");
+      if (!hasAnyRequirement) {
+        unmet.push("NO_COMPLETION_REQUIREMENTS");
+      } else {
+        if (!videoDone) unmet.push("VIDEO_INCOMPLETE");
+        if (!quizDone) unmet.push("QUIZ_NOT_PASSED");
+        if (!homeworkDone) unmet.push("HOMEWORK_NOT_SUBMITTED");
+      }
     }
 
     // EFFECTIVE state: access first. `completed` stays the historical fact
@@ -1454,6 +1467,11 @@ export async function evaluateStudentCatchup(
         eligible: true,
       };
     }
+    // Catch-up uses only requirements that ACTUALLY exist. Eligibility is
+    // "nothing pending" (vacuous for an empty missed lesson: no recovery
+    // work exists to do, so the hold resolves while the empty lesson itself
+    // stays a chain boundary) — deliberately NOT `evaluation.completed`,
+    // which is false for empty lessons by the progression contract above.
     const unmet: ProgressionUnmetCode[] = [];
     if (evaluation.video.required && !evaluation.video.done) unmet.push("VIDEO_INCOMPLETE");
     if (evaluation.quiz.required && !evaluation.quiz.done) unmet.push("QUIZ_NOT_PASSED");
@@ -1475,7 +1493,7 @@ export async function evaluateStudentCatchup(
       },
       unmet,
       reason: reasonTextFor(unmet.length > 0 ? unmet : (["ABSENCE_HOLD"] as const)),
-      eligible: evaluation.completed,
+      eligible: unmet.length === 0,
     };
   });
 
@@ -1523,6 +1541,8 @@ export async function syncDerivedCompletion(
     const courseId = resolveLessonCourseId(lesson as LessonChain);
     if (!courseId) return { completed: false, synced: false };
     const progression = await loadCourseProgression(studentId, courseId);
+    // Sync mirrors the derivation: empty (zero-requirement) lessons evaluate
+    // to `completed: false`, so the guard below exits before any write.
     const evaluation = progression.byLessonId.get(lessonId) ?? null;
     if (!evaluation?.completed) return { completed: false, synced: false };
     const existing = await db.lessonProgress.findUnique({

@@ -509,6 +509,24 @@ test("Phase B: student session media alignment", async () => {
     data: { lessonId: L5.id, title: "L5 quiz", titleAr: "كوييز 1-5", trackScope: "SHARED" },
   });
 
+  // Manual-QA stabilization: L1 (modern recordings only — never progression
+  // inputs) is an EMPTY lesson, i.e. a chain BOUNDARY the engine no longer
+  // auto-completes. The media probes behind it cross via the INTENDED
+  // mechanism — admin access overrides for the Arabic student — which unlock
+  // without fabricating completion or requirements. L5/L6 keep NO override
+  // (the gate quiz still locks L6: B7 + the N scenario), and the Language
+  // student keeps none (track refusal still fires first: E2).
+  for (const lessonId of [L4.id, L2.id, L3.id]) {
+    await client.progressionOverride.create({
+      data: {
+        studentId: sAr.student.id,
+        lessonId,
+        reason: "phase B fixture: cross the empty-lesson boundary",
+        createdByUserId: "phaseb-admin",
+      },
+    });
+  }
+
   // ===========================================================================
   // M1 (run FIRST, before any video-progress seeding): the legacy 95% gate is
   // still enforced by the lesson progress route. L4 has a videoUrl and the
@@ -519,8 +537,10 @@ test("Phase B: student session media alignment", async () => {
   eq(m1.status, 403, "M1: 95% video gate still refuses completion without watch credit");
 
   // Seed the legacy watch credit (simulates a fully watched legacy video) so
-  // L4 is complete and the rest of the chain unlocks — for BOTH course-A
-  // students, so their later denials cannot be explained away by a lock.
+  // L4 SATISFIES its video requirement — for BOTH course-A students, so
+  // their later denials cannot be explained away by an unsatisfied video.
+  // (Chain position behind the L1 boundary comes from the fixture overrides
+  // above for the Arabic student; the Language student never opens L4.)
   for (const s of [sAr.student, sLang.student]) {
     await client.lessonProgress.create({
       data: {
@@ -817,7 +837,15 @@ test("Phase B: student session media alignment", async () => {
   eq(m2.status, 200, "M2: modern lesson opens");
   eq(m2.json.requirements?.video?.required, false, "M2: a modern video creates NO progression video requirement");
   const m3 = await POST_JSON(R.lessonProgress, `http://t/api/lessons/${L1.id}/progress`, { completed: true }, { id: L1.id });
-  eq(m3.status, 200, "M2: completion of a modern lesson is not blocked by the video world");
+  // Manual-QA stabilization: L1 is EMPTY (modern recordings are never
+  // progression inputs — required === false pinned above), so it is a chain
+  // boundary that can never complete. The claim is refused with the boundary
+  // reason — NOT because a video requirement was fabricated (none was), but
+  // because a zero-requirement lesson is never done. No isCompleted row is
+  // written by this refusal.
+  eq(m3.status, 403, "M2: completion of a modern-only (empty) lesson is refused at the boundary");
+  eq(m3.json?.reasonCode, "NO_COMPLETION_REQUIREMENTS", "M2: the refusal names the boundary reason");
+  eq(m3.json?.code, "REQUIREMENTS_UNMET", "M2: the refusal keeps the structured unmet shape");
   // Source pins: the video rule lives in the canonical engine (Phase H
   // relocation) and still derives requiredness from Lesson.videoUrl ONLY —
   // recordings never create a requirement. The adapter owns no rule.
@@ -977,8 +1005,8 @@ test("Phase B: student session media alignment", async () => {
   ok(/student\.group/.test(currentCourseRoute), "T6: the reader resolves from the student's own group row");
   ok(!/["']phaseb-/.test(currentCourseRoute), "T6: the reader hardcodes no course slug");
   const courseView = read("src/components/course/student-course.tsx");
-  ok(/fetch\("\/api\/students\/me\/current-course"\)/.test(courseView), "T6: the Course view asks the authorized reader when no navParam");
-  ok(/setNavParam\(slug\)/.test(courseView), "T6: the view navigates through the SAME navParam mechanism");
+  ok(/fetch\("\/api\/students\/me\/current-course"\)/.test(courseView), "T6: the Course view asks the authorized reader");
+  ok(/setNavParam\(authoritativeSlug\)/.test(courseView), "T6: the view navigates through the SAME navParam mechanism");
   ok(!/["']phaseb-/.test(courseView), "T6: the Course view hardcodes no course slug");
   // The dashboard "كل الكورس" flow is unchanged: it still passes its own
   // group.course.slug straight into navParam.

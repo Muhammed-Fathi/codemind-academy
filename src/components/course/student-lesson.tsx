@@ -457,7 +457,13 @@ export function StudentLessonView() {
     }
   };
 
+  // Manual-QA stabilization: prev/next MUST move the store's `lessonId` — the
+  // fetch key (`activeLessonId`) — not just `navParam`, which nothing on
+  // this view reads. (Pre-existing: identical on main; Phase H never touched
+  // it.) Targets stay the server's canonical chain ids; a locked target
+  // renders the server's denial panel — the client never pre-filters.
   const gotoLesson = (id: string) => {
+    setLessonId(id);
     setView("student-lesson");
     setNavParam(id);
   };
@@ -564,6 +570,9 @@ export function StudentLessonView() {
           </div>
         </div>
         <div className="flex items-center gap-2 pt-1">
+          <span className="text-[11px] text-muted-foreground font-medium shrink-0">
+            {t("course.242")}
+          </span>
           <Progress value={progressPct} className="flex-1" />
           <span className="text-xs text-muted-foreground font-medium">
             {progressPct}%
@@ -1013,15 +1022,26 @@ function RequirementRow({
   detail?: string;
 }) {
   const t = useT();
+  // Manual-QA stabilization: the canonical trichotomy, branched on
+  // `required` FIRST (the engine reports `done=true` for absent components,
+  // which must never render a green check):
+  //   NOT_REQUIRED       → neutral circle + "غير مطلوب"
+  //   REQUIRED_INCOMPLETE → neutral circle (+ detail, e.g. video %)
+  //   REQUIRED_COMPLETE   → green check (+ detail)
+  const state = !req.required
+    ? "absent"
+    : req.done
+      ? "done"
+      : "pending";
   return (
     <div className="flex items-center gap-3 rounded-lg border border-border/60 px-3 py-2">
-      {req.done ? (
+      {state === "done" ? (
         <CheckCircle2 className="w-4 h-4 text-primary shrink-0" />
       ) : (
         <Circle className="w-4 h-4 text-muted-foreground/40 shrink-0" />
       )}
       <span className="flex-1 min-w-0 text-sm">{label}</span>
-      {!req.required ? (
+      {state === "absent" ? (
         <Badge
           variant="outline"
           className="text-[10px] text-muted-foreground shrink-0"

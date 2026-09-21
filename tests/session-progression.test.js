@@ -567,18 +567,25 @@ async function main() {
   ok(unlocked.has("L1") && unlocked.has("L2") && !unlocked.has("L3"), "only L1 and L2 are unlocked");
   ok(!unlocked.has("LG1") && !unlocked.has("MX-C"), "the unlock set is scoped to the requested course");
 
-  section("11. A lesson with no components can never lock a student forever");
+  section("11. An empty lesson is a chain boundary, never auto-complete");
   // Swap in a catalogue where L1 has no video, quiz or assignment.
+  // Manual-QA stabilization (approved deviation 1): vacuous completion is
+  // the WRONG product behavior — a zero-requirement lesson can never be
+  // "done", so it stays UNLOCKED + incomplete (reachable, named boundary)
+  // and the chain behind it stays LOCKED until an admin configures real
+  // requirements or grants an override.
   CATALOGUE = defaultCatalogue().map((l) =>
     l.id === "L1" ? { ...l, videoUrl: null, quizzes: [], homeworks: [] } : l
   );
   reset();
   prog = await SP.getCourseSessionProgress("S1", COURSE);
-  ok(prog.sessions[0].completed === true, "an empty session counts as complete");
+  ok(prog.sessions[0].completed === false, "an empty session is NOT complete (no vacuous completion)");
+  ok(prog.sessions[0].unlocked === true && prog.sessions[0].state === "UNLOCKED", "the empty boundary itself stays reachable");
+  ok(prog.sessions[0].reasonCode === "NO_COMPLETION_REQUIREMENTS", "the boundary carries its stable reason code");
   ok(prog.sessions[0].video.required === false, "missing video is not a requirement");
   ok(prog.sessions[0].quiz.required === false, "missing quiz is not a requirement");
   ok(prog.sessions[0].assignment.required === false, "missing assignment is not a requirement");
-  ok(prog.sessions[1].unlocked === true, "the next session unlocks");
+  ok(prog.sessions[1].unlocked === false && prog.sessions[1].state === "LOCKED", "the session after an empty boundary stays LOCKED");
   CATALOGUE = defaultCatalogue();
 
   section("11b. Archived lessons leave the progression universe (Phase 11)");
