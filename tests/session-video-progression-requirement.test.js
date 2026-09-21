@@ -493,7 +493,7 @@ test("SessionVideo progression requirement (REQUIRED-vs-OPTIONAL)", async () => 
   );
   eq(a6a.status, 422, "A6: required + 49% → 422 (below the floor, not clamped to 50)");
   eq(a6a.json.code, "INVALID_REQUIRED_PERCENT", "A6: the machine code names the contract");
-  eq(a6a.json.error, "نسبة الإكمال يجب أن تكون رقمًا بين 50 و 100", "A6: the Arabic message is exact (api.361)");
+  eq(a6a.json.error, "نسبة المشاهدة المطلوبة لازم تكون بين 50% و100%.", "A6: the Arabic message is exact (api.361)");
   const a6b = await POST_FORM(
     R.adminVideos, "http://t/api/admin/session-videos",
     uploadForm({ lessonId: Lbound.id, required: "true", percent: "101" })
@@ -529,7 +529,7 @@ test("SessionVideo progression requirement (REQUIRED-vs-OPTIONAL)", async () => 
   });
   eq(a7.status, 422, "A7: a non-numeric percent (external path) → 422");
   eq(a7.json.code, "INVALID_REQUIRED_PERCENT", "A7: the machine code names the contract");
-  eq(a7.json.error, "نسبة الإكمال يجب أن تكون رقمًا بين 50 و 100", "A7: the Arabic message is exact (api.361)");
+  eq(a7.json.error, "نسبة المشاهدة المطلوبة لازم تكون بين 50% و100%.", "A7: the Arabic message is exact (api.361)");
   eq(await client.sessionVideo.count({}), videosBefore + 5, "A7: only the five accepted creates persisted (A4×4 + A5)");
 
   // ===========================================================================
@@ -1023,7 +1023,7 @@ test("SessionVideo progression requirement (REQUIRED-vs-OPTIONAL)", async () => 
   ok(dict.includes('"admin.626": { ar: "نسبة المشاهدة المطلوبة (%)", en: "Required watch percent (%)" }'), "N7: admin.626 copy is exact");
   ok(dict.includes('"admin.632": { ar: "مطلوب", en: "Required" }'), "N7: admin.632 copy is exact");
   ok(dict.includes("لا يمكن جعل فيديو خارجي مطلوبًا لإكمال الدرس"), "N7: api.360 Arabic ships");
-  ok(dict.includes("نسبة الإكمال يجب أن تكون رقمًا بين 50 و 100"), "N7: api.361 Arabic ships");
+  ok(dict.includes("نسبة المشاهدة المطلوبة لازم تكون بين 50% و100%."), "N7: api.361 Arabic ships");
   const listRoute = read("src/app/api/students/me/session-videos/route.ts");
   ok(listRoute.includes("satisfied: trackable && percent >= v.requiredPercent,"), "N8: the list computes the LIVE verdict per video");
   const beatRoute = read("src/app/api/students/me/session-videos/[id]/progress/route.ts");

@@ -2618,7 +2618,7 @@ export const DICT_2026: Record<string, DictEntry> = {
     en: "An external video cannot be required for lesson completion",
   },
   "api.361": {
-    ar: "نسبة الإكمال يجب أن تكون رقمًا بين 50 و 100",
-    en: "The completion percent must be a number between 50 and 100",
+    ar: "نسبة المشاهدة المطلوبة لازم تكون بين 50% و100%.",
+    en: "The required watch percent must be between 50% and 100%.",
   },
 };
