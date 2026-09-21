@@ -50,7 +50,7 @@ import {
   rateLimitedResponse,
 } from "@/lib/api";
 import { boundedText } from "@/lib/teacher-content";
-import { createNotificationIfAllowed } from "@/lib/notify";
+import { createTeacherNoteWithFanout } from "@/lib/teacher-notes";
 
 /** Note length contract (shared with the UI hint + the suite). */
 export const TEACHER_NOTE_MIN = 3;
@@ -137,57 +137,17 @@ export async function POST(req: NextRequest) {
     .find((s) => s.id === studentId);
   if (!inScopeStudent) return err(tApi("api.299"), 404);
 
-  const created = await db.teacherNote.create({
-    data: {
-      teacherId: teacher.id,
-      studentId,
-      note: note.value,
-    },
+  // The SHARED teacher-send write side (note row + audit + parent fan-out)
+  // — manual notes and readiness reminders run ONE implementation.
+  const sent = await createTeacherNoteWithFanout(db, {
+    teacherId: teacher.id,
+    actorUserId: user.id,
+    studentId,
+    note: note.value,
+    teacherName: teacher.user.name,
+    studentName: inScopeStudent.user.name,
+    tApi,
   });
 
-  // ADMIN OVERSIGHT — who wrote what, when. Failure-tolerant: the note is
-  // committed; an audit hiccup must not erase the teacher's work.
-  await db.auditLog
-    .create({
-      data: {
-        userId: user.id,
-        action: "TEACHER_NOTE_CREATE",
-        entity: "TeacherNote",
-        entityId: created.id,
-        details: JSON.stringify({ studentId, length: note.value.length }).slice(
-          0,
-          1000
-        ),
-      },
-    })
-    .catch(() => undefined);
-
-  // PARENT FAN-OUT — every parent LINKED to this student gets one
-  // ANNOUNCEMENT notification (preferences + quiet hours honoured by the
-  // shared helper). Link stays NULL on purpose: the deep-link scheme only
-  // knows lesson/video/quiz/homework, and a parent notification to a
-  // student-owned view would be a scope breach. The parent dashboard
-  // already renders the note (TeacherNotesCard).
-  const links = await db.parentStudentLink.findMany({
-    where: { studentId },
-    include: { parent: { include: { user: { select: { id: true, name: true } } } } },
-  });
-  let notifiedParents = 0;
-  for (const link of links) {
-    const parentId = link.parent?.user?.id;
-    if (!parentId) continue;
-    const delivered = await createNotificationIfAllowed({
-      userId: parentId,
-      type: "ANNOUNCEMENT",
-      title: tApi("api.301"),
-      message: tApi("api.302", {
-        p1: teacher.user.name,
-        p2: inScopeStudent.user.name,
-      }),
-      link: null,
-    });
-    if (delivered) notifiedParents++;
-  }
-
-  return ok({ note: { id: created.id, createdAt: created.createdAt }, notifiedParents }, { status: 201 });
+  return ok({ note: { id: sent.noteId, createdAt: sent.createdAt }, notifiedParents: sent.notifiedParents }, { status: 201 });
 }

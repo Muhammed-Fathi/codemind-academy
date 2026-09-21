@@ -112,7 +112,7 @@ async function main() {
     // migration, so the frozen history is 12 + 1 + 2 + 1 = 16. Every PREVIOUS
     // migration must still be present — which is what the assertion below
     // actually protects.
-    ok(migs.length === 17, `17 migrations preserved (found ${migs.length})`);
+    ok(migs.length === 18, `18 migrations preserved (found ${migs.length})`);
     ok(
       migs.includes("20260915180000_phase26d_quiz_attempt_architecture") &&
         migs.includes("20260919120000_phase_f_live_session_lifecycle") &&
@@ -135,7 +135,7 @@ async function main() {
     // AbsenceHoldStatus): 56 + 4 = 60 and 21 + 2 = 23.
     // Phase H added the ProgressionOverride model (no new enum): 60 + 1 = 61.
     ok(parsed.models.size === 61, `61 models parsed (found ${parsed.models.size})`);
-    ok(parsed.enums.size === 23, `23 enums parsed (found ${parsed.enums.size})`);
+    ok(parsed.enums.size === 24, `24 enums parsed (found ${parsed.enums.size})`);
     // No provider-specific column types or attributes anywhere. (Type check is
     // done on PARSED field types — a substring sweep would false-positive on
     // column names like `sizeBytes`.)
@@ -183,7 +183,9 @@ async function main() {
     // .attachmentId/.gradedById): 87 + 3 = 90.
     // Phase H added 2 FK relations (ProgressionOverride → Student/Lesson;
     // the actor columns are deliberately plain TEXT, never FKs): 90 + 2 = 92.
-    ok(fks === 92, `92 FK relations found (found ${fks})`);
+    // Requirement modes added 1 FK relation (SessionVideo → LiveSession,
+    // the explicit absence source): 92 + 1 = 93.
+    ok(fks === 93, `93 FK relations found (found ${fks})`);
     ok(unbalanced === 0, "every FK is balanced with a known referential action");
     // Migration order: total, deterministic, parents before children.
     const order1 = pgLib.migrationOrder(parsed);
@@ -204,12 +206,13 @@ async function main() {
     // 21 enums + 55 tables + 70 indexes: Phase 26B added Group_trackScope_idx
     // (owner-approved Group.trackScope), so the index count grew 69 → 70.
     // Phase 26D: +1 table (QuizRetryGrant) and +3 indexes on it.
-    // 23 enums + 61 tables + the 90 explicit CREATE INDEX statements (87
-    // through Phase G + the 3 Phase H ProgressionOverride indexes) — the
-    // exact statement count is derived, never hand-tuned.
+    // 24 enums + 61 tables + the 91 explicit CREATE INDEX statements (87
+    // through Phase G + the 3 Phase H ProgressionOverride indexes + the
+    // SessionVideo liveSessionId index) — the exact statement count is
+    // derived, never hand-tuned.
     ok(
-      stmts.length === 23 + 61 + 90,
-      `baseline has ${23 + 61 + 90} statements (found ${stmts.length})`
+      stmts.length === 24 + 61 + 91,
+      `baseline has ${24 + 61 + 91} statements (found ${stmts.length})`
     );
     ok(/CREATE INDEX "Group_trackScope_idx"/.test(ddl), "baseline carries the Phase 26B group-audience index");
     const longIdents = [...ddl.matchAll(/"([A-Za-z0-9_]{64,})"/g)];

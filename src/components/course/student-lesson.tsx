@@ -58,6 +58,9 @@ type SessionVideoRequirementItem = {
   trackable: boolean;
   currentPercent: number;
   completed: boolean;
+  /** Loader-attached: the video's mode + THIS student's verdict. */
+  requirementMode?: string;
+  applicability?: string;
 };
 
 type SessionRequirement = {
@@ -70,6 +73,8 @@ type SessionRequirement = {
   completedCount?: number;
   /** Video only: the per-video decomposition (REQUIRED videos only). */
   items?: SessionVideoRequirementItem[];
+  /** Video only: ABSENT_STUDENTS recordings exempt for THIS student. */
+  exempt?: SessionVideoRequirementItem[];
 };
 
 type SessionRequirements = {
@@ -295,6 +300,23 @@ export function StudentLessonView() {
       .finally(() => setLoading(false));
   }, [activeLessonId, t]);
 
+  // Canonical refresh: verified watch beats re-read the lesson payload so
+  // the requirement card + header advance WITHOUT a manual reload. Silent
+  // (no skeleton flash) and debounced (a beat storm never spams the API).
+  const lastCanonicalRefreshRef = React.useRef(0);
+  const refreshCanonical = React.useCallback(() => {
+    if (!activeLessonId) return;
+    const now = Date.now();
+    if (now - lastCanonicalRefreshRef.current < 10000) return;
+    lastCanonicalRefreshRef.current = now;
+    fetch(`/api/lessons/${encodeURIComponent(activeLessonId)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d) setData(d);
+      })
+      .catch(() => {});
+  }, [activeLessonId]);
+
   React.useEffect(() => {
     reload();
   }, [reload]);
@@ -426,7 +448,12 @@ export function StudentLessonView() {
     );
   }
 
-  const progressPct = data.progress?.progress || 0;
+  // The header percent: the CANONICAL video value when video is required
+  // (the binding bottleneck the card decomposes below), the historical
+  // marker otherwise — one meaning per %, shared with the dashboard
+  // Continue bar.
+  const videoReq = data.requirements?.video;
+  const progressPct = videoReq?.required ? videoReq.value : data.progress?.progress || 0;
   // Phase H — completion is the canonical engine verdict. The route already
   // converges `progress.isCompleted` onto it, but the requirements row is the
   // first-class source (it survives even when the progress row is absent).
@@ -617,6 +644,7 @@ export function StudentLessonView() {
               lessonId={data.lesson.id}
               legacyVideoUrl={data.lesson.videoUrl}
               lessonTitle={pickAuto(data.lesson.titleAr, data.lesson.title)}
+              onWatchProgress={refreshCanonical}
             />
           </motion.div>
 
@@ -1128,6 +1156,10 @@ type LessonVideoItem = {
   src: string | null;
   isExternal: boolean;
   isRequiredForProgression: boolean;
+  /** Requirement mode + THIS student's engine verdict (absent = legacy shape). */
+  requirementMode?: string;
+  applicable?: boolean;
+  applicability?: string;
   trackable: boolean;
   progress: { percent: number; isCompleted: boolean; watchedSec: number; satisfied: boolean };
 };
@@ -1136,10 +1168,13 @@ function LessonVideoSection({
   lessonId,
   legacyVideoUrl,
   lessonTitle,
+  onWatchProgress,
 }: {
   lessonId: string;
   legacyVideoUrl: string | null;
   lessonTitle: string;
+  /** Fired on every verified watch beat (the parent refreshes, debounced). */
+  onWatchProgress: () => void;
 }) {
   const t = useT();
   // null = still loading; [] = loaded, none eligible; list = loaded.
@@ -1226,7 +1261,7 @@ function LessonVideoSection({
             <SessionVideoPlayer
               key={active.id}
               video={active}
-              onProgress={(percent, isCompleted, satisfied) =>
+              onProgress={(percent, isCompleted, satisfied) => {
                 setVideos((prev) =>
                   prev?.map((v) =>
                     v.id === active.id
@@ -1236,8 +1271,11 @@ function LessonVideoSection({
                         }
                       : v
                   ) ?? prev
-                )
-              }
+                );
+                // The requirement card + header read the CANONICAL payload,
+                // not this playlist state — refresh it (debounced upstream).
+                onWatchProgress();
+              }}
             />
             {videos.length > 1 && (
               <div className="rounded-lg border border-border/60 p-3 lg:self-start">
@@ -1260,7 +1298,7 @@ function LessonVideoSection({
                         }`}
                       >
                         <div className="grid place-items-center w-8 h-8 shrink-0 rounded-lg bg-primary/10 text-primary">
-                          {(v.isRequiredForProgression ? v.progress.satisfied : v.progress.isCompleted) ? (
+                          {((v.applicable ?? v.isRequiredForProgression) ? v.progress.satisfied : v.progress.isCompleted) ? (
                             <CheckCircle2 className="w-4 h-4" />
                           ) : (
                             <PlayCircle className="w-4 h-4" />
@@ -1288,7 +1326,7 @@ function LessonVideoSection({
                             />
                           )}
                         </div>
-                        {v.trackable && !v.isRequiredForProgression && (
+                        {v.trackable && !(v.applicable ?? v.isRequiredForProgression) && (
                           <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
                             {v.progress.percent}%
                           </span>

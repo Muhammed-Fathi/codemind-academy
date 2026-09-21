@@ -89,6 +89,10 @@ type SessionVideo = {
   lesson: SessionVideoLesson | null;
   requiredPercent: number;
   isRequiredForProgression: boolean;
+  /** Requirement mode + absence-source link (from the GET mapping). */
+  requirementMode: string;
+  liveSessionId: string | null;
+  liveSession: { id: string; title: string; titleAr: string } | null;
   isPublished: boolean;
   publishedAt: string | null;
   source: "URL" | "UPLOAD";
@@ -423,12 +427,18 @@ export function SessionVideosView() {
                       >
                         {tr(v.isPublished ? "admin.211" : "admin.212")}
                       </Badge>
-                      {v.isRequiredForProgression && (
+                      {(v.requirementMode ??
+                        (v.isRequiredForProgression ? "ALL_STUDENTS" : "OPTIONAL")) !==
+                        "OPTIONAL" && (
                         <Badge
                           variant="outline"
                           className="border-primary/40 bg-primary/10 text-primary text-[10px]"
                         >
-                          {tr("admin.632")}
+                          {tr(
+                            v.requirementMode === "ABSENT_STUDENTS"
+                              ? "admin.637"
+                              : "admin.632"
+                          )}
                         </Badge>
                       )}
                       <div className="flex items-center gap-1.5">
@@ -523,10 +533,18 @@ function PublishVideoCard({
   const [description, setDescription] = React.useState("");
   const [videoUrl, setVideoUrl] = React.useState("");
   const [file, setFile] = React.useState<File | null>(null);
-  // Progression requirement: OPTIONAL by default (false), threshold 95 —
+  // Progression requirement: OPTIONAL by default, threshold 95 —
   // the same defaults the server applies when the fields are absent.
-  const [isRequired, setIsRequired] = React.useState(false);
   const [requiredPercent, setRequiredPercent] = React.useState("95");
+  // Explicit requirement mode + absence-source session (the selector owns
+  // both; the legacy REQUIRED toggle is retired — the flag the payloads
+  // still carry is DERIVED from the mode below for older servers).
+  const [requirementMode, setRequirementMode] = React.useState("OPTIONAL");
+  const [liveSessionId, setLiveSessionId] = React.useState("");
+  const [eligibleSessions, setEligibleSessions] = React.useState<EligibleSession[]>([]);
+  // The lesson home starts empty, so the session list mounts already
+  // resolved (empty); the key block below re-arms loading per lesson.
+  const [sessionsLoaded, setSessionsLoaded] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   // The lesson the video belongs to — REQUIRED (Phase A). Preselected when
   // the admin deep-linked here from the lesson's detail page.
@@ -570,6 +588,44 @@ function PublishVideoCard({
     preselectAppliedRef.current = initialLessonId;
     setLessonId(initialLessonId);
   }, [initialLessonId, eligibleLessonIds]);
+  // Eligible absence-source sessions for the ABSENT_STUDENTS picker. The
+  // selection clears whenever the lesson home changes (a session from
+  // another lesson must never ride along); a failed fetch degrades to an
+  // empty list, which disables the absent option with its explanation.
+  // Lesson-home switch, adjusted during render: the picked session never
+  // rides along to another lesson, and the fetch below only subscribes.
+  const [sessionsLessonKey, setSessionsLessonKey] = React.useState(lessonId);
+  if (sessionsLessonKey !== lessonId) {
+    setSessionsLessonKey(lessonId);
+    setLiveSessionId("");
+    if (!lessonId) {
+      setEligibleSessions([]);
+      setSessionsLoaded(true);
+    } else {
+      setSessionsLoaded(false);
+    }
+  }
+  React.useEffect(() => {
+    if (!lessonId) return;
+    let cancelled = false;
+    fetch(
+      `/api/admin/session-videos/eligible-sessions?batchId=${encodeURIComponent(batch.id)}&lessonId=${encodeURIComponent(lessonId)}`
+    )
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (cancelled) return;
+        setEligibleSessions(Array.isArray(d?.sessions) ? d.sessions : []);
+        setSessionsLoaded(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setEligibleSessions([]);
+        setSessionsLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [lessonId, batch.id]);
 
   const reset = () => {
     setTitle("");
@@ -578,7 +634,8 @@ function PublishVideoCard({
     setVideoUrl("");
     setFile(null);
     setLessonId("");
-    setIsRequired(false);
+    setRequirementMode("OPTIONAL");
+    setLiveSessionId("");
     setRequiredPercent("95");
   };
 
@@ -655,8 +712,8 @@ function PublishVideoCard({
     // clamping — an out-of-range threshold is a 422, never a silent rewrite).
     // The client only fails fast on non-numeric input with the IDENTICAL
     // api.361 copy (no request, value preserved for correction); REQUIRED on
-    // an external URL is unexpressible (no verified watch %) so the toggle is
-    // disabled for that method and the payload forces OPTIONAL there.
+    // an external URL is unexpressible (no verified watch %) so the selector
+    // forces OPTIONAL for that method (stated in the form).
     // The RAW string rides every creation path (presigned completeFields +
     // buffered fallback + URL JSON) so the server validates exactly what the
     // admin typed; a 422 surfaces its Arabic `error` with the value intact.
@@ -666,7 +723,15 @@ function PublishVideoCard({
       return;
     }
     const threshold = requiredPercent;
-    const requiredForProgression = method === "UPLOAD" && isRequired;
+    // Trackability gates expression: non-OPTIONAL modes are unexpressible on
+    // an external URL (no verified watch %), so the payload forces OPTIONAL
+    // there — stated in the form, re-enforced by the server on write.
+    const trackable = method === "UPLOAD";
+    const modeValue = trackable ? requirementMode : "OPTIONAL";
+    const sessionValue = modeValue === "ABSENT_STUDENTS" ? liveSessionId : "";
+    // Dual-written legacy flag, derived from the mode (older readers keep
+    // their exact meaning: non-OPTIONAL ⇔ required for the audience).
+    const requiredForProgression = modeValue !== "OPTIONAL";
     lastPublishRef.current = publish;
 
     if (method === "UPLOAD") {
@@ -688,6 +753,8 @@ function PublishVideoCard({
             description,
             publish,
             isRequiredForProgression: requiredForProgression,
+            requirementMode: modeValue,
+            liveSessionId: sessionValue,
             requiredPercent: threshold,
           }, // raw string — the complete route validates, never coerces
           // No browser-side hash for videos: a 512 MB buffer just to hash it
@@ -703,6 +770,8 @@ function PublishVideoCard({
           form.set("description", description);
           form.set("publish", String(publish));
           form.set("isRequiredForProgression", String(requiredForProgression));
+          form.set("requirementMode", modeValue);
+          form.set("liveSessionId", sessionValue);
           form.set("requiredPercent", String(threshold));
           form.set("file", f);
           try {
@@ -745,6 +814,8 @@ function PublishVideoCard({
           videoUrl,
           publish,
           isRequiredForProgression: requiredForProgression,
+          requirementMode: modeValue,
+          liveSessionId: sessionValue,
           requiredPercent: threshold,
         }),
       });
@@ -929,24 +1000,27 @@ function PublishVideoCard({
           />
         </div>
 
-        {/* Progression requirement — explicit REQUIRED-vs-OPTIONAL per video.
-            The threshold keeps the existing 50–100 range rule (default 95).
-            REQUIRED on an external URL is unexpressible (no verified watch
-            %), so the toggle is disabled for that method — stated in the
-            form, re-enforced by the server on every creation path. */}
+        {/* Progression requirement — explicit OPTIONAL / ALL_STUDENTS /
+            ABSENT_STUDENTS per video. The threshold keeps the existing
+            50–100 range rule (default 95). Non-OPTIONAL modes on an external
+            URL are unexpressible (no verified watch %), so the options are
+            disabled for that method — stated in the form, re-enforced by
+            the server on every creation path. */}
         <div className="space-y-2 rounded-lg border border-border/60 p-3">
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id="sv-required"
-              checked={method === "UPLOAD" && isRequired}
-              onCheckedChange={(c) => setIsRequired(c === true)}
-              disabled={busy || method !== "UPLOAD"}
-            />
-            <Label htmlFor="sv-required">{tr("admin.625")}</Label>
-          </div>
-          {method !== "UPLOAD" && (
-            <p className="text-[11px] text-muted-foreground">{tr("admin.628")}</p>
-          )}
+          <RequirementModeSelector
+            idPrefix="sv"
+            mode={requirementMode}
+            onModeChange={setRequirementMode}
+            liveSessionId={liveSessionId}
+            onSessionChange={setLiveSessionId}
+            trackable={method === "UPLOAD"}
+            lessonId={lessonId}
+            sessions={eligibleSessions}
+            sessionsLoaded={sessionsLoaded}
+            currentSession={null}
+            disabled={busy}
+            tr={tr}
+          />
           <div>
             <Label htmlFor="sv-percent">{tr("admin.626")}</Label>
             <Input
@@ -992,8 +1066,140 @@ function PublishVideoCard({
   );
 }
 
-/** Per-row edit form: metadata + the progression requirement. The REQUIRED
-    toggle is disabled for URL-source rows (untrackable) with the same
+/** A LiveSession the ABSENT_STUDENTS picker may offer (see
+    GET /api/admin/session-videos/eligible-sessions). */
+type EligibleSession = {
+  id: string;
+  title: string;
+  titleAr: string;
+  startAt: string;
+  status: string;
+  groupName: string | null;
+  finalized: boolean;
+};
+
+/** Progression-requirement mode selector, shared by the publish and edit
+    forms. Three explicit options (admin.635–637, exact platform copy):
+    OPTIONAL (extra content), ALL_STUDENTS (everyone), ABSENT_STUDENTS (only
+    students with an unexcused absence for the linked session). Non-OPTIONAL
+    modes are unexpressible for untrackable (URL) media; ABSENT_STUDENTS
+    additionally needs a lesson home plus at least one eligible session —
+    otherwise the option is disabled WITH the reason stated, never offered
+    dead. The server re-enforces every rule on write. All styling uses theme
+    tokens (light/dark safe by construction). */
+function RequirementModeSelector({
+  idPrefix,
+  mode,
+  onModeChange,
+  liveSessionId,
+  onSessionChange,
+  trackable,
+  lessonId,
+  sessions,
+  sessionsLoaded,
+  currentSession,
+  disabled,
+  tr,
+}: {
+  idPrefix: string;
+  mode: string;
+  onModeChange: (mode: string) => void;
+  liveSessionId: string;
+  onSessionChange: (id: string) => void;
+  trackable: boolean;
+  lessonId: string;
+  sessions: EligibleSession[];
+  sessionsLoaded: boolean;
+  currentSession: { id: string; title: string; titleAr: string } | null;
+  disabled: boolean;
+  tr: (key: string) => string;
+}) {
+  const absentBlockedReason = !trackable
+    ? tr("admin.628")
+    : !lessonId
+      ? tr("admin.640")
+      : sessionsLoaded && sessions.length === 0
+        ? tr("admin.641")
+        : null;
+  const absentEnabled = trackable && !!lessonId && sessionsLoaded && sessions.length > 0;
+  // A previously-linked session that no longer qualifies (e.g. cancelled
+  // after linking) is SHOWN as the broken current value — disabled, so the
+  // admin sees what must be replaced instead of a silently blank picker.
+  const showCurrentSession =
+    currentSession && !sessions.some((s) => s.id === currentSession.id)
+      ? currentSession
+      : null;
+  return (
+    <div className="space-y-2">
+      <span className="text-sm font-medium text-foreground">{tr("admin.634")}</span>
+      <div className="flex flex-col gap-1.5" role="radiogroup" aria-label={tr("admin.634")}>
+        {(
+          [
+            { value: "OPTIONAL", label: tr("admin.635"), enabled: true },
+            { value: "ALL_STUDENTS", label: tr("admin.636"), enabled: trackable },
+            { value: "ABSENT_STUDENTS", label: tr("admin.637"), enabled: absentEnabled },
+          ] as const
+        ).map((opt) => (
+          <label
+            key={opt.value}
+            htmlFor={`${idPrefix}-mode-${opt.value}`}
+            className={`flex items-center gap-2 text-sm ${
+              opt.enabled && !disabled ? "text-foreground" : "text-muted-foreground"
+            }`}
+          >
+            <input
+              id={`${idPrefix}-mode-${opt.value}`}
+              type="radio"
+              name={`${idPrefix}-mode`}
+              value={opt.value}
+              checked={mode === opt.value}
+              onChange={() => onModeChange(opt.value)}
+              disabled={disabled || !opt.enabled}
+              className="h-4 w-4 shrink-0"
+            />
+            {opt.label}
+          </label>
+        ))}
+      </div>
+      {!trackable && (
+        <p className="text-[11px] text-muted-foreground">{tr("admin.628")}</p>
+      )}
+      {trackable && absentBlockedReason && (
+        <p className="text-[11px] text-muted-foreground">{absentBlockedReason}</p>
+      )}
+      {mode === "ABSENT_STUDENTS" && (
+        <div className="space-y-1">
+          <p className="text-[11px] text-muted-foreground">{tr("admin.638")}</p>
+          <Label htmlFor={`${idPrefix}-session`}>{tr("admin.639")}</Label>
+          <select
+            id={`${idPrefix}-session`}
+            value={liveSessionId}
+            onChange={(e) => onSessionChange(e.target.value)}
+            disabled={disabled || !absentEnabled}
+            className="flex h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] dark:bg-input/30 md:text-sm"
+          >
+            <option value="">{tr("admin.639")}</option>
+            {showCurrentSession && (
+              <option value={showCurrentSession.id} disabled>
+                {showCurrentSession.titleAr || showCurrentSession.title}
+              </option>
+            )}
+            {sessions.map((s) => (
+              <option key={s.id} value={s.id}>
+                {(s.titleAr || s.title) +
+                  (s.groupName ? ` — ${s.groupName}` : "") +
+                  ` — ${new Date(s.startAt).toLocaleDateString()}`}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Per-row edit form: metadata + the progression requirement. Non-OPTIONAL
+    modes are disabled for URL-source rows (untrackable) with the same
     explainer the publish form states; the server re-enforces on PATCH. */
 function EditVideoForm({
   video,
@@ -1009,13 +1215,53 @@ function EditVideoForm({
   const [titleAr, setTitleAr] = React.useState(video.titleAr);
   const [description, setDescription] = React.useState(video.description ?? "");
   const [percent, setPercent] = React.useState(String(video.requiredPercent));
-  const [isRequired, setIsRequired] = React.useState(
-    video.isRequiredForProgression
+  // The stored requirement, edited explicitly (legacy rows fall back to the
+  // flag's exact historical meaning). The lesson home is fixed in the edit
+  // form — the eligible sessions load once for (batch × lesson).
+  const [requirementMode, setRequirementMode] = React.useState<string>(
+    video.requirementMode ?? (video.isRequiredForProgression ? "ALL_STUDENTS" : "OPTIONAL")
   );
+  const [liveSessionId, setLiveSessionId] = React.useState(video.liveSessionId ?? "");
+  const editLessonIdForState = video.lesson?.id ?? "";
+  const [eligibleSessions, setEligibleSessions] = React.useState<EligibleSession[]>([]);
+  // A video without a lesson home mounts already resolved (empty list).
+  const [sessionsLoaded, setSessionsLoaded] = React.useState(!editLessonIdForState);
   const [saving, setSaving] = React.useState(false);
   // Trackability is the row's storage, reached here as the list's `source`
   // (URL = EXTERNAL_URL = untrackable, UPLOAD = managed = measurable).
   const trackable = video.source !== "URL";
+  const editLessonId = video.lesson?.id ?? "";
+  // Lesson-home switch, adjusted during render: without a home the list is
+  // empty and resolved; with one the fetch below only subscribes.
+  const [editSessionsKey, setEditSessionsKey] = React.useState(editLessonId);
+  if (editSessionsKey !== editLessonId) {
+    setEditSessionsKey(editLessonId);
+    if (!editLessonId) {
+      setEligibleSessions([]);
+      setSessionsLoaded(true);
+    }
+  }
+  React.useEffect(() => {
+    if (!editLessonId) return;
+    let cancelled = false;
+    fetch(
+      `/api/admin/session-videos/eligible-sessions?batchId=${encodeURIComponent(video.batch.id)}&lessonId=${encodeURIComponent(editLessonId)}`
+    )
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (cancelled) return;
+        setEligibleSessions(Array.isArray(d?.sessions) ? d.sessions : []);
+        setSessionsLoaded(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setEligibleSessions([]);
+        setSessionsLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [editLessonId]);
 
   const save = async () => {
     if (!title.trim()) {
@@ -1032,6 +1278,7 @@ function EditVideoForm({
       return;
     }
     const threshold = percent;
+    const modeValue = trackable ? requirementMode : "OPTIONAL";
     setSaving(true);
     try {
       const res = await fetch(`/api/admin/session-videos/${video.id}`, {
@@ -1042,7 +1289,9 @@ function EditVideoForm({
           titleAr: titleAr.trim() || title.trim(),
           description,
           requiredPercent: threshold,
-          isRequiredForProgression: trackable && isRequired,
+          requirementMode: modeValue,
+          isRequiredForProgression: modeValue !== "OPTIONAL",
+          liveSessionId: modeValue === "ABSENT_STUDENTS" ? liveSessionId : null,
         }),
       });
       const d = await res.json().catch(() => null);
@@ -1091,16 +1340,21 @@ function EditVideoForm({
           className="mt-1"
         />
       </div>
-      <div className="flex flex-wrap items-end gap-4">
-        <div className="flex items-center gap-2">
-          <Checkbox
-            id={`edit-required-${video.id}`}
-            checked={trackable && isRequired}
-            onCheckedChange={(c) => setIsRequired(c === true)}
-            disabled={saving || !trackable}
-          />
-          <Label htmlFor={`edit-required-${video.id}`}>{tr("admin.625")}</Label>
-        </div>
+      <div className="space-y-2 rounded-lg border border-border/60 p-3">
+        <RequirementModeSelector
+          idPrefix={`edit-${video.id}`}
+          mode={requirementMode}
+          onModeChange={setRequirementMode}
+          liveSessionId={liveSessionId}
+          onSessionChange={setLiveSessionId}
+          trackable={trackable}
+          lessonId={editLessonId}
+          sessions={eligibleSessions}
+          sessionsLoaded={sessionsLoaded}
+          currentSession={video.liveSession}
+          disabled={saving}
+          tr={tr}
+        />
         <div>
           <Label htmlFor={`edit-percent-${video.id}`}>{tr("admin.626")}</Label>
           <Input
@@ -1117,9 +1371,6 @@ function EditVideoForm({
           />
         </div>
       </div>
-      {!trackable && (
-        <p className="text-[11px] text-muted-foreground">{tr("admin.628")}</p>
-      )}
       <p className="-mt-1 text-[11px] text-muted-foreground">{tr("admin.627")}</p>
       <div className="flex items-center gap-2">
         <Button size="sm" onClick={save} disabled={saving}>

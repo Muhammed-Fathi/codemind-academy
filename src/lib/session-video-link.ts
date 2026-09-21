@@ -40,6 +40,8 @@ import type { db } from "@/lib/db";
 // Client-safe storage predicate (NOT @/lib/media: this module ships to the
 // browser through session-video-picker, and @/lib/media is node-only).
 import { isManagedPrivateStorage } from "@/lib/media-storage";
+// Pure requirement-mode vocabulary (client-safe: no I/O, no node-only deps).
+import { normalizeRequirementMode, type RequirementMode } from "./video-applicability";
 import { normalizeSchoolType } from "@/lib/school-type";
 import { normalizeTrackScope } from "@/lib/track-scope";
 
@@ -207,6 +209,78 @@ export async function validateSessionVideoLink(
   return { ok: true, lessonId, batchId };
 }
 
+export type AbsentSessionLinkClient = Pick<typeof db, "liveSession" | "batch">;
+
+export type AbsentSessionLinkResult =
+  | { ok: true; liveSessionId: string }
+  | { ok: false; code: "ABSENT_SESSION_INVALID"; status: number; message: string };
+
+/**
+ * The single database validator for an ABSENT_STUDENTS recording's linked
+ * LiveSession. The absence source must be REAL and COMPATIBLE:
+ *   1. The session exists.
+ *   2. It is not CANCELLED (a cancelled class has no meaningful absentees).
+ *   3. It belongs to the video's course (session.group.courseId ===
+ *      batch.courseId). A batch WITHOUT a course (legacy null) cannot prove
+ *      course membership, so the rule tightens instead: the session must be
+ *      linked to THIS lesson exactly (no lesson-inference, no guessing).
+ *   4. It is lesson-compatible: session.lessonId is null (a general session
+ *      the admin explicitly attaches) or equals the video's lessonId.
+ * Finalization is deliberately NOT required here: a recording may be
+ * published before the teacher locks the register — applicability simply
+ * stays EXEMPT_NOT_FINALIZED until the lock lands.
+ */
+export async function validateAbsentSessionLink(
+  client: AbsentSessionLinkClient,
+  input: { liveSessionId?: unknown; lessonId?: unknown; batchId?: unknown }
+): Promise<AbsentSessionLinkResult> {
+  const refuse = (message: string): AbsentSessionLinkResult => ({
+    ok: false,
+    code: "ABSENT_SESSION_INVALID",
+    status: SESSION_VIDEO_REQUIREMENT_ERRORS.ABSENT_SESSION_INVALID.status,
+    message,
+  });
+  const liveSessionId = asTrimmedId(input.liveSessionId);
+  const lessonId = asTrimmedId(input.lessonId);
+  const batchId = asTrimmedId(input.batchId);
+  if (!liveSessionId || !lessonId || !batchId) {
+    return refuse("a linked session, lesson and batch are all required");
+  }
+  const session = await client.liveSession.findUnique({
+    where: { id: liveSessionId },
+    select: {
+      id: true,
+      status: true,
+      lessonId: true,
+      group: { select: { courseId: true } },
+    },
+  });
+  if (!session) return refuse("the linked live session does not exist");
+  if (String(session.status ?? "").toUpperCase() === "CANCELLED") {
+    return refuse("the linked live session is cancelled");
+  }
+  const sessionLessonId = (session.lessonId as string | null) ?? null;
+  if (sessionLessonId !== null && sessionLessonId !== lessonId) {
+    return refuse("the linked live session belongs to a different lesson");
+  }
+  const batch = await client.batch.findUnique({
+    where: { id: batchId },
+    select: { courseId: true },
+  });
+  const batchCourseId = (batch?.courseId as string | null) ?? null;
+  if (batchCourseId !== null) {
+    const sessionCourseId = (session.group as { courseId: string | null } | null)?.courseId ?? null;
+    if (sessionCourseId !== batchCourseId) {
+      return refuse("the linked live session belongs to a different course");
+    }
+  } else if (sessionLessonId !== lessonId) {
+    // No course anchor exists on this batch, so only an exact lesson link
+    // proves the session covers THIS video's absence.
+    return refuse("the linked live session must belong to this lesson");
+  }
+  return { ok: true, liveSessionId };
+}
+
 /**
  * Client-side mirror of rule 6 (pure, no I/O) — the Admin UI uses it to show
  * only the lessons a selected batch can legally hold. The server ALWAYS
@@ -259,13 +333,24 @@ export function lessonFitsBatch(
 export const SESSION_VIDEO_REQUIREMENT_ERRORS = {
   EXTERNAL_CANNOT_BE_REQUIRED: { status: 422, i18n: "api.360" },
   INVALID_REQUIRED_PERCENT: { status: 422, i18n: "api.361" },
+  INVALID_REQUIREMENT_MODE: { status: 422, i18n: "api.362" },
+  ABSENT_REQUIRES_LESSON: { status: 422, i18n: "api.363" },
+  ABSENT_REQUIRES_SESSION: { status: 422, i18n: "api.364" },
+  ABSENT_SESSION_INVALID: { status: 422, i18n: "api.365" },
 } as const;
 
 export type SessionVideoRequirementCode =
   keyof typeof SESSION_VIDEO_REQUIREMENT_ERRORS;
 
 export type SessionVideoRequirementResult =
-  | { ok: true; isRequired: boolean; requiredPercent: number }
+  | {
+      ok: true;
+      isRequired: boolean;
+      requiredPercent: number;
+      requirementMode: RequirementMode;
+      /** The absence-source session (ABSENT_STUDENTS only; else null). */
+      liveSessionId: string | null;
+    }
   | { ok: false; code: SessionVideoRequirementCode; status: number; message: string };
 
 /** Schema default, mirroring VIDEO_COMPLETION_THRESHOLD (95%). */
@@ -275,13 +360,64 @@ export const SESSION_VIDEO_MIN_REQUIRED_PERCENT = 50;
 export const SESSION_VIDEO_MAX_REQUIRED_PERCENT = 100;
 
 export function parseSessionVideoRequirement(
-  input: { isRequiredForProgression?: unknown; requiredPercent?: unknown },
-  opts: { storage: unknown }
+  input: {
+    isRequiredForProgression?: unknown;
+    requirementMode?: unknown;
+    liveSessionId?: unknown;
+    requiredPercent?: unknown;
+  },
+  opts: { storage: unknown; lessonId?: unknown }
 ): SessionVideoRequirementResult {
+  // Mode resolution: an explicitly-provided mode wins (and garbage is
+  // refused, never coerced); an omitted mode falls back to the legacy flag
+  // (true → ALL_STUDENTS, anything else → OPTIONAL) for older clients.
   // Multipart transports carry "true" (string); JSON carries true (boolean).
-  // Both are canonical encodings of intent — anything else means OPTIONAL.
+  const modeProvided =
+    input.requirementMode !== undefined &&
+    input.requirementMode !== null &&
+    !(typeof input.requirementMode === "string" && input.requirementMode.trim() === "");
+  const parsedMode = modeProvided ? normalizeRequirementMode(input.requirementMode) : null;
+  if (modeProvided && !parsedMode) {
+    return {
+      ok: false,
+      code: "INVALID_REQUIREMENT_MODE",
+      status: SESSION_VIDEO_REQUIREMENT_ERRORS.INVALID_REQUIREMENT_MODE.status,
+      message: "requirementMode must be one of OPTIONAL, ALL_STUDENTS, ABSENT_STUDENTS",
+    };
+  }
   const flag = input.isRequiredForProgression;
-  const isRequired = flag === true || flag === "true";
+  const requirementMode: RequirementMode =
+    parsedMode ?? (flag === true || flag === "true" ? "ALL_STUDENTS" : "OPTIONAL");
+  const isRequired = requirementMode !== "OPTIONAL";
+
+  // ABSENT_STUDENTS presence contract (no DB needed): the mode is meaningless
+  // without a lesson home (the absence to cover lives under a lesson) and
+  // without the explicit absence-source session. Both are refused with their
+  // OWN codes (never the generic link errors): the requirement contract —
+  // not the link contract — decides what a requirement needs. Non-ABSENT
+  // modes persist no link: a session id sent alongside OPTIONAL/ALL_STUDENTS
+  // is dropped (it has no meaning there), so leaving ABSENT_STUDENTS can
+  // never strand a stale absence source on the row.
+  let liveSessionId: string | null = null;
+  if (requirementMode === "ABSENT_STUDENTS") {
+    if (!asTrimmedId(opts.lessonId)) {
+      return {
+        ok: false,
+        code: "ABSENT_REQUIRES_LESSON",
+        status: SESSION_VIDEO_REQUIREMENT_ERRORS.ABSENT_REQUIRES_LESSON.status,
+        message: "absent-only mode requires the video to be linked to a lesson",
+      };
+    }
+    liveSessionId = asTrimmedId(input.liveSessionId);
+    if (!liveSessionId) {
+      return {
+        ok: false,
+        code: "ABSENT_REQUIRES_SESSION",
+        status: SESSION_VIDEO_REQUIREMENT_ERRORS.ABSENT_REQUIRES_SESSION.status,
+        message: "absent-only mode requires the linked live session",
+      };
+    }
+  }
 
   let requiredPercent = SESSION_VIDEO_DEFAULT_REQUIRED_PERCENT;
   const raw = input.requiredPercent;
@@ -313,5 +449,5 @@ export function parseSessionVideoRequirement(
     };
   }
 
-  return { ok: true, isRequired, requiredPercent };
+  return { ok: true, isRequired, requiredPercent, requirementMode, liveSessionId };
 }

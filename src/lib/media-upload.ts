@@ -76,7 +76,12 @@ import {
 import { acquireUploadFinalizeLock } from "@/lib/db-serialization";
 import { normalizeTrackScope, type TrackScope } from "@/lib/track-scope";
 import { assertVolumeQuota } from "@/lib/storage-quotas";
-import { parseSessionVideoRequirement, validateSessionVideoLink } from "@/lib/session-video-link";
+import {
+  parseSessionVideoRequirement,
+  validateAbsentSessionLink,
+  validateSessionVideoLink,
+} from "@/lib/session-video-link";
+import type { RequirementMode } from "./video-applicability";
 import {
   MAX_HOMEWORK_FILE_BYTES,
   extFromHomeworkFileMime,
@@ -1102,6 +1107,9 @@ export type PresignedUploadCompleteInput = {
   /** Progression requirement (SESSION_VIDEO): REQUIRED flag + threshold. */
   isRequiredForProgression?: unknown;
   requiredPercent?: unknown;
+  /** Requirement mode + absence-source session (ABSENT_STUDENTS only). */
+  requirementMode?: unknown;
+  liveSessionId?: unknown;
   // Shared / LESSON_PDF payload:
   /** NOT TRUSTED for identity (Phase A) — see `batchId`. */
   lessonId?: unknown;
@@ -1213,7 +1221,12 @@ export async function completePresignedUpload(
   //    a bad payload must never cost a verified upload its bytes).
   let title = "";
   let trackScope: TrackScope | undefined;
-  let videoRequirement = { isRequired: false, requiredPercent: 95 };
+  let videoRequirement: {
+    isRequired: boolean;
+    requiredPercent: number;
+    requirementMode: RequirementMode;
+    liveSessionId: string | null;
+  } = { isRequired: false, requiredPercent: 95, requirementMode: "OPTIONAL", liveSessionId: null };
   if (payload.purpose === "SESSION_VIDEO") {
     title = asTrimmedString(input.title) ?? "";
     if (!title) return { ok: false, code: "TITLE_REQUIRED", message: "Title is required" };
@@ -1225,13 +1238,31 @@ export async function completePresignedUpload(
     const reqParse = parseSessionVideoRequirement(
       {
         isRequiredForProgression: input.isRequiredForProgression,
+        requirementMode: input.requirementMode,
+        liveSessionId: input.liveSessionId,
         requiredPercent: input.requiredPercent,
       },
-      { storage: mediaStorageValueForBackend("s3") }
+      { storage: mediaStorageValueForBackend("s3"), lessonId: target.lessonId }
     );
     if (!reqParse.ok)
       return { ok: false, code: "INVALID_VIDEO_REQUIREMENT", message: reqParse.message };
-    videoRequirement = { isRequired: reqParse.isRequired, requiredPercent: reqParse.requiredPercent };
+    // ABSENT_STUDENTS: the linked session must exist and be compatible —
+    // verified in the same cheap pre-I/O block, before any row exists.
+    if (reqParse.requirementMode === "ABSENT_STUDENTS") {
+      const absentLink = await validateAbsentSessionLink(client, {
+        liveSessionId: reqParse.liveSessionId,
+        lessonId: target.lessonId,
+        batchId: target.batchId,
+      });
+      if (!absentLink.ok)
+        return { ok: false, code: "INVALID_VIDEO_REQUIREMENT", message: absentLink.message };
+    }
+    videoRequirement = {
+      requirementMode: reqParse.requirementMode,
+      isRequired: reqParse.isRequired,
+      requiredPercent: reqParse.requiredPercent,
+      liveSessionId: reqParse.liveSessionId,
+    };
   } else if (
     payload.purpose === "HOMEWORK_ATTACHMENT" ||
     payload.purpose === "HOMEWORK_SUBMISSION"
@@ -1507,7 +1538,9 @@ export async function completePresignedUpload(
             title,
             titleAr,
             description,
+            requirementMode: videoRequirement.requirementMode,
             isRequiredForProgression: videoRequirement.isRequired,
+            liveSessionId: videoRequirement.liveSessionId,
             requiredPercent: videoRequirement.requiredPercent,
             isPublished: publish,
             publishedAt: publish ? new Date() : null,

@@ -90,6 +90,10 @@ export async function GET(_req: NextRequest) {
   const engineCompleted = new Set<string>();
   const unlockedLessonIds = new Set<string>();
   const engineReasonByLesson = new Map<string, { reason: string | null; reasonCode: string | null; unmet: { kind: string; label?: string | null }[]; state: string }>();
+  // Canonical video value per lesson (required? + binding bottleneck %) —
+  // the Continue bar reads THIS when video is required, never the stale
+  // whole-lesson legacy marker.
+  const engineVideoByLesson = new Map<string, { required: boolean; value: number }>();
   {
     const engineCourseId = student.group?.course?.id ?? null;
     if (engineCourseId && student.group?.isActive) {
@@ -108,6 +112,10 @@ export async function GET(_req: NextRequest) {
           reasonCode: row.reasonCode ?? null,
           unmet: row.unmet ?? [],
           state: row.state ?? (row.completed ? "COMPLETED" : row.unlocked ? "UNLOCKED" : "LOCKED"),
+        });
+        engineVideoByLesson.set(row.lessonId, {
+          required: !!row.video?.required,
+          value: typeof row.video?.value === "number" ? row.video.value : 0,
         });
       }
     }
@@ -457,7 +465,13 @@ export async function GET(_req: NextRequest) {
           topic: continueLesson.topic
             ? sp(continueLesson.topic.titleAr, continueLesson.topic.title)
             : null,
-          progress: continueLesson.progress[0]?.progress || 0,
+          // The Continue bar reads the CANONICAL video value when video is
+          // required (the same number the lesson header shows) and the
+          // historical marker otherwise — never a stale 100% over an
+          // unmet requirement.
+          progress: engineVideoByLesson.get(continueLesson.id)?.required
+            ? (engineVideoByLesson.get(continueLesson.id)?.value ?? 0)
+            : continueLesson.progress[0]?.progress || 0,
           // Phase H: canonical completion + the Arabic reason/unmet so the
           // Continue card names the exact next action.
           isCompleted: engineCompleted.has(continueLesson.id),

@@ -102,6 +102,12 @@ import { VIDEO_COMPLETION_THRESHOLD } from "@/lib/progress";
 import { canAccessTrackScope, trackScopeWhere, videoTrackFilter } from "@/lib/track-scope";
 import { normalizeSchoolType, type SchoolType } from "@/lib/school-type";
 import { isManagedPrivateStorage } from "@/lib/media";
+import {
+  effectiveRequirementMode,
+  loadVideoApplicability,
+  type ApplicabilityReason,
+  type RequirementMode,
+} from "./video-applicability";
 import { evaluateAccessDecision } from "@/lib/subscription-entitlement";
 
 // ---------------------------------------------------------------------------
@@ -326,6 +332,29 @@ export type ProgressionVideoItem = {
   /** Live server percent (SessionVideoView.percent); 0 when unwatched. */
   currentPercent: number;
   completed: boolean;
+  /**
+   * Loader-attached (never a core input): the video's requirement mode and
+   * THIS student's applicability verdict. Absent on hand-built core inputs.
+   */
+  requirementMode?: RequirementMode;
+  applicability?: ApplicabilityReason;
+};
+
+/**
+ * An ABSENT_STUDENTS recording that does NOT gate THIS student (present /
+ * excused / unmarked / unfinalized-register), carried so the student UI can
+ * render the exemption explicitly instead of silently dropping the row.
+ * NEVER a core input — the loader attaches it post-evaluation.
+ */
+export type ProgressionVideoExemptItem = {
+  id: string;
+  title: string;
+  titleAr: string;
+  requiredPercent: number;
+  trackable: boolean;
+  currentPercent: number;
+  requirementMode: RequirementMode;
+  applicability: ApplicabilityReason;
 };
 
 export type ProgressionRequirement = {
@@ -340,6 +369,12 @@ export type ProgressionRequirement = {
   completedCount?: number;
   /** Video only: the per-video decomposition (REQUIRED videos only). */
   items?: ProgressionVideoItem[];
+  /**
+   * Video only: ABSENT_STUDENTS rows that do NOT gate THIS student, with
+   * their live percents (loader-attached, never a core input — the student
+   * UI renders the exemption explicitly instead of dropping the row).
+   */
+  exempt?: ProgressionVideoExemptItem[];
 };
 
 export type ProgressionEvidence = {
@@ -781,6 +816,10 @@ export async function loadCourseProgression(
   // construction). ONE batched query regardless of lesson count; a student
   // with no batch resolves no audience and reads none.
   const studentBatchId = student?.batchId ?? null;
+  // The where-clause still keys on the dual-written legacy flag (which is
+  // `true` ⟺ mode ≠ OPTIONAL on every write path), so pre-existing rows and
+  // mocks behave identically; the MODE + per-student attendance slice is
+  // applied below in JS through the shared applicability authority.
   const requiredVideoRows =
     studentBatchId && lessonIds.length > 0
       ? await db.sessionVideo.findMany({
@@ -797,11 +836,114 @@ export async function loadCourseProgression(
             title: true,
             titleAr: true,
             requiredPercent: true,
+            requirementMode: true,
+            isRequiredForProgression: true,
+            liveSessionId: true,
             media: { select: { storage: true } },
           },
         })
       : [];
-  const requiredVideoIds = [...new Set(requiredVideoRows.map((v) => v.id))];
+
+  // Applicability partition (per student): ALL_STUDENTS videos gate;
+  // OPTIONAL rows are content only; ABSENT_STUDENTS videos gate ONLY the
+  // students whose absence for the linked session is proven unexcused —
+  // everyone else lands in the EXEMPT bucket (rendered explicitly, never
+  // silently dropped and never gating). The pure core below still receives
+  // exactly the applicable required videos, so its contract is untouched.
+  // The mode rides along: the applicability authority re-derives it from
+  // each ref, and a mode-less ref would resolve to OPTIONAL (every ABSENT
+  // video silently exempting everyone).
+  const absentCandidates: { id: string; requirementMode: RequirementMode; liveSessionId: string | null }[] = [];
+  const candidateById = new Map<
+    string,
+    {
+      id: string;
+      lessonId: string;
+      title: string;
+      titleAr: string;
+      requiredPercent: number;
+      trackable: boolean;
+      requirementMode: RequirementMode;
+      liveSessionId: string | null;
+    }
+  >();
+  for (const v of requiredVideoRows) {
+    if (!v.lessonId) continue;
+    const mode = effectiveRequirementMode(v);
+    if (mode === "OPTIONAL") continue;
+    candidateById.set(v.id, {
+      id: v.id,
+      lessonId: v.lessonId,
+      title: v.title,
+      titleAr: v.titleAr,
+      requiredPercent: v.requiredPercent ?? VIDEO_COMPLETION_THRESHOLD,
+      trackable: isManagedPrivateStorage(
+        (v.media as { storage: unknown } | null)?.storage
+      ),
+      requirementMode: mode,
+      liveSessionId: v.liveSessionId ?? null,
+    });
+    if (mode === "ABSENT_STUDENTS") {
+      absentCandidates.push({ id: v.id, requirementMode: mode, liveSessionId: v.liveSessionId ?? null });
+    }
+  }
+  // Zero queries when no absent-mode video exists (the common case).
+  const applicability =
+    absentCandidates.length > 0
+      ? await loadVideoApplicability(db, studentId, absentCandidates)
+      : new Map<string, { applicable: boolean; reason: ApplicabilityReason }>();
+
+  const requiredVideosByLesson = new Map<
+    string,
+    { id: string; title: string; titleAr: string; requiredPercent: number; trackable: boolean }[]
+  >();
+  const exemptBaseByLesson = new Map<
+    string,
+    Omit<ProgressionVideoExemptItem, "currentPercent">[]
+  >();
+  const videoMetaById = new Map<string, { requirementMode: RequirementMode; applicability: ApplicabilityReason }>();
+  for (const c of candidateById.values()) {
+    const verdict =
+      c.requirementMode === "ALL_STUDENTS"
+        ? { applicable: true as const, reason: "ALL_STUDENTS" as const }
+        : (applicability.get(c.id) ?? { applicable: false as const, reason: "NO_SESSION_LINK" as const });
+    if (verdict.applicable) {
+      const list = requiredVideosByLesson.get(c.lessonId) ?? [];
+      list.push({
+        id: c.id,
+        title: c.title,
+        titleAr: c.titleAr,
+        requiredPercent: c.requiredPercent,
+        trackable: c.trackable,
+      });
+      requiredVideosByLesson.set(c.lessonId, list);
+      videoMetaById.set(c.id, { requirementMode: c.requirementMode, applicability: verdict.reason });
+    } else {
+      const list = exemptBaseByLesson.get(c.lessonId) ?? [];
+      list.push({
+        id: c.id,
+        title: c.title,
+        titleAr: c.titleAr,
+        requiredPercent: c.requiredPercent,
+        trackable: c.trackable,
+        requirementMode: c.requirementMode,
+        applicability: verdict.reason,
+      });
+      exemptBaseByLesson.set(c.lessonId, list);
+    }
+  }
+  // Deterministic item order regardless of storage order.
+  for (const list of requiredVideosByLesson.values()) {
+    list.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  }
+  for (const list of exemptBaseByLesson.values()) {
+    list.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  }
+
+  // Live percents are needed for gating (required) AND for rendering
+  // (exempt rows show their own watch %), so the single views query covers
+  // both buckets — one IN query, never per-video round trips.
+  const requiredVideoIds = [...candidateById.keys()];
 
   const [progressRows, attemptRows, submissionRows, holdRows, overrideRows, videoViewRows] =
     await Promise.all([
@@ -870,29 +1012,6 @@ export async function loadCourseProgression(
           })
         : Promise.resolve([] as { sessionVideoId: string; percent: number }[]),
     ]);
-
-  const requiredVideosByLesson = new Map<
-    string,
-    { id: string; title: string; titleAr: string; requiredPercent: number; trackable: boolean }[]
-  >();
-  for (const v of requiredVideoRows) {
-    if (!v.lessonId) continue;
-    const list = requiredVideosByLesson.get(v.lessonId) ?? [];
-    list.push({
-      id: v.id,
-      title: v.title,
-      titleAr: v.titleAr,
-      requiredPercent: v.requiredPercent ?? VIDEO_COMPLETION_THRESHOLD,
-      trackable: isManagedPrivateStorage(
-        (v.media as { storage: unknown } | null)?.storage
-      ),
-    });
-    requiredVideosByLesson.set(v.lessonId, list);
-  }
-  // Deterministic item order regardless of storage order.
-  for (const list of requiredVideosByLesson.values()) {
-    list.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  }
 
   const coreLessons: ProgressionCoreLesson[] = lessons.map((l) => ({
     id: l.id,
@@ -984,6 +1103,31 @@ export async function loadCourseProgression(
     holds,
     overrides,
   });
+
+  // Loader-only decoration (never a core input): attach each required
+  // item's mode + THIS student's applicability verdict, and expose the
+  // exempt ABSENT_STUDENTS rows with their live percents so the student UI
+  // renders exemptions explicitly. Gating is untouched — the core already
+  // evaluated exactly the applicable videos.
+  for (const e of evaluated) {
+    const detail = e.video;
+    if (detail.items) {
+      for (const item of detail.items) {
+        const meta = videoMetaById.get(item.id);
+        if (meta) {
+          item.requirementMode = meta.requirementMode;
+          item.applicability = meta.applicability;
+        }
+      }
+    }
+    const exemptBase = exemptBaseByLesson.get(e.lessonId);
+    if (exemptBase && exemptBase.length > 0) {
+      detail.exempt = exemptBase.map((b) => ({
+        ...b,
+        currentPercent: videoWatchPercent.get(b.id) ?? 0,
+      }));
+    }
+  }
 
   // Boundary: the initial contiguous accessible run, the first hold-blocked
   // lesson, and every override island.

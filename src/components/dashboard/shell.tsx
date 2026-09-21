@@ -101,6 +101,7 @@ const NAV_BY_ROLE: Record<string, NavItem[]> = {
     { key: "teacher-live-sessions", label: "shell.f3", icon: Video },
     { key: "teacher-quizzes", label: "shell.035", icon: Trophy },
     { key: "teacher-homework", label: "shell.004", icon: ClipboardList },
+    { key: "teacher-readiness", label: "shell.044", icon: Users },
     { key: "teacher-notifications", label: "shell.005", icon: Bell },
   ],
   ADMIN: [

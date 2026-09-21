@@ -25,6 +25,7 @@ import { StudentDashboard } from "@/components/student/student-dashboard";
 import { ParentDashboard } from "@/components/parent/parent-dashboard";
 import { TeacherDashboard } from "@/components/teacher/teacher-dashboard";
 import { TeacherSessions } from "@/components/teacher/teacher-sessions";
+import { TeacherReadinessView } from "@/components/teacher/readiness-view";
 import { TeacherLiveSessionsWorkspace } from "@/components/teacher/live-sessions-workspace";
 import {
   ParentAbsencesView,
@@ -254,6 +255,11 @@ function renderView(view: string, role?: string | null) {
     case "teacher-homework":
     case "teacher-templates":
     case "teacher-analytics":
+    // Lesson readiness (states-only per-student requirement view + parent
+    // reminders). Kept OUT of TeacherDashboard — the same precedent as
+    // teacher-sessions, so the legacy dashboard file stays byte-identical.
+    case "teacher-readiness":
+      return <TeacherReadinessView />;
     case "teacher-notifications":
       return <TeacherDashboard />;
     // Phase E — the teacher Session workspace (sessions list + per-lesson

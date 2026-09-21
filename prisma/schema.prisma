@@ -1456,6 +1456,15 @@ model MediaAsset {
   @@index([storage])
 }
 
+/// SessionVideo progression requirement MODE — the authoritative gate.
+/// OPTIONAL = content only; ALL_STUDENTS = everyone; ABSENT_STUDENTS = only
+/// students with a proven unexcused absence for `liveSession`.
+enum SessionVideoRequirementMode {
+  OPTIONAL
+  ALL_STUDENTS
+  ABSENT_STUDENTS
+}
+
 /// A session video published to a batch. One row per (batch, lesson-ish session).
 model SessionVideo {
   id           String             @id @default(cuid())
@@ -1467,11 +1476,29 @@ model SessionVideo {
   description  String?
   /// Minimum watched percentage required to consider the video complete.
   requiredPercent Int             @default(95)
-  /// Explicit per-video progression gate. When true — AND the video is
-  /// published, track/batch-eligible and trackable (managed storage) — the
-  /// canonical engine requires watchPercent >= requiredPercent. Default
-  /// false: every pre-existing row stays OPTIONAL (additive-only, no backfill).
+  /// DEPRECATED as the authority (kept + dual-written for backward
+  /// compatibility): the authoritative gate is `requirementMode` below. The
+  /// engine and every read path interpret the MODE; write paths keep this
+  /// flag in sync (`true` ⟺ mode is not OPTIONAL) so older readers keep
+  /// working. Default false: every pre-existing row stays OPTIONAL.
   isRequiredForProgression Boolean @default(false)
+  /// Per-video progression requirement MODE — the authoritative gate.
+  ///   OPTIONAL        — content + telemetry only, never a progression input.
+  ///   ALL_STUDENTS    — every eligible student must satisfy
+  ///                     watchPercent >= requiredPercent.
+  ///   ABSENT_STUDENTS — only students with an UNEXCUSED finalized absence
+  ///                     for `liveSession` must satisfy it (see
+  ///                     src/lib/video-applicability.ts). Present / excused /
+  ///                     unmarked students are EXEMPT, never silently gated.
+  /// Default OPTIONAL: additive-only, no backfill — except the one-time
+  /// migration mapping below (legacy `isRequiredForProgression = true` rows
+  /// become ALL_STUDENTS, which preserves their exact historical meaning:
+  /// required for everyone).
+  requirementMode SessionVideoRequirementMode @default(OPTIONAL)
+  /// The LiveSession whose absence this recording covers (ABSENT_STUDENTS
+  /// only; NULL otherwise). An EXPLICIT admin-chosen FK — NEVER inferred
+  /// from dates, titles or lesson links.
+  liveSessionId String?
   isPublished  Boolean            @default(false)
   publishedAt  DateTime?
   createdAt    DateTime           @default(now())
@@ -1479,10 +1506,12 @@ model SessionVideo {
   batch        Batch              @relation(fields: [batchId], references: [id], onDelete: Cascade)
   lesson       Lesson?            @relation(fields: [lessonId], references: [id], onDelete: SetNull)
   media        MediaAsset         @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+  liveSession  LiveSession?       @relation(fields: [liveSessionId], references: [id], onDelete: SetNull)
   views        SessionVideoView[]
 
   @@index([batchId, isPublished])
   @@index([lessonId])
+  @@index([liveSessionId])
 }
 
 /// Per-student watch tracking of a batch session video (95% rule).

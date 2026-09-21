@@ -48,10 +48,12 @@ import {
   SESSION_VIDEO_LINK_ERRORS,
   SESSION_VIDEO_REQUIREMENT_ERRORS,
   parseSessionVideoRequirement,
+  validateAbsentSessionLink,
   validateSessionVideoLink,
   type SessionVideoLinkCode,
   type SessionVideoRequirementCode,
 } from "@/lib/session-video-link";
+import type { RequirementMode } from "@/lib/video-applicability";
 
 /**
  * One response shape for every academic-link refusal: a LOCALIZED admin-facing
@@ -115,6 +117,8 @@ export async function GET(req: NextRequest) {
         media: {
           select: { id: true, storage: true, externalUrl: true, durationSec: true, mimeType: true, sizeBytes: true },
         },
+        // Absence-link identity for the edit form (the picker matches by id).
+        liveSession: { select: { id: true, title: true, titleAr: true } },
         _count: { select: { views: true } },
       },
     }),
@@ -129,7 +133,10 @@ export async function GET(req: NextRequest) {
       batch: v.batch,
       lesson: v.lesson,
       requiredPercent: v.requiredPercent,
+      requirementMode: v.requirementMode,
       isRequiredForProgression: v.isRequiredForProgression,
+      liveSessionId: v.liveSessionId,
+      liveSession: v.liveSession,
       isPublished: v.isPublished,
       publishedAt: v.publishedAt,
       // Uploaded files are NEVER exposed as a direct path — only via the
@@ -167,6 +174,8 @@ export async function POST(req: NextRequest) {
   let file: File | null = null;
   let requiredFlagRaw: unknown = undefined;
   let requiredPercentRaw: unknown = undefined;
+  let requirementModeRaw: unknown = undefined;
+  let liveSessionIdRaw: unknown = undefined;
 
   if (contentType.includes("multipart/form-data")) {
     const form = await req.formData();
@@ -179,6 +188,8 @@ export async function POST(req: NextRequest) {
     externalUrl = form.get("videoUrl") ? String(form.get("videoUrl")).trim() : null;
     requiredFlagRaw = form.get("isRequiredForProgression");
     requiredPercentRaw = form.get("requiredPercent");
+    requirementModeRaw = form.get("requirementMode");
+    liveSessionIdRaw = form.get("liveSessionId");
     const f = form.get("file");
     if (f && typeof f !== "string") file = f as File;
   } else {
@@ -192,9 +203,31 @@ export async function POST(req: NextRequest) {
     externalUrl = body.videoUrl ? String(body.videoUrl).trim() : null;
     requiredFlagRaw = body.isRequiredForProgression;
     requiredPercentRaw = body.requiredPercent;
+    requirementModeRaw = body.requirementMode;
+    liveSessionIdRaw = body.liveSessionId;
   }
 
   if (!title) return err(tApi("api.187"), 400);
+
+  // Mode-first presence gate: ABSENT_STUDENTS names its missing lesson /
+  // session with its OWN codes (api.363/364) rather than the generic
+  // LESSON_REQUIRED — the requirement contract decides what a requirement
+  // needs BEFORE the link contract decides what a row needs. Real storage
+  // is not yet known here, so the gate assumes the ACTIVE managed backend
+  // (never a literal, never EXTERNAL): only storage-independent
+  // presence/shape faults can fire early, and the branch parsers below
+  // re-run the SAME contract with the real storage (the EXTERNAL rule
+  // needs it).
+  const preRequirement = parseSessionVideoRequirement(
+    {
+      isRequiredForProgression: requiredFlagRaw,
+      requirementMode: requirementModeRaw,
+      liveSessionId: liveSessionIdRaw,
+      requiredPercent: requiredPercentRaw,
+    },
+    { storage: activeMediaStorageValue(), lessonId }
+  );
+  if (!preRequirement.ok) return sessionVideoRequirementError(tApi, preRequirement.code);
 
   // Phase A — academic ownership: a NEW session video must belong to a valid
   // Lesson × Batch pair. The SAME shared validator the presigned init/complete
@@ -212,7 +245,12 @@ export async function POST(req: NextRequest) {
   let mediaAssetId: string;
   // Set by exactly one branch below (both validate through the shared
   // requirement contract before anything is written).
-  let requirement = { isRequired: false, requiredPercent: 95 };
+  let requirement: {
+    isRequired: boolean;
+    requiredPercent: number;
+    requirementMode: RequirementMode;
+    liveSessionId: string | null;
+  } = { isRequired: false, requiredPercent: 95, requirementMode: "OPTIONAL", liveSessionId: null };
 
   if (file) {
     if (file.size > MAX_VIDEO_BYTES) return err(tApi("api.215"), 413);
@@ -231,11 +269,31 @@ export async function POST(req: NextRequest) {
     // uploaded (managed-storage) video may be REQUIRED; the threshold keeps
     // the existing 50–100 range rule. Size/mime precedence above is kept.
     const fileRequirement = parseSessionVideoRequirement(
-      { isRequiredForProgression: requiredFlagRaw, requiredPercent: requiredPercentRaw },
-      { storage }
+      {
+        isRequiredForProgression: requiredFlagRaw,
+        requirementMode: requirementModeRaw,
+        liveSessionId: liveSessionIdRaw,
+        requiredPercent: requiredPercentRaw,
+      },
+      { storage, lessonId: link.lessonId }
     );
     if (!fileRequirement.ok) return sessionVideoRequirementError(tApi, fileRequirement.code);
-    requirement = { isRequired: fileRequirement.isRequired, requiredPercent: fileRequirement.requiredPercent };
+    // ABSENT_STUDENTS: the absence source must EXIST and be compatible —
+    // verified in the same cheap pre-write block, before any row exists.
+    if (fileRequirement.requirementMode === "ABSENT_STUDENTS") {
+      const absentLink = await validateAbsentSessionLink(db, {
+        liveSessionId: fileRequirement.liveSessionId,
+        lessonId: link.lessonId,
+        batchId: link.batchId,
+      });
+      if (!absentLink.ok) return sessionVideoRequirementError(tApi, absentLink.code);
+    }
+    requirement = {
+      requirementMode: fileRequirement.requirementMode,
+      isRequired: fileRequirement.isRequired,
+      requiredPercent: fileRequirement.requiredPercent,
+      liveSessionId: fileRequirement.liveSessionId,
+    };
     // Phase 21 — volume quota, checked BEFORE any byte is written. No-op
     // unless the operator sets MEDIA_QUOTA_BYTES.
     const quota = await assertVolumeQuota(buffer.length);
@@ -279,11 +337,24 @@ export async function POST(req: NextRequest) {
     // reliable server watch %), so REQUIRED is refused here — never stored
     // as required, never silently demoted either. The admin must choose.
     const urlRequirement = parseSessionVideoRequirement(
-      { isRequiredForProgression: requiredFlagRaw, requiredPercent: requiredPercentRaw },
-      { storage: "EXTERNAL_URL" }
+      {
+        isRequiredForProgression: requiredFlagRaw,
+        requirementMode: requirementModeRaw,
+        liveSessionId: liveSessionIdRaw,
+        requiredPercent: requiredPercentRaw,
+      },
+      { storage: "EXTERNAL_URL", lessonId: link.lessonId }
     );
     if (!urlRequirement.ok) return sessionVideoRequirementError(tApi, urlRequirement.code);
-    requirement = { isRequired: urlRequirement.isRequired, requiredPercent: urlRequirement.requiredPercent };
+    // No absent-link DB check here: any non-OPTIONAL mode on external media
+    // is already refused above (EXTERNAL_CANNOT_BE_REQUIRED), and OPTIONAL
+    // rows carry no link by construction.
+    requirement = {
+      requirementMode: urlRequirement.requirementMode,
+      isRequired: urlRequirement.isRequired,
+      requiredPercent: urlRequirement.requiredPercent,
+      liveSessionId: urlRequirement.liveSessionId,
+    };
     const asset = await db.mediaAsset.create({
       data: {
         kind: "VIDEO",
@@ -313,7 +384,9 @@ export async function POST(req: NextRequest) {
       title,
       titleAr,
       description,
+      requirementMode: requirement.requirementMode,
       isRequiredForProgression: requirement.isRequired,
+      liveSessionId: requirement.liveSessionId,
       requiredPercent: requirement.requiredPercent,
       isPublished: publish,
       publishedAt: publish ? new Date() : null,

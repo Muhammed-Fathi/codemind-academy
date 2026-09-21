@@ -20,7 +20,7 @@ async function main() {
   ok(mig.includes("senderPhone") && mig.includes("requestedGroupId") && mig.includes("requestedPlanId") && mig.includes("rejectionReason") && mig.includes("reviewedAt") && mig.includes("reviewedByUserId"), "migration has all 6 ledger columns");
   ok(mig.includes("Payment_status_createdAt_idx") && mig.includes("Payment_subscriptionId_status_idx"), "migration has 2 indexes");
   const migs = fs.readdirSync(path.join(REPO,"prisma/migrations")).filter(d=> fs.existsSync(path.join(REPO,"prisma/migrations",d,"migration.sql"))).sort();
-  ok(migs.length === 17, `17 migrations total (found ${migs.length}) — 10 PR-era + Phase 26B + Phase 26D + Phase F + two Phase G workflow migrations + the Phase H override migration + the session-video requirement migration`);
+  ok(migs.length === 18, `18 migrations total (found ${migs.length}) — 10 PR-era + Phase 26B + Phase 26D + Phase F + two Phase G workflow migrations + the Phase H override migration + the session-video requirement migration + the requirement-modes migration`);
   ok(migs[9]==="20260914120000_payment_lifecycle_redesign", "ledger migration still applies after its predecessors");
   // The PR4 gate protects the LEDGER ORDER of its own era, not the tail of the
   // repository forever: Phase F (live sessions) legitimately sorts after 26D.
@@ -29,10 +29,10 @@ async function main() {
       migs.indexOf("20260919120000_phase_f_live_session_lifecycle") - 1,
     "Phase 26D quiz attempt-architecture migration still sorts directly before Phase F (forward-only history)"
   );
-  ok(migs[migs.length-1]==="20260921120000_session_video_progression_requirement", "session-video requirement migration sorts last (append-only history)");
+  ok(migs[migs.length-1]==="20260921180000_session_video_requirement_modes", "requirement-modes migration sorts last (append-only history)");
   ok(
-    JSON.stringify(migs.slice(-5)) === JSON.stringify(["20260919120000_phase_f_live_session_lifecycle","20260919180000_phase_g_quiz_homework_workflow","20260919190000_phase_g_camera_policy","20260920120000_phase_h_progression_override","20260921120000_session_video_progression_requirement"]),
-    "the tail after 26D is exactly [Phase F, Phase G x2, Phase H, session-video requirement] in order"
+    JSON.stringify(migs.slice(-6)) === JSON.stringify(["20260919120000_phase_f_live_session_lifecycle","20260919180000_phase_g_quiz_homework_workflow","20260919190000_phase_g_camera_policy","20260920120000_phase_h_progression_override","20260921120000_session_video_progression_requirement","20260921180000_session_video_requirement_modes"]),
+    "the tail after 26D is exactly [Phase F, Phase G x2, Phase H, session-video requirement, requirement modes] in order"
   );
   ok(migs.includes("20260915120000_phase26b_group_track_scope"), "the Phase 26B group-audience migration is still present and in order");
   // no new migration beyond PR1 for PR4
@@ -136,11 +136,11 @@ async function main() {
   // Phase H override migration are all authorized and additive, so the pin
   // moves by exactly four and the PR4-relevant files are asserted unchanged
   // below.
-  ok(migs.length === 17, "migration count is 17 (Phase 26D + the authorized additive Phase F, Phase G x2, Phase H and session-video requirement migrations)");
+  ok(migs.length === 18, "migration count is 18 (Phase 26D + the authorized additive Phase F, Phase G x2, Phase H, session-video requirement and requirement-modes migrations)");
   ok(
-    migs[migs.length - 1] === "20260921120000_session_video_progression_requirement" &&
-      fs.readFileSync(path.join(REPO, "prisma/migrations", migs[migs.length - 1], "migration.sql"), "utf8").includes('ADD COLUMN "isRequiredForProgression"'),
-    "the newest migration is the additive session-video requirement flag"
+    migs[migs.length - 1] === "20260921180000_session_video_requirement_modes" &&
+      fs.readFileSync(path.join(REPO, "prisma/migrations", migs[migs.length - 1], "migration.sql"), "utf8").includes('ADD COLUMN "requirementMode"'),
+    "the newest migration is the additive requirement-modes migration"
   );
 
   section("10. Operational safety — secret handling and migration drift");

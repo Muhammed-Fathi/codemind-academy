@@ -10,6 +10,7 @@
 -- See docs/POSTGRES_CUTOVER_RUNBOOK.md.
 
 -- 1. Enums (native PostgreSQL enums; SQLite stores the same values as TEXT).
+CREATE TYPE "SessionVideoRequirementMode" AS ENUM ('OPTIONAL', 'ALL_STUDENTS', 'ABSENT_STUDENTS');
 CREATE TYPE "LessonStatus" AS ENUM ('DRAFT', 'READY', 'PUBLISHED');
 CREATE TYPE "CurriculumStatus" AS ENUM ('OFFICIAL', 'LEGACY', 'ARCHIVED');
 CREATE TYPE "EnrollmentStatus" AS ENUM ('ACTIVE', 'PAUSED', 'COMPLETED', 'CANCELLED');
@@ -401,26 +402,6 @@ CREATE TABLE "SessionPublication" (
   CONSTRAINT "SessionPublication_lessonId_fkey" FOREIGN KEY ("lessonId") REFERENCES "Lesson" ("id") ON UPDATE CASCADE ON DELETE CASCADE
 );
 
-CREATE TABLE "SessionVideo" (
-  "id" TEXT NOT NULL,
-  "batchId" TEXT NOT NULL,
-  "lessonId" TEXT,
-  "mediaAssetId" TEXT NOT NULL,
-  "title" TEXT NOT NULL,
-  "titleAr" TEXT NOT NULL,
-  "description" TEXT,
-  "requiredPercent" INTEGER NOT NULL DEFAULT 95,
-  "isRequiredForProgression" BOOLEAN NOT NULL DEFAULT FALSE,
-  "isPublished" BOOLEAN NOT NULL DEFAULT FALSE,
-  "publishedAt" TIMESTAMPTZ(3),
-  "createdAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "updatedAt" TIMESTAMPTZ(3) NOT NULL,
-  CONSTRAINT "SessionVideo_pkey" PRIMARY KEY ("id"),
-  CONSTRAINT "SessionVideo_batchId_fkey" FOREIGN KEY ("batchId") REFERENCES "Batch" ("id") ON UPDATE CASCADE ON DELETE CASCADE,
-  CONSTRAINT "SessionVideo_lessonId_fkey" FOREIGN KEY ("lessonId") REFERENCES "Lesson" ("id") ON UPDATE CASCADE ON DELETE SET NULL,
-  CONSTRAINT "SessionVideo_mediaAssetId_fkey" FOREIGN KEY ("mediaAssetId") REFERENCES "MediaAsset" ("id") ON UPDATE CASCADE ON DELETE RESTRICT
-);
-
 CREATE TABLE "User" (
   "id" TEXT NOT NULL,
   "email" TEXT NOT NULL,
@@ -586,6 +567,29 @@ CREATE TABLE "LiveSession" (
   CONSTRAINT "LiveSession_teacherId_fkey" FOREIGN KEY ("teacherId") REFERENCES "Teacher" ("id") ON UPDATE CASCADE,
   CONSTRAINT "LiveSession_substituteTeacherId_fkey" FOREIGN KEY ("substituteTeacherId") REFERENCES "Teacher" ("id") ON UPDATE CASCADE ON DELETE SET NULL,
   CONSTRAINT "LiveSession_groupId_fkey" FOREIGN KEY ("groupId") REFERENCES "Group" ("id") ON UPDATE CASCADE ON DELETE CASCADE
+);
+
+CREATE TABLE "SessionVideo" (
+  "id" TEXT NOT NULL,
+  "batchId" TEXT NOT NULL,
+  "lessonId" TEXT,
+  "mediaAssetId" TEXT NOT NULL,
+  "title" TEXT NOT NULL,
+  "titleAr" TEXT NOT NULL,
+  "description" TEXT,
+  "requiredPercent" INTEGER NOT NULL DEFAULT 95,
+  "isRequiredForProgression" BOOLEAN NOT NULL DEFAULT FALSE,
+  "requirementMode" "SessionVideoRequirementMode" NOT NULL DEFAULT 'OPTIONAL',
+  "liveSessionId" TEXT,
+  "isPublished" BOOLEAN NOT NULL DEFAULT FALSE,
+  "publishedAt" TIMESTAMPTZ(3),
+  "createdAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMPTZ(3) NOT NULL,
+  CONSTRAINT "SessionVideo_pkey" PRIMARY KEY ("id"),
+  CONSTRAINT "SessionVideo_batchId_fkey" FOREIGN KEY ("batchId") REFERENCES "Batch" ("id") ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT "SessionVideo_lessonId_fkey" FOREIGN KEY ("lessonId") REFERENCES "Lesson" ("id") ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT "SessionVideo_mediaAssetId_fkey" FOREIGN KEY ("mediaAssetId") REFERENCES "MediaAsset" ("id") ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT "SessionVideo_liveSessionId_fkey" FOREIGN KEY ("liveSessionId") REFERENCES "LiveSession" ("id") ON UPDATE CASCADE ON DELETE SET NULL
 );
 
 CREATE TABLE "Student" (
@@ -1040,8 +1044,6 @@ CREATE INDEX "Question_quizId_idx" ON "Question" ("quizId");
 CREATE INDEX "Question_schoolType_idx" ON "Question" ("schoolType");
 CREATE INDEX "MockExamQuestion_mockExamId_idx" ON "MockExamQuestion" ("mockExamId");
 CREATE INDEX "SessionPublication_publishedAt_idx" ON "SessionPublication" ("publishedAt");
-CREATE INDEX "SessionVideo_batchId_isPublished_idx" ON "SessionVideo" ("batchId", "isPublished");
-CREATE INDEX "SessionVideo_lessonId_idx" ON "SessionVideo" ("lessonId");
 CREATE INDEX "User_role_idx" ON "User" ("role");
 CREATE INDEX "User_status_idx" ON "User" ("status");
 CREATE INDEX "AuditLog_userId_idx" ON "AuditLog" ("userId");
@@ -1058,6 +1060,9 @@ CREATE INDEX "LiveSession_startAt_idx" ON "LiveSession" ("startAt");
 CREATE INDEX "LiveSession_teacherId_startAt_idx" ON "LiveSession" ("teacherId", "startAt");
 CREATE INDEX "LiveSession_substituteTeacherId_idx" ON "LiveSession" ("substituteTeacherId");
 CREATE INDEX "LiveSession_status_startAt_idx" ON "LiveSession" ("status", "startAt");
+CREATE INDEX "SessionVideo_batchId_isPublished_idx" ON "SessionVideo" ("batchId", "isPublished");
+CREATE INDEX "SessionVideo_lessonId_idx" ON "SessionVideo" ("lessonId");
+CREATE INDEX "SessionVideo_liveSessionId_idx" ON "SessionVideo" ("liveSessionId");
 CREATE INDEX "Student_schoolType_idx" ON "Student" ("schoolType");
 CREATE INDEX "Student_groupId_idx" ON "Student" ("groupId");
 CREATE INDEX "Student_batchId_idx" ON "Student" ("batchId");

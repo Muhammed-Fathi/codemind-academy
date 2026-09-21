@@ -47,6 +47,10 @@ type SessionVideo = {
   isExternal: boolean;
   /** Explicit REQUIRED-vs-OPTIONAL (server; default false). */
   isRequiredForProgression: boolean;
+  /** Requirement mode + THIS student's engine verdict (absent = legacy shape). */
+  requirementMode?: string;
+  applicable?: boolean;
+  applicability?: string;
   /** Managed storage (measurable) vs external (no server watch %). */
   trackable: boolean;
   progress: { percent: number; isCompleted: boolean; watchedSec: number; satisfied: boolean };
@@ -58,13 +62,20 @@ export type VideoBadgeInput = {
   trackable: boolean;
   requiredPercent: number;
   progress: { percent: number };
+  /** Requirement mode + THIS student's engine verdict (absent = legacy shape). */
+  requirementMode?: string;
+  applicable?: boolean;
+  applicability?: string;
 };
 
 /**
  * Requirement identity badges for ONE video — the SINGLE definition. The
  * library rows, the lesson playlist rows and the player header all render
  * these, from server flags only (no client-side derivation):
- *   REQUIRED + trackable → «مطلوب لإكمال الدرس» + «72% / 95%»;
+ *   REQUIRED + trackable → «مطلوب لإكمال الدرس» + «72% / 95%»
+ *     (+ «مطلوب منك لتعويض غيابك» when an ABSENT_STUDENTS video applies);
+ *   ABSENT_STUDENTS exempt → the explicit exemption («غير مطلوب منك — …»),
+ *     never a silent re-label as extra content;
  *   OPTIONAL + trackable → «فيديو إضافي»;
  *   untrackable          → «نسبة المشاهدة غير متاحة» (never a bar/percent).
  */
@@ -75,7 +86,11 @@ export function SessionVideoBadges({ video }: { video: VideoBadgeInput }) {
       <span className="text-[10px] text-muted-foreground">{tr("course.243")}</span>
     );
   }
-  if (video.isRequiredForProgression) {
+  // `applicable` is the engine's per-student verdict; rows that predate it
+  // fall back to the legacy flag (identical meaning for ALL/OPTIONAL).
+  const required = video.applicable ?? video.isRequiredForProgression;
+  const absentMode = video.requirementMode === "ABSENT_STUDENTS";
+  if (required) {
     return (
       <span className="inline-flex flex-wrap items-center gap-1.5">
         <Badge
@@ -87,7 +102,23 @@ export function SessionVideoBadges({ video }: { video: VideoBadgeInput }) {
         <span className="text-[10px] tabular-nums text-muted-foreground">
           {video.progress.percent}% / {video.requiredPercent}%
         </span>
+        {absentMode && (
+          <span className="text-[10px] text-muted-foreground">{tr("course.247")}</span>
+        )}
       </span>
+    );
+  }
+  if (absentMode) {
+    // Exempt from an absent-mode recording: say WHY, in the student's own
+    // words — never silently shown as extra content.
+    const key =
+      video.applicability === "EXEMPT_EXCUSED"
+        ? "course.249"
+        : video.applicability === "EXEMPT_PRESENT"
+          ? "course.248"
+          : "course.251";
+    return (
+      <span className="text-[10px] text-muted-foreground">{tr(key)}</span>
     );
   }
   return (
@@ -225,7 +256,7 @@ export function StudentSessionVideosView() {
                     }`}
                   >
                     <div className="grid place-items-center w-8 h-8 shrink-0 rounded-lg bg-primary/10 text-primary">
-                      {(v.isRequiredForProgression ? v.progress.satisfied : v.progress.isCompleted) ? (
+                      {((v.applicable ?? v.isRequiredForProgression) ? v.progress.satisfied : v.progress.isCompleted) ? (
                         <CheckCircle2 className="w-4 h-4" />
                       ) : (
                         <Video className="w-4 h-4" />
@@ -252,7 +283,7 @@ export function StudentSessionVideosView() {
                         <Progress value={v.progress.percent} className="mt-1 h-1" />
                       )}
                     </div>
-                    {v.trackable && !v.isRequiredForProgression && (
+                    {v.trackable && !(v.applicable ?? v.isRequiredForProgression) && (
                       <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
                         {v.progress.percent}%
                       </span>
@@ -282,10 +313,13 @@ export function SessionVideoPlayer({
   const tr = useT();
   const ref = React.useRef<HTMLVideoElement | null>(null);
   const [percent, setPercent] = React.useState(video.progress.percent);
-  // REQUIRED videos complete by the LIVE rule (satisfied), OPTIONAL by
-  // sticky history — the same rule the rows apply, so player and rows agree.
+  // Whether THIS student must satisfy this recording (the engine verdict;
+  // legacy rows fall back to the flag). REQUIRED videos complete by the
+  // LIVE rule (satisfied), non-required by sticky history — the same rule
+  // the rows apply, so player and rows agree.
+  const requiredForStudent = video.applicable ?? video.isRequiredForProgression;
   const [completed, setCompleted] = React.useState(
-    video.isRequiredForProgression ? video.progress.satisfied : video.progress.isCompleted
+    requiredForStudent ? video.progress.satisfied : video.progress.isCompleted
   );
   const playingRef = React.useRef(false);
 
@@ -319,7 +353,7 @@ export function SessionVideoPlayer({
       const d = await r.json().catch(() => ({}));
       if (typeof d.percent === "number") {
         setPercent(d.percent);
-        const done = video.isRequiredForProgression
+        const done = requiredForStudent
           ? Boolean(d.satisfied)
           : Boolean(d.isCompleted);
         setCompleted(done);
@@ -328,9 +362,19 @@ export function SessionVideoPlayer({
     } catch {
       /* transient network issues must not interrupt playback */
     }
-  }, [video.id, onProgress]);
+  }, [video.id, requiredForStudent, onProgress]);
 
-  // Heartbeat only while actually playing — a paused tab earns no credit.
+  // Heartbeat design (server-verified, tamper-resistant):
+  //   * a beat on PLAY anchors the server clock (the row's lastHeartbeatAt),
+  //     so the elapsed-time credit of every LATER beat has a start point —
+  //     without this anchor the first watch of short content accrues 0;
+  //   * interval beats accrue while actually playing (a paused tab earns no
+  //     credit);
+  //   * pause / ended / unmount beats flush the tail, so the final segment
+  //     is never lost.
+  // Amounts stay server-measured (elapsed wall-clock between beats, capped,
+  // position-bounded) — the client only decides WHEN to report, never how
+  // much it earned.
   React.useEffect(() => {
     const timer = window.setInterval(() => {
       if (playingRef.current) beat();
@@ -378,6 +422,8 @@ export function SessionVideoPlayer({
             onLoadedMetadata={handleLoaded}
             onPlay={() => {
               playingRef.current = true;
+              // Anchor the server clock at playback start (see above).
+              beat();
             }}
             onPause={() => {
               playingRef.current = false;

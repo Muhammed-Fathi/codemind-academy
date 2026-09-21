@@ -66,6 +66,7 @@ const MIG_PHASE_G = "20260919180000_phase_g_quiz_homework_workflow";
 const MIG_CAMERA = "20260919190000_phase_g_camera_policy";
 const MIG_PHASE_H = "20260920120000_phase_h_progression_override";
 const MIG_SV_REQ = "20260921120000_session_video_progression_requirement";
+const MIG_SV_MODES = "20260921180000_session_video_requirement_modes";
 
 let pass = 0;
 const failures = [];
@@ -105,11 +106,11 @@ function partA() {
   // A1 — layout contract
   const sqliteMigrations = listMigrationDirs(SQLITE_MIGRATIONS);
   const pgMigrations = listMigrationDirs(PG_MIGRATIONS);
-  ok(sqliteMigrations.length === 17, `SQLite migrations dir carries all 17 historical migrations (got ${sqliteMigrations.length})`);
-  ok(pgMigrations.length === 7, `PG migrations dir carries the provider chain plus camera policy, Phase H and the session-video requirement (got ${pgMigrations.length})`);
+  ok(sqliteMigrations.length === 18, `SQLite migrations dir carries all 18 historical migrations (got ${sqliteMigrations.length})`);
+  ok(pgMigrations.length === 8, `PG migrations dir carries the provider chain plus camera policy, Phase H, the session-video requirement and requirement modes (got ${pgMigrations.length})`);
   ok(
-    pgMigrations[0] === "0_init" && pgMigrations[1] === MIG_26D && pgMigrations[2] === MIG_PHASE_F && pgMigrations[3] === MIG_PHASE_G && pgMigrations[4] === MIG_CAMERA && pgMigrations[5] === MIG_PHASE_H && pgMigrations[6] === MIG_SV_REQ,
-    "PG migrations are 0_init, Phase 26D, Phase F, Phase G, camera, Phase H, session-video requirement, in order"
+    pgMigrations[0] === "0_init" && pgMigrations[1] === MIG_26D && pgMigrations[2] === MIG_PHASE_F && pgMigrations[3] === MIG_PHASE_G && pgMigrations[4] === MIG_CAMERA && pgMigrations[5] === MIG_PHASE_H && pgMigrations[6] === MIG_SV_REQ && pgMigrations[7] === MIG_SV_MODES,
+    "PG migrations are 0_init, Phase 26D, Phase F, Phase G, camera, Phase H, session-video requirement, requirement modes, in order"
   );
   ok(fs.existsSync(PG_SCHEMA), "prisma/postgres/schema.prisma exists (PG schema owns its own directory)");
   ok(!fs.existsSync(OLD_PG_SCHEMA), "prisma/schema.postgresql.prisma does NOT exist (must never share prisma/ with SQLite again)");
@@ -147,6 +148,11 @@ function partA() {
     read(path.join(PG_MIGRATIONS, MIG_SV_REQ, "migration.sql")) !== read(path.join(SQLITE_MIGRATIONS, MIG_SV_REQ, "migration.sql")),
     "the PG and SQLite editions of the session-video requirement are distinct files (provider-specific SQL)"
   );
+  ok(
+    !fs.existsSync(path.join(PG_MIGRATIONS, MIG_SV_MODES, "migration.sql")) === false &&
+    read(path.join(PG_MIGRATIONS, MIG_SV_MODES, "migration.sql")) !== read(path.join(SQLITE_MIGRATIONS, MIG_SV_MODES, "migration.sql")),
+    "the PG and SQLite editions of requirement modes are distinct files (provider-specific SQL)"
+  );
   const pgSchemaHeader = read(PG_SCHEMA).split("\n").slice(0, 35).join("\n");
   ok(/WHY THIS FILE LIVES IN prisma\/postgres\//.test(pgSchemaHeader), "PG schema header documents the directory contract");
 
@@ -175,6 +181,7 @@ function partA() {
     "20260919190000_phase_g_camera_policy": "b34ddf74f0cd88fedf41baec4dc6d6dcb305a4a9da47989e918e19d89460ed24",
     "20260920120000_phase_h_progression_override": "4c9bf851683883d83ca76da379710244910b5955e1d542aa44794d1811e503ec",
     "20260921120000_session_video_progression_requirement": "0e6ab013989ce633b586b014d2675b1303f328b64aae7c7e992b76b5213a075b",
+    "20260921180000_session_video_requirement_modes": "942e1a893b1bb91d574d5b7d445a8145a6f7b04653c38481e49e8b4300ff1d4f",
     // PostgreSQL history (frozen from this commit on):
     "0_init": "c7f5d3fa76931d02e48c5cd2c4bfdb972c0f25e528e3c0c116736d3729cefa80",
     "PG:20260915180000_phase26d_quiz_attempt_architecture": "2c1bdde167f7dfff9b79a61f116da3dbd93b13c6aa27825404a79312ec7be104",
@@ -182,6 +189,7 @@ function partA() {
     "PG:20260919180000_phase_g_quiz_homework_workflow": "e16d1b6d454af5dd332727e869400ffa281d6f953b934007bc5e968e2fb05099",
     "PG:20260920120000_phase_h_progression_override": "f5481f3844f347920d945ba0936fe167435a7df395102af88cc3a4fee967a98f",
     "PG:20260921120000_session_video_progression_requirement": "dea2dd69badf709a2e2dda87735baca7da68cc0f355d03f556f82e42e9cba687",
+    "PG:20260921180000_session_video_requirement_modes": "77f073e7973f396b3d29bbe774428acf9c77538f763afbbcc7424176b418fa88",
   };
   for (const [name, checksum] of Object.entries(PINNED)) {
     const isPg = name.startsWith("PG:") || name === "0_init";
@@ -269,6 +277,7 @@ function partA() {
   const got = merge(
     merge(
     merge(
+    merge(
       merge(
         merge(
           merge(
@@ -284,6 +293,8 @@ function partA() {
       parseInventory(read(path.join(PG_MIGRATIONS, MIG_PHASE_H, "migration.sql")))
     ),
     parseInventory(read(path.join(PG_MIGRATIONS, MIG_SV_REQ, "migration.sql")))
+    ),
+    parseInventory(read(path.join(PG_MIGRATIONS, MIG_SV_MODES, "migration.sql")))
   );
   {
     const diffs = [];
@@ -301,7 +312,7 @@ function partA() {
     for (const c of want.indexes) if (!got.indexes.has(c)) diffs.push(`missing index ${c}`);
     for (const c of got.indexes) if (!want.indexes.has(c)) diffs.push(`extra index ${c}`);
     ok(diffs.length === 0,
-      `0_init + PG Phase 26D + Phase F + Phase G + camera + Phase H + session-video requirement == scripts/db/postgres-baseline.sql structurally (${want.tables.size} tables, ${[...want.tables.values()].reduce((a, c) => a + c.length, 0)} columns)`,
+      `0_init + PG Phase 26D + Phase F + Phase G + camera + Phase H + session-video requirement + requirement modes == scripts/db/postgres-baseline.sql structurally (${want.tables.size} tables, ${[...want.tables.values()].reduce((a, c) => a + c.length, 0)} columns)`,
       diffs.slice(0, 8).join("; "));
   }
 
@@ -441,8 +452,8 @@ function partA() {
     const mig = require(path.join(REPO, "scripts", "lib", "migrate-sqlite.mjs"));
     const db = new DatabaseSync(dbPath);
     const applied = mig.applyMigrations(db, { withBaseSchema: true });
-    ok(applied.length === 17, `fresh SQLite applies all 17 migrations (got ${applied.length})`);
-    ok(applied[applied.length - 1] === MIG_SV_REQ, "the last applied SQLite migration is the session-video requirement migration");
+    ok(applied.length === 18, `fresh SQLite applies all 18 migrations (got ${applied.length})`);
+    ok(applied[applied.length - 1] === MIG_SV_MODES, "the last applied SQLite migration is the requirement-modes migration");
     for (const [tbl, cols] of [
       ["Quiz", ["quizMode", "questionCount", "maxAttempts", "shuffleOptions", "difficultyPlan"]],
       ["QuizAttempt", ["attemptNumber", "status", "retryGrantId"]],
@@ -492,7 +503,7 @@ function partA() {
     // the harness ledger records the very checksums pinned in A2
     const rows = db.prepare('SELECT migration_name, checksum FROM "_prisma_migrations"').all();
     const pinned = rows.every((r) => r.checksum === PINNED[r.migration_name]);
-    ok(pinned && rows.length === 17, "fresh SQLite ledger carries exactly the pinned applied checksums");
+    ok(pinned && rows.length === 18, "fresh SQLite ledger carries exactly the pinned applied checksums");
     db.close();
     fs.rmSync(tmp, { recursive: true, force: true });
   }

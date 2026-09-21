@@ -38,6 +38,7 @@ export type ViewKey =
   | "teacher-templates"
   | "teacher-analytics"
   | "teacher-notifications"
+  | "teacher-readiness"
   | "admin-overview"
   | "admin-students"
   | "admin-teachers"
