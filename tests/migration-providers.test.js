@@ -13,8 +13,11 @@
 //
 // THE FIX THIS FILE GUARDS
 // ========================
-//   prisma/schema.prisma            (SQLite)  + prisma/migrations            (12 files, provider=sqlite)
-//   prisma/postgres/schema.prisma   (PG)      + prisma/postgres/migrations   (0_init + 26D, provider=postgresql)
+//   prisma/schema.prisma            (SQLite)  + prisma/migrations            (19 files, provider=sqlite)
+//   prisma/postgres/schema.prisma   (PG)      + prisma/postgres/migrations   (0_init + 26D + F + G + camera + H
+//                                                                                + session-video requirement
+//                                                                                + requirement modes + readiness-reminder
+//                                                                                recipients, provider=postgresql)
 // 0_init is the frozen pre-26D production schema; the PG edition of Phase 26D
 // carries the same logical change with PostgreSQL types and canonical
 // constraint names. NEVER point the PostgreSQL provider at prisma/migrations
@@ -24,7 +27,7 @@
 // ======
 //   Part A — offline (always runs): layout contract, applied-migration
 //            checksum contract, SQLite-only-SQL denylist, structural
-//            convergence (0_init + 26D == postgres-baseline.sql), fresh
+//            convergence (whole PG chain == postgres-baseline.sql), fresh
 //            SQLite through the repo's own migration harness.
 //   Part B — real PostgreSQL (needs DATABASE_URL, DISPOSABLE ONLY): applies
 //            the real migration SQL to a real server and catalog-compares
@@ -194,6 +197,10 @@ function partA() {
     "PG:20260915180000_phase26d_quiz_attempt_architecture": "2c1bdde167f7dfff9b79a61f116da3dbd93b13c6aa27825404a79312ec7be104",
     "PG:20260919120000_phase_f_live_session_lifecycle": "186f921f184b21bafc5c65ffa514bd526dd614f21227a4afd2462ca5d971d388",
     "PG:20260919180000_phase_g_quiz_homework_workflow": "e16d1b6d454af5dd332727e869400ffa281d6f953b934007bc5e968e2fb05099",
+    // The camera policy is byte-identical in both providers (one ADD COLUMN,
+    // no provider-specific type), so its PG pin equals its SQLite pin above —
+    // each edition is still pinned independently.
+    "PG:20260919190000_phase_g_camera_policy": "b34ddf74f0cd88fedf41baec4dc6d6dcb305a4a9da47989e918e19d89460ed24",
     "PG:20260920120000_phase_h_progression_override": "f5481f3844f347920d945ba0936fe167435a7df395102af88cc3a4fee967a98f",
     "PG:20260921120000_session_video_progression_requirement": "dea2dd69badf709a2e2dda87735baca7da68cc0f355d03f556f82e42e9cba687",
     "PG:20260921180000_session_video_requirement_modes": "77f073e7973f396b3d29bbe774428acf9c77538f763afbbcc7424176b418fa88",
@@ -230,7 +237,8 @@ function partA() {
     ok(badComment.length === 0, `PG migration ${name} has no semicolons inside -- comments (statement-splitter safety)`);
   }
 
-  // A4 — structural convergence: 0_init + PG 26D == postgres-baseline.sql.
+  // A4 — structural convergence: the whole PG chain (0_init + every later PG
+  //      migration, all merged below) == postgres-baseline.sql.
   const parseInventory = (sql) => {
     const inv = { enums: new Set(), enumAdds: new Map(), tables: new Map(), indexes: new Set(), constraints: new Set() };
     for (const m of sql.matchAll(/CREATE TYPE "([A-Za-z0-9_]+)" AS ENUM \(([^)]*)\);/g)) inv.enums.add(`${m[1]}(${m[2].split(",").length})`);
@@ -469,7 +477,7 @@ function partA() {
       "the recipients migration is additive in both providers (no table/column change, no row write)");
   }
 
-  // A6 — fresh SQLite through the repo's own harness: base DDL + 16 migrations.
+  // A6 — fresh SQLite through the repo's own harness: base DDL + 19 migrations.
   {
     const { DatabaseSync } = require("node:sqlite");
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cm-mig-providers-"));
@@ -891,6 +899,14 @@ async function partC() {
 
   // C1 — fresh PostgreSQL: `migrate deploy` alone provisions and converges.
   {
+    // The engine resolves its migrations from the directory NEXT TO the schema
+    // file, so this pins the resolution BEFORE anything runs: the PG schema
+    // must live in prisma/postgres (never back in prisma/ next to SQLite) and
+    // its adjacent migrations directory must BE prisma/postgres/migrations.
+    ok(PG_SCHEMA === path.join(REPO, "prisma", "postgres", "schema.prisma") &&
+      path.join(path.dirname(PG_SCHEMA), "migrations") === PG_MIGRATIONS &&
+      path.dirname(PG_SCHEMA) !== path.join(REPO, "prisma"),
+      "engine: fresh PG deploy resolves its migrations from prisma/postgres/migrations (schema-adjacent directory)");
     const pool = new pg.Pool({ connectionString: DATABASE_URL, max: 1 });
     const query = async (t, p) => pool.query(t, p);
     await resetPublicSchema(query);
@@ -903,10 +919,22 @@ async function partC() {
     const query2 = async (t, p) => pool2.query(t, p);
     const snap = await catalogSnapshot(query2);
     const ledger = await query2(`SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NOT NULL ORDER BY migration_name`);
-    const expectedPgLedger = ["0_init", MIG_26D, MIG_PHASE_F, MIG_PHASE_G, MIG_CAMERA, MIG_PHASE_H, MIG_SV_REQ];
+    const expectedPgLedger = ["0_init", MIG_26D, MIG_PHASE_F, MIG_PHASE_G, MIG_CAMERA, MIG_PHASE_H, MIG_SV_REQ, MIG_SV_MODES, MIG_REMIND_AUD];
+    // The expected ledger is the migrations directory itself: this guard fails
+    // loudly the moment a new migration lands without joining the explicit
+    // list (a stale list previously blamed the engine for the test's own
+    // omission). The explicit list stays — "never the SQLite names" must be
+    // spelled out, not inferred.
+    ok(JSON.stringify(listMigrationDirs(PG_MIGRATIONS)) === JSON.stringify(expectedPgLedger),
+      "engine: expected PG ledger list matches prisma/postgres/migrations (contract cannot drift silently)");
     ok(JSON.stringify(ledger.rows.map((x) => x.migration_name)) === JSON.stringify(expectedPgLedger),
       "engine: fresh deploy ledger contains exactly the complete PostgreSQL chain (never the SQLite names)");
-    ok(ledger.rows.every((x) => expectedPgLedger.includes(x.migration_name)),
+    // SQLite-ONLY names are the SQLite history MINUS the provider-shared
+    // migrations (the later phases ship a twin edition per provider under the
+    // same name). A fresh PG deploy must carry none of them.
+    const sqliteOnly = listMigrationDirs(SQLITE_MIGRATIONS).filter((n) => !expectedPgLedger.includes(n));
+    ok(sqliteOnly.length === 11 && ledger.rows.length === expectedPgLedger.length &&
+      ledger.rows.every((x) => !sqliteOnly.includes(x.migration_name)),
       "engine: fresh deploy ledger contains no SQLite migration names");
     const refs = await query2(`SELECT to_regclass('public."QuizRetryGrant"') AS t`);
     ok(refs.rows[0].t !== null, "engine: QuizRetryGrant exists after fresh deploy");
@@ -961,7 +989,7 @@ async function partC() {
   }
 
   // C3 — SQLite applied-ledger contract through the real engine: a database
-  //      migrated with the repo harness (base DDL + 13 files, real checksums)
+  //      migrated with the repo harness (base DDL + 19 files, real checksums)
   //      must be recognised as fully up to date.
   {
     const { DatabaseSync } = require("node:sqlite");
