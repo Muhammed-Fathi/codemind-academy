@@ -13,7 +13,13 @@ name: PG17 trusted catalog references (pre-26D + POST-26D full chain)
 #     Fresh PG17 + the REAL Prisma engine applies EXACTLY the current
 #     PostgreSQL migration chain from prisma/postgres/migrations
 #     (0_init + 20260915180000_phase26d_quiz_attempt_architecture +
-#      20260919120000_phase_f_live_session_lifecycle), proving:
+#      20260919120000_phase_f_live_session_lifecycle +
+#      20260919180000_phase_g_quiz_homework_workflow +
+#      20260919190000_phase_g_camera_policy +
+#      20260920120000_phase_h_progression_override +
+#      20260921120000_session_video_progression_requirement +
+#      20260921180000_session_video_requirement_modes +
+#      20260922090000_readiness_reminder_recipients), proving:
 #       * migrations apply cleanly from empty,
 #       * `prisma migrate status` is clean ("Database schema is up to date!"),
 #       * a second `prisma migrate deploy` is a no-op
@@ -112,6 +118,31 @@ name: PG17 trusted catalog references (pre-26D + POST-26D full chain)
 #   Artifact, job and file names keep their historical "phase26d" labels: the
 #   captured JSON is a cumulative FULL-CHAIN reference and renaming it would
 #   break the maintainer's documented read-only comparison command.
+#
+# PHASE H / SESSION-VIDEO / READINESS — WORKFLOW UPDATE (2026-09-22).
+#   The PostgreSQL chain now holds NINE migrations (0_init + 26D + F + G +
+#   camera + H + session-video requirement + session-video modes + readiness
+#   recipients). The contract below was brought current WITHOUT touching any
+#   migration, schema or business logic (verification-only change):
+#     * the PRE-26D bundle step now uses WHITELIST isolation (keep ONLY 0_init
+#       + migration_lock.toml, delete everything else) instead of a hardcoded
+#       per-migration rm blacklist, which had let the four newest migrations
+#       leak into the trusted historical bundle;
+#     * the PRE-26D validator additionally proves the absence of every Phase
+#       G / H / session-video / readiness object and pins NotificationType to
+#       EXACTLY its 12 historical labels, so the frozen reference cannot drift;
+#     * the POST-26D validator pins all nine migration SHA-256s, asserts the
+#       Phase G / H / session-video / readiness objects BY NAME (Phase G
+#       previously had no object assertions at all), and the full chain must
+#       match the measured catalog size exactly:
+#           607 columns / 98 enum values / 190 indexes /
+#           192 primary+unique+foreign-key constraints
+#       (measured on a real PostgreSQL engine via the read-only inspector's
+#       own queries; the p/u/f subset is PostgreSQL-major-stable, the raw
+#       pg_constraint total is not: 192 on PG17, 611 on PG18);
+#     * the POST-26D ledger must be exactly the nine migrations in order, and
+#       the reference's recorded repository checksums must cover EXACTLY the
+#       same set, so a future migration fails loudly here instead of drifting.
 
 on:
   push:
@@ -125,6 +156,12 @@ env:
   INIT_SQL_SHA256: c7f5d3fa76931d02e48c5cd2c4bfdb972c0f25e528e3c0c116736d3729cefa80
   PHASE26D_SQL_SHA256: 2c1bdde167f7dfff9b79a61f116da3dbd93b13c6aa27825404a79312ec7be104
   PHASE_F_SQL_SHA256: 186f921f184b21bafc5c65ffa514bd526dd614f21227a4afd2462ca5d971d388
+  PHASE_G_SQL_SHA256: e16d1b6d454af5dd332727e869400ffa281d6f953b934007bc5e968e2fb05099
+  PHASE_G_CAMERA_SQL_SHA256: b34ddf74f0cd88fedf41baec4dc6d6dcb305a4a9da47989e918e19d89460ed24
+  PHASE_H_SQL_SHA256: f5481f3844f347920d945ba0936fe167435a7df395102af88cc3a4fee967a98f
+  SESSION_VIDEO_REQ_SQL_SHA256: dea2dd69badf709a2e2dda87735baca7da68cc0f355d03f556f82e42e9cba687
+  SESSION_VIDEO_MODES_SQL_SHA256: 77f073e7973f396b3d29bbe774428acf9c77538f763afbbcc7424176b418fa88
+  READINESS_REMINDER_SQL_SHA256: 80cb5f164b947869a6c333b5bd3b27434dc2ac5809552b6eeb3b8085a97f0513
 
   # Inline verification scripts, carried as env values (block scalars) and piped
   # into node. This keeps the change strictly workflow-only while avoiding the
@@ -193,6 +230,51 @@ env:
     }
     assert(!ref.catalog.enums.some(e => e.name === 'AbsenceReviewStatus' || e.name === 'AbsenceHoldStatus'),
       'pre-26D: no Phase F enums');
+    // Phase G must be absent too: the bundle really is the pre-Phase-G state.
+    for (const [table, column] of [['Quiz', 'status'], ['Quiz', 'publishedAt'], ['Quiz', 'cameraPolicy'],
+                                   ['Homework', 'status'], ['Homework', 'publishedAt'], ['Homework', 'attachmentId'],
+                                   ['HomeworkSubmission', 'attachmentId'], ['HomeworkSubmission', 'gradedById'],
+                                   ['HomeworkSubmission', 'gradedAt']]) {
+      assert(!ref.catalog.columns.some(x => x.table_name === table && x.column_name === column),
+        'pre-26D: no Phase G column ' + table + '.' + column);
+    }
+    for (const name of ['Homework_attachmentId_fkey', 'HomeworkSubmission_attachmentId_fkey',
+                        'HomeworkSubmission_gradedById_fkey']) {
+      assert(!ref.catalog.constraints.some(k => k.name === name), 'pre-26D: no Phase G constraint ' + name);
+    }
+    // Phase H must be absent too: the bundle really is the pre-Phase-H state.
+    assert(!ref.catalog.tables.some(t => t.name === 'ProgressionOverride'),
+      'pre-26D: no Phase H table ProgressionOverride');
+    for (const name of ['ProgressionOverride_pkey', 'ProgressionOverride_studentId_fkey',
+                        'ProgressionOverride_lessonId_fkey']) {
+      assert(!ref.catalog.constraints.some(k => k.name === name), 'pre-26D: no Phase H constraint ' + name);
+    }
+    for (const name of ['ProgressionOverride_studentId_idx', 'ProgressionOverride_lessonId_idx',
+                        'ProgressionOverride_studentId_lessonId_idx']) {
+      assert(!ref.catalog.indexes.some(i => i.name === name), 'pre-26D: no Phase H index ' + name);
+    }
+    // Session-video + readiness must be absent too: the bundle really is the
+    // pre-session-video state.
+    for (const [table, column] of [['SessionVideo', 'isRequiredForProgression'], ['SessionVideo', 'requirementMode'],
+                                   ['SessionVideo', 'liveSessionId']]) {
+      assert(!ref.catalog.columns.some(x => x.table_name === table && x.column_name === column),
+        'pre-26D: no session-video column ' + table + '.' + column);
+    }
+    assert(!ref.catalog.constraints.some(k => k.name === 'SessionVideo_liveSessionId_fkey'),
+      'pre-26D: no session-video FK');
+    assert(!ref.catalog.indexes.some(i => i.name === 'SessionVideo_liveSessionId_idx'),
+      'pre-26D: no session-video index');
+    assert(!ref.catalog.enums.some(e => e.name === 'SessionVideoRequirementMode'),
+      'pre-26D: no session-video enum');
+    assert(!ref.catalog.enums.find(e => e.name === 'NotificationType').values.includes('READINESS_REMINDER'),
+      'pre-26D: no readiness label');
+    // NotificationType is EXACTLY the 12 historical labels: no Phase F append,
+    // no readiness label. This is the frozen historical contract.
+    assert.deepEqual(ref.catalog.enums.find(e => e.name === 'NotificationType').values,
+      ['NEW_LESSON', 'NEW_QUIZ', 'QUIZ_RESULT', 'NEW_HOMEWORK', 'HOMEWORK_DEADLINE', 'UPCOMING_SESSION',
+       'LOW_ATTENDANCE', 'MONTHLY_REPORT', 'SUBSCRIPTION_EXPIRATION', 'ANNOUNCEMENT', 'PAYMENT_APPROVED',
+       'PAYMENT_REJECTED'],
+      'exact pre-26D NotificationType labels (frozen history)');
     console.log('PG17_0_INIT_REFERENCE_VALID');
 
   # The trusted POST-26D reference must be the full PG migration chain on PG17.
@@ -210,6 +292,24 @@ env:
     assert.equal(
       ref.repositoryMigrationChecksums['prisma/postgres/migrations/20260919120000_phase_f_live_session_lifecycle'],
       process.env.PHASE_F_SQL_SHA256, 'repository Phase F SHA-256 pinned');
+    assert.equal(
+      ref.repositoryMigrationChecksums['prisma/postgres/migrations/20260919180000_phase_g_quiz_homework_workflow'],
+      process.env.PHASE_G_SQL_SHA256, 'repository Phase G SHA-256 pinned');
+    assert.equal(
+      ref.repositoryMigrationChecksums['prisma/postgres/migrations/20260919190000_phase_g_camera_policy'],
+      process.env.PHASE_G_CAMERA_SQL_SHA256, 'repository Phase G camera-policy SHA-256 pinned');
+    assert.equal(
+      ref.repositoryMigrationChecksums['prisma/postgres/migrations/20260920120000_phase_h_progression_override'],
+      process.env.PHASE_H_SQL_SHA256, 'repository Phase H SHA-256 pinned');
+    assert.equal(
+      ref.repositoryMigrationChecksums['prisma/postgres/migrations/20260921120000_session_video_progression_requirement'],
+      process.env.SESSION_VIDEO_REQ_SQL_SHA256, 'repository session-video-requirement SHA-256 pinned');
+    assert.equal(
+      ref.repositoryMigrationChecksums['prisma/postgres/migrations/20260921180000_session_video_requirement_modes'],
+      process.env.SESSION_VIDEO_MODES_SQL_SHA256, 'repository session-video-modes SHA-256 pinned');
+    assert.equal(
+      ref.repositoryMigrationChecksums['prisma/postgres/migrations/20260922090000_readiness_reminder_recipients'],
+      process.env.READINESS_REMINDER_SQL_SHA256, 'repository readiness-reminder SHA-256 pinned');
     for (const s of ['tables', 'columns', 'enums', 'constraints', 'indexes']) {
       assert(Array.isArray(ref.catalog[s]) && ref.catalog[s].length > 0, 'catalog section ' + s);
     }
@@ -322,6 +422,83 @@ env:
                         'Notification_userId_dedupeKey_key']) {
       assert(idx(name), 'Phase F index ' + name + ' exists');
     }
+    // ---- PHASE G objects (quiz/homework workflow + camera policy) -----------
+    // Phase G lifecycle columns (TEXT with a PUBLISHED default, nullable
+    // publishedAt; attachment/grader columns nullable by design).
+    for (const [table, column] of [
+      ['Quiz', 'status'], ['Quiz', 'publishedAt'], ['Quiz', 'cameraPolicy'],
+      ['Homework', 'status'], ['Homework', 'publishedAt'], ['Homework', 'attachmentId'],
+      ['HomeworkSubmission', 'attachmentId'], ['HomeworkSubmission', 'gradedById'],
+      ['HomeworkSubmission', 'gradedAt'],
+    ]) {
+      assert(col(table, column), 'Phase G column ' + table + '.' + column + ' exists');
+    }
+    assert(col('Quiz', 'status').not_null, 'Phase G Quiz.status is NOT NULL');
+    assert(col('Quiz', 'cameraPolicy').not_null, 'Phase G Quiz.cameraPolicy is NOT NULL');
+    assert(col('Homework', 'status').not_null, 'Phase G Homework.status is NOT NULL');
+    // Phase G history-preserving foreign keys (SET NULL, canonical names).
+    for (const name of ['Homework_attachmentId_fkey',
+                        'HomeworkSubmission_attachmentId_fkey',
+                        'HomeworkSubmission_gradedById_fkey']) {
+      assert(con(name), 'Phase G constraint ' + name + ' exists');
+    }
+    assert(/ON DELETE SET NULL/.test(con('Homework_attachmentId_fkey').definition),
+      'Phase G Homework FK is history-preserving (SET NULL)');
+    assert(/ON DELETE SET NULL/.test(con('HomeworkSubmission_gradedById_fkey').definition),
+      'Phase G grader FK is history-preserving (SET NULL)');
+    // Phase G adds no indexes (its columns carry no @@index in the source).
+    // ---- PHASE H objects (admin progression override) -----------------------
+    assert(ref.catalog.tables.some(t => t.name === 'ProgressionOverride'),
+      'Phase H table ProgressionOverride exists');
+    for (const c of ['id', 'studentId', 'lessonId', 'reason', 'createdByUserId', 'createdAt',
+                     'expiresAt', 'revokedAt', 'revokedByUserId', 'revokeReason']) {
+      assert(col('ProgressionOverride', c), 'Phase H column ProgressionOverride.' + c + ' exists');
+    }
+    assert.equal(ref.catalog.columns.filter(x => x.table_name === 'ProgressionOverride').length, 10,
+      'Phase H table carries exactly its 10 columns');
+    for (const name of ['ProgressionOverride_pkey',
+                        'ProgressionOverride_studentId_fkey',
+                        'ProgressionOverride_lessonId_fkey']) {
+      assert(con(name), 'Phase H constraint ' + name + ' exists');
+    }
+    assert(/ON DELETE CASCADE/.test(con('ProgressionOverride_studentId_fkey').definition),
+      'Phase H student FK cascades (override rows never orphan)');
+    assert(/ON DELETE CASCADE/.test(con('ProgressionOverride_lessonId_fkey').definition),
+      'Phase H lesson FK cascades (override rows never orphan)');
+    for (const name of ['ProgressionOverride_pkey',
+                        'ProgressionOverride_studentId_idx',
+                        'ProgressionOverride_lessonId_idx',
+                        'ProgressionOverride_studentId_lessonId_idx']) {
+      assert(idx(name), 'Phase H index ' + name + ' exists');
+    }
+    // ---- SESSION-VIDEO objects (progression requirement + modes) ------------
+    assert(col('SessionVideo', 'isRequiredForProgression'),
+      'session-video column SessionVideo.isRequiredForProgression exists');
+    assert(col('SessionVideo', 'isRequiredForProgression').not_null,
+      'session-video isRequiredForProgression is NOT NULL');
+    assert.deepEqual(ref.catalog.enums.find(e => e.name === 'SessionVideoRequirementMode').values,
+      ['OPTIONAL', 'ALL_STUDENTS', 'ABSENT_STUDENTS'], 'exact SessionVideoRequirementMode labels');
+    assert(col('SessionVideo', 'requirementMode'), 'session-video column SessionVideo.requirementMode exists');
+    assert(col('SessionVideo', 'requirementMode').not_null, 'session-video requirementMode is NOT NULL');
+    assert(col('SessionVideo', 'liveSessionId'), 'session-video column SessionVideo.liveSessionId exists');
+    assert(!col('SessionVideo', 'liveSessionId').not_null, 'session-video liveSessionId is nullable');
+    assert(con('SessionVideo_liveSessionId_fkey'), 'session-video constraint SessionVideo_liveSessionId_fkey exists');
+    assert(/ON DELETE SET NULL/.test(con('SessionVideo_liveSessionId_fkey').definition),
+      'session-video liveSessionId FK is history-preserving (SET NULL)');
+    assert(idx('SessionVideo_liveSessionId_idx'), 'session-video index SessionVideo_liveSessionId_idx exists');
+    // ---- READINESS-REMINDER object (appended NotificationType label) --------
+    // The full enum is asserted EXACTLY: 12 historical labels, then the nine
+    // Phase F labels in append order, then READINESS_REMINDER last (a native
+    // type can only grow, so every append lands last and nothing moves).
+    assert.deepEqual(ref.catalog.enums.find(e => e.name === 'NotificationType').values,
+      ['NEW_LESSON', 'NEW_QUIZ', 'QUIZ_RESULT', 'NEW_HOMEWORK', 'HOMEWORK_DEADLINE', 'UPCOMING_SESSION',
+       'LOW_ATTENDANCE', 'MONTHLY_REPORT', 'SUBSCRIPTION_EXPIRATION', 'ANNOUNCEMENT', 'PAYMENT_APPROVED',
+       'PAYMENT_REJECTED',
+       'SESSION_SCHEDULED', 'SESSION_LINK', 'SESSION_RESCHEDULED', 'SESSION_CANCELLED',
+       'ABSENCE_FINALIZED', 'ABSENCE_REASON_SUBMITTED', 'ABSENCE_EXCUSED', 'ABSENCE_UNEXCUSED',
+       'ABSENCE_REMINDER',
+       'READINESS_REMINDER'],
+      'exact full-chain NotificationType labels (history + Phase F + readiness, in order)');
     // Catalog health.
     assert(ref.catalog.indexes.every(i => i.indisvalid && i.indisready), 'no invalid indexes');
     assert(ref.catalog.constraints.every(k => k.convalidated), 'no unvalidated constraints');
@@ -336,42 +513,58 @@ env:
       ' indexes=' + ref.catalog.indexes.length + ' con(p+u+f)=' +
       ref.catalog.constraints.filter(k => ['p', 'u', 'f'].includes(k.contype)).length +
       ' con(total)=' + ref.catalog.constraints.length;
-    assert.equal(ref.catalog.columns.length, 594, 'full chain must have 594 columns — ' + size);
-    assert.equal(enumValues, 94, 'full chain must have 94 enum values — ' + size);
-    assert.equal(ref.catalog.indexes.length, 185, 'full chain must have 185 indexes — ' + size);
+    assert.equal(ref.catalog.columns.length, 607, 'full chain must have 607 columns — ' + size);
+    assert.equal(enumValues, 98, 'full chain must have 98 enum values — ' + size);
+    assert.equal(ref.catalog.indexes.length, 190, 'full chain must have 190 indexes — ' + size);
     //
     // Constraints are asserted through their TYPED subset (p = primary key,
     // u = unique, f = foreign key), never through the raw pg_constraint total,
     // because the raw total is PostgreSQL-MAJOR DEPENDENT:
     //   * PostgreSQL 18 stores column NOT NULL specifications in pg_constraint
     //     as contype 'n' (PostgreSQL 18.0 release notes, "Store column NOT NULL
-    //     specifications in pg_constraint"), which adds 408 rows for this schema
-    //     (raw total 593 = 408 n + 60 p + 38 u + 87 f);
+    //     specifications in pg_constraint"), which adds 419 rows for this schema
+    //     (raw total 611 = 419 n + 61 p + 38 u + 93 f);
     //   * PostgreSQL 17 — the CI service container, matching the production
     //     target — keeps NOT NULL on the relation in pg_attribute instead
     //     ("Not-null constraints on relations are represented in the pg_attribute
     //     catalog, not here", PG17 docs 51.13), so pg_constraint carries only
-    //     p/u/f for this schema (raw total 185).
+    //     p/u/f for this schema (raw total 192).
     // The p/u/f subset is the same on both majors and is exactly the constraint
-    // set the migrations create, so 185 is the stable contract. NOTHING is
-    // weakened by this: every Phase F constraint is additionally asserted BY
-    // NAME above, the reference is still verified `convalidated` end to end,
-    // and the self-comparison and full section shape checks are unchanged.
+    // set the migrations create, so 192 is the stable contract. NOTHING is
+    // weakened by this: every Phase F/G/H and session-video constraint is
+    // additionally asserted BY NAME above, the reference is still verified
+    // `convalidated` end to end, and the self-comparison and full section
+    // shape checks are unchanged.
     const typedConstraints = ref.catalog.constraints.filter(k => ['p', 'u', 'f'].includes(k.contype));
-    assert.equal(typedConstraints.length, 188,
-      'full chain must have 188 primary/unique/foreign-key constraints — ' + size);
+    assert.equal(typedConstraints.length, 192,
+      'full chain must have 192 primary/unique/foreign-key constraints — ' + size);
     // Ledger proof: the real engine applied EXACTLY the PG chain, cleanly.
-    assert.deepEqual(ref.ledger.map(r => r.migration_name),
-      ['0_init', '20260915180000_phase26d_quiz_attempt_architecture',
+    // EXPECTED_CHAIN is the single source of truth for the current chain: the
+    // ledger must equal it in order, and the repository checksums recorded in
+    // the reference must cover EXACTLY the same set — so a future migration
+    // cannot silently land without joining this contract (it fails loudly
+    // here instead of drifting).
+    const EXPECTED_CHAIN = ['0_init', '20260915180000_phase26d_quiz_attempt_architecture',
        '20260919120000_phase_f_live_session_lifecycle',
        '20260919180000_phase_g_quiz_homework_workflow',
-       '20260919190000_phase_g_camera_policy'],
+       '20260919190000_phase_g_camera_policy',
+       '20260920120000_phase_h_progression_override',
+       '20260921120000_session_video_progression_requirement',
+       '20260921180000_session_video_requirement_modes',
+       '20260922090000_readiness_reminder_recipients'];
+    assert.deepEqual(ref.ledger.map(r => r.migration_name), EXPECTED_CHAIN,
       'ledger is exactly the PostgreSQL chain, in order (never the SQLite names)');
     for (const r of ref.ledger) {
       assert(r.finished_at, r.migration_name + ' finished');
       assert.equal(r.rolled_back_at, null, r.migration_name + ' not rolled back');
       assert.equal(r.applied_steps_count, 1, r.migration_name + ' applied exactly once');
     }
+    const repoPgMigrations = Object.keys(ref.repositoryMigrationChecksums || {})
+      .filter(k => k.startsWith('prisma/postgres/migrations/'))
+      .map(k => k.slice('prisma/postgres/migrations/'.length))
+      .sort();
+    assert.deepEqual(repoPgMigrations, [...EXPECTED_CHAIN].sort(),
+      'every prisma/postgres/migrations directory is asserted in EXPECTED_CHAIN (none unpinned, none phantom)');
     console.log('PG17_FULL_CHAIN_PHASE26D_REFERENCE_VALID');
 
 jobs:
@@ -432,14 +625,14 @@ jobs:
           cp prisma/postgres/schema.prisma "$BUNDLE/schema.prisma"
           cmp prisma/postgres/schema.prisma "$BUNDLE/schema.prisma"
           cp -r prisma/postgres/migrations "$BUNDLE/migrations"
-          # Remove EVERY post-0_init migration directory, so the bundle is
-          # exactly the pre-26D state even as the chain grows (Phase 26D, Phase F).
-          rm -rf "$BUNDLE/migrations/20260915180000_phase26d_quiz_attempt_architecture"
-          rm -rf "$BUNDLE/migrations/20260919120000_phase_f_live_session_lifecycle"
-          rm -rf "$BUNDLE/migrations/20260919180000_phase_g_quiz_homework_workflow"
-          rm -rf "$BUNDLE/migrations/20260919190000_phase_g_camera_policy"
-          [ ! -d "$BUNDLE/migrations/20260915180000_phase26d_quiz_attempt_architecture" ]
-          [ ! -d "$BUNDLE/migrations/20260919120000_phase_f_live_session_lifecycle" ]
+          # WHITELIST isolation: keep ONLY 0_init + migration_lock.toml and
+          # delete EVERYTHING else, so the bundle is exactly the pre-26D state
+          # no matter how the chain grows. (A hardcoded per-migration rm
+          # blacklist previously let newer migrations — Phase H, the
+          # session-video pair, the readiness recipients — leak into this
+          # bundle and fail the exactly-one-directory assertion below. A
+          # blacklist can never be complete; the whitelist cannot leak.)
+          find "$BUNDLE/migrations" -mindepth 1 -maxdepth 1 ! -name '0_init' ! -name 'migration_lock.toml' -exec rm -rf {} +
           echo "$INIT_SQL_SHA256  $BUNDLE/migrations/0_init/migration.sql" | sha256sum -c -
           grep -q 'provider = "postgresql"' "$BUNDLE/migrations/migration_lock.toml"
           echo "Bundle migrations directory contains:"
@@ -538,6 +731,12 @@ jobs:
           echo "$INIT_SQL_SHA256  prisma/postgres/migrations/0_init/migration.sql" | sha256sum -c -
           echo "$PHASE26D_SQL_SHA256  prisma/postgres/migrations/20260915180000_phase26d_quiz_attempt_architecture/migration.sql" | sha256sum -c -
           echo "$PHASE_F_SQL_SHA256  prisma/postgres/migrations/20260919120000_phase_f_live_session_lifecycle/migration.sql" | sha256sum -c -
+          echo "$PHASE_G_SQL_SHA256  prisma/postgres/migrations/20260919180000_phase_g_quiz_homework_workflow/migration.sql" | sha256sum -c -
+          echo "$PHASE_G_CAMERA_SQL_SHA256  prisma/postgres/migrations/20260919190000_phase_g_camera_policy/migration.sql" | sha256sum -c -
+          echo "$PHASE_H_SQL_SHA256  prisma/postgres/migrations/20260920120000_phase_h_progression_override/migration.sql" | sha256sum -c -
+          echo "$SESSION_VIDEO_REQ_SQL_SHA256  prisma/postgres/migrations/20260921120000_session_video_progression_requirement/migration.sql" | sha256sum -c -
+          echo "$SESSION_VIDEO_MODES_SQL_SHA256  prisma/postgres/migrations/20260921180000_session_video_requirement_modes/migration.sql" | sha256sum -c -
+          echo "$READINESS_REMINDER_SQL_SHA256  prisma/postgres/migrations/20260922090000_readiness_reminder_recipients/migration.sql" | sha256sum -c -
           echo "PostgreSQL migration chain to apply (exactly this directory, in order):"
           ls prisma/postgres/migrations
 
@@ -548,6 +747,12 @@ jobs:
           grep -q "0_init" full-chain-deploy.log
           grep -q "20260915180000_phase26d_quiz_attempt_architecture" full-chain-deploy.log
           grep -q "20260919120000_phase_f_live_session_lifecycle" full-chain-deploy.log
+          grep -q "20260919180000_phase_g_quiz_homework_workflow" full-chain-deploy.log
+          grep -q "20260919190000_phase_g_camera_policy" full-chain-deploy.log
+          grep -q "20260920120000_phase_h_progression_override" full-chain-deploy.log
+          grep -q "20260921120000_session_video_progression_requirement" full-chain-deploy.log
+          grep -q "20260921180000_session_video_requirement_modes" full-chain-deploy.log
+          grep -q "20260922090000_readiness_reminder_recipients" full-chain-deploy.log
           echo "Full chain applied cleanly from a fresh PostgreSQL 17 database."
 
       - name: Prove migrate status is clean
