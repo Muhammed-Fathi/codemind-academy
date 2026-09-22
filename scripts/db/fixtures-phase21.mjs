@@ -3,7 +3,8 @@
 // Builds a SCRATCH SQLite database (OS temp dir — never the real DB) at the
 // CURRENT migration head (base DDL derived from prisma/schema.prisma + every
 // real migration.sql in order, via scripts/lib/migrate-sqlite.mjs), then
-// inserts a deterministic, production-shaped row set covering ALL 55 tables:
+// inserts a deterministic, production-shaped row set covering the curriculum,
+// identity, progress, media, lifecycle and audit tables (see insertFixtures):
 //   * official curriculum (Course/Part/Unit/Lesson OFFICIAL+PUBLISHED) + legacy
 //   * users in every role, students in both school types, parent linkage
 //   * progress, quiz attempts + answers, homework, mock-exam attempts
@@ -128,6 +129,10 @@ function insertFixtures(db) {
        VALUES ('p21-link1','p21-p1','p21-s1','parent',?)`, T0);
   run(`INSERT INTO "Enrollment" ("id","studentId","courseId","trackId","status","startsAt","createdAt")
        VALUES ('p21-enr1','p21-s1','p21-c1','p21-tr1','ACTIVE',?,?)`, T0, T0);
+  // Phase H — one admin progression override (an audited access exception; it
+  // rewrites no academic fact, so no other fixture row changes with it).
+  run(`INSERT INTO "ProgressionOverride" ("id","studentId","lessonId","reason","createdByUserId","createdAt","expiresAt","revokedAt","revokedByUserId","revokeReason")
+       VALUES ('p21-ov1','p21-s1','p21-l1','Rehearsal fixture: admin exception for a missed live session','p21-u-admin',?,?,?,?,?)`, T2, FUTURE, null, null, null);
 
   // ---- progress, quizzes, homework, mock exams ----
   run(`INSERT INTO "LessonProgress" ("id","studentId","lessonId","progress","isCompleted","videoDurationSec","videoWatchedSec","videoPercent","videoCompleted","videoCompletedAt")

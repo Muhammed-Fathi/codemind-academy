@@ -37,6 +37,7 @@ import {
   UPLOAD_ERROR_STATUS,
   completePresignedUpload,
 } from "@/lib/media-upload";
+import { getServerT } from "@/lib/i18n-server";
 
 export async function POST(req: NextRequest) {
   const { user, error } = await requireRole("ADMIN");
@@ -59,12 +60,25 @@ export async function POST(req: NextRequest) {
     titleAr: body.titleAr,
     description: body.description,
     publish: body.publish,
+    isRequiredForProgression: body.isRequiredForProgression,
+    requiredPercent: body.requiredPercent,
     // Shared / LESSON_PDF payload:
     lessonId: body.lessonId,
     trackScope: body.trackScope,
   });
 
   if (!result.ok) {
+    // The progression-threshold refusal speaks the SAME contract as the
+    // buffered Admin POST/PATCH (422 + api.361 Arabic): the Admin UI surfaces
+    // `error` verbatim, so an English validator message here would leak
+    // through to the admin. The machine code stays INVALID_VIDEO_REQUIREMENT.
+    if (result.code === "INVALID_VIDEO_REQUIREMENT") {
+      const tApi = await getServerT();
+      return NextResponse.json(
+        { error: tApi("api.361"), code: result.code },
+        { status: 422 }
+      );
+    }
     return NextResponse.json(
       {
         error: result.message,

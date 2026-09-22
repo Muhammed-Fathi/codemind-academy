@@ -45,8 +45,88 @@ type SessionVideo = {
   publishedAt: string | null;
   src: string | null;
   isExternal: boolean;
-  progress: { percent: number; isCompleted: boolean; watchedSec: number };
+  /** Explicit REQUIRED-vs-OPTIONAL (server; default false). */
+  isRequiredForProgression: boolean;
+  /** Requirement mode + THIS student's engine verdict (absent = legacy shape). */
+  requirementMode?: string;
+  applicable?: boolean;
+  applicability?: string;
+  /** Managed storage (measurable) vs external (no server watch %). */
+  trackable: boolean;
+  progress: { percent: number; isCompleted: boolean; watchedSec: number; satisfied: boolean };
 };
+
+/** The minimal video shape the requirement badges read (both list types satisfy it). */
+export type VideoBadgeInput = {
+  isRequiredForProgression: boolean;
+  trackable: boolean;
+  requiredPercent: number;
+  progress: { percent: number };
+  /** Requirement mode + THIS student's engine verdict (absent = legacy shape). */
+  requirementMode?: string;
+  applicable?: boolean;
+  applicability?: string;
+};
+
+/**
+ * Requirement identity badges for ONE video — the SINGLE definition. The
+ * library rows, the lesson playlist rows and the player header all render
+ * these, from server flags only (no client-side derivation):
+ *   REQUIRED + trackable → «مطلوب لإكمال الدرس» + «72% / 95%»
+ *     (+ «مطلوب منك لتعويض غيابك» when an ABSENT_STUDENTS video applies);
+ *   ABSENT_STUDENTS exempt → the explicit exemption («غير مطلوب منك — …»),
+ *     never a silent re-label as extra content;
+ *   OPTIONAL + trackable → «فيديو إضافي»;
+ *   untrackable          → «نسبة المشاهدة غير متاحة» (never a bar/percent).
+ */
+export function SessionVideoBadges({ video }: { video: VideoBadgeInput }) {
+  const tr = useT();
+  if (!video.trackable) {
+    return (
+      <span className="text-[10px] text-muted-foreground">{tr("course.243")}</span>
+    );
+  }
+  // `applicable` is the engine's per-student verdict; rows that predate it
+  // fall back to the legacy flag (identical meaning for ALL/OPTIONAL).
+  const required = video.applicable ?? video.isRequiredForProgression;
+  const absentMode = video.requirementMode === "ABSENT_STUDENTS";
+  if (required) {
+    return (
+      <span className="inline-flex flex-wrap items-center gap-1.5">
+        <Badge
+          variant="outline"
+          className="border-primary/40 bg-primary/10 text-primary text-[10px]"
+        >
+          {tr("course.244")}
+        </Badge>
+        <span className="text-[10px] tabular-nums text-muted-foreground">
+          {video.progress.percent}% / {video.requiredPercent}%
+        </span>
+        {absentMode && (
+          <span className="text-[10px] text-muted-foreground">{tr("course.247")}</span>
+        )}
+      </span>
+    );
+  }
+  if (absentMode) {
+    // Exempt from an absent-mode recording: say WHY, in the student's own
+    // words — never silently shown as extra content.
+    const key =
+      video.applicability === "EXEMPT_EXCUSED"
+        ? "course.249"
+        : video.applicability === "EXEMPT_PRESENT"
+          ? "course.248"
+          : "course.251";
+    return (
+      <span className="text-[10px] text-muted-foreground">{tr(key)}</span>
+    );
+  }
+  return (
+    <Badge variant="outline" className="text-[10px] text-muted-foreground">
+      {tr("course.245")}
+    </Badge>
+  );
+}
 
 const HEARTBEAT_MS = 15_000;
 
@@ -144,11 +224,11 @@ export function StudentSessionVideosView() {
             <SessionVideoPlayer
               key={active.id}
               video={active}
-              onProgress={(percent, isCompleted) =>
+              onProgress={(percent, isCompleted, satisfied) =>
                 setVideos((prev) =>
                   prev.map((v) =>
                     v.id === active.id
-                      ? { ...v, progress: { ...v.progress, percent, isCompleted } }
+                      ? { ...v, progress: { ...v.progress, percent, isCompleted, satisfied } }
                       : v
                   )
                 )
@@ -176,7 +256,7 @@ export function StudentSessionVideosView() {
                     }`}
                   >
                     <div className="grid place-items-center w-8 h-8 shrink-0 rounded-lg bg-primary/10 text-primary">
-                      {v.progress.isCompleted ? (
+                      {((v.applicable ?? v.isRequiredForProgression) ? v.progress.satisfied : v.progress.isCompleted) ? (
                         <CheckCircle2 className="w-4 h-4" />
                       ) : (
                         <Video className="w-4 h-4" />
@@ -196,11 +276,18 @@ export function StudentSessionVideosView() {
                           {pickAuto(v.lesson.titleAr, v.lesson.title)}
                         </div>
                       )}
-                      <Progress value={v.progress.percent} className="mt-1 h-1" />
+                      <div className="mt-1">
+                        <SessionVideoBadges video={v} />
+                      </div>
+                      {v.trackable && (
+                        <Progress value={v.progress.percent} className="mt-1 h-1" />
+                      )}
                     </div>
-                    <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
-                      {v.progress.percent}%
-                    </span>
+                    {v.trackable && !(v.applicable ?? v.isRequiredForProgression) && (
+                      <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+                        {v.progress.percent}%
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -221,12 +308,19 @@ export function SessionVideoPlayer({
   onProgress,
 }: {
   video: SessionVideo;
-  onProgress: (percent: number, isCompleted: boolean) => void;
+  onProgress: (percent: number, isCompleted: boolean, satisfied: boolean) => void;
 }) {
   const tr = useT();
   const ref = React.useRef<HTMLVideoElement | null>(null);
   const [percent, setPercent] = React.useState(video.progress.percent);
-  const [completed, setCompleted] = React.useState(video.progress.isCompleted);
+  // Whether THIS student must satisfy this recording (the engine verdict;
+  // legacy rows fall back to the flag). REQUIRED videos complete by the
+  // LIVE rule (satisfied), non-required by sticky history — the same rule
+  // the rows apply, so player and rows agree.
+  const requiredForStudent = video.applicable ?? video.isRequiredForProgression;
+  const [completed, setCompleted] = React.useState(
+    requiredForStudent ? video.progress.satisfied : video.progress.isCompleted
+  );
   const playingRef = React.useRef(false);
 
   // Decide HOW to render before rendering anything.
@@ -240,12 +334,10 @@ export function SessionVideoPlayer({
     if (!video.isExternal) return { mode: "video" as const, src: video.src };
     return resolveExternalVideoPlayback(video.src);
   }, [video.src, video.isExternal]);
-  // Watch-time credit depends on a real playhead, which only a <video> exposes.
-  // An iframe embed cannot report one, so the progress bar is not shown for it
-  // (a bar frozen at 0% would misreport the student's own work).
-  const trackable = playback?.mode === "video";
-
   const beat = React.useCallback(async () => {
+    // Untrackable (external) media accrues nothing server-side, so no beat is
+    // even sent — the player stays a pure player for those rows.
+    if (!video.trackable) return;
     const el = ref.current;
     if (!el || !el.duration || Number.isNaN(el.duration)) return;
     try {
@@ -261,15 +353,28 @@ export function SessionVideoPlayer({
       const d = await r.json().catch(() => ({}));
       if (typeof d.percent === "number") {
         setPercent(d.percent);
-        setCompleted(Boolean(d.isCompleted));
-        onProgress(d.percent, Boolean(d.isCompleted));
+        const done = requiredForStudent
+          ? Boolean(d.satisfied)
+          : Boolean(d.isCompleted);
+        setCompleted(done);
+        onProgress(d.percent, Boolean(d.isCompleted), Boolean(d.satisfied));
       }
     } catch {
       /* transient network issues must not interrupt playback */
     }
-  }, [video.id, onProgress]);
+  }, [video.id, requiredForStudent, onProgress]);
 
-  // Heartbeat only while actually playing — a paused tab earns no credit.
+  // Heartbeat design (server-verified, tamper-resistant):
+  //   * a beat on PLAY anchors the server clock (the row's lastHeartbeatAt),
+  //     so the elapsed-time credit of every LATER beat has a start point —
+  //     without this anchor the first watch of short content accrues 0;
+  //   * interval beats accrue while actually playing (a paused tab earns no
+  //     credit);
+  //   * pause / ended / unmount beats flush the tail, so the final segment
+  //     is never lost.
+  // Amounts stay server-measured (elapsed wall-clock between beats, capped,
+  // position-bounded) — the client only decides WHEN to report, never how
+  // much it earned.
   React.useEffect(() => {
     const timer = window.setInterval(() => {
       if (playingRef.current) beat();
@@ -317,6 +422,8 @@ export function SessionVideoPlayer({
             onLoadedMetadata={handleLoaded}
             onPlay={() => {
               playingRef.current = true;
+              // Anchor the server clock at playback start (see above).
+              beat();
             }}
             onPause={() => {
               playingRef.current = false;
@@ -344,19 +451,22 @@ export function SessionVideoPlayer({
             {video.description && (
               <p className="mt-0.5 text-xs text-muted-foreground">{video.description}</p>
             )}
+            <div className="mt-1.5">
+              <SessionVideoBadges video={video} />
+            </div>
           </div>
           {completed ? (
             <Badge className="border-emerald-500/30 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
               <CheckCircle2 className="w-3.5 h-3.5 me-1" />
               {tr("course.211")}
             </Badge>
-          ) : trackable ? (
+          ) : video.trackable ? (
             <Badge variant="outline">
               {tr("course.210")}: {percent}%
             </Badge>
           ) : null}
         </div>
-        {trackable ? (
+        {video.trackable ? (
           <>
             <Progress value={percent} className="h-2" />
             <p className="text-[11px] text-muted-foreground">
@@ -369,6 +479,9 @@ export function SessionVideoPlayer({
           // bar stuck at 0%. (Not shown when there is no playable media at
           // all — that case already explains itself above.)
           <p className="text-[11px] text-muted-foreground">{tr("course.227")}</p>
+        ) : playback?.mode === "video" ? (
+          // External direct file: playable, but no server watch % accrues.
+          <p className="text-[11px] text-muted-foreground">{tr("course.243")}</p>
         ) : null}
       </CardContent>
     </Card>

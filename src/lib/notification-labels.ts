@@ -9,7 +9,7 @@
 // never UI copy.
 //
 // This is the ONE mapping from `NotificationType` to a dictionary key, and it
-// covers the WHOLE enum (all 21 values, not just the Phase F nine), so no
+// covers the WHOLE enum (all 22 values, not just the Phase F nine), so no
 // surface can ever fall back to the raw code: an unknown/legacy value maps to
 // a generic "notification" label instead of leaking the enum.
 //
@@ -41,6 +41,8 @@ export const NOTIFICATION_TYPE_LABEL_KEYS: Record<string, string> = {
   ABSENCE_EXCUSED: "notif.type.absenceExcused",
   ABSENCE_UNEXCUSED: "notif.type.absenceUnexcused",
   ABSENCE_REMINDER: "notif.type.absenceReminder",
+  // Teacher Readiness — the teacher-triggered student nudge.
+  READINESS_REMINDER: "notif.type.readinessReminder",
 };
 
 /** Never render `type` itself: always a label key, with a safe generic fallback. */

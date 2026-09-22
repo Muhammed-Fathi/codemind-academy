@@ -502,9 +502,30 @@ test("Phase B: student session media alignment", async () => {
   });
 
   // L5 carries a quiz → it stays incomplete (no attempt) → L6 is LOCKED.
+  // (The gate quiz is question-less: PUBLISHED + track-eligible is a
+  // requirement regardless of pool state — pool problems fail loud through
+  // the quiz path, never silently drop out of progression.)
   await client.quiz.create({
     data: { lessonId: L5.id, title: "L5 quiz", titleAr: "كوييز 1-5", trackScope: "SHARED" },
   });
+
+  // Manual-QA stabilization: L1 (modern recordings only — never progression
+  // inputs) is an EMPTY lesson, i.e. a chain BOUNDARY the engine no longer
+  // auto-completes. The media probes behind it cross via the INTENDED
+  // mechanism — admin access overrides for the Arabic student — which unlock
+  // without fabricating completion or requirements. L5/L6 keep NO override
+  // (the gate quiz still locks L6: B7 + the N scenario), and the Language
+  // student keeps none (track refusal still fires first: E2).
+  for (const lessonId of [L4.id, L2.id, L3.id]) {
+    await client.progressionOverride.create({
+      data: {
+        studentId: sAr.student.id,
+        lessonId,
+        reason: "phase B fixture: cross the empty-lesson boundary",
+        createdByUserId: "phaseb-admin",
+      },
+    });
+  }
 
   // ===========================================================================
   // M1 (run FIRST, before any video-progress seeding): the legacy 95% gate is
@@ -516,8 +537,10 @@ test("Phase B: student session media alignment", async () => {
   eq(m1.status, 403, "M1: 95% video gate still refuses completion without watch credit");
 
   // Seed the legacy watch credit (simulates a fully watched legacy video) so
-  // L4 is complete and the rest of the chain unlocks — for BOTH course-A
-  // students, so their later denials cannot be explained away by a lock.
+  // L4 SATISFIES its video requirement — for BOTH course-A students, so
+  // their later denials cannot be explained away by an unsatisfied video.
+  // (Chain position behind the L1 boundary comes from the fixture overrides
+  // above for the Arabic student; the Language student never opens L4.)
   for (const s of [sAr.student, sLang.student]) {
     await client.lessonProgress.create({
       data: {
@@ -657,12 +680,26 @@ test("Phase B: student session media alignment", async () => {
     { positionSec: 10, durationSec: 100 }, { id: vUnpub.id }
   );
   eq(k3.status, 404, "K3: heartbeat on an unpublished video → 404 (no oracle)");
+  // Session-video-requirement revision — JUSTIFICATION (read before touching
+  // K4): vSharedAr is an EXTERNAL_URL recording (see mkVideo). `course.227`
+  // promises the student "نسبة المشاهدة غير متاحة" for such sources — watch
+  // percent is UNAVAILABLE — so accruing server percent from its heartbeats
+  // contradicted the shipped UI contract (the old K4 pinned exactly that
+  // contradiction: 200 + a computed percent for an unmeasurable source). The
+  // heartbeat therefore refuses untrackable sources with 409 + the course.227
+  // Arabic message, while K1/K2/K3/K5's verdict order is preserved
+  // (batch → published → lesson → trackability). Managed sources still
+  // accrue — K6/K7 below pin the 200 positive cases.
   const k4 = await POST_JSON(
     R.videoProgress, `http://t/api/students/me/session-videos/${vSharedAr.id}/progress`,
     { positionSec: 30, durationSec: 100 }, { id: vSharedAr.id }
   );
-  eq(k4.status, 200, "K4: the authorized heartbeat succeeds");
-  ok(typeof k4.json.percent === "number", "K4: heartbeat returns server-computed percent");
+  eq(k4.status, 409, "K4: heartbeat on an untrackable (external) recording → 409");
+  eq(k4.json.error, "الفيديو ده بيشتغل من مصدر خارجي، فمش بيتسجل منه نسبة مشاهدة.", "K4: the refusal carries the course.227 Arabic message");
+  const k4row = await client.sessionVideoView.findFirst({
+    where: { sessionVideoId: vSharedAr.id, studentId: sAr.student.id },
+  });
+  eq(k4row, null, "K4: the refused heartbeat stored NOTHING");
   // Phase B (fix) — the heartbeat applies the SAME lesson authority:
   asUser(sAr.user);
   const k5 = await POST_JSON(
@@ -788,12 +825,15 @@ test("Phase B: student session media alignment", async () => {
   eq(l6.json.code, "NOT_ENROLLED", "L6: refusal carries the NOT_ENROLLED code");
 
   // ===========================================================================
-  // M2. Progression is READ for rendering but NOT redefined: a fully watched
-  //     batch video (SessionVideoView 100%) must NOT create a video
-  //     requirement and must NOT block completion of a modern lesson — the
-  //     SessionVideoView → progression integration is deliberately deferred.
+  // M2. Progression is READ for rendering but NOT redefined by OPTIONAL
+  //     recordings: a fully watched OPTIONAL batch video (SessionVideoView
+  //     100%) must NOT create a video requirement and must NOT block
+  //     completion of a modern lesson. (Session-video-requirement revision:
+  //     the "never inputs" rule now covers OPTIONAL recordings; REQUIRED
+  //     ones gate with their own threshold — see Phase H CASE 17f–17j.)
   // ===========================================================================
-  // (upsert: K4's authorized heartbeat already created this pair's row)
+  // (upsert: creates the pair's row directly — K4's refused heartbeat stored
+  // nothing, and the row below is seeded on purpose)
   await client.sessionVideoView.upsert({
     where: {
       sessionVideoId_studentId: {
@@ -814,12 +854,27 @@ test("Phase B: student session media alignment", async () => {
   eq(m2.status, 200, "M2: modern lesson opens");
   eq(m2.json.requirements?.video?.required, false, "M2: a modern video creates NO progression video requirement");
   const m3 = await POST_JSON(R.lessonProgress, `http://t/api/lessons/${L1.id}/progress`, { completed: true }, { id: L1.id });
-  eq(m3.status, 200, "M2: completion of a modern lesson is not blocked by the video world");
-  // Source pins: the progression engine and the 95% gate are UNCHANGED.
-  const engine = read("src/lib/session-progress.ts");
-  ok(/const hasVideo = !!lesson\.videoUrl;/.test(engine), "M3: the engine still derives the video requirement from Lesson.videoUrl only");
+  // Manual-QA stabilization: L1 is EMPTY (OPTIONAL recordings are never
+  // progression inputs — required === false pinned above), so it is a chain
+  // boundary that can never complete. The claim is refused with the boundary
+  // reason — NOT because a video requirement was fabricated (none was), but
+  // because a zero-requirement lesson is never done. No isCompleted row is
+  // written by this refusal.
+  eq(m3.status, 403, "M2: completion of a modern-only (empty) lesson is refused at the boundary");
+  eq(m3.json?.reasonCode, "NO_COMPLETION_REQUIREMENTS", "M2: the refusal names the boundary reason");
+  eq(m3.json?.code, "REQUIREMENTS_UNMET", "M2: the refusal keeps the structured unmet shape");
+  // Source pins: the video rule lives in the canonical engine (Phase H
+  // relocation) and derives requiredness from Lesson.videoUrl OR >=1
+  // REQUIRED recording — OPTIONAL recordings never create a requirement.
+  // The adapter owns no rule.
+  const engine = read("src/lib/progression.ts");
+  ok(/const videoRequired = lesson\.hasLegacyVideo \|\| requiredVideos\.length > 0;/.test(engine), "M3: the engine derives the video requirement from legacy-OR-required-recordings");
+  ok(/hasLegacyVideo: !!l\.videoUrl,/.test(engine), "M3: the legacy column feeds the video rule");
+  ok(/isRequiredForProgression: true/.test(engine), "M3: only REQUIRED recordings are engine inputs");
+  ok(!/batchVideos/.test(engine), "M3: no legacy batch-video concept in the engine");
+  ok(!/const videoRequired/.test(read("src/lib/session-progress.ts")), "M3: the adapter owns no video rule (delegation only)");
   const progressRoute = read("src/app/api/lessons/[id]/progress/route.ts");
-  ok(/!lesson\.videoUrl \|\|/.test(progressRoute), "M3: the 95% completion gate expression is unchanged");
+  ok(/access\.status\?\.completed === true/.test(progressRoute), "M3: the completion gate derives from the canonical engine");
   const progressLib = read("src/lib/progress.ts");
   ok(/videoUrl: \{ not: null \}/.test(progressLib), "M3: the legacy video-progress summary filter is unchanged");
 
@@ -969,8 +1024,8 @@ test("Phase B: student session media alignment", async () => {
   ok(/student\.group/.test(currentCourseRoute), "T6: the reader resolves from the student's own group row");
   ok(!/["']phaseb-/.test(currentCourseRoute), "T6: the reader hardcodes no course slug");
   const courseView = read("src/components/course/student-course.tsx");
-  ok(/fetch\("\/api\/students\/me\/current-course"\)/.test(courseView), "T6: the Course view asks the authorized reader when no navParam");
-  ok(/setNavParam\(slug\)/.test(courseView), "T6: the view navigates through the SAME navParam mechanism");
+  ok(/fetch\("\/api\/students\/me\/current-course"\)/.test(courseView), "T6: the Course view asks the authorized reader");
+  ok(/setNavParam\(authoritativeSlug\)/.test(courseView), "T6: the view navigates through the SAME navParam mechanism");
   ok(!/["']phaseb-/.test(courseView), "T6: the Course view hardcodes no course slug");
   // The dashboard "كل الكورس" flow is unchanged: it still passes its own
   // group.course.slug straight into navParam.

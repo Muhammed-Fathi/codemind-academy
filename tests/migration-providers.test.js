@@ -13,8 +13,11 @@
 //
 // THE FIX THIS FILE GUARDS
 // ========================
-//   prisma/schema.prisma            (SQLite)  + prisma/migrations            (12 files, provider=sqlite)
-//   prisma/postgres/schema.prisma   (PG)      + prisma/postgres/migrations   (0_init + 26D, provider=postgresql)
+//   prisma/schema.prisma            (SQLite)  + prisma/migrations            (19 files, provider=sqlite)
+//   prisma/postgres/schema.prisma   (PG)      + prisma/postgres/migrations   (0_init + 26D + F + G + camera + H
+//                                                                                + session-video requirement
+//                                                                                + requirement modes + readiness-reminder
+//                                                                                recipients, provider=postgresql)
 // 0_init is the frozen pre-26D production schema; the PG edition of Phase 26D
 // carries the same logical change with PostgreSQL types and canonical
 // constraint names. NEVER point the PostgreSQL provider at prisma/migrations
@@ -24,7 +27,7 @@
 // ======
 //   Part A — offline (always runs): layout contract, applied-migration
 //            checksum contract, SQLite-only-SQL denylist, structural
-//            convergence (0_init + 26D == postgres-baseline.sql), fresh
+//            convergence (whole PG chain == postgres-baseline.sql), fresh
 //            SQLite through the repo's own migration harness.
 //   Part B — real PostgreSQL (needs DATABASE_URL, DISPOSABLE ONLY): applies
 //            the real migration SQL to a real server and catalog-compares
@@ -64,6 +67,10 @@ const MIG_26D = "20260915180000_phase26d_quiz_attempt_architecture";
 const MIG_PHASE_F = "20260919120000_phase_f_live_session_lifecycle";
 const MIG_PHASE_G = "20260919180000_phase_g_quiz_homework_workflow";
 const MIG_CAMERA = "20260919190000_phase_g_camera_policy";
+const MIG_PHASE_H = "20260920120000_phase_h_progression_override";
+const MIG_SV_REQ = "20260921120000_session_video_progression_requirement";
+const MIG_SV_MODES = "20260921180000_session_video_requirement_modes";
+const MIG_REMIND_AUD = "20260922090000_readiness_reminder_recipients";
 
 let pass = 0;
 const failures = [];
@@ -103,11 +110,11 @@ function partA() {
   // A1 — layout contract
   const sqliteMigrations = listMigrationDirs(SQLITE_MIGRATIONS);
   const pgMigrations = listMigrationDirs(PG_MIGRATIONS);
-  ok(sqliteMigrations.length === 15, `SQLite migrations dir carries all 15 historical migrations (got ${sqliteMigrations.length})`);
-  ok(pgMigrations.length === 5, `PG migrations dir carries the provider chain plus camera policy (got ${pgMigrations.length})`);
+  ok(sqliteMigrations.length === 19, `SQLite migrations dir carries all 19 historical migrations (got ${sqliteMigrations.length})`);
+  ok(pgMigrations.length === 9, `PG migrations dir carries the provider chain plus camera policy, Phase H, the session-video requirement, requirement modes and the readiness-reminder recipients (got ${pgMigrations.length})`);
   ok(
-    pgMigrations[0] === "0_init" && pgMigrations[1] === MIG_26D && pgMigrations[2] === MIG_PHASE_F && pgMigrations[3] === MIG_PHASE_G && pgMigrations[4] === MIG_CAMERA,
-    "PG migrations are 0_init, Phase 26D, Phase F, Phase G, in order"
+    pgMigrations[0] === "0_init" && pgMigrations[1] === MIG_26D && pgMigrations[2] === MIG_PHASE_F && pgMigrations[3] === MIG_PHASE_G && pgMigrations[4] === MIG_CAMERA && pgMigrations[5] === MIG_PHASE_H && pgMigrations[6] === MIG_SV_REQ && pgMigrations[7] === MIG_SV_MODES && pgMigrations[8] === MIG_REMIND_AUD,
+    "PG migrations are 0_init, Phase 26D, Phase F, Phase G, camera, Phase H, session-video requirement, requirement modes, readiness-reminder recipients, in order"
   );
   ok(fs.existsSync(PG_SCHEMA), "prisma/postgres/schema.prisma exists (PG schema owns its own directory)");
   ok(!fs.existsSync(OLD_PG_SCHEMA), "prisma/schema.postgresql.prisma does NOT exist (must never share prisma/ with SQLite again)");
@@ -135,6 +142,26 @@ function partA() {
     read(path.join(PG_MIGRATIONS, MIG_PHASE_G, "migration.sql")) !== read(path.join(SQLITE_MIGRATIONS, MIG_PHASE_G, "migration.sql")),
     "the PG and SQLite editions of Phase G are distinct files (provider-specific SQL)"
   );
+  ok(
+    !fs.existsSync(path.join(PG_MIGRATIONS, MIG_PHASE_H, "migration.sql")) === false &&
+    read(path.join(PG_MIGRATIONS, MIG_PHASE_H, "migration.sql")) !== read(path.join(SQLITE_MIGRATIONS, MIG_PHASE_H, "migration.sql")),
+    "the PG and SQLite editions of Phase H are distinct files (provider-specific SQL)"
+  );
+  ok(
+    !fs.existsSync(path.join(PG_MIGRATIONS, MIG_SV_REQ, "migration.sql")) === false &&
+    read(path.join(PG_MIGRATIONS, MIG_SV_REQ, "migration.sql")) !== read(path.join(SQLITE_MIGRATIONS, MIG_SV_REQ, "migration.sql")),
+    "the PG and SQLite editions of the session-video requirement are distinct files (provider-specific SQL)"
+  );
+  ok(
+    !fs.existsSync(path.join(PG_MIGRATIONS, MIG_SV_MODES, "migration.sql")) === false &&
+    read(path.join(PG_MIGRATIONS, MIG_SV_MODES, "migration.sql")) !== read(path.join(SQLITE_MIGRATIONS, MIG_SV_MODES, "migration.sql")),
+    "the PG and SQLite editions of requirement modes are distinct files (provider-specific SQL)"
+  );
+  ok(
+    !fs.existsSync(path.join(PG_MIGRATIONS, MIG_REMIND_AUD, "migration.sql")) === false &&
+    read(path.join(PG_MIGRATIONS, MIG_REMIND_AUD, "migration.sql")) !== read(path.join(SQLITE_MIGRATIONS, MIG_REMIND_AUD, "migration.sql")),
+    "the PG and SQLite editions of the readiness-reminder recipients are distinct files (provider-specific SQL)"
+  );
   const pgSchemaHeader = read(PG_SCHEMA).split("\n").slice(0, 35).join("\n");
   ok(/WHY THIS FILE LIVES IN prisma\/postgres\//.test(pgSchemaHeader), "PG schema header documents the directory contract");
 
@@ -161,11 +188,23 @@ function partA() {
     "20260919120000_phase_f_live_session_lifecycle": "480a5327e1ebeb488b2723ab4e263778530d141577315d38ac48cf3728f94ac3",
     "20260919180000_phase_g_quiz_homework_workflow": "d86e31ee0774403354c33084437e0f550b45b1595ab8faf4341e114bc80922b3",
     "20260919190000_phase_g_camera_policy": "b34ddf74f0cd88fedf41baec4dc6d6dcb305a4a9da47989e918e19d89460ed24",
+    "20260920120000_phase_h_progression_override": "4c9bf851683883d83ca76da379710244910b5955e1d542aa44794d1811e503ec",
+    "20260921120000_session_video_progression_requirement": "0e6ab013989ce633b586b014d2675b1303f328b64aae7c7e992b76b5213a075b",
+    "20260921180000_session_video_requirement_modes": "942e1a893b1bb91d574d5b7d445a8145a6f7b04653c38481e49e8b4300ff1d4f",
+    "20260922090000_readiness_reminder_recipients": "4f2696dca5d6afcbeff726b80ced3fd640fa61a144dd820d26ed9029784a09e4",
     // PostgreSQL history (frozen from this commit on):
     "0_init": "c7f5d3fa76931d02e48c5cd2c4bfdb972c0f25e528e3c0c116736d3729cefa80",
     "PG:20260915180000_phase26d_quiz_attempt_architecture": "2c1bdde167f7dfff9b79a61f116da3dbd93b13c6aa27825404a79312ec7be104",
     "PG:20260919120000_phase_f_live_session_lifecycle": "186f921f184b21bafc5c65ffa514bd526dd614f21227a4afd2462ca5d971d388",
     "PG:20260919180000_phase_g_quiz_homework_workflow": "e16d1b6d454af5dd332727e869400ffa281d6f953b934007bc5e968e2fb05099",
+    // The camera policy is byte-identical in both providers (one ADD COLUMN,
+    // no provider-specific type), so its PG pin equals its SQLite pin above —
+    // each edition is still pinned independently.
+    "PG:20260919190000_phase_g_camera_policy": "b34ddf74f0cd88fedf41baec4dc6d6dcb305a4a9da47989e918e19d89460ed24",
+    "PG:20260920120000_phase_h_progression_override": "f5481f3844f347920d945ba0936fe167435a7df395102af88cc3a4fee967a98f",
+    "PG:20260921120000_session_video_progression_requirement": "dea2dd69badf709a2e2dda87735baca7da68cc0f355d03f556f82e42e9cba687",
+    "PG:20260921180000_session_video_requirement_modes": "77f073e7973f396b3d29bbe774428acf9c77538f763afbbcc7424176b418fa88",
+    "PG:20260922090000_readiness_reminder_recipients": "80cb5f164b947869a6c333b5bd3b27434dc2ac5809552b6eeb3b8085a97f0513",
   };
   for (const [name, checksum] of Object.entries(PINNED)) {
     const isPg = name.startsWith("PG:") || name === "0_init";
@@ -198,7 +237,8 @@ function partA() {
     ok(badComment.length === 0, `PG migration ${name} has no semicolons inside -- comments (statement-splitter safety)`);
   }
 
-  // A4 — structural convergence: 0_init + PG 26D == postgres-baseline.sql.
+  // A4 — structural convergence: the whole PG chain (0_init + every later PG
+  //      migration, all merged below) == postgres-baseline.sql.
   const parseInventory = (sql) => {
     const inv = { enums: new Set(), enumAdds: new Map(), tables: new Map(), indexes: new Set(), constraints: new Set() };
     for (const m of sql.matchAll(/CREATE TYPE "([A-Za-z0-9_]+)" AS ENUM \(([^)]*)\);/g)) inv.enums.add(`${m[1]}(${m[2].split(",").length})`);
@@ -252,16 +292,27 @@ function partA() {
   const want = parseInventory(read(BASELINE_SQL));
   const got = merge(
     merge(
+    merge(
+    merge(
+    merge(
       merge(
         merge(
-          parseInventory(read(path.join(PG_MIGRATIONS, "0_init", "migration.sql"))),
-          parseInventory(read(path.join(PG_MIGRATIONS, MIG_26D, "migration.sql")))
+          merge(
+            parseInventory(read(path.join(PG_MIGRATIONS, "0_init", "migration.sql"))),
+            parseInventory(read(path.join(PG_MIGRATIONS, MIG_26D, "migration.sql")))
+          ),
+          parseInventory(read(path.join(PG_MIGRATIONS, MIG_PHASE_F, "migration.sql")))
         ),
-        parseInventory(read(path.join(PG_MIGRATIONS, MIG_PHASE_F, "migration.sql")))
+        parseInventory(read(path.join(PG_MIGRATIONS, MIG_PHASE_G, "migration.sql")))
       ),
-      parseInventory(read(path.join(PG_MIGRATIONS, MIG_PHASE_G, "migration.sql")))
+      parseInventory(read(path.join(PG_MIGRATIONS, MIG_CAMERA, "migration.sql")))
+      ),
+      parseInventory(read(path.join(PG_MIGRATIONS, MIG_PHASE_H, "migration.sql")))
     ),
-    parseInventory(read(path.join(PG_MIGRATIONS, MIG_CAMERA, "migration.sql")))
+    parseInventory(read(path.join(PG_MIGRATIONS, MIG_SV_REQ, "migration.sql")))
+    ),
+    parseInventory(read(path.join(PG_MIGRATIONS, MIG_SV_MODES, "migration.sql")))),
+    parseInventory(read(path.join(PG_MIGRATIONS, MIG_REMIND_AUD, "migration.sql")))
   );
   {
     const diffs = [];
@@ -279,7 +330,7 @@ function partA() {
     for (const c of want.indexes) if (!got.indexes.has(c)) diffs.push(`missing index ${c}`);
     for (const c of got.indexes) if (!want.indexes.has(c)) diffs.push(`extra index ${c}`);
     ok(diffs.length === 0,
-      `0_init + PG Phase 26D + Phase F + Phase G == scripts/db/postgres-baseline.sql structurally (${want.tables.size} tables, ${[...want.tables.values()].reduce((a, c) => a + c.length, 0)} columns)`,
+      `0_init + PG Phase 26D + Phase F + Phase G + camera + Phase H + session-video requirement + requirement modes + readiness-reminder recipients == scripts/db/postgres-baseline.sql structurally (${want.tables.size} tables, ${[...want.tables.values()].reduce((a, c) => a + c.length, 0)} columns)`,
       diffs.slice(0, 8).join("; "));
   }
 
@@ -354,7 +405,79 @@ function partA() {
       "Phase G is additive in both providers (no table/column drop, no row delete)");
   }
 
-  // A6 — fresh SQLite through the repo's own harness: base DDL + 15 migrations.
+  // A5d — the two Phase H editions add the same logical objects (one new
+  // table, Prisma-canonical constraint + index names both sides; the actor
+  // columns are plain TEXT in both providers, never FKs).
+  {
+    const sqliteH = read(path.join(SQLITE_MIGRATIONS, MIG_PHASE_H, "migration.sql"));
+    const pgH = read(path.join(PG_MIGRATIONS, MIG_PHASE_H, "migration.sql"));
+    const tables = (sql) => [...sql.matchAll(/CREATE TABLE "([A-Za-z0-9_]+)"/g)].map((m) => m[1]).sort().join(",");
+    ok(tables(sqliteH) === tables(pgH) && tables(sqliteH) === "ProgressionOverride",
+      "both Phase H editions create exactly the ProgressionOverride table");
+    const cols = (sql) => {
+      const body = /CREATE TABLE "ProgressionOverride" \(([\s\S]*?)\n\);/.exec(sql)?.[1] ?? "";
+      return [...body.matchAll(/^\s*"([A-Za-z0-9_]+)"\s+(?:TEXT|DATETIME|TIMESTAMPTZ\(3\))/gm)].map((m) => m[1]).join(",");
+    };
+    ok(cols(sqliteH) === cols(pgH),
+      "both Phase H editions create the same columns in the same order",
+      `${cols(sqliteH)} :: ${cols(pgH)}`);
+    for (const name of [
+      "ProgressionOverride_studentId_fkey",
+      "ProgressionOverride_lessonId_fkey",
+      "ProgressionOverride_studentId_idx",
+      "ProgressionOverride_lessonId_idx",
+      "ProgressionOverride_studentId_lessonId_idx",
+    ]) {
+      ok(sqliteH.includes(`"${name}"`) && pgH.includes(`"${name}"`),
+        `both Phase H editions carry the canonical ${name}`);
+    }
+    // The primary key is named in PostgreSQL only (SQLite spells it inline —
+    // the documented provider asymmetry, same as every earlier table).
+    ok(pgH.includes('"ProgressionOverride_pkey"'), "the PG edition names the pkey canonically");
+    ok(/"id" TEXT NOT NULL PRIMARY KEY/.test(sqliteH), "the SQLite edition carries the inline primary key");
+    ok(/DATETIME/.test(stripSqlComments(sqliteH)) && !/DATETIME/.test(stripSqlComments(pgH)), "the SQLite edition keeps DATETIME, the PG edition does not");
+    ok(/TIMESTAMPTZ\(3\)/.test(pgH), "the PG edition uses TIMESTAMPTZ(3)");
+    ok((pgH.match(/ON DELETE CASCADE/g) || []).length === 2, "both Phase H FKs cascade with the parent (override rows never orphan)");
+    ok(!/"ProgressionOverride_createdByUserId_fkey"|"ProgressionOverride_revokedByUserId_fkey"/.test(pgH + sqliteH),
+      "the actor columns are plain TEXT in both providers (deleting a user never rewrites override history)");
+    ok(!/DROP TABLE|DROP COLUMN|DELETE FROM/i.test(stripSqlComments(sqliteH)) && !/DROP TABLE|DROP COLUMN|DELETE FROM/i.test(stripSqlComments(pgH)),
+      "Phase H is additive in both providers (no table/column drop, no row delete)");
+  }
+
+  // A5e — the two session-video-requirement editions add the same logical
+  // object (one NOT NULL boolean with a static false default; the lowercase /
+  // uppercase DEFAULT spelling is the documented provider asymmetry, same as
+  // Phase 26D's shuffleOptions).
+  {
+    const sqliteS = read(path.join(SQLITE_MIGRATIONS, MIG_SV_REQ, "migration.sql"));
+    const pgS = read(path.join(PG_MIGRATIONS, MIG_SV_REQ, "migration.sql"));
+    const cols = (sql) => [...sql.matchAll(/ADD COLUMN "([A-Za-z0-9_]+)"/g)].map((m) => m[1]).sort().join(",");
+    ok(cols(sqliteS) === cols(pgS) && cols(sqliteS) === "isRequiredForProgression",
+      "both session-video-requirement editions add exactly the isRequiredForProgression column");
+    ok(/ALTER TABLE "SessionVideo" ADD COLUMN "isRequiredForProgression" BOOLEAN NOT NULL DEFAULT false;/.test(stripSqlComments(sqliteS)),
+      "the SQLite edition adds the NOT NULL boolean with a static false default");
+    ok(/ALTER TABLE "SessionVideo" ADD COLUMN "isRequiredForProgression" BOOLEAN NOT NULL DEFAULT FALSE;/.test(stripSqlComments(pgS)),
+      "the PG edition adds the NOT NULL boolean with a static FALSE default");
+    ok(!/DROP TABLE|DROP COLUMN|DELETE FROM|UPDATE "/i.test(stripSqlComments(sqliteS)) && !/DROP TABLE|DROP COLUMN|DELETE FROM|UPDATE "/i.test(stripSqlComments(pgS)),
+      "the session-video requirement is additive in both providers (no drop, no row write, no backfill)");
+  }
+
+  // A5f — the two readiness-reminder-recipients editions add the same logical
+  // object: one appended NotificationType label. SQLite stores enums as TEXT
+  // so its edition is DDL-free by design; the PG edition grows the native
+  // type with a single ALTER TYPE ... ADD VALUE.
+  {
+    const sqliteR = read(path.join(SQLITE_MIGRATIONS, MIG_REMIND_AUD, "migration.sql"));
+    const pgR = read(path.join(PG_MIGRATIONS, MIG_REMIND_AUD, "migration.sql"));
+    ok(stripSqlComments(sqliteR).trim() === "", "the SQLite edition is DDL-free (enums are TEXT, nothing to alter)");
+    ok(/READINESS_REMINDER/.test(sqliteR), "the SQLite edition documents the new label for the record");
+    ok((stripSqlComments(pgR).match(/ALTER TYPE "NotificationType" ADD VALUE IF NOT EXISTS 'READINESS_REMINDER';/g) || []).length === 1,
+      "the PG edition appends exactly the READINESS_REMINDER label");
+    ok(!/CREATE TABLE|ADD COLUMN|DROP TABLE|DROP COLUMN|DELETE FROM|UPDATE "/i.test(stripSqlComments(sqliteR)) && !/CREATE TABLE|ADD COLUMN|DROP TABLE|DROP COLUMN|DELETE FROM|UPDATE "/i.test(stripSqlComments(pgR)),
+      "the recipients migration is additive in both providers (no table/column change, no row write)");
+  }
+
+  // A6 — fresh SQLite through the repo's own harness: base DDL + 19 migrations.
   {
     const { DatabaseSync } = require("node:sqlite");
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cm-mig-providers-"));
@@ -362,8 +485,8 @@ function partA() {
     const mig = require(path.join(REPO, "scripts", "lib", "migrate-sqlite.mjs"));
     const db = new DatabaseSync(dbPath);
     const applied = mig.applyMigrations(db, { withBaseSchema: true });
-    ok(applied.length === 15, `fresh SQLite applies all 15 migrations (got ${applied.length})`);
-    ok(applied[applied.length - 1] === MIG_CAMERA, "the last applied SQLite migration is the camera-policy migration");
+    ok(applied.length === 19, `fresh SQLite applies all 19 migrations (got ${applied.length})`);
+    ok(applied[applied.length - 1] === MIG_REMIND_AUD, "the last applied SQLite migration is the readiness-reminder-recipients migration");
     for (const [tbl, cols] of [
       ["Quiz", ["quizMode", "questionCount", "maxAttempts", "shuffleOptions", "difficultyPlan"]],
       ["QuizAttempt", ["attemptNumber", "status", "retryGrantId"]],
@@ -397,10 +520,23 @@ function partA() {
       const present = new Set(db.prepare(`PRAGMA table_info("${tbl}")`).all().map((r) => r.name));
       ok(cols.every((c) => present.has(c)), `fresh SQLite schema carries ${tbl} Phase G columns`);
     }
+    ok(!!db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='ProgressionOverride'`).get(), "fresh SQLite schema carries the Phase H ProgressionOverride table");
+    {
+      const present = new Set(db.prepare(`PRAGMA table_info("SessionVideo")`).all().map((r) => r.name));
+      ok(present.has("isRequiredForProgression"), "fresh SQLite schema carries the SessionVideo isRequiredForProgression column");
+    }
+    {
+      const present = new Set(db.prepare(`PRAGMA table_info("ProgressionOverride")`).all().map((r) => r.name));
+      ok(["id", "studentId", "lessonId", "reason", "createdByUserId", "createdAt", "expiresAt", "revokedAt", "revokedByUserId", "revokeReason"].every((c) => present.has(c)),
+        "fresh SQLite schema carries every ProgressionOverride column");
+      for (const idx of ["ProgressionOverride_studentId_idx", "ProgressionOverride_lessonId_idx", "ProgressionOverride_studentId_lessonId_idx"]) {
+        ok(!!db.prepare(`SELECT name FROM sqlite_master WHERE type='index' AND name=?`).get(idx), `fresh SQLite schema carries ${idx}`);
+      }
+    }
     // the harness ledger records the very checksums pinned in A2
     const rows = db.prepare('SELECT migration_name, checksum FROM "_prisma_migrations"').all();
     const pinned = rows.every((r) => r.checksum === PINNED[r.migration_name]);
-    ok(pinned && rows.length === 15, "fresh SQLite ledger carries exactly the pinned applied checksums");
+    ok(pinned && rows.length === 19, "fresh SQLite ledger carries exactly the pinned applied checksums");
     db.close();
     fs.rmSync(tmp, { recursive: true, force: true });
   }
@@ -549,6 +685,77 @@ async function buildNeonSimulation(query) {
 }
 
 // ---------------------------------------------------------------------------
+// Part A5 — P1012 regression: SessionVideo <-> LiveSession is a COMPLETE
+// relation in BOTH provider schemas. Commit 197ada2 shipped the forward
+// side only (`SessionVideo.liveSession` with no back-reference), so a fresh
+// local `npm run db:generate` died with Prisma P1012 ("The relation field
+// `liveSession` on model `SessionVideo` is missing an opposite relation
+// field on the model `LiveSession`") and the shipped schema was invalid.
+// This block parses what P1012 checks — the relation pair, not just one
+// side — plus the migration/FK SetNull semantics, so it cannot ship again.
+// ---------------------------------------------------------------------------
+{
+  const modelBlock = (schema, name) => {
+    const m = schema.match(new RegExp(`^model ${name} \\{[\\s\\S]*?^\\}`, "m"));
+    return m ? m[0] : "";
+  };
+  const schemas = [
+    ["SQLite", read(SQLITE_SCHEMA)],
+    ["PostgreSQL", read(PG_SCHEMA)],
+  ];
+  for (const [provider, schema] of schemas) {
+    const video = modelBlock(schema, "SessionVideo");
+    const session = modelBlock(schema, "LiveSession");
+    ok(
+      video.length > 0 && /^\s*liveSessionId String\?\s*$/m.test(video),
+      `${provider}: SessionVideo owns the nullable liveSessionId FK column`
+    );
+    ok(
+      /^\s*liveSession\s+LiveSession\?\s+@relation\(fields: \[liveSessionId\], references: \[id\], onDelete: SetNull\)\s*$/m.test(
+        video
+      ),
+      `${provider}: SessionVideo.liveSession is the optional SetNull forward relation`
+    );
+    ok(
+      session.length > 0 && /^\s*sessionVideos SessionVideo\[\]\s*$/m.test(session),
+      `${provider}: LiveSession owns the inverse sessionVideos collection (P1012 opposite field)`
+    );
+  }
+  // The relation is unambiguous (exactly one SessionVideo<->LiveSession
+  // pair), so Prisma needs no explicit relation name on either side.
+  const sqliteSchema = read(SQLITE_SCHEMA);
+  const forwardCount = (sqliteSchema.match(/^\s*liveSession\s+LiveSession\?/gm) || []).length;
+  const inverseCount = (sqliteSchema.match(/^\s*sessionVideos SessionVideo\[\]/gm) || []).length;
+  ok(
+    forwardCount === 1 && inverseCount >= 1,
+    "exactly one SessionVideo.liveSession forward field (no ambiguous pair, no @relation name needed)",
+    `forward=${forwardCount} inverse-name-occurrences=${inverseCount}`
+  );
+  // Migration/FK semantics: PG carries a real SetNull FK, SQLite carries
+  // the nullable column + covering index (ALTER TABLE ... ADD COLUMN cannot
+  // declare a FOREIGN KEY — the Phase G attachmentId/gradedById columns set
+  // the same precedent), and the derived baseline converges on SetNull.
+  const pgModes = stripSqlComments(read(path.join(PG_MIGRATIONS, MIG_SV_MODES, "migration.sql")));
+  ok(
+    pgModes.includes('ALTER TABLE "SessionVideo" ADD COLUMN "liveSessionId" TEXT') &&
+      pgModes.includes('CONSTRAINT "SessionVideo_liveSessionId_fkey" FOREIGN KEY ("liveSessionId") REFERENCES "LiveSession"("id") ON DELETE SET NULL'),
+    "PG requirement-modes migration carries the liveSessionId column and the ON DELETE SET NULL FK"
+  );
+  const liteModes = stripSqlComments(read(path.join(SQLITE_MIGRATIONS, MIG_SV_MODES, "migration.sql")));
+  ok(
+    liteModes.includes('ALTER TABLE "SessionVideo" ADD COLUMN "liveSessionId" TEXT') &&
+      liteModes.includes('CREATE INDEX "SessionVideo_liveSessionId_idx" ON "SessionVideo"("liveSessionId")'),
+    "SQLite requirement-modes migration carries the nullable liveSessionId column and its covering index"
+  );
+  ok(
+    stripSqlComments(read(BASELINE_SQL)).includes(
+      'CONSTRAINT "SessionVideo_liveSessionId_fkey" FOREIGN KEY ("liveSessionId") REFERENCES "LiveSession" ("id") ON UPDATE CASCADE ON DELETE SET NULL'
+    ),
+    "derived postgres baseline converges on the SetNull liveSessionId FK"
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Part B — real PostgreSQL (disposable), SQL-level
 // ---------------------------------------------------------------------------
 
@@ -692,6 +899,14 @@ async function partC() {
 
   // C1 — fresh PostgreSQL: `migrate deploy` alone provisions and converges.
   {
+    // The engine resolves its migrations from the directory NEXT TO the schema
+    // file, so this pins the resolution BEFORE anything runs: the PG schema
+    // must live in prisma/postgres (never back in prisma/ next to SQLite) and
+    // its adjacent migrations directory must BE prisma/postgres/migrations.
+    ok(PG_SCHEMA === path.join(REPO, "prisma", "postgres", "schema.prisma") &&
+      path.join(path.dirname(PG_SCHEMA), "migrations") === PG_MIGRATIONS &&
+      path.dirname(PG_SCHEMA) !== path.join(REPO, "prisma"),
+      "engine: fresh PG deploy resolves its migrations from prisma/postgres/migrations (schema-adjacent directory)");
     const pool = new pg.Pool({ connectionString: DATABASE_URL, max: 1 });
     const query = async (t, p) => pool.query(t, p);
     await resetPublicSchema(query);
@@ -704,10 +919,22 @@ async function partC() {
     const query2 = async (t, p) => pool2.query(t, p);
     const snap = await catalogSnapshot(query2);
     const ledger = await query2(`SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NOT NULL ORDER BY migration_name`);
-    const expectedPgLedger = ["0_init", MIG_26D, MIG_PHASE_F, MIG_PHASE_G, MIG_CAMERA];
+    const expectedPgLedger = ["0_init", MIG_26D, MIG_PHASE_F, MIG_PHASE_G, MIG_CAMERA, MIG_PHASE_H, MIG_SV_REQ, MIG_SV_MODES, MIG_REMIND_AUD];
+    // The expected ledger is the migrations directory itself: this guard fails
+    // loudly the moment a new migration lands without joining the explicit
+    // list (a stale list previously blamed the engine for the test's own
+    // omission). The explicit list stays — "never the SQLite names" must be
+    // spelled out, not inferred.
+    ok(JSON.stringify(listMigrationDirs(PG_MIGRATIONS)) === JSON.stringify(expectedPgLedger),
+      "engine: expected PG ledger list matches prisma/postgres/migrations (contract cannot drift silently)");
     ok(JSON.stringify(ledger.rows.map((x) => x.migration_name)) === JSON.stringify(expectedPgLedger),
       "engine: fresh deploy ledger contains exactly the complete PostgreSQL chain (never the SQLite names)");
-    ok(ledger.rows.every((x) => expectedPgLedger.includes(x.migration_name)),
+    // SQLite-ONLY names are the SQLite history MINUS the provider-shared
+    // migrations (the later phases ship a twin edition per provider under the
+    // same name). A fresh PG deploy must carry none of them.
+    const sqliteOnly = listMigrationDirs(SQLITE_MIGRATIONS).filter((n) => !expectedPgLedger.includes(n));
+    ok(sqliteOnly.length === 11 && ledger.rows.length === expectedPgLedger.length &&
+      ledger.rows.every((x) => !sqliteOnly.includes(x.migration_name)),
       "engine: fresh deploy ledger contains no SQLite migration names");
     const refs = await query2(`SELECT to_regclass('public."QuizRetryGrant"') AS t`);
     ok(refs.rows[0].t !== null, "engine: QuizRetryGrant exists after fresh deploy");
@@ -762,7 +989,7 @@ async function partC() {
   }
 
   // C3 — SQLite applied-ledger contract through the real engine: a database
-  //      migrated with the repo harness (base DDL + 13 files, real checksums)
+  //      migrated with the repo harness (base DDL + 19 files, real checksums)
   //      must be recognised as fully up to date.
   {
     const { DatabaseSync } = require("node:sqlite");

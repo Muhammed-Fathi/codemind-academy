@@ -52,7 +52,14 @@ export async function POST(req: NextRequest) {
 
   // Access gate — identical to the submit route: progression unlock + track.
   const access = await canAccessHomework(student.id, homeworkId);
-  if (!access.allowed) return denyProgression(access.reason, "Homework not found");
+  if (!access.allowed)
+    return denyProgression(access.reason, "Homework not found", {
+      state: access.evaluation?.state ?? null,
+      reason: access.evaluation?.reason ?? null,
+      reasonCode: access.evaluation?.reasonCode ?? null,
+      unmet: access.evaluation?.unmet ?? [],
+      holdBlocked: access.reason === "ABSENCE_HOLD",
+    });
 
   const homework = await db.homework.findUnique({
     where: { id: homeworkId },

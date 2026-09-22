@@ -256,10 +256,14 @@ section("3. Authorization matrix — every content route × the 10 checks");
     "material download gates through authorizeMaterialDownload (10-check contract)");
 
   // The 10 checks live in one place each (no second implementation).
+  // Phase H: the shared gate is the canonical engine; session-progress.ts is
+  // a thin adapter that must only delegate.
   const sp = read("src/lib/session-progress.ts");
-  ok(/isStudentVisibleStatus/.test(sp), "check #7 (lifecycle) enforced in the shared gate");
+  const eng = read("src/lib/progression.ts");
+  ok(/isStudentVisibleStatus/.test(eng), "check #7 (lifecycle) enforced in the shared gate");
   ok(/canAccessTrackScope/.test(sp), "check #5 (track) enforced in the shared gate");
-  ok(/trackScopeWhere/.test(sp), "the universe query narrows by track (check #5)");
+  ok(/trackScopeWhere/.test(eng), "the universe query narrows by track (check #5)");
+  ok(!/const videoDone/.test(sp) && !/previousCompleted/.test(sp), "the adapter carries no gate logic of its own");
   ok(/group:\s*\{\s*select:\s*\{\s*courseId: true,\s*isActive: true/.test(sp) || /isActive/.test(sp),
     "check #3 (enrollment) = active group bound to the course");
   ok(/resolveLessonCourseId/.test(sp), "check #4/#6 (course + session-in-course) via chain resolution");
@@ -274,7 +278,11 @@ section("3. Authorization matrix — every content route × the 10 checks");
   ok(/isManagedPrivateStorage,/.test(sm) && /from \"@\/lib\/media\"/.test(sm), "material check #10 uses the shared storage predicate from lib/media");
   ok(/!asset\.storageKey/.test(sm), "material check #10 still requires a storageKey");
   ok(/asset\.isPrivate !== true/.test(sm), "material check #10 still requires isPrivate");
-  ok(/MANAGED_PRIVATE_STORAGE_VALUES = \[\s*\"LOCAL_PRIVATE\",\s*\"S3\",\s*\]/.test(read("src/lib/media.ts")), "managed private storage is exactly LOCAL_PRIVATE + S3 (EXTERNAL_URL excluded)");
+  // The canonical set moved to the client-safe predicate module (the
+  // session-video requirement validator ships to the browser); lib/media
+  // re-exports it, so every gate still resolves the SAME single definition.
+  ok(/MANAGED_PRIVATE_STORAGE_VALUES = \[\s*\"LOCAL_PRIVATE\",\s*\"S3\",\s*\]/.test(read("src/lib/media-storage.ts")), "managed private storage is exactly LOCAL_PRIVATE + S3 (EXTERNAL_URL excluded)");
+  ok(/MANAGED_PRIVATE_STORAGE_VALUES,/.test(read("src/lib/media.ts")), "lib/media re-exports the canonical managed set (single definition)");
   ok(/isActive/.test(sm), "material check #9 (active material)");
 }
 
@@ -289,7 +297,10 @@ section("4. IDOR — sequential / guessed / foreign ids deny without existence l
 
   const sp = read("src/lib/session-progress.ts");
   ok(/reason: \"LESSON_NOT_FOUND\"/.test(sp), "track/lifecycle refusal is LESSON_NOT_FOUND (non-oracle)");
-  ok(/lesson\)\s*\{\s*return \{ allowed: false, reason: \"LESSON_NOT_FOUND\"/.test(sp) || /!lesson\) return \{ allowed: false, reason: \"LESSON_NOT_FOUND\"/.test(sp),
+  // Phase H: the canonical verdict lives in the engine; the missing-id and
+  // out-of-scope answers must still be byte-identical there (non-oracle).
+  const engVerdict = read("src/lib/progression.ts");
+  ok(/!lesson\) return \{ allowed: false, reason: "LESSON_NOT_FOUND"/.test(engVerdict),
     "missing lesson id is indistinguishable from an out-of-scope id");
 
   const sm = read("src/lib/session-materials.ts");
@@ -329,7 +340,9 @@ section("5. Cross-track / cross-course / premature access");
   ok(/function isStudentVisibleStatus/.test(lifecycle), "single lifecycle-availability predicate");
 
   const sp = read("src/lib/session-progress.ts");
-  ok(/unlocked: previousCompleted/.test(sp), "progression = sequential unlock (premature access)");
+  // Phase H: strict sequential chain in the canonical engine (every previous
+  // lesson COMPLETED — a completed-but-locked lesson reopens nothing).
+  ok(/previousCompleted = previousCompleted && completed/.test(read("src/lib/progression.ts")), "progression = sequential unlock (premature access)");
   ok(/EXCLUDE_ARCHIVED_LESSON/.test(sp), "archived lessons are excluded from the universe");
 
   // Cross-course: the material authorizer resolves the owning course.

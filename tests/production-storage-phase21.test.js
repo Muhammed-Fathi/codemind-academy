@@ -107,13 +107,19 @@ async function main() {
       fs.existsSync(path.join(REPO, "prisma", "migrations", d, "migration.sql")));
     // Phase 26D appended the Lesson Quiz attempt-architecture migration.
     // Phase F appended one additive migration (live-session lifecycle),
-    // so the frozen history is 12 + 1. Every PREVIOUS migration must still be
-    // present — which is what the assertion below actually protects.
-    ok(migs.length === 13, `13 migrations preserved (found ${migs.length})`);
+    // Phase G appended the quiz/homework workflow migration plus the camera
+    // policy migration, and Phase H appended the progression-override
+    // migration, so the frozen history is 12 + 1 + 2 + 1 = 16. Every PREVIOUS
+    // migration must still be present — which is what the assertion below
+    // actually protects.
+    ok(migs.length === 19, `19 migrations preserved (found ${migs.length})`);
     ok(
       migs.includes("20260915180000_phase26d_quiz_attempt_architecture") &&
-        migs.includes("20260919120000_phase_f_live_session_lifecycle"),
-      "the 26D and Phase F migrations are both in the history"
+        migs.includes("20260919120000_phase_f_live_session_lifecycle") &&
+        migs.includes("20260919180000_phase_g_quiz_homework_workflow") &&
+        migs.includes("20260919190000_phase_g_camera_policy") &&
+        migs.includes("20260920120000_phase_h_progression_override"),
+      "the 26D, Phase F, Phase G, camera and Phase H migrations are all in the history"
     );
     ok(migs.includes("20260915120000_phase26b_group_track_scope"), "Phase 26B group-audience migration present");
   }
@@ -127,8 +133,9 @@ async function main() {
     // Phase F added 4 models (AttendanceCorrection, AbsenceReview,
     // AbsenceReasonSubmission, AbsenceHold) and 2 enums (AbsenceReviewStatus,
     // AbsenceHoldStatus): 56 + 4 = 60 and 21 + 2 = 23.
-    ok(parsed.models.size === 60, `60 models parsed (found ${parsed.models.size})`);
-    ok(parsed.enums.size === 23, `23 enums parsed (found ${parsed.enums.size})`);
+    // Phase H added the ProgressionOverride model (no new enum): 60 + 1 = 61.
+    ok(parsed.models.size === 61, `61 models parsed (found ${parsed.models.size})`);
+    ok(parsed.enums.size === 24, `24 enums parsed (found ${parsed.enums.size})`);
     // No provider-specific column types or attributes anywhere. (Type check is
     // done on PARSED field types — a substring sweep would false-positive on
     // column names like `sizeBytes`.)
@@ -172,12 +179,18 @@ async function main() {
     // QuizAttempt.retryGrantId → QuizRetryGrant.
     // Phase F added 10 FK relations (the four new tables' constraints plus
     // LiveSession.substituteTeacherId): 77 + 10 = 87.
-    ok(fks === 87, `87 FK relations found (found ${fks})`);
+    // Phase G added 3 FK relations (Homework.attachmentId, HomeworkSubmission
+    // .attachmentId/.gradedById): 87 + 3 = 90.
+    // Phase H added 2 FK relations (ProgressionOverride → Student/Lesson;
+    // the actor columns are deliberately plain TEXT, never FKs): 90 + 2 = 92.
+    // Requirement modes added 1 FK relation (SessionVideo → LiveSession,
+    // the explicit absence source): 92 + 1 = 93.
+    ok(fks === 93, `93 FK relations found (found ${fks})`);
     ok(unbalanced === 0, "every FK is balanced with a known referential action");
     // Migration order: total, deterministic, parents before children.
     const order1 = pgLib.migrationOrder(parsed);
     const order2 = pgLib.migrationOrder(pgLib.parseSchema());
-    ok(order1.length === 60, "migration order covers all 60 tables");
+    ok(order1.length === 61, "migration order covers all 61 tables");
     ok(JSON.stringify(order1) === JSON.stringify(order2), "migration order is deterministic");
     const pos = new Map(order1.map((m, i) => [m, i]));
     let violations = 0;
@@ -193,11 +206,13 @@ async function main() {
     // 21 enums + 55 tables + 70 indexes: Phase 26B added Group_trackScope_idx
     // (owner-approved Group.trackScope), so the index count grew 69 → 70.
     // Phase 26D: +1 table (QuizRetryGrant) and +3 indexes on it.
-    // 23 enums + 60 tables + the FK block (73 pre-existing + the 10 Phase F
-    // constraints) — the exact statement count is derived, never hand-tuned.
+    // 24 enums + 61 tables + the 91 explicit CREATE INDEX statements (87
+    // through Phase G + the 3 Phase H ProgressionOverride indexes + the
+    // SessionVideo liveSessionId index) — the exact statement count is
+    // derived, never hand-tuned.
     ok(
-      stmts.length === 23 + 60 + 87,
-      `baseline has ${23 + 60 + 87} statements (found ${stmts.length})`
+      stmts.length === 24 + 61 + 91,
+      `baseline has ${24 + 61 + 91} statements (found ${stmts.length})`
     );
     ok(/CREATE INDEX "Group_trackScope_idx"/.test(ddl), "baseline carries the Phase 26B group-audience index");
     const longIdents = [...ddl.matchAll(/"([A-Za-z0-9_]{64,})"/g)];
@@ -632,7 +647,7 @@ console.log("HARNESS_JSON " + JSON.stringify(results));
     try {
       const mig = run("node scripts/verify-phase21-migration.mjs");
       ok(/PHASE21_MIGRATION_OK/.test(mig), "migration rehearsal passed (PHASE21_MIGRATION_OK)");
-      ok(/row counts preserved on all 60 tables/.test(mig), "rehearsal preserved all row counts");
+      ok(/row counts preserved on all 61 tables/.test(mig), "rehearsal preserved all row counts");
       ok(/canonical row hashes identical/.test(mig), "rehearsal proved byte-identity via hashes");
     } catch (e) {
       ok(false, "migration rehearsal passed");

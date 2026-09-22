@@ -92,6 +92,11 @@ model Student {
   /// Phase F — administrative absence cases + their holds (see AbsenceReview).
   absenceReviews    AbsenceReview[]
   absenceHolds      AbsenceHold[]
+  /// Phase H — admin-issued progression overrides targeting this student.
+  /// An override is an access EXCEPTION (an overlay on the canonical engine),
+  /// never a rewrite of academic facts: quiz passes, homework submissions,
+  /// video completion and attendance history are untouched by it.
+  progressionOverrides ProgressionOverride[]
   quizAttempts      QuizAttempt[]
   /// Phase 26D — Admin-issued retry permissions targeting this student.
   retryGrants       QuizRetryGrant[]
@@ -344,6 +349,8 @@ model Lesson {
   /// the state Phase 17 notification fan-out consumes). Optional: a lesson
   /// that has never been opened through the ceremony has none.
   publication   SessionPublication?
+  /// Phase H — admin progression overrides granting access to this lesson.
+  progressionOverrides ProgressionOverride[]
 
   @@index([topicId])
   @@index([unitId, order])
@@ -559,6 +566,11 @@ model LiveSession {
   attendance   Attendance[]
   attendanceCorrections AttendanceCorrection[]
   absenceReviews AbsenceReview[]
+  /// SessionVideo requirement modes — the recordings that name THIS session
+  /// as their explicit absence source (`SessionVideo.liveSessionId`). The
+  /// forward side owns the nullable FK with `onDelete: SetNull`: deleting a
+  /// session unlinks its recordings, never deletes them.
+  sessionVideos SessionVideo[]
   lesson       Lesson?       @relation(fields: [lessonId], references: [id])
   teacher      Teacher?      @relation(fields: [teacherId], references: [id])
   substituteTeacher Teacher? @relation("LiveSessionSubstitute", fields: [substituteTeacherId], references: [id], onDelete: SetNull)
@@ -722,6 +734,63 @@ model AbsenceHold {
 
   @@index([studentId, status])
   @@index([sessionId])
+}
+
+/// ProgressionOverride — the Phase H ADMIN-ONLY progression exception.
+///
+/// WHY THIS TABLE EXISTS
+///   The canonical progression engine (`src/lib/progression.ts`) derives
+///   LOCKED / UNLOCKED / COMPLETED per student per lesson from academic facts
+///   (video watch, quiz passes, homework submissions) sequenced over the
+///   published, track-eligible curriculum, minus active absence holds. That
+///   derivation is final for every role — except that an ADMIN may grant a
+///   named student access to a named lesson as an audited, expirable, revocable
+///   EXCEPTION, without rewriting any underlying fact.
+///
+/// WHAT IT IS
+///   * ONE row grants access to ONE lesson for ONE student. It unlocks the
+///     named lesson only: earlier lessons keep their own states, later lessons
+///     still wait for the named lesson's derived completion.
+///   * An override BYPASSES the sequential gate and an active absence-hold
+///     boundary for the named lesson. It NEVER bypasses track isolation
+///     (the grant route refuses a lesson outside the student's track), the
+///     publication lifecycle (DRAFT/READY/archived lessons are ungrantable) or
+///     enrollment/entitlement.
+///   * It NEVER fabricates academic facts: no quiz pass, no homework
+///     submission, no video completion, no attendance rewrite, no hold
+///     destruction, no historical COMPLETED rewrite. The engine reports the
+///     facts unchanged and marks the access as override-granted.
+///
+/// LIFECYCLE
+///   ACTIVE  = revokedAt IS NULL AND (expiresAt IS NULL OR expiresAt > now).
+///   EXPIRED = expiresAt <= now (evaluated at read time; no sweeper rewrites).
+///   REVOKED = revokedAt IS NOT NULL (append-only; rows are never deleted).
+///   Creation is idempotent per (student, lesson): re-granting an already
+///   active override replays the existing row instead of duplicating it.
+///
+/// ACTOR COLUMNS (createdByUserId / revokedByUserId) are plain columns, NOT
+/// relations — deleting a user must never rewrite override history (the same
+/// policy as `SessionPublication.publishedByUserId` and the Phase F actor
+/// columns). Every grant and revocation is mirrored into `AuditLog`.
+model ProgressionOverride {
+  id              String    @id @default(cuid())
+  studentId       String
+  lessonId        String
+  /// Mandatory explicit reason, validated server-side (3..500 chars).
+  reason          String
+  createdByUserId String
+  createdAt       DateTime  @default(now())
+  /// Optional expiry. NULL = no expiry. Evaluated at read time.
+  expiresAt       DateTime?
+  revokedAt       DateTime?
+  revokedByUserId String?
+  revokeReason    String?
+  student         Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  lesson          Lesson    @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@index([studentId])
+  @@index([lessonId])
+  @@index([studentId, lessonId])
 }
 
 model Quiz {
@@ -1416,6 +1485,15 @@ model MediaAsset {
   @@index([storage])
 }
 
+/// SessionVideo progression requirement MODE — the authoritative gate.
+/// OPTIONAL = content only; ALL_STUDENTS = everyone; ABSENT_STUDENTS = only
+/// students with a proven unexcused absence for `liveSession`.
+enum SessionVideoRequirementMode {
+  OPTIONAL
+  ALL_STUDENTS
+  ABSENT_STUDENTS
+}
+
 /// A session video published to a batch. One row per (batch, lesson-ish session).
 model SessionVideo {
   id           String             @id @default(cuid())
@@ -1427,6 +1505,29 @@ model SessionVideo {
   description  String?
   /// Minimum watched percentage required to consider the video complete.
   requiredPercent Int             @default(95)
+  /// DEPRECATED as the authority (kept + dual-written for backward
+  /// compatibility): the authoritative gate is `requirementMode` below. The
+  /// engine and every read path interpret the MODE; write paths keep this
+  /// flag in sync (`true` ⟺ mode is not OPTIONAL) so older readers keep
+  /// working. Default false: every pre-existing row stays OPTIONAL.
+  isRequiredForProgression Boolean @default(false)
+  /// Per-video progression requirement MODE — the authoritative gate.
+  ///   OPTIONAL        — content + telemetry only, never a progression input.
+  ///   ALL_STUDENTS    — every eligible student must satisfy
+  ///                     watchPercent >= requiredPercent.
+  ///   ABSENT_STUDENTS — only students with an UNEXCUSED finalized absence
+  ///                     for `liveSession` must satisfy it (see
+  ///                     src/lib/video-applicability.ts). Present / excused /
+  ///                     unmarked students are EXEMPT, never silently gated.
+  /// Default OPTIONAL: additive-only, no backfill — except the one-time
+  /// migration mapping below (legacy `isRequiredForProgression = true` rows
+  /// become ALL_STUDENTS, which preserves their exact historical meaning:
+  /// required for everyone).
+  requirementMode SessionVideoRequirementMode @default(OPTIONAL)
+  /// The LiveSession whose absence this recording covers (ABSENT_STUDENTS
+  /// only; NULL otherwise). An EXPLICIT admin-chosen FK — NEVER inferred
+  /// from dates, titles or lesson links.
+  liveSessionId String?
   isPublished  Boolean            @default(false)
   publishedAt  DateTime?
   createdAt    DateTime           @default(now())
@@ -1434,10 +1535,12 @@ model SessionVideo {
   batch        Batch              @relation(fields: [batchId], references: [id], onDelete: Cascade)
   lesson       Lesson?            @relation(fields: [lessonId], references: [id], onDelete: SetNull)
   media        MediaAsset         @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+  liveSession  LiveSession?       @relation(fields: [liveSessionId], references: [id], onDelete: SetNull)
   views        SessionVideoView[]
 
   @@index([batchId, isPublished])
   @@index([lessonId])
+  @@index([liveSessionId])
 }
 
 /// Per-student watch tracking of a batch session video (95% rule).
@@ -1806,6 +1909,11 @@ enum NotificationType {
   ABSENCE_UNEXCUSED
   /// Phase F — the "still no reason" reminder (idempotent per case per day).
   ABSENCE_REMINDER
+  /// Teacher Readiness — the teacher-triggered "finish your pending lesson
+  /// requirements" nudge to the STUDENT (idempotent per student per lesson
+  /// per day; preferences + quiet hours honoured like every non-mandatory
+  /// notification — see `src/lib/readiness-reminders.ts`).
+  READINESS_REMINDER
 }
 
 /// Phase F — the ADMINISTRATIVE state machine of an absence case. Separate

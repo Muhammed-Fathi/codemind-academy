@@ -22,6 +22,7 @@
 //
 // Run: node tests/authorization-invariants.test.js
 
+/* eslint-disable @typescript-eslint/no-require-imports -- plain-node test runner, same as the other suites */
 const fs = require("fs");
 const path = require("path");
 
@@ -82,34 +83,46 @@ section("2. 95% video rule cannot be bypassed");
 {
   const src = read("src/app/api/lessons/[id]/progress/route.ts");
 
+  // Phase H: completion is DERIVED, never claimed. The route takes the
+  // verdict from the canonical evaluation (`access.status.completed`, itself
+  // derived from server-tracked facts only) — the old video-only
+  // `videoSatisfied` gate was subsumed by the full derivation (video ≥
+  // threshold AND every required quiz PASSED AND every required homework
+  // SUBMITTED). The audit invariant is unchanged in spirit and stricter in
+  // letter: no client input can self-certify completion.
   ok(
-    /VIDEO_COMPLETION_THRESHOLD/.test(src),
-    "progress route imports the shared threshold constant"
+    /access\.status\?\.completed === true/.test(src),
+    "progress route takes the completion verdict from the canonical evaluation"
   );
   ok(
-    /const videoSatisfied\s*=/.test(src),
-    "progress route computes a single videoSatisfied gate"
+    !/const videoSatisfied\s*=/.test(src),
+    "no second video-only gate in the route (the engine owns the rule)"
   );
 
   // The regression this audit found: `progress: 100` used to complete a
-  // lesson without consulting the video threshold at all.
+  // lesson without consulting the derivation at all.
   const hundredBranch = /progressValue\s*>=\s*100\s*\)\s*\{([\s\S]{0,240}?)\}/.exec(src);
   ok(!!hundredBranch, "progress>=100 branch is present");
   ok(
-    hundredBranch && /videoSatisfied/.test(hundredBranch[1]),
-    "progress>=100 branch is guarded by videoSatisfied (no silent bypass)"
+    hundredBranch && /engineCompleted/.test(hundredBranch[1]),
+    "progress>=100 branch is guarded by the derived verdict (no silent bypass)"
   );
 
   const flagBranch = /if\s*\(completedFlag\)\s*\{([\s\S]{0,240}?)\n\s{4}\}/.exec(src);
   ok(
-    flagBranch && /videoSatisfied/.test(flagBranch[1]),
-    "completed:true branch is guarded by videoSatisfied"
+    flagBranch && /engineCompleted/.test(flagBranch[1]),
+    "completed:true branch is guarded by the derived verdict"
   );
 
-  // Both guarded paths must actually reject, not just skip the flag.
+  // Both guarded paths must actually reject, not just skip the flag — with
+  // the Arabic reason + structured unmet requirements, never a bare refusal.
   ok(
-    (src.match(/if \(!videoSatisfied\) return err\(/g) || []).length >= 2,
-    "both completion paths return 403 when the video is not satisfied"
+    (src.match(/if \(!engineCompleted\) return refusePremature\(\)/g) || []).length >= 2,
+    "both completion paths return 403 when the derivation is not complete"
+  );
+  ok(
+    /REQUIREMENTS_UNMET/.test(src) && /status: 403/.test(src),
+    "a premature claim is refused with a structured 403"
   );
 
   const heartbeat = read("src/app/api/lessons/[id]/video-progress/route.ts");
@@ -136,35 +149,66 @@ section("2. 95% video rule cannot be bypassed");
 section("3. Session locking treats missing components as not-required");
 // ---------------------------------------------------------------------------
 {
+  // Phase H: session-progress.ts is a thin adapter; the rules live in the
+  // canonical engine. The adapter must delegate (no second rule set), and
+  // the engine must keep every invariant below.
   const src = read("src/lib/session-progress.ts");
-  ok(/const hasVideo = !!lesson\.videoUrl;/.test(src), "video presence is detected");
+  const eng = read("src/lib/progression.ts");
   ok(
-    /const videoDone = hasVideo[\s\S]{0,120}: true;/.test(src),
+    /from "@\/lib\/progression"/.test(src) &&
+      /loadCourseProgression/.test(src) &&
+      /evaluateLessonAccess/.test(src),
+    "the adapter delegates to the canonical engine (no second rules)"
+  );
+  ok(
+    !/const hasVideo =/.test(src) && !/previousCompleted/.test(src),
+    "the adapter carries no gating logic of its own"
+  );
+  // Restored contract (relocated to the engine), session-video-requirement
+  // revision: video REQUIRED-ness is Lesson.videoUrl OR >=1 REQUIRED
+  // recording — OPTIONAL recordings never create a requirement (Phase B
+  // M2, revised).
+  ok(
+    /const videoRequired = lesson\.hasLegacyVideo \|\| requiredVideos\.length > 0;/.test(eng),
+    "video REQUIRED-ness derives from legacy-OR-required-recordings"
+  );
+  ok(
+    /isRequiredForProgression: true/.test(eng),
+    "only REQUIRED recordings are progression inputs"
+  );
+  ok(
+    /const videoDone = !videoRequired \|\|/.test(eng),
     "a lesson with NO video does not require a video (no permanent lock)"
   );
   ok(
-    /const quizDone = hasQuiz[\s\S]{0,140}: true;/.test(src),
+    /!quizRequired \|\|/.test(eng),
     "a lesson with NO quiz does not require a quiz"
   );
   ok(
-    /const assignmentDone = hasHomework[\s\S]{0,160}: true;/.test(src),
+    /!homeworkRequired \|\|/.test(eng),
     "a lesson with NO assignment does not require an assignment"
   );
   ok(
-    /completed = videoDone && quizDone && assignmentDone/.test(src),
+    /hasAnyRequirement && videoDone && quizDone && homeworkDone/.test(eng),
     "a session completes only when all REQUIRED components are done"
   );
+  // Manual-QA stabilization: completion additionally requires ≥1 requirement
+  // to exist — a zero-requirement lesson is a chain boundary, never done.
   ok(
-    /let previousCompleted = true;/.test(src),
+    /const hasAnyRequirement = videoRequired \|\| quizRequired \|\| homeworkRequired;/.test(eng),
+    "completion needs at least one requirement (no vacuous completion)"
+  );
+  ok(
+    /let previousCompleted = true;/.test(eng),
     "the first lesson is always unlocked"
   );
   ok(
-    /unlocked: previousCompleted/.test(src),
-    "lesson N+1 unlocks only when lesson N is complete"
+    /previousCompleted = previousCompleted && completed/.test(eng),
+    "lesson N+1 unlocks only when EVERY previous lesson is complete (strict chain)"
   );
   ok(
-    /videoPercent >= VIDEO_COMPLETION_THRESHOLD/.test(src),
-    "the unlock rule uses the same 95% threshold"
+    /VIDEO_COMPLETION_THRESHOLD/.test(eng),
+    "the unlock rule uses the shared 95% threshold"
   );
 }
 
@@ -181,14 +225,28 @@ section("4. Enrollment definition is consistent across authorization paths");
   );
   // The regression: canAccessLesson used to ignore isActive, so a deactivated
   // group still granted lesson access even though the course route refused.
+  // Phase H: canAccessLesson delegates to the canonical evaluateLessonAccess;
+  // the ACTIVE-group rule is pinned at the verdict site (same shared
+  // evaluateAccessDecision getEnrollment uses).
   const fn = /export async function canAccessLesson[\s\S]*$/.exec(sessionProgress)[0];
   ok(
-    /isActive: true/.test(fn) || /!student\.group\.isActive/.test(fn),
-    "canAccessLesson also requires an ACTIVE group (agrees with getEnrollment)"
+    /evaluateLessonAccess\(studentId, lessonId\)/.test(fn),
+    "canAccessLesson delegates to the canonical lesson verdict"
+  );
+  const verdict = /export async function evaluateLessonAccess[\s\S]*$/.exec(
+    read("src/lib/progression.ts")
+  )[0];
+  ok(
+    /student\.group\.isActive/.test(verdict) && /courseId/.test(verdict),
+    "the canonical verdict requires an ACTIVE group bound to the course (agrees with getEnrollment)"
   );
   ok(
-    /NOT_ENROLLED/.test(fn),
-    "canAccessLesson reports NOT_ENROLLED rather than silently allowing"
+    /evaluateAccessDecision\(/.test(verdict),
+    "the canonical verdict uses the shared enrollment decision (no second rule)"
+  );
+  ok(
+    /"NOT_ENROLLED"/.test(verdict),
+    "the canonical verdict reports NOT_ENROLLED rather than silently allowing"
   );
 }
 

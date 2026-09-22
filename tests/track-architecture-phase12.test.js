@@ -63,6 +63,7 @@ fs.writeFileSync(
       module: "commonjs",
       strict: false,
       skipLibCheck: true,
+      esModuleInterop: true,
       types: ["node"],
       typeRoots: [path.join(REPO, "node_modules/@types")],
       baseUrl: REPO,
@@ -364,6 +365,11 @@ const fakeDb = {
       return W.quizAttempts
         .filter((a) => {
           if (where.studentId && !matchCond(a.studentId, where.studentId)) return false;
+          // Phase H: the canonical quiz fact is a FINISHED + grader-marked
+          // PASSED attempt (bare attempts satisfy nothing).
+          if (where.quizId && !matchCond(a.quizId, where.quizId)) return false;
+          if (where.finishedAt && !matchCond(a.finishedAt ?? null, where.finishedAt)) return false;
+          if (where.passed !== undefined && !matchCond(a.passed ?? null, where.passed)) return false;
           if (where.quiz) {
             const quiz = W.quizzes[a.quizId];
             if (!quiz) return false;
@@ -400,12 +406,43 @@ const fakeDb = {
   },
   lessonProgress: {
     async findMany({ where }) {
-      return W.lessonProgress.filter((p) => where.lessonId.in.includes(p.lessonId));
+      return W.lessonProgress.filter((p) => {
+        if (where.studentId && !matchCond(p.studentId, where.studentId)) return false;
+        if (where.lessonId && !matchCond(p.lessonId, where.lessonId)) return false;
+        return true;
+      });
     },
   },
   homeworkSubmission: {
     async findMany({ where }) {
-      return W.homeworkSubmissions.filter((h) => where.homeworkId.in.includes(h.homeworkId));
+      return W.homeworkSubmissions.filter((h) => {
+        if (where.studentId && !matchCond(h.studentId, where.studentId)) return false;
+        if (where.homeworkId && !matchCond(h.homeworkId, where.homeworkId)) return false;
+        if (where.submittedAt && !matchCond(h.submittedAt ?? null, where.submittedAt)) return false;
+        return true;
+      });
+    },
+  },
+  // Phase H engine models: present but empty (no holds, no overrides, no
+  // batch recordings in the track-isolation world).
+  sessionVideo: {
+    async findMany() {
+      return [];
+    },
+  },
+  sessionVideoView: {
+    async findMany() {
+      return [];
+    },
+  },
+  absenceHold: {
+    async findMany() {
+      return [];
+    },
+  },
+  progressionOverride: {
+    async findMany() {
+      return [];
     },
   },
   parent: {
@@ -538,17 +575,19 @@ async function main() {
   // lock, so a matrix measured against a locked lesson would be asserting
   // Phase 4 behaviour instead of Phase 12 track scope. With L-SHARED done,
   // every row below is unlocked and the verdict can only come from the track.
-  W.lessons["L-SHARED"].quizzes = [{ id: "Q-SHARED" }];
-  W.lessons["L-SHARED"].homeworks = [{ id: "H-SHARED" }];
-  W.lessons["L-AR"].quizzes = [{ id: "Q-AR-OWN" }];
-  W.lessons["L-AR"].homeworks = [{ id: "H-AR-OWN" }];
-  W.lessons["L-LANG"].quizzes = [{ id: "Q-LANG-OWN" }];
-  W.lessons["L-LANG"].homeworks = [{ id: "H-LANG-OWN" }];
+  // Phase H: attached components carry their trackScope (the engine slices
+  // requirements by it) and completion seeds are grader-marked PASSES.
+  W.lessons["L-SHARED"].quizzes = [{ id: "Q-SHARED", trackScope: "SHARED", status: "PUBLISHED" }];
+  W.lessons["L-SHARED"].homeworks = [{ id: "H-SHARED", trackScope: "SHARED", status: "PUBLISHED" }];
+  W.lessons["L-AR"].quizzes = [{ id: "Q-AR-OWN", trackScope: "ARABIC", status: "PUBLISHED" }];
+  W.lessons["L-AR"].homeworks = [{ id: "H-AR-OWN", trackScope: "ARABIC", status: "PUBLISHED" }];
+  W.lessons["L-LANG"].quizzes = [{ id: "Q-LANG-OWN", trackScope: "LANGUAGE", status: "PUBLISHED" }];
+  W.lessons["L-LANG"].homeworks = [{ id: "H-LANG-OWN", trackScope: "LANGUAGE", status: "PUBLISHED" }];
   W.lessonProgress.push({ studentId: "ar-student", lessonId: "L-SHARED", videoPercent: 100, videoCompleted: true, isCompleted: true });
-  W.quizAttempts.push({ id: "att-1", quizId: "Q-SHARED", studentId: "ar-student", finishedAt: new Date() });
+  W.quizAttempts.push({ id: "att-1", quizId: "Q-SHARED", studentId: "ar-student", finishedAt: new Date(), passed: true });
   W.homeworkSubmissions.push({ homeworkId: "H-SHARED", studentId: "ar-student", submittedAt: new Date() });
   W.lessonProgress.push({ studentId: "lang-student", lessonId: "L-SHARED", videoPercent: 100, videoCompleted: true, isCompleted: true });
-  W.quizAttempts.push({ id: "att-2", quizId: "Q-SHARED", studentId: "lang-student", finishedAt: new Date() });
+  W.quizAttempts.push({ id: "att-2", quizId: "Q-SHARED", studentId: "lang-student", finishedAt: new Date(), passed: true });
   W.homeworkSubmissions.push({ homeworkId: "H-SHARED", studentId: "lang-student", submittedAt: new Date() });
 
   const lessonMatrix = [
@@ -1035,10 +1074,12 @@ async function main() {
   ok(/v\.isPublished/.test(mediaRoute), "media still requires the video to be published");
   ok(/v\.batchId === student\.batchId/.test(mediaRoute), "media still requires batch membership");
 
-  const engine = read("src/lib/session-progress.ts");
-  ok(/\.\.\.trackScopeWhere\(resolvedSchoolType\)/.test(engine), "the progression universe is track-filtered");
+  // Phase H: the canonical engine owns the track slicing; the adapter
+  // delegates and owns no predicate of its own.
+  const engine = read("src/lib/progression.ts");
+  ok(/\.\.\.trackScopeWhere\(schoolType\),/.test(engine), "the progression universe is track-filtered");
   ok(/canAccessTrackScope\(schoolType, lesson\.trackScope\)/.test(engine), "canAccessLesson has an explicit track gate");
-  ok(/gateTrackedResource/.test(engine), "quiz/homework gating shares one track implementation");
+  ok(/gateTrackedResource/.test(read("src/lib/session-progress.ts")), "quiz/homework gating shares one track implementation");
 
   const teacherQuiz = read("src/app/api/teacher/quizzes/route.ts");
   ok(/trackScope: quizTrackScope/.test(teacherQuiz), "teacher quiz creation stores an explicit trackScope");

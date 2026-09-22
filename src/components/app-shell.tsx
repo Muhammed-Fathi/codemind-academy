@@ -25,6 +25,7 @@ import { StudentDashboard } from "@/components/student/student-dashboard";
 import { ParentDashboard } from "@/components/parent/parent-dashboard";
 import { TeacherDashboard } from "@/components/teacher/teacher-dashboard";
 import { TeacherSessions } from "@/components/teacher/teacher-sessions";
+import { TeacherReadinessView } from "@/components/teacher/readiness-view";
 import { TeacherLiveSessionsWorkspace } from "@/components/teacher/live-sessions-workspace";
 import {
   ParentAbsencesView,
@@ -256,6 +257,13 @@ function renderView(view: string, role?: string | null) {
     case "teacher-analytics":
     case "teacher-notifications":
       return <TeacherDashboard />;
+    // Lesson readiness (states-only per-student requirement view + parent
+    // reminders). Standalone case with its OWN return — it must NEVER join
+    // the fall-through group above: sharing that group once swept the
+    // dashboard, attendance, quiz, homework, template and analytics keys
+    // into this return (manual-QA navigation regression).
+    case "teacher-readiness":
+      return <TeacherReadinessView />;
     // Phase E — the teacher Session workspace (sessions list + per-lesson
     // workspace). Kept OUT of TeacherDashboard so the legacy tabs are
     // byte-for-byte untouched, and so the Phase 18 pins over that file stay

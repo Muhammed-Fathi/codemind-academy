@@ -313,8 +313,9 @@ test("Phase C: lesson content aggregation", async () => {
   //   Course B: LB1 — its own lesson (cross-course probe target)
   //
   // The gate quiz sits LATE in the chain so every earlier lesson is reachable
-  // (auto-completed or seeded), and L_LOCK is the ONLY lesson locked behind
-  // it — exactly the Phase N scenario.
+  // (seeded-satisfied, or override-carried past the empty-lesson boundaries
+  // the engine no longer auto-completes), and L_LOCK is the ONLY lesson
+  // locked behind it — exactly the Phase N scenario.
   // ===========================================================================
   const course = await client.course.create({
     data: { slug: "phasec-a", name: "Course A", nameAr: "كورس أ", description: "phase C" },
@@ -503,6 +504,8 @@ test("Phase C: lesson content aggregation", async () => {
   });
 
   // L_QUIZ carries the gate quiz → L_LOCK stays locked for both students.
+  // (Question-less: PUBLISHED + track-eligible is a requirement regardless
+  // of pool state, so the unpassed gate holds exactly as before.)
   await client.quiz.create({
     data: { lessonId: L_QUIZ.id, title: "Gate quiz", titleAr: "اختبار البوابة", trackScope: "SHARED" },
   });
@@ -525,8 +528,10 @@ test("Phase C: lesson content aggregation", async () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Progression seeds (Phase T — the engine semantics are untouched; these rows
-  // merely SATISFY the existing requirements so the chain reaches the gate):
+  // Progression seeds (Phase T — these rows merely SATISFY the requirements
+  // so the chain reaches the gate; Phase H consequence: a quiz counts only
+  // when PASSED, so the L_FULL seeds are grader-marked passes, not bare
+  // attempts. Recordings need no seeds — they are never requirements.):
   //   * L_FULL for the Arabic student: BOTH its quizzes attempted and BOTH its
   //     homeworks submitted (the engine counts every quiz/homework of the
   //     lesson — a documented pre-Phase-C behaviour Phase C does not change);
@@ -535,7 +540,7 @@ test("Phase C: lesson content aggregation", async () => {
   // ---------------------------------------------------------------------------
   for (const quizId of [quizFullShared.id, quizFullArabic.id]) {
     await client.quizAttempt.create({
-      data: { quizId, studentId: sAr.student.id, finishedAt: new Date(), attemptNumber: 1 },
+      data: { quizId, studentId: sAr.student.id, finishedAt: new Date(), attemptNumber: 1, percentage: 100, passed: true },
     });
   }
   for (const homeworkId of [hwFullShared.id, hwFullLang.id]) {
@@ -551,6 +556,23 @@ test("Phase C: lesson content aggregation", async () => {
       videoPercent: 100, videoCompleted: true,
     },
   });
+  // Manual-QA stabilization: L_MODERN (modern recordings only — never
+  // progression inputs) and L_MAT (materials only) are EMPTY lessons, i.e.
+  // chain BOUNDARIES the engine no longer auto-completes. The access-gated
+  // content probes behind them (E: L_MULTI's video list, T: the L_HW page)
+  // cross via the INTENDED mechanism — admin access overrides — which unlock
+  // without fabricating completion or requirements. Every other assertion in
+  // this suite reads lock-independent presence and needs no override.
+  for (const lessonId of [L_MULTI.id, L_HW.id]) {
+    await client.progressionOverride.create({
+      data: {
+        studentId: sAr.student.id,
+        lessonId,
+        reason: "phase C fixture: cross the empty-lesson boundary",
+        createdByUserId: "phasec-admin",
+      },
+    });
+  }
 
   const treeLessons = {};
   const lessonContent = {};
@@ -722,8 +744,24 @@ test("Phase C: lesson content aggregation", async () => {
     eq(treeLessons[L_LOCK.id].hasQuiz, true, "N: the locked row keeps its skeleton quiz badge");
     eq(treeLessons[L_LOCK.id].hasAssignment, true, "N: the locked row keeps its skeleton homework badge");
     // …while every protected field stays redacted.
-    for (const field of ["videoUrl", "pdfUrl", "summary", "description", "quiz", "homework", "requirements"]) {
+    for (const field of ["videoUrl", "pdfUrl", "summary", "description", "quiz", "homework"]) {
       eq(treeLessons[L_LOCK.id][field], null, `N: locked row redacts ${field}`);
+    }
+    // Phase H: a locked row is never a bare LOCKED — the safe canonical
+    // subset (state, Arabic reason + code, structured unmet) WITHOUT the
+    // per-dimension matrix.
+    {
+      const req = treeLessons[L_LOCK.id].requirements;
+      eq(req.state, "LOCKED", "N: locked row carries the LOCKED state");
+      eq(req.completed, false, "N: locked row is not completed");
+      eq(req.unlocked, false, "N: locked row is not unlocked");
+      ok(typeof req.reason === "string" && req.reason.length > 0, "N: locked row carries the Arabic reason");
+      eq(req.reasonCode, "PREVIOUS_INCOMPLETE", "N: locked row carries the primary reason code");
+      eq(req.unmet.map((u) => u.kind), ["PREVIOUS_INCOMPLETE"], "N: locked row carries the structured unmet (the binding constraint)");
+      ok(req.unmet.every((u) => typeof u.label === "string" && u.label.length > 0), "N: every unmet entry carries its Arabic label");
+      eq(req.video, undefined, "N: locked row redacts the video matrix");
+      eq(req.quiz, undefined, "N: locked row redacts the quiz matrix");
+      eq(req.assignment, undefined, "N: locked row redacts the assignment matrix");
     }
     eq(treeLessons[L_LOCK.id].materials, [], "N: locked row exposes no material descriptors");
   }
@@ -747,7 +785,8 @@ test("Phase C: lesson content aggregation", async () => {
   {
     asUser(sAr.user);
     // L_QUIZ has an untouched quiz → still incomplete → L_LOCK still locked
-    // (already pinned above) and L_HW is reachable (before the gate).
+    // (already pinned above); L_HW is reachable via its fixture override
+    // (past the empty-lesson boundary — order semantics untouched).
     const lp = await GET(R.lesson, `http://t/api/lessons/${L_HW.id}`, { id: L_HW.id });
     eq(lp.status, 200, "T: earlier lessons stay reachable (order semantics untouched)");
   }
@@ -842,7 +881,8 @@ test("Phase C: lesson content aggregation", async () => {
     const lessonRoute = read("src/app/api/lessons/[id]/route.ts");
     const dashRoute = read("src/app/api/students/me/dashboard/route.ts");
     const libSrc = read("src/lib/lesson-content.ts");
-    const engine = read("src/lib/session-progress.ts");
+    const engine = read("src/lib/progression.ts");
+    const adapter = read("src/lib/session-progress.ts");
     const lifecycle = read("src/lib/session-lifecycle.ts");
 
     ok(/buildLessonContentSummaries/.test(courseRoute), "R: the course tree calls the shared authority");
@@ -860,10 +900,21 @@ test("Phase C: lesson content aggregation", async () => {
     ok(!/VIDEO_COMPLETION_THRESHOLD/.test(libSrc), "T: the authority never restates the 95% rule");
     ok(!/from "@\/lib\/session-progress"|require\("@\/lib\/session-progress"\)/.test(libSrc), "T: the authority never imports the progression module (callers keep their gates)");
 
-    // T/U: the engines are byte-intact where Phase C is concerned.
-    ok(/const hasVideo = !!lesson\.videoUrl;/.test(engine), "T: the progression engine still derives video REQUIRED-ness from the legacy column only");
-    ok(/const hasQuiz = lesson\.quizzes\.length > 0;/.test(engine), "T: the progression engine quiz requirement unchanged");
-    ok(/const hasHomework = lesson\.homeworks\.length > 0;/.test(engine), "T: the progression engine homework requirement unchanged");
+    // T/U: the canonical engine (Phase H relocation) owns the requirement
+    // rules with the APPROVED contract; the adapter delegates and owns no
+    // rule of its own. Video: Lesson.videoUrl OR >=1 REQUIRED recording
+    // (Phase B M2, revised — OPTIONAL recordings never create a
+    // requirement). Quiz: every PUBLISHED track-eligible quiz — pool state
+    // never filters requirements.
+    ok(/const videoRequired = lesson\.hasLegacyVideo \|\| requiredVideos\.length > 0;/.test(engine), "T: the progression engine derives video REQUIRED-ness from legacy-OR-required-recordings");
+    ok(/hasLegacyVideo: !!l\.videoUrl,/.test(engine), "T: the legacy column feeds the video rule");
+    ok(/isRequiredForProgression: true/.test(engine), "T: only REQUIRED recordings are progression inputs");
+    ok(/where: \{ status: "PUBLISHED" \},/.test(engine), "T: PUBLISHED quizzes are requirement candidates (lifecycle gate)");
+    ok(!/isQuestionEligible/.test(engine), "T: no pool filter on quiz requirements (misconfiguration fails loud, never silently drops)");
+    ok(/where: \{ status: \{ in: \["PUBLISHED", "CLOSED"\] \} \},/.test(engine), "T: PUBLISHED + CLOSED homeworks are requirement candidates");
+    ok(!/const videoRequired/.test(adapter), "T: the adapter owns no video rule (delegation only)");
+    ok(!/\.quizzes\.length > 0/.test(adapter), "T: the adapter owns no quiz rule (delegation only)");
+    ok(!/\.homeworks\.length > 0/.test(adapter), "T: the adapter owns no homework rule (delegation only)");
     ok(/VIDEO_COMPLETION_THRESHOLD = 95/.test(read("src/lib/progress.ts")), "T: the 95% threshold literal untouched");
     ok(/DRAFT → READY/.test(lifecycle), "U: the lifecycle module is untouched (readiness contract intact)");
     ok(!/lesson-content/.test(lifecycle), "U: the lifecycle module does not import the authority (no readiness coupling)");

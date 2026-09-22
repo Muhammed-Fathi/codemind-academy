@@ -60,6 +60,7 @@ export const VIEWS_BY_ROLE: Record<string, string[]> = {
     "teacher-templates",
     "teacher-analytics",
     "teacher-notifications",
+    "teacher-readiness",
   ],
   ADMIN: [
     "admin-overview",

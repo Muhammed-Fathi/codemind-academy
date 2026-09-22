@@ -45,14 +45,36 @@ import { Textarea } from "@/components/ui/textarea";
 // external-URL contract as the standalone library). Reused here so the
 // Lesson workspace and the library can never diverge.
 import { SessionVideoPlayer } from "@/components/course/session-videos-view";
+import { SessionVideoBadges } from "@/components/course/session-videos-view";
 
 // ============================================================
 // Types
 // ============================================================
+type SessionVideoRequirementItem = {
+  id: string;
+  title: string;
+  titleAr: string;
+  requiredPercent: number;
+  trackable: boolean;
+  currentPercent: number;
+  completed: boolean;
+  /** Loader-attached: the video's mode + THIS student's verdict. */
+  requirementMode?: string;
+  applicability?: string;
+};
+
 type SessionRequirement = {
   required: boolean;
   done: boolean;
   value: number;
+  /** Video only: how many REQUIRED videos gate this lesson. */
+  requiredCount?: number;
+  /** Video only: how many of them currently satisfy their own threshold. */
+  completedCount?: number;
+  /** Video only: the per-video decomposition (REQUIRED videos only). */
+  items?: SessionVideoRequirementItem[];
+  /** Video only: ABSENT_STUDENTS recordings exempt for THIS student. */
+  exempt?: SessionVideoRequirementItem[];
 };
 
 type SessionRequirements = {
@@ -61,7 +83,25 @@ type SessionRequirements = {
   video: SessionRequirement;
   quiz: SessionRequirement;
   assignment: SessionRequirement;
+  /**
+   * Phase H — the canonical engine explanation. `state` is one of
+   * LOCKED/UNLOCKED/COMPLETED, `reason` the Arabic sentence, `unmet` the
+   * structured remainder. Rendered verbatim; never re-derived.
+   */
+  state?: string | null;
+  reason?: string | null;
+  reasonCode?: string | null;
+  unmet?: { kind: string; label?: string | null }[] | null;
 };
+
+/** Phase H — structured denial details the server attaches to 403s. */
+type DenialDetails = {
+  state?: string | null;
+  reason?: string | null;
+  reasonCode?: string | null;
+  unmet?: { kind: string; label?: string | null }[] | null;
+  holdBlocked?: boolean;
+} | null;
 
 type LessonView = {
   lesson: {
@@ -162,8 +202,12 @@ export function StudentLessonView() {
   // locked-session panel for gated sessions, a not-available panel for
   // unpublished/foreign ids. No content is fetched or shown in either case.
   const [errorKind, setErrorKind] = React.useState<
-    "locked" | "missing" | "denied" | "error"
+    "locked" | "held" | "missing" | "denied" | "error"
   >("error");
+  // Phase H — the structured denial the server attached to the 403 (Arabic
+  // reason + state + unmet). Rendered verbatim in the lock/hold panels.
+  const [denial, setDenial] = React.useState<DenialDetails>(null);
+  const [resolvingHold, setResolvingHold] = React.useState(false);
   const [completing, setCompleting] = React.useState(false);
   const [bookmarked, setBookmarked] = React.useState(false);
 
@@ -210,37 +254,101 @@ export function StudentLessonView() {
     }
     setLoading(true);
     setError(null);
+    setDenial(null);
     fetch(`/api/lessons/${encodeURIComponent(activeLessonId || "")}`)
       .then(async (r) => {
         if (r.ok) return r.json();
         const body = await r.json().catch(() => ({}));
+        const b = body as { code?: string; details?: DenialDetails } | null;
         return Promise.reject({
           status: r.status,
-          code: (body as { code?: string } | null)?.code,
+          code: b?.code,
+          details: b?.details ?? null,
         });
       })
       .then((d) => setData(d))
-      .catch((e: { status?: number; code?: string } | null) => {
-        if (e?.status === 403 && e?.code === "PREVIOUS_SESSION_INCOMPLETE") {
-          setErrorKind("locked");
-          setError(t("course.204"));
-        } else if (e?.status === 403) {
-          setErrorKind("denied");
-          setError(t("course.212"));
-        } else if (e?.status === 404) {
-          setErrorKind("missing");
-          setError(t("course.218"));
-        } else {
-          setErrorKind("error");
-          setError(t("course.050"));
+      .catch(
+        (e: { status?: number; code?: string; details?: DenialDetails } | null) => {
+          // Phase H — denials carry the canonical explanation (Arabic reason
+          // + state + structured unmet). The panels below render it verbatim;
+          // the legacy generic strings stay as fallbacks only. An absence
+          // hold gets its own panel with a catch-up CTA.
+          const details = e?.details ?? null;
+          setDenial(details);
+          if (e?.status === 403 && e?.code === "ABSENCE_HOLD") {
+            setErrorKind("held");
+            setError(details?.reason || t("course.204"));
+          } else if (
+            e?.status === 403 &&
+            (e?.code === "PREVIOUS_SESSION_INCOMPLETE" ||
+              e?.code === "REQUIREMENTS_UNMET")
+          ) {
+            setErrorKind("locked");
+            setError(details?.reason || t("course.204"));
+          } else if (e?.status === 403) {
+            setErrorKind("denied");
+            setError(details?.reason || t("course.212"));
+          } else if (e?.status === 404) {
+            setErrorKind("missing");
+            setError(t("course.218"));
+          } else {
+            setErrorKind("error");
+            setError(t("course.050"));
+          }
         }
-      })
+      )
       .finally(() => setLoading(false));
   }, [activeLessonId, t]);
+
+  // Canonical refresh: verified watch beats re-read the lesson payload so
+  // the requirement card + header advance WITHOUT a manual reload. Silent
+  // (no skeleton flash) and debounced (a beat storm never spams the API).
+  const lastCanonicalRefreshRef = React.useRef(0);
+  const refreshCanonical = React.useCallback(() => {
+    if (!activeLessonId) return;
+    const now = Date.now();
+    if (now - lastCanonicalRefreshRef.current < 10000) return;
+    lastCanonicalRefreshRef.current = now;
+    fetch(`/api/lessons/${encodeURIComponent(activeLessonId)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d) setData(d);
+      })
+      .catch(() => {});
+  }, [activeLessonId]);
 
   React.useEffect(() => {
     reload();
   }, [reload]);
+
+  // Phase H — resolve eligible absence holds, then re-attempt the fetch so a
+  // lifted hold opens the session immediately.
+  const resolveHold = async () => {
+    setResolvingHold(true);
+    try {
+      const r = await fetch("/api/students/me/catchup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const j = (await r.json().catch(() => null)) as {
+        resolved?: unknown[];
+        error?: string;
+      } | null;
+      if (r.ok && j && (j.resolved?.length ?? 0) > 0) {
+        toast.success(t("phaseh.catchupDone"));
+      } else if (r.ok) {
+        toast.warning(t("phaseh.catchupNoneNew"));
+      } else {
+        toast.error(j?.error || t("course.050"));
+      }
+    } catch {
+      toast.error(t("course.050"));
+    } finally {
+      setResolvingHold(false);
+      reload();
+    }
+  };
 
   if (loading) return <LessonSkeleton />;
 
@@ -249,8 +357,15 @@ export function StudentLessonView() {
     // skeletons. Neither panel names the session (its title is unknown here
     // by construction: the server refused the fetch), so a locked panel can
     // never become an oracle for unpublished content.
-    if (errorKind === "locked" || errorKind === "missing") {
+    // Phase H — an absence hold renders the same posture with its own title,
+    // the server's Arabic reason + structured unmet, and a catch-up CTA.
+    if (
+      errorKind === "locked" ||
+      errorKind === "held" ||
+      errorKind === "missing"
+    ) {
       const locked = errorKind === "locked";
+      const held = errorKind === "held";
       return (
         <Card className="glass">
           <CardContent className="flex flex-col items-center justify-center py-16 text-center px-6">
@@ -268,12 +383,40 @@ export function StudentLessonView() {
               )}
             </div>
             <p className="text-base font-bold mb-1">
-              {locked ? t("course.203") : t("course.217")}
+              {held
+                ? t("phaseh.heldTitle")
+                : locked
+                  ? t("course.203")
+                  : t("course.217")}
             </p>
             <p className="text-sm text-muted-foreground max-w-md">
               {error || t("course.051")}
             </p>
+            {/* Phase H — the structured remainder the server attached to the
+                denial. Safe by construction (labels only, no content). */}
+            {(errorKind === "locked" || held) &&
+              denial?.unmet &&
+              denial.unmet.length > 0 && (
+                <div className="flex items-center justify-center gap-1.5 flex-wrap mt-3">
+                  {denial.unmet.slice(0, 4).map((u, i) => (
+                    <Badge
+                      key={`${u.kind}-${i}`}
+                      variant="outline"
+                      className="bg-amber-400/10 text-amber-600 dark:text-amber-400 border-amber-500/30"
+                    >
+                      {u.label || u.kind}
+                    </Badge>
+                  ))}
+                </div>
+              )}
             <div className="flex flex-col sm:flex-row items-center gap-2 mt-5">
+              {held && (
+                <Button onClick={resolveHold} disabled={resolvingHold}>
+                  {resolvingHold
+                    ? t("phaseh.catchupWorking")
+                    : t("phaseh.catchupCta")}
+                </Button>
+              )}
               <Button
                 variant="outline"
                 onClick={() => setView("student-dashboard")}
@@ -305,9 +448,23 @@ export function StudentLessonView() {
     );
   }
 
-  const progressPct = data.progress?.progress || 0;
-  const isCompleted = data.progress?.isCompleted || false;
+  // The header percent: the CANONICAL video value when video is required
+  // (the binding bottleneck the card decomposes below), the historical
+  // marker otherwise — one meaning per %, shared with the dashboard
+  // Continue bar.
+  const videoReq = data.requirements?.video;
+  const progressPct = videoReq?.required ? videoReq.value : data.progress?.progress || 0;
+  // Phase H — completion is the canonical engine verdict. The route already
+  // converges `progress.isCompleted` onto it, but the requirements row is the
+  // first-class source (it survives even when the progress row is absent).
+  const isCompleted =
+    data.requirements?.completed ?? data.progress?.isCompleted ?? false;
 
+  // Phase H — "Mark as Complete" is a CLAIM, not a write. The server accepts
+  // it only when the canonical engine already evaluates the session as
+  // completed; a premature claim returns the Arabic reason, shown verbatim.
+  // A success re-fetches so the checklist reflects the engine, never an
+  // optimistic local flip.
   const markComplete = async () => {
     setCompleting(true);
     try {
@@ -319,16 +476,24 @@ export function StudentLessonView() {
           body: JSON.stringify({ completed: true }),
         }
       );
-      if (!res.ok) throw new Error("fail");
-      toast.success(t("course.053"));
-      setData({
-        ...data,
-        progress: {
-          progress: 100,
-          isCompleted: true,
-          lastViewedAt: new Date().toISOString(),
-        },
-      });
+      const body = (await res.json().catch(() => null)) as {
+        completed?: boolean;
+        reason?: string;
+        error?: string;
+        details?: DenialDetails;
+      } | null;
+      if (!res.ok) {
+        toast.error(
+          body?.details?.reason || body?.reason || body?.error || t("course.054")
+        );
+        return;
+      }
+      if (body?.completed) {
+        toast.success(t("course.053"));
+        reload();
+      } else {
+        toast.warning(body?.reason || t("course.054"));
+      }
     } catch {
       toast.error(t("course.054"));
     } finally {
@@ -336,7 +501,13 @@ export function StudentLessonView() {
     }
   };
 
+  // Manual-QA stabilization: prev/next MUST move the store's `lessonId` — the
+  // fetch key (`activeLessonId`) — not just `navParam`, which nothing on
+  // this view reads. (Pre-existing: identical on main; Phase H never touched
+  // it.) Targets stay the server's canonical chain ids; a locked target
+  // renders the server's denial panel — the client never pre-filters.
   const gotoLesson = (id: string) => {
+    setLessonId(id);
     setView("student-lesson");
     setNavParam(id);
   };
@@ -443,6 +614,9 @@ export function StudentLessonView() {
           </div>
         </div>
         <div className="flex items-center gap-2 pt-1">
+          <span className="text-[11px] text-muted-foreground font-medium shrink-0">
+            {t("course.242")}
+          </span>
           <Progress value={progressPct} className="flex-1" />
           <span className="text-xs text-muted-foreground font-medium">
             {progressPct}%
@@ -470,6 +644,7 @@ export function StudentLessonView() {
               lessonId={data.lesson.id}
               legacyVideoUrl={data.lesson.videoUrl}
               lessonTitle={pickAuto(data.lesson.titleAr, data.lesson.title)}
+              onWatchProgress={refreshCanonical}
             />
           </motion.div>
 
@@ -789,11 +964,7 @@ export function StudentLessonView() {
                   <RequirementRow
                     label={t("course.206")}
                     req={data.requirements.video}
-                    detail={
-                      data.requirements.video.required
-                        ? `${data.requirements.video.value}%`
-                        : undefined
-                    }
+                    detail={videoRequirementDetail(data.requirements.video, t)}
                   />
                   <RequirementRow
                     label={t("course.207")}
@@ -803,10 +974,27 @@ export function StudentLessonView() {
                     label={t("course.208")}
                     req={data.requirements.assignment}
                   />
+                  {/* Phase H — the canonical next action, verbatim from the
+                      engine row, plus the structured remainder as chips. */}
                   {!data.requirements.completed && (
-                    <p className="text-xs text-muted-foreground pt-1">
-                      {t("course.223")}
-                    </p>
+                    <div className="pt-1 space-y-2">
+                      <p className="text-xs text-amber-600 dark:text-amber-400 font-medium">
+                        {data.requirements.reason || t("course.223")}
+                      </p>
+                      {(data.requirements.unmet?.length ?? 0) > 0 && (
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {data.requirements.unmet!.slice(0, 4).map((u, i) => (
+                            <Badge
+                              key={`${u.kind}-${i}`}
+                              variant="outline"
+                              className="bg-amber-400/10 text-amber-600 dark:text-amber-400 border-amber-500/30 text-[10px]"
+                            >
+                              {u.label || u.kind}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </CardContent>
               </Card>
@@ -865,6 +1053,23 @@ export function StudentLessonView() {
 // ============================================================
 // Phase 16 — Requirement checklist row + linked recordings
 // ============================================================
+/**
+ * The VIDEO row's detail badge, from the canonical payload only (no local
+ * derivation): required recordings present → «1 من 2 فيديو مكتمل» (counts);
+ * legacy-only requirement → «72%» (the legacy percent); not required → no
+ * detail (the NOT_REQUIRED badge shows instead).
+ */
+function videoRequirementDetail(
+  req: SessionRequirement,
+  t: (key: string, params?: Record<string, unknown>) => string
+): string | undefined {
+  if (!req.required) return undefined;
+  if (req.requiredCount) {
+    return t("course.246", { p1: req.completedCount ?? 0, p2: req.requiredCount });
+  }
+  return `${req.value}%`;
+}
+
 function RequirementRow({
   label,
   req,
@@ -875,15 +1080,26 @@ function RequirementRow({
   detail?: string;
 }) {
   const t = useT();
+  // Manual-QA stabilization: the canonical trichotomy, branched on
+  // `required` FIRST (the engine reports `done=true` for absent components,
+  // which must never render a green check):
+  //   NOT_REQUIRED       → neutral circle + "غير مطلوب"
+  //   REQUIRED_INCOMPLETE → neutral circle (+ detail, e.g. video %)
+  //   REQUIRED_COMPLETE   → green check (+ detail)
+  const state = !req.required
+    ? "absent"
+    : req.done
+      ? "done"
+      : "pending";
   return (
     <div className="flex items-center gap-3 rounded-lg border border-border/60 px-3 py-2">
-      {req.done ? (
+      {state === "done" ? (
         <CheckCircle2 className="w-4 h-4 text-primary shrink-0" />
       ) : (
         <Circle className="w-4 h-4 text-muted-foreground/40 shrink-0" />
       )}
       <span className="flex-1 min-w-0 text-sm">{label}</span>
-      {!req.required ? (
+      {state === "absent" ? (
         <Badge
           variant="outline"
           className="text-[10px] text-muted-foreground shrink-0"
@@ -939,17 +1155,26 @@ type LessonVideoItem = {
   publishedAt: string | null;
   src: string | null;
   isExternal: boolean;
-  progress: { percent: number; isCompleted: boolean; watchedSec: number };
+  isRequiredForProgression: boolean;
+  /** Requirement mode + THIS student's engine verdict (absent = legacy shape). */
+  requirementMode?: string;
+  applicable?: boolean;
+  applicability?: string;
+  trackable: boolean;
+  progress: { percent: number; isCompleted: boolean; watchedSec: number; satisfied: boolean };
 };
 
 function LessonVideoSection({
   lessonId,
   legacyVideoUrl,
   lessonTitle,
+  onWatchProgress,
 }: {
   lessonId: string;
   legacyVideoUrl: string | null;
   lessonTitle: string;
+  /** Fired on every verified watch beat (the parent refreshes, debounced). */
+  onWatchProgress: () => void;
 }) {
   const t = useT();
   // null = still loading; [] = loaded, none eligible; list = loaded.
@@ -1036,18 +1261,21 @@ function LessonVideoSection({
             <SessionVideoPlayer
               key={active.id}
               video={active}
-              onProgress={(percent, isCompleted) =>
+              onProgress={(percent, isCompleted, satisfied) => {
                 setVideos((prev) =>
                   prev?.map((v) =>
                     v.id === active.id
                       ? {
                           ...v,
-                          progress: { ...v.progress, percent, isCompleted },
+                          progress: { ...v.progress, percent, isCompleted, satisfied },
                         }
                       : v
                   ) ?? prev
-                )
-              }
+                );
+                // The requirement card + header read the CANONICAL payload,
+                // not this playlist state — refresh it (debounced upstream).
+                onWatchProgress();
+              }}
             />
             {videos.length > 1 && (
               <div className="rounded-lg border border-border/60 p-3 lg:self-start">
@@ -1070,7 +1298,7 @@ function LessonVideoSection({
                         }`}
                       >
                         <div className="grid place-items-center w-8 h-8 shrink-0 rounded-lg bg-primary/10 text-primary">
-                          {v.progress.isCompleted ? (
+                          {((v.applicable ?? v.isRequiredForProgression) ? v.progress.satisfied : v.progress.isCompleted) ? (
                             <CheckCircle2 className="w-4 h-4" />
                           ) : (
                             <PlayCircle className="w-4 h-4" />
@@ -1088,14 +1316,21 @@ function LessonVideoSection({
                               {pickAuto(v.lesson.titleAr, v.lesson.title)}
                             </div>
                           )}
-                          <Progress
-                            value={v.progress.percent}
-                            className="mt-1 h-1"
-                          />
+                          <div className="mt-1">
+                            <SessionVideoBadges video={v} />
+                          </div>
+                          {v.trackable && (
+                            <Progress
+                              value={v.progress.percent}
+                              className="mt-1 h-1"
+                            />
+                          )}
                         </div>
-                        <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
-                          {v.progress.percent}%
-                        </span>
+                        {v.trackable && !(v.applicable ?? v.isRequiredForProgression) && (
+                          <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+                            {v.progress.percent}%
+                          </span>
+                        )}
                       </button>
                     );
                   })}

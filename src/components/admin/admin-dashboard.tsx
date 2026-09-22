@@ -105,6 +105,7 @@ import {
   TrendingDown,
   Clock,
   Activity,
+  KeyRound,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -126,6 +127,7 @@ import { NotificationsPanel } from "@/components/shared/notifications-panel";
 import { MockExamsView } from "@/components/admin/mock-exams-view";
 import { QuizReviewView } from "@/components/admin/quiz-review-view";
 import { SessionWorkflowView } from "@/components/admin/session-workflow-view";
+import { ProgressionOverrideSection } from "@/components/admin/progression-override-section";
 
 const BRAND_COLORS = ["#10b981", "#14b8a6", "#f59e0b", "#0d9488", "#84cc16"];
 
@@ -1118,6 +1120,9 @@ function StudentProfileDrawer({
                     {tr("admin.066")}</>
                 )}
               </Button>
+
+              {/* Phase H — progression overrides: grant / list / revoke. */}
+              <ProgressionOverrideSection studentId={student.id} />
             </div>
           </>
         )}

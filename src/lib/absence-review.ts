@@ -870,6 +870,98 @@ export async function voidAbsenceCaseForCorrection(params: {
 }
 
 // ---------------------------------------------------------------------------
+// Academic catch-up resolution (Phase H entry point — Phase F authority)
+// ---------------------------------------------------------------------------
+
+export type ResolveCatchupResult =
+  | { resolved: true; alreadyResolved: false; holdId: string }
+  | { resolved: false; alreadyResolved: true; holdId: string | null };
+
+/**
+ * Resolve an UNEXCUSED case's ACTIVE hold because the student completed the
+ * missed lesson's academic requirements (Phase H catch-up).
+ *
+ * THIS IS PHASE F AUTHORITY, CALLED BY PHASE H — not a Phase H bypass:
+ *
+ *   * The ONLY row written is the hold (`RESOLVED` + timestamp + actor +
+ *     `resolution = CATCHUP_COMPLETED`). The `AbsenceReview` row is UNTOUCHED:
+ *     an UNEXCUSED absence stays UNEXCUSED in history — the student caught up
+ *     academically, the administrative decision is not rewritten.
+ *   * No LessonProgress row is written, no lesson is unlocked here. Unlocking
+ *     is the Phase H engine's derivation, which simply stops seeing an ACTIVE
+ *     hold afterwards.
+ *   * IDEMPOTENT: a second call (retry, double submit, concurrent sweep)
+ *     returns `{ resolved: false, alreadyResolved: true }` and writes
+ *     NOTHING — no second hold update, no second audit row. The audit row is
+ *     written only on the transition itself.
+ *   * ELIGIBILITY IS THE CALLER'S JOB: Phase H evaluates catch-up
+ *     (`evaluateStudentCatchup`) and calls this only for eligible holds. This
+ *     function trusts nothing about academics and verifies only that an ACTIVE
+ *     hold exists for the case.
+ *
+ * A case with NO hold, or whose hold is already RESOLVED (EXCUSED cases,
+ * corrected cases, already-caught-up cases), resolves to `alreadyResolved`
+ * without a write — resolving one of those would be inventing a transition
+ * that never happened.
+ */
+export async function resolveHoldForCatchup(params: {
+  reviewId: string;
+  actorUserId: string;
+  now?: Date;
+  client?: Client;
+}): Promise<ResolveCatchupResult> {
+  const client = params.client ?? db;
+  const now = params.now ?? new Date();
+
+  const review = (await (client as any).absenceReview.findUnique({
+    where: { id: params.reviewId },
+    select: { id: true, status: true, studentId: true, sessionId: true },
+  })) as { id: string; status: string; studentId: string; sessionId: string } | null;
+  if (!review) {
+    throw new AbsenceError("ABSENCE_NOT_FOUND", "Absence case not found", 404);
+  }
+
+  const hold = (await (client as any).absenceHold.findFirst({
+    where: { absenceReviewId: review.id },
+    select: { id: true, status: true },
+  })) as { id: string; status: string } | null;
+
+  if (!hold || String(hold.status).toUpperCase() !== "ACTIVE") {
+    return { resolved: false, alreadyResolved: true, holdId: hold?.id ?? null };
+  }
+
+  await (client as any).absenceHold.update({
+    where: { id: hold.id },
+    data: {
+      status: "RESOLVED",
+      resolvedAt: now,
+      resolvedByUserId: params.actorUserId,
+      resolution: "CATCHUP_COMPLETED",
+    },
+  });
+
+  await (client as any).auditLog
+    .create({
+      data: {
+        userId: params.actorUserId,
+        action: "ABSENCE_HOLD_CATCHUP_RESOLVED",
+        entity: "AbsenceHold",
+        entityId: hold.id,
+        details: JSON.stringify({
+          reviewId: review.id,
+          sessionId: review.sessionId,
+          studentId: review.studentId,
+          reviewStatus: review.status,
+          resolution: "CATCHUP_COMPLETED",
+        }).slice(0, 1000),
+      },
+    })
+    .catch(() => undefined);
+
+  return { resolved: true, alreadyResolved: false, holdId: hold.id };
+}
+
+// ---------------------------------------------------------------------------
 // Repeated-absence signal (informational only)
 // ---------------------------------------------------------------------------
 

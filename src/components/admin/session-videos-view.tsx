@@ -30,9 +30,19 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Users,
   Upload,
@@ -43,6 +53,7 @@ import {
   CheckCircle2,
   BookOpen,
   AlertTriangle,
+  Pencil,
 } from "lucide-react";
 import { uploadFailureMessage } from "@/lib/upload-error-text";
 import {
@@ -86,6 +97,11 @@ type SessionVideo = {
   /** The academic session this video belongs to (Phase A). null = legacy row. */
   lesson: SessionVideoLesson | null;
   requiredPercent: number;
+  isRequiredForProgression: boolean;
+  /** Requirement mode + absence-source link (from the GET mapping). */
+  requirementMode: string;
+  liveSessionId: string | null;
+  liveSession: { id: string; title: string; titleAr: string } | null;
   isPublished: boolean;
   publishedAt: string | null;
   source: "URL" | "UPLOAD";
@@ -94,7 +110,7 @@ type SessionVideo = {
   viewers: number;
 };
 
-/** Lessons grouped for the picker — one <optgroup> per group; the label is
+/** Lessons grouped for the picker — one SelectGroup per group; the label is
     formatted in the component (i18n) from the pure group data. */
 type LessonGroupView = {
   key: string;
@@ -157,6 +173,8 @@ export function SessionVideosView() {
   });
   const [activeBatchId, setActiveBatchId] = React.useState<string | null>(null);
   const [videos, setVideos] = React.useState<SessionVideo[]>([]);
+  /** The row currently showing the inline edit form (null = none). */
+  const [editingId, setEditingId] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [loadingVideos, setLoadingVideos] = React.useState(false);
 
@@ -418,7 +436,32 @@ export function SessionVideosView() {
                       >
                         {tr(v.isPublished ? "admin.211" : "admin.212")}
                       </Badge>
+                      {(v.requirementMode ??
+                        (v.isRequiredForProgression ? "ALL_STUDENTS" : "OPTIONAL")) !==
+                        "OPTIONAL" && (
+                        <Badge
+                          variant="outline"
+                          className="border-primary/40 bg-primary/10 text-primary text-[10px]"
+                        >
+                          {tr(
+                            v.requirementMode === "ABSENT_STUDENTS"
+                              ? "admin.637"
+                              : "admin.632"
+                          )}
+                        </Badge>
+                      )}
                       <div className="flex items-center gap-1.5">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          aria-label={tr("admin.629")}
+                          onClick={() =>
+                            setEditingId((prev) => (prev === v.id ? null : v.id))
+                          }
+                        >
+                          <Pencil className="w-3.5 h-3.5 me-1" />
+                          {tr("admin.629")}
+                        </Button>
                         <Button
                           size="sm"
                           variant="outline"
@@ -448,6 +491,18 @@ export function SessionVideosView() {
                           <Trash2 className="w-4 h-4 text-destructive" />
                         </Button>
                       </div>
+                      {editingId === v.id && (
+                        <div className="basis-full">
+                          <EditVideoForm
+                            video={v}
+                            onCancel={() => setEditingId(null)}
+                            onSaved={() => {
+                              setEditingId(null);
+                              loadVideos(activeBatch.id);
+                            }}
+                          />
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -487,6 +542,18 @@ function PublishVideoCard({
   const [description, setDescription] = React.useState("");
   const [videoUrl, setVideoUrl] = React.useState("");
   const [file, setFile] = React.useState<File | null>(null);
+  // Progression requirement: OPTIONAL by default, threshold 95 —
+  // the same defaults the server applies when the fields are absent.
+  const [requiredPercent, setRequiredPercent] = React.useState("95");
+  // Explicit requirement mode + absence-source session (the selector owns
+  // both; the legacy REQUIRED toggle is retired — the flag the payloads
+  // still carry is DERIVED from the mode below for older servers).
+  const [requirementMode, setRequirementMode] = React.useState("OPTIONAL");
+  const [liveSessionId, setLiveSessionId] = React.useState("");
+  const [eligibleSessions, setEligibleSessions] = React.useState<EligibleSession[]>([]);
+  // The lesson home starts empty, so the session list mounts already
+  // resolved (empty); the key block below re-arms loading per lesson.
+  const [sessionsLoaded, setSessionsLoaded] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   // The lesson the video belongs to — REQUIRED (Phase A). Preselected when
   // the admin deep-linked here from the lesson's detail page.
@@ -530,6 +597,44 @@ function PublishVideoCard({
     preselectAppliedRef.current = initialLessonId;
     setLessonId(initialLessonId);
   }, [initialLessonId, eligibleLessonIds]);
+  // Eligible absence-source sessions for the ABSENT_STUDENTS picker. The
+  // selection clears whenever the lesson home changes (a session from
+  // another lesson must never ride along); a failed fetch degrades to an
+  // empty list, which disables the absent option with its explanation.
+  // Lesson-home switch, adjusted during render: the picked session never
+  // rides along to another lesson, and the fetch below only subscribes.
+  const [sessionsLessonKey, setSessionsLessonKey] = React.useState(lessonId);
+  if (sessionsLessonKey !== lessonId) {
+    setSessionsLessonKey(lessonId);
+    setLiveSessionId("");
+    if (!lessonId) {
+      setEligibleSessions([]);
+      setSessionsLoaded(true);
+    } else {
+      setSessionsLoaded(false);
+    }
+  }
+  React.useEffect(() => {
+    if (!lessonId) return;
+    let cancelled = false;
+    fetch(
+      `/api/admin/session-videos/eligible-sessions?batchId=${encodeURIComponent(batch.id)}&lessonId=${encodeURIComponent(lessonId)}`
+    )
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (cancelled) return;
+        setEligibleSessions(Array.isArray(d?.sessions) ? d.sessions : []);
+        setSessionsLoaded(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setEligibleSessions([]);
+        setSessionsLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [lessonId, batch.id]);
 
   const reset = () => {
     setTitle("");
@@ -538,6 +643,9 @@ function PublishVideoCard({
     setVideoUrl("");
     setFile(null);
     setLessonId("");
+    setRequirementMode("OPTIONAL");
+    setLiveSessionId("");
+    setRequiredPercent("95");
   };
 
   /** One place turns an upload result into what the admin sees. */
@@ -609,6 +717,30 @@ function PublishVideoCard({
       toast.error(tr("api.219"));
       return;
     }
+    // Progression requirement: the SERVER is authoritative (50–100, no
+    // clamping — an out-of-range threshold is a 422, never a silent rewrite).
+    // The client only fails fast on non-numeric input with the IDENTICAL
+    // api.361 copy (no request, value preserved for correction); REQUIRED on
+    // an external URL is unexpressible (no verified watch %) so the selector
+    // forces OPTIONAL for that method (stated in the form).
+    // The RAW string rides every creation path (presigned completeFields +
+    // buffered fallback + URL JSON) so the server validates exactly what the
+    // admin typed; a 422 surfaces its Arabic `error` with the value intact.
+    const percentNum = Number(requiredPercent);
+    if (!Number.isFinite(percentNum)) {
+      toast.error(tr("api.361"));
+      return;
+    }
+    const threshold = requiredPercent;
+    // Trackability gates expression: non-OPTIONAL modes are unexpressible on
+    // an external URL (no verified watch %), so the payload forces OPTIONAL
+    // there — stated in the form, re-enforced by the server on write.
+    const trackable = method === "UPLOAD";
+    const modeValue = trackable ? requirementMode : "OPTIONAL";
+    const sessionValue = modeValue === "ABSENT_STUDENTS" ? liveSessionId : "";
+    // Dual-written legacy flag, derived from the mode (older readers keep
+    // their exact meaning: non-OPTIONAL ⇔ required for the audience).
+    const requiredForProgression = modeValue !== "OPTIONAL";
     lastPublishRef.current = publish;
 
     if (method === "UPLOAD") {
@@ -629,7 +761,11 @@ function PublishVideoCard({
             titleAr: titleAr || title,
             description,
             publish,
-          },
+            isRequiredForProgression: requiredForProgression,
+            requirementMode: modeValue,
+            liveSessionId: sessionValue,
+            requiredPercent: threshold,
+          }, // raw string — the complete route validates, never coerces
           // No browser-side hash for videos: a 512 MB buffer just to hash it
           // is worse than skipping the optional integrity proof.
           sha256: null,
@@ -642,6 +778,10 @@ function PublishVideoCard({
           form.set("titleAr", titleAr || title);
           form.set("description", description);
           form.set("publish", String(publish));
+          form.set("isRequiredForProgression", String(requiredForProgression));
+          form.set("requirementMode", modeValue);
+          form.set("liveSessionId", sessionValue);
+          form.set("requiredPercent", String(threshold));
           form.set("file", f);
           try {
             const r = await fetch("/api/admin/session-videos", {
@@ -682,6 +822,10 @@ function PublishVideoCard({
           description,
           videoUrl,
           publish,
+          isRequiredForProgression: requiredForProgression,
+          requirementMode: modeValue,
+          liveSessionId: sessionValue,
+          requiredPercent: threshold,
         }),
       });
       const d = await res.json();
@@ -712,6 +856,10 @@ function PublishVideoCard({
             <BookOpen className="w-3.5 h-3.5" />
             {tr("admin.586")}
           </Label>
+          {/* Themed Select (never native): a native option popup ignores
+              the dark theme; option groups render as SelectGroup. Kept
+              OUTSIDE the parenthesized branches below: a leading JSX
+              comment there parses as an object literal and breaks it. */}
           {lessonsLoading ? (
             <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -733,24 +881,28 @@ function PublishVideoCard({
           ) : lessonGroups.length === 0 ? (
             <div className="mt-1 text-xs text-muted-foreground">{tr("admin.589")}</div>
           ) : (
-            <select
-              id="sv-lesson"
-              value={lessonId}
-              onChange={(e) => setLessonId(e.target.value)}
+            <Select
+              value={lessonId || SV_NO_LESSON}
+              onValueChange={(v) => setLessonId(v === SV_NO_LESSON ? "" : v)}
               disabled={busy}
-              className="flex h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] dark:bg-input/30 md:text-sm"
             >
-              <option value="">{tr("admin.587")}</option>
-              {lessonGroups.map((g) => (
-                <optgroup key={g.key} label={g.label}>
-                  {g.lessons.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {lessonOptionLabel(l, tr)}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
+              <SelectTrigger id="sv-lesson" className="w-full min-w-0">
+                <SelectValue placeholder={tr("admin.587")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={SV_NO_LESSON}>{tr("admin.587")}</SelectItem>
+                {lessonGroups.map((g) => (
+                  <SelectGroup key={g.key}>
+                    <SelectLabel>{g.label}</SelectLabel>
+                    {g.lessons.map((l) => (
+                      <SelectItem key={l.id} value={l.id}>
+                        {lessonOptionLabel(l, tr)}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                ))}
+              </SelectContent>
+            </Select>
           )}
           <p className="mt-1 text-[11px] text-muted-foreground">{tr("admin.583")}</p>
         </div>
@@ -865,6 +1017,45 @@ function PublishVideoCard({
           />
         </div>
 
+        {/* Progression requirement — explicit OPTIONAL / ALL_STUDENTS /
+            ABSENT_STUDENTS per video. The threshold keeps the existing
+            50–100 range rule (default 95). Non-OPTIONAL modes on an external
+            URL are unexpressible (no verified watch %), so the options are
+            disabled for that method — stated in the form, re-enforced by
+            the server on every creation path. */}
+        <div className="space-y-2 rounded-lg border border-border/60 p-3">
+          <RequirementModeSelector
+            idPrefix="sv"
+            mode={requirementMode}
+            onModeChange={setRequirementMode}
+            liveSessionId={liveSessionId}
+            onSessionChange={setLiveSessionId}
+            trackable={method === "UPLOAD"}
+            lessonId={lessonId}
+            sessions={eligibleSessions}
+            sessionsLoaded={sessionsLoaded}
+            currentSession={null}
+            disabled={busy}
+            tr={tr}
+          />
+          <div>
+            <Label htmlFor="sv-percent">{tr("admin.626")}</Label>
+            <Input
+              id="sv-percent"
+              type="number"
+              min={50}
+              max={100}
+              value={requiredPercent}
+              onChange={(e) => setRequiredPercent(e.target.value)}
+              inputMode="numeric"
+              dir="ltr"
+              disabled={busy}
+              className="mt-1 w-24"
+            />
+            <p className="mt-1 text-[11px] text-muted-foreground">{tr("admin.627")}</p>
+          </div>
+        </div>
+
         {/* Real upload state — the same panel the session-PDF screen renders:
             preparing → uploading (MB / MB — %) → confirming → success/failure.
             "Completed" is only ever shown AFTER the server confirmed the save. */}
@@ -889,5 +1080,338 @@ function PublishVideoCard({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+/** A LiveSession the ABSENT_STUDENTS picker may offer (see
+    GET /api/admin/session-videos/eligible-sessions). */
+
+/**
+ * Sentinel item values: Radix Select items need non-empty values, while the
+ * lesson/session pickers legitimately clear to "" — the sentinels
+ * round-trip through onValueChange so the state shape never changes.
+ */
+const SV_NO_LESSON = "__no_lesson__";
+const SV_NO_SESSION = "__no_session__";
+type EligibleSession = {
+  id: string;
+  title: string;
+  titleAr: string;
+  startAt: string;
+  status: string;
+  groupName: string | null;
+  finalized: boolean;
+};
+
+/** Progression-requirement mode selector, shared by the publish and edit
+    forms. Three explicit options (admin.635–637, exact platform copy):
+    OPTIONAL (extra content), ALL_STUDENTS (everyone), ABSENT_STUDENTS (only
+    students with an unexcused absence for the linked session). Non-OPTIONAL
+    modes are unexpressible for untrackable (URL) media; ABSENT_STUDENTS
+    additionally needs a lesson home plus at least one eligible session —
+    otherwise the option is disabled WITH the reason stated, never offered
+    dead. The server re-enforces every rule on write. All styling uses theme
+    tokens (light/dark safe by construction). */
+function RequirementModeSelector({
+  idPrefix,
+  mode,
+  onModeChange,
+  liveSessionId,
+  onSessionChange,
+  trackable,
+  lessonId,
+  sessions,
+  sessionsLoaded,
+  currentSession,
+  disabled,
+  tr,
+}: {
+  idPrefix: string;
+  mode: string;
+  onModeChange: (mode: string) => void;
+  liveSessionId: string;
+  onSessionChange: (id: string) => void;
+  trackable: boolean;
+  lessonId: string;
+  sessions: EligibleSession[];
+  sessionsLoaded: boolean;
+  currentSession: { id: string; title: string; titleAr: string } | null;
+  disabled: boolean;
+  tr: (key: string) => string;
+}) {
+  const absentBlockedReason = !trackable
+    ? tr("admin.628")
+    : !lessonId
+      ? tr("admin.640")
+      : sessionsLoaded && sessions.length === 0
+        ? tr("admin.641")
+        : null;
+  const absentEnabled = trackable && !!lessonId && sessionsLoaded && sessions.length > 0;
+  // A previously-linked session that no longer qualifies (e.g. cancelled
+  // after linking) is SHOWN as the broken current value — disabled, so the
+  // admin sees what must be replaced instead of a silently blank picker.
+  const showCurrentSession =
+    currentSession && !sessions.some((s) => s.id === currentSession.id)
+      ? currentSession
+      : null;
+  return (
+    <div className="space-y-2">
+      <span className="text-sm font-medium text-foreground">{tr("admin.634")}</span>
+      <div className="flex flex-col gap-1.5" role="radiogroup" aria-label={tr("admin.634")}>
+        {(
+          [
+            { value: "OPTIONAL", label: tr("admin.635"), enabled: true },
+            { value: "ALL_STUDENTS", label: tr("admin.636"), enabled: trackable },
+            { value: "ABSENT_STUDENTS", label: tr("admin.637"), enabled: absentEnabled },
+          ] as const
+        ).map((opt) => (
+          <label
+            key={opt.value}
+            htmlFor={`${idPrefix}-mode-${opt.value}`}
+            className={`flex items-center gap-2 text-sm ${
+              opt.enabled && !disabled ? "text-foreground" : "text-muted-foreground"
+            }`}
+          >
+            <input
+              id={`${idPrefix}-mode-${opt.value}`}
+              type="radio"
+              name={`${idPrefix}-mode`}
+              value={opt.value}
+              checked={mode === opt.value}
+              onChange={() => onModeChange(opt.value)}
+              disabled={disabled || !opt.enabled}
+              className="h-4 w-4 shrink-0"
+            />
+            {opt.label}
+          </label>
+        ))}
+      </div>
+      {!trackable && (
+        <p className="text-[11px] text-muted-foreground">{tr("admin.628")}</p>
+      )}
+      {trackable && absentBlockedReason && (
+        <p className="text-[11px] text-muted-foreground">{absentBlockedReason}</p>
+      )}
+      {mode === "ABSENT_STUDENTS" && (
+        <div className="space-y-1">
+          <p className="text-[11px] text-muted-foreground">{tr("admin.638")}</p>
+          <Label htmlFor={`${idPrefix}-session`}>{tr("admin.639")}</Label>
+          {/* Themed Select (never native): a native option popup ignores
+              the dark theme. The placeholder rides a sentinel so clearing
+              the session keeps working exactly as before. */}
+          <Select
+            value={liveSessionId || SV_NO_SESSION}
+            onValueChange={(v) => onSessionChange(v === SV_NO_SESSION ? "" : v)}
+            disabled={disabled || !absentEnabled}
+          >
+            <SelectTrigger id={`${idPrefix}-session`} className="w-full min-w-0">
+              <SelectValue placeholder={tr("admin.639")} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={SV_NO_SESSION}>{tr("admin.639")}</SelectItem>
+              {showCurrentSession && (
+                <SelectItem value={showCurrentSession.id} disabled>
+                  {showCurrentSession.titleAr || showCurrentSession.title}
+                </SelectItem>
+              )}
+              {sessions.map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  {(s.titleAr || s.title) +
+                    (s.groupName ? ` — ${s.groupName}` : "") +
+                    ` — ${new Date(s.startAt).toLocaleDateString()}`}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Per-row edit form: metadata + the progression requirement. Non-OPTIONAL
+    modes are disabled for URL-source rows (untrackable) with the same
+    explainer the publish form states; the server re-enforces on PATCH. */
+function EditVideoForm({
+  video,
+  onCancel,
+  onSaved,
+}: {
+  video: SessionVideo;
+  onCancel: () => void;
+  onSaved: () => void;
+}) {
+  const tr = useT();
+  const [title, setTitle] = React.useState(video.title);
+  const [titleAr, setTitleAr] = React.useState(video.titleAr);
+  const [description, setDescription] = React.useState(video.description ?? "");
+  const [percent, setPercent] = React.useState(String(video.requiredPercent));
+  // The stored requirement, edited explicitly (legacy rows fall back to the
+  // flag's exact historical meaning). The lesson home is fixed in the edit
+  // form — the eligible sessions load once for (batch × lesson).
+  const [requirementMode, setRequirementMode] = React.useState<string>(
+    video.requirementMode ?? (video.isRequiredForProgression ? "ALL_STUDENTS" : "OPTIONAL")
+  );
+  const [liveSessionId, setLiveSessionId] = React.useState(video.liveSessionId ?? "");
+  const editLessonIdForState = video.lesson?.id ?? "";
+  const [eligibleSessions, setEligibleSessions] = React.useState<EligibleSession[]>([]);
+  // A video without a lesson home mounts already resolved (empty list).
+  const [sessionsLoaded, setSessionsLoaded] = React.useState(!editLessonIdForState);
+  const [saving, setSaving] = React.useState(false);
+  // Trackability is the row's storage, reached here as the list's `source`
+  // (URL = EXTERNAL_URL = untrackable, UPLOAD = managed = measurable).
+  const trackable = video.source !== "URL";
+  const editLessonId = video.lesson?.id ?? "";
+  // Lesson-home switch, adjusted during render: without a home the list is
+  // empty and resolved; with one the fetch below only subscribes.
+  const [editSessionsKey, setEditSessionsKey] = React.useState(editLessonId);
+  if (editSessionsKey !== editLessonId) {
+    setEditSessionsKey(editLessonId);
+    if (!editLessonId) {
+      setEligibleSessions([]);
+      setSessionsLoaded(true);
+    }
+  }
+  React.useEffect(() => {
+    if (!editLessonId) return;
+    let cancelled = false;
+    fetch(
+      `/api/admin/session-videos/eligible-sessions?batchId=${encodeURIComponent(video.batch.id)}&lessonId=${encodeURIComponent(editLessonId)}`
+    )
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (cancelled) return;
+        setEligibleSessions(Array.isArray(d?.sessions) ? d.sessions : []);
+        setSessionsLoaded(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setEligibleSessions([]);
+        setSessionsLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [editLessonId]);
+
+  const save = async () => {
+    if (!title.trim()) {
+      toast.error(tr("admin.580"));
+      return;
+    }
+    // Server-authoritative threshold (no clamping): fail fast on
+    // non-numeric input with the identical api.361 copy, otherwise PATCH the
+    // RAW value — a 422 toasts its Arabic `error` and every field keeps its
+    // entered value for correction (nothing resets on failure).
+    const n = Number(percent);
+    if (!Number.isFinite(n)) {
+      toast.error(tr("api.361"));
+      return;
+    }
+    const threshold = percent;
+    const modeValue = trackable ? requirementMode : "OPTIONAL";
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/admin/session-videos/${video.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: title.trim(),
+          titleAr: titleAr.trim() || title.trim(),
+          description,
+          requiredPercent: threshold,
+          requirementMode: modeValue,
+          isRequiredForProgression: modeValue !== "OPTIONAL",
+          liveSessionId: modeValue === "ABSENT_STUDENTS" ? liveSessionId : null,
+        }),
+      });
+      const d = await res.json().catch(() => null);
+      if (!res.ok) throw new Error((d && d.error) || tr("admin.001"));
+      toast.success(tr("admin.633"));
+      onSaved();
+    } catch (e: any) {
+      toast.error(e.message || tr("admin.001"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3 rounded-lg border border-primary/30 bg-primary/[0.03] p-3">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <Label htmlFor={`edit-title-${video.id}`}>{tr("admin.235")} (EN)</Label>
+          <Input
+            id={`edit-title-${video.id}`}
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            disabled={saving}
+            className="mt-1"
+          />
+        </div>
+        <div>
+          <Label htmlFor={`edit-title-ar-${video.id}`}>{tr("admin.235")} (AR)</Label>
+          <Input
+            id={`edit-title-ar-${video.id}`}
+            value={titleAr}
+            onChange={(e) => setTitleAr(e.target.value)}
+            disabled={saving}
+            className="mt-1"
+          />
+        </div>
+      </div>
+      <div>
+        <Label htmlFor={`edit-desc-${video.id}`}>{tr("admin.249")}</Label>
+        <Textarea
+          id={`edit-desc-${video.id}`}
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          rows={2}
+          disabled={saving}
+          className="mt-1"
+        />
+      </div>
+      <div className="space-y-2 rounded-lg border border-border/60 p-3">
+        <RequirementModeSelector
+          idPrefix={`edit-${video.id}`}
+          mode={requirementMode}
+          onModeChange={setRequirementMode}
+          liveSessionId={liveSessionId}
+          onSessionChange={setLiveSessionId}
+          trackable={trackable}
+          lessonId={editLessonId}
+          sessions={eligibleSessions}
+          sessionsLoaded={sessionsLoaded}
+          currentSession={video.liveSession}
+          disabled={saving}
+          tr={tr}
+        />
+        <div>
+          <Label htmlFor={`edit-percent-${video.id}`}>{tr("admin.626")}</Label>
+          <Input
+            id={`edit-percent-${video.id}`}
+            type="number"
+            min={50}
+            max={100}
+            value={percent}
+            onChange={(e) => setPercent(e.target.value)}
+            inputMode="numeric"
+            dir="ltr"
+            disabled={saving}
+            className="mt-1 w-24"
+          />
+        </div>
+      </div>
+      <p className="-mt-1 text-[11px] text-muted-foreground">{tr("admin.627")}</p>
+      <div className="flex items-center gap-2">
+        <Button size="sm" onClick={save} disabled={saving}>
+          {saving && <Loader2 className="w-3.5 h-3.5 me-1.5 animate-spin" />}
+          {tr("admin.630")}
+        </Button>
+        <Button size="sm" variant="outline" onClick={onCancel} disabled={saving}>
+          {tr("admin.631")}
+        </Button>
+      </div>
+    </div>
   );
 }

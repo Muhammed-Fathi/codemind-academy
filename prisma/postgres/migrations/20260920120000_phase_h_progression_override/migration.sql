@@ -1,0 +1,56 @@
+-- ===========================================================================
+-- Phase H — Canonical progression and access engine, admin override (PG).
+--
+-- ADDITIVE ONLY. One new table, three new indexes. No table is rebuilt, no
+-- column is added to an existing table, no row is deleted, no default is
+-- backfilled destructively. The logical objects are identical to the SQLite
+-- edition of this migration (same table, same columns, same Prisma-canonical
+-- constraint and index names) with PostgreSQL types.
+--
+-- WHY THIS TABLE EXISTS (Phase H contract)
+--
+--   The canonical progression engine (src/lib/progression.ts) derives
+--   LOCKED / UNLOCKED / COMPLETED per student per lesson from academic facts
+--   that already exist (video watch, quiz passes, homework submissions),
+--   sequenced over the published track-eligible curriculum minus active
+--   Phase F absence holds. That derivation needs no new state — except for
+--   the ONE deliberate exception: an ADMIN may grant a named student access
+--   to a named lesson as an audited expirable revocable exception, without
+--   rewriting any underlying fact. That exception is this table.
+--
+-- WHAT IT IS NOT
+--   Not a second Lesson model, not a second progression state machine, not a
+--   second absence or quiz or homework lifecycle. It stores no academic fact
+--   at all — only who granted whom access to what, why, when, and until when.
+--
+-- LIFECYCLE (evaluated at read time, never swept)
+--   ACTIVE  = revokedAt IS NULL AND (expiresAt IS NULL OR expiresAt > now)
+--   EXPIRED = expiresAt <= now
+--   REVOKED = revokedAt IS NOT NULL (rows are never deleted)
+--
+-- ACTOR COLUMNS (createdByUserId / revokedByUserId) are plain TEXT columns,
+-- NOT foreign keys: deleting a user must never rewrite override history (the
+-- same policy as SessionPublication.publishedByUserId and the Phase F actor
+-- columns). Every grant and revocation is mirrored into AuditLog.
+-- ===========================================================================
+
+CREATE TABLE "ProgressionOverride" (
+  "id" TEXT NOT NULL,
+  "studentId" TEXT NOT NULL,
+  "lessonId" TEXT NOT NULL,
+  "reason" TEXT NOT NULL,
+  "createdByUserId" TEXT NOT NULL,
+  "createdAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "expiresAt" TIMESTAMPTZ(3),
+  "revokedAt" TIMESTAMPTZ(3),
+  "revokedByUserId" TEXT,
+  "revokeReason" TEXT,
+  CONSTRAINT "ProgressionOverride_pkey" PRIMARY KEY ("id"),
+  CONSTRAINT "ProgressionOverride_studentId_fkey" FOREIGN KEY ("studentId") REFERENCES "Student" ("id") ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT "ProgressionOverride_lessonId_fkey" FOREIGN KEY ("lessonId") REFERENCES "Lesson" ("id") ON UPDATE CASCADE ON DELETE CASCADE
+);
+
+-- Prisma-canonical index names, so a later drift check sees no difference.
+CREATE INDEX "ProgressionOverride_studentId_idx" ON "ProgressionOverride" ("studentId");
+CREATE INDEX "ProgressionOverride_lessonId_idx" ON "ProgressionOverride" ("lessonId");
+CREATE INDEX "ProgressionOverride_studentId_lessonId_idx" ON "ProgressionOverride" ("studentId", "lessonId");

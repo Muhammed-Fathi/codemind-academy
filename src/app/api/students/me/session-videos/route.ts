@@ -49,6 +49,8 @@ import { VIDEO_COMPLETION_THRESHOLD } from "@/lib/progress";
 import { videoTrackFilter } from "@/lib/track-scope";
 import { LESSON_STUDENT_STATUS_FILTER } from "@/lib/session-lifecycle";
 import { canAccessLesson } from "@/lib/session-progress";
+import { isManagedPrivateStorage } from "@/lib/media";
+import { effectiveRequirementMode, loadVideoApplicability } from "@/lib/video-applicability";
 
 export async function GET(req: NextRequest) {
   const user = await requireUser();
@@ -130,25 +132,58 @@ export async function GET(req: NextRequest) {
   // becomes accessible the row reappears — no client-side state, no
   // progression change: `canAccessLesson` simply returns true once the
   // engine unlocks the lesson.
-  const lessonIds = [...new Set(found.filter((v) => v.lessonId).map((v) => v.lessonId!))];
+  const lessonIds: string[] = [];
+  for (const v of found) {
+    const lid = (v as { lessonId?: unknown }).lessonId;
+    if (typeof lid === "string" && lid && !lessonIds.includes(lid)) lessonIds.push(lid);
+  }
   const lessonVerdicts = new Map(
     (await Promise.all(
       lessonIds.map(async (lid) => [lid, await canAccessLesson(student.id, lid)] as const),
     )).map(([lid, verdict]) => [lid, verdict.allowed]),
   );
-  const videos = found.filter((v) => v.lessonId === null || lessonVerdicts.get(v.lessonId) === true);
+  const videos = found.filter(
+    (v) => v.lessonId === null || lessonVerdicts.get(v.lessonId as string) === true
+  );
+
+  // Per-video requirement verdicts for THIS student (one batched absence
+  // triple-query shared by every ABSENT_STUDENTS row — never per-video
+  // round trips). The UI renders REQUIRED vs EXEMPT from these flags only.
+  const applicability = await loadVideoApplicability(
+    db,
+    student.id,
+    videos.map((v) => ({
+      id: v.id,
+      requirementMode: v.requirementMode,
+      isRequiredForProgression: v.isRequiredForProgression,
+      liveSessionId: v.liveSessionId,
+    }))
+  );
 
   return ok({
     isEnrolled: true,
     threshold: VIDEO_COMPLETION_THRESHOLD,
     videos: videos.map((v) => {
       const view = v.views[0];
+      const verdict = applicability.get(v.id) ?? { applicable: false, reason: "OPTIONAL" as const };
+      const percent = view?.percent ?? 0;
+      // Trackability is the storage contract, not a guess: only managed
+      // private bytes (LOCAL_PRIVATE / S3) accrue server-verified watch %
+      // through the heartbeat. EXTERNAL_URL rows never accrue.
+      const trackable = isManagedPrivateStorage(v.media.storage);
       return {
         id: v.id,
         title: v.title,
         titleAr: v.titleAr,
         description: v.description,
         lesson: v.lesson,
+        isRequiredForProgression: v.isRequiredForProgression,
+        // Requirement identity for THIS student: the mode, the engine's
+        // applicable/exempt verdict, and the machine-readable reason.
+        requirementMode: effectiveRequirementMode(v),
+        applicable: verdict.applicable,
+        applicability: verdict.reason,
+        trackable,
         requiredPercent: v.requiredPercent,
         publishedAt: v.publishedAt,
         // Uploaded media is served only through the authorized route.
@@ -158,9 +193,15 @@ export async function GET(req: NextRequest) {
             : `/api/media/${v.media.id}`,
         isExternal: v.media.storage === "EXTERNAL_URL",
         progress: {
-          percent: view?.percent ?? 0,
+          percent,
+          // Sticky history (never rewritten): enrichment for OPTIONAL videos.
           isCompleted: view?.isCompleted ?? false,
           watchedSec: view?.watchedSec ?? 0,
+          // LIVE satisfaction of THIS video's own threshold — the engine's
+          // rule, not the sticky flag. The UI checks THIS for REQUIRED
+          // videos, so a retroactive threshold change reflects without
+          // rewriting history.
+          satisfied: trackable && percent >= v.requiredPercent,
         },
       };
     }),

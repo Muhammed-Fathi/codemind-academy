@@ -51,7 +51,13 @@ export async function GET(
   if (!quiz) return err("Quiz not found", 404);
 
   const access = await canAccessQuiz(student.id, id);
-  if (!access.allowed) return denyProgression(access.reason, "Quiz not found");
+  if (!access.allowed) return denyProgression(access.reason, "Quiz not found", {
+      state: access.evaluation?.state ?? null,
+      reason: access.evaluation?.reason ?? null,
+      reasonCode: access.evaluation?.reasonCode ?? null,
+      unmet: access.evaluation?.unmet ?? [],
+      holdBlocked: access.reason === "ABSENCE_HOLD",
+    });
 
   const schoolType = await getStudentSchoolType(student.id);
   const blueprint = resolveQuizBlueprint(quiz);

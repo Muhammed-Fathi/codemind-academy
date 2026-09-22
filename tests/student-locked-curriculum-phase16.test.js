@@ -464,9 +464,15 @@ async function main() {
   pinned(lessonContentLib, /includeProtected: true,/, "F5: presence is computed over the unredacted descriptor list");
   pinned(courseRoute, /materials: locked \? \[\] : materials,/, "F6: locked sessions still get an empty descriptor list");
   // Phase 4 redaction re-asserted: every protected field stays locked→null.
-  for (const field of ["videoUrl", "pdfUrl", "summary", "description", "quiz", "homework", "requirements"]) {
+  for (const field of ["videoUrl", "pdfUrl", "summary", "description", "quiz", "homework"]) {
     pinned(courseRoute, new RegExp(`${field}: locked \\? null`), `F7: redaction kept for ${field}`);
   }
+  // PHASE H SUPERSESSION: a locked session is never a bare LOCKED — the tree
+  // sends the safe canonical subset (state, Arabic reason + code, structured
+  // unmet) via lockedRequirements(); the full requirement matrix stays
+  // server-side for locked rows.
+  pinned(courseRoute, /requirements: lockedRequirements\(lesson\.id\),/, "F7: locked sessions carry the safe canonical subset");
+  absent(courseRoute, /requirements: locked \? null/, "F7-neg: locked sessions are no longer bare nulls", "      requirements: locked ? null,");
   // The Phase 4 split-count contract still holds inside the mapper.
   {
     const dtoStart = courseRoute.indexOf("const toLesson = (lesson: LessonRow) => {");
@@ -565,11 +571,15 @@ async function main() {
   pinned(videosView, /const navParam = useApp\(\(s\) => s\.navParam\);/, "I6: the recordings view reads navParam");
   pinned(videosView, /navParam && list\.some\(\(v\) => v\.id === navParam\)/, "I7: video:<id> activates its recording when authorized");
 
+  // Manual-QA stabilization (test restoration): the landing views fetch by the
+  // store's dedicated keys (activeQuizId / activeLessonId, fed by every
+  // navigation entry incl. gotoLesson) — never by raw navParam. The pins
+  // below assert the AUTHORIZED re-fetch endpoint + key.
   const quizRunner = read("src/components/course/quiz-runner.tsx");
-  pinned(quizRunner, /fetch\(`\/api\/quizzes\/\$\{encodeURIComponent\(navParam\)\}/, "I8: quiz:<id> re-fetches through the authorized quiz API");
+  pinned(quizRunner, /fetch\(`\/api\/quizzes\/\$\{encodeURIComponent\(activeQuizId/, "I8: quiz:<id> re-fetches through the authorized quiz API");
 
   const lessonView = read("src/components/course/student-lesson.tsx");
-  pinned(lessonView, /fetch\(`\/api\/lessons\/\$\{encodeURIComponent\(navParam\)\}/, "I9: lesson:<id> re-fetches through the authorized lesson API");
+  pinned(lessonView, /fetch\(`\/api\/lessons\/\$\{encodeURIComponent\(activeLessonId/, "I9: lesson:<id> re-fetches through the authorized lesson API");
 
   const quizRoute = read("src/app/api/quizzes/[id]/route.ts");
   pinned(quizRoute, /canAccessQuiz\(/, "I10: the quiz landing fetch is progression-gated server-side");

@@ -10,6 +10,7 @@
 -- See docs/POSTGRES_CUTOVER_RUNBOOK.md.
 
 -- 1. Enums (native PostgreSQL enums; SQLite stores the same values as TEXT).
+CREATE TYPE "SessionVideoRequirementMode" AS ENUM ('OPTIONAL', 'ALL_STUDENTS', 'ABSENT_STUDENTS');
 CREATE TYPE "LessonStatus" AS ENUM ('DRAFT', 'READY', 'PUBLISHED');
 CREATE TYPE "CurriculumStatus" AS ENUM ('OFFICIAL', 'LEGACY', 'ARCHIVED');
 CREATE TYPE "EnrollmentStatus" AS ENUM ('ACTIVE', 'PAUSED', 'COMPLETED', 'CANCELLED');
@@ -30,7 +31,7 @@ CREATE TYPE "ExamType" AS ENUM ('UNIT', 'MONTHLY', 'MOCK', 'FINAL');
 CREATE TYPE "SubscriptionStatus" AS ENUM ('PENDING', 'ACTIVE', 'EXPIRED', 'CANCELLED');
 CREATE TYPE "PaymentMethod" AS ENUM ('INSTAPAY', 'VODAFONE_CASH', 'ETISALAT_CASH');
 CREATE TYPE "PaymentStatus" AS ENUM ('PENDING', 'APPROVED', 'REJECTED', 'EXPIRED');
-CREATE TYPE "NotificationType" AS ENUM ('NEW_LESSON', 'NEW_QUIZ', 'QUIZ_RESULT', 'NEW_HOMEWORK', 'HOMEWORK_DEADLINE', 'UPCOMING_SESSION', 'LOW_ATTENDANCE', 'MONTHLY_REPORT', 'SUBSCRIPTION_EXPIRATION', 'ANNOUNCEMENT', 'PAYMENT_APPROVED', 'PAYMENT_REJECTED', 'SESSION_SCHEDULED', 'SESSION_LINK', 'SESSION_RESCHEDULED', 'SESSION_CANCELLED', 'ABSENCE_FINALIZED', 'ABSENCE_REASON_SUBMITTED', 'ABSENCE_EXCUSED', 'ABSENCE_UNEXCUSED', 'ABSENCE_REMINDER');
+CREATE TYPE "NotificationType" AS ENUM ('NEW_LESSON', 'NEW_QUIZ', 'QUIZ_RESULT', 'NEW_HOMEWORK', 'HOMEWORK_DEADLINE', 'UPCOMING_SESSION', 'LOW_ATTENDANCE', 'MONTHLY_REPORT', 'SUBSCRIPTION_EXPIRATION', 'ANNOUNCEMENT', 'PAYMENT_APPROVED', 'PAYMENT_REJECTED', 'SESSION_SCHEDULED', 'SESSION_LINK', 'SESSION_RESCHEDULED', 'SESSION_CANCELLED', 'ABSENCE_FINALIZED', 'ABSENCE_REASON_SUBMITTED', 'ABSENCE_EXCUSED', 'ABSENCE_UNEXCUSED', 'ABSENCE_REMINDER', 'READINESS_REMINDER');
 CREATE TYPE "AbsenceReviewStatus" AS ENUM ('PENDING_REASON', 'PENDING_REVIEW', 'EXCUSED', 'UNEXCUSED', 'NO_ACTION_REQUIRED');
 CREATE TYPE "AbsenceHoldStatus" AS ENUM ('ACTIVE', 'RESOLVED');
 
@@ -401,25 +402,6 @@ CREATE TABLE "SessionPublication" (
   CONSTRAINT "SessionPublication_lessonId_fkey" FOREIGN KEY ("lessonId") REFERENCES "Lesson" ("id") ON UPDATE CASCADE ON DELETE CASCADE
 );
 
-CREATE TABLE "SessionVideo" (
-  "id" TEXT NOT NULL,
-  "batchId" TEXT NOT NULL,
-  "lessonId" TEXT,
-  "mediaAssetId" TEXT NOT NULL,
-  "title" TEXT NOT NULL,
-  "titleAr" TEXT NOT NULL,
-  "description" TEXT,
-  "requiredPercent" INTEGER NOT NULL DEFAULT 95,
-  "isPublished" BOOLEAN NOT NULL DEFAULT FALSE,
-  "publishedAt" TIMESTAMPTZ(3),
-  "createdAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "updatedAt" TIMESTAMPTZ(3) NOT NULL,
-  CONSTRAINT "SessionVideo_pkey" PRIMARY KEY ("id"),
-  CONSTRAINT "SessionVideo_batchId_fkey" FOREIGN KEY ("batchId") REFERENCES "Batch" ("id") ON UPDATE CASCADE ON DELETE CASCADE,
-  CONSTRAINT "SessionVideo_lessonId_fkey" FOREIGN KEY ("lessonId") REFERENCES "Lesson" ("id") ON UPDATE CASCADE ON DELETE SET NULL,
-  CONSTRAINT "SessionVideo_mediaAssetId_fkey" FOREIGN KEY ("mediaAssetId") REFERENCES "MediaAsset" ("id") ON UPDATE CASCADE ON DELETE RESTRICT
-);
-
 CREATE TABLE "User" (
   "id" TEXT NOT NULL,
   "email" TEXT NOT NULL,
@@ -585,6 +567,29 @@ CREATE TABLE "LiveSession" (
   CONSTRAINT "LiveSession_teacherId_fkey" FOREIGN KEY ("teacherId") REFERENCES "Teacher" ("id") ON UPDATE CASCADE,
   CONSTRAINT "LiveSession_substituteTeacherId_fkey" FOREIGN KEY ("substituteTeacherId") REFERENCES "Teacher" ("id") ON UPDATE CASCADE ON DELETE SET NULL,
   CONSTRAINT "LiveSession_groupId_fkey" FOREIGN KEY ("groupId") REFERENCES "Group" ("id") ON UPDATE CASCADE ON DELETE CASCADE
+);
+
+CREATE TABLE "SessionVideo" (
+  "id" TEXT NOT NULL,
+  "batchId" TEXT NOT NULL,
+  "lessonId" TEXT,
+  "mediaAssetId" TEXT NOT NULL,
+  "title" TEXT NOT NULL,
+  "titleAr" TEXT NOT NULL,
+  "description" TEXT,
+  "requiredPercent" INTEGER NOT NULL DEFAULT 95,
+  "isRequiredForProgression" BOOLEAN NOT NULL DEFAULT FALSE,
+  "requirementMode" "SessionVideoRequirementMode" NOT NULL DEFAULT 'OPTIONAL',
+  "liveSessionId" TEXT,
+  "isPublished" BOOLEAN NOT NULL DEFAULT FALSE,
+  "publishedAt" TIMESTAMPTZ(3),
+  "createdAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMPTZ(3) NOT NULL,
+  CONSTRAINT "SessionVideo_pkey" PRIMARY KEY ("id"),
+  CONSTRAINT "SessionVideo_batchId_fkey" FOREIGN KEY ("batchId") REFERENCES "Batch" ("id") ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT "SessionVideo_lessonId_fkey" FOREIGN KEY ("lessonId") REFERENCES "Lesson" ("id") ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT "SessionVideo_mediaAssetId_fkey" FOREIGN KEY ("mediaAssetId") REFERENCES "MediaAsset" ("id") ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT "SessionVideo_liveSessionId_fkey" FOREIGN KEY ("liveSessionId") REFERENCES "LiveSession" ("id") ON UPDATE CASCADE ON DELETE SET NULL
 );
 
 CREATE TABLE "Student" (
@@ -807,6 +812,22 @@ CREATE TABLE "ParentStudentLink" (
   CONSTRAINT "ParentStudentLink_parentId_fkey" FOREIGN KEY ("parentId") REFERENCES "Parent" ("id") ON UPDATE CASCADE ON DELETE CASCADE
 );
 
+CREATE TABLE "ProgressionOverride" (
+  "id" TEXT NOT NULL,
+  "studentId" TEXT NOT NULL,
+  "lessonId" TEXT NOT NULL,
+  "reason" TEXT NOT NULL,
+  "createdByUserId" TEXT NOT NULL,
+  "createdAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "expiresAt" TIMESTAMPTZ(3),
+  "revokedAt" TIMESTAMPTZ(3),
+  "revokedByUserId" TEXT,
+  "revokeReason" TEXT,
+  CONSTRAINT "ProgressionOverride_pkey" PRIMARY KEY ("id"),
+  CONSTRAINT "ProgressionOverride_studentId_fkey" FOREIGN KEY ("studentId") REFERENCES "Student" ("id") ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT "ProgressionOverride_lessonId_fkey" FOREIGN KEY ("lessonId") REFERENCES "Lesson" ("id") ON UPDATE CASCADE ON DELETE CASCADE
+);
+
 CREATE TABLE "QuizRetryGrant" (
   "id" TEXT NOT NULL,
   "studentId" TEXT NOT NULL,
@@ -1023,8 +1044,6 @@ CREATE INDEX "Question_quizId_idx" ON "Question" ("quizId");
 CREATE INDEX "Question_schoolType_idx" ON "Question" ("schoolType");
 CREATE INDEX "MockExamQuestion_mockExamId_idx" ON "MockExamQuestion" ("mockExamId");
 CREATE INDEX "SessionPublication_publishedAt_idx" ON "SessionPublication" ("publishedAt");
-CREATE INDEX "SessionVideo_batchId_isPublished_idx" ON "SessionVideo" ("batchId", "isPublished");
-CREATE INDEX "SessionVideo_lessonId_idx" ON "SessionVideo" ("lessonId");
 CREATE INDEX "User_role_idx" ON "User" ("role");
 CREATE INDEX "User_status_idx" ON "User" ("status");
 CREATE INDEX "AuditLog_userId_idx" ON "AuditLog" ("userId");
@@ -1041,6 +1060,9 @@ CREATE INDEX "LiveSession_startAt_idx" ON "LiveSession" ("startAt");
 CREATE INDEX "LiveSession_teacherId_startAt_idx" ON "LiveSession" ("teacherId", "startAt");
 CREATE INDEX "LiveSession_substituteTeacherId_idx" ON "LiveSession" ("substituteTeacherId");
 CREATE INDEX "LiveSession_status_startAt_idx" ON "LiveSession" ("status", "startAt");
+CREATE INDEX "SessionVideo_batchId_isPublished_idx" ON "SessionVideo" ("batchId", "isPublished");
+CREATE INDEX "SessionVideo_lessonId_idx" ON "SessionVideo" ("lessonId");
+CREATE INDEX "SessionVideo_liveSessionId_idx" ON "SessionVideo" ("liveSessionId");
 CREATE INDEX "Student_schoolType_idx" ON "Student" ("schoolType");
 CREATE INDEX "Student_groupId_idx" ON "Student" ("groupId");
 CREATE INDEX "Student_batchId_idx" ON "Student" ("batchId");
@@ -1065,6 +1087,9 @@ CREATE INDEX "LessonNote_studentId_idx" ON "LessonNote" ("studentId");
 CREATE INDEX "LessonProgress_studentId_idx" ON "LessonProgress" ("studentId");
 CREATE INDEX "LessonProgress_lessonId_idx" ON "LessonProgress" ("lessonId");
 CREATE INDEX "LessonProgress_videoCompleted_idx" ON "LessonProgress" ("videoCompleted");
+CREATE INDEX "ProgressionOverride_studentId_idx" ON "ProgressionOverride" ("studentId");
+CREATE INDEX "ProgressionOverride_lessonId_idx" ON "ProgressionOverride" ("lessonId");
+CREATE INDEX "ProgressionOverride_studentId_lessonId_idx" ON "ProgressionOverride" ("studentId", "lessonId");
 CREATE INDEX "QuizRetryGrant_studentId_quizId_idx" ON "QuizRetryGrant" ("studentId", "quizId");
 CREATE INDEX "QuizRetryGrant_quizId_idx" ON "QuizRetryGrant" ("quizId");
 CREATE INDEX "QuizRetryGrant_grantedByUserId_idx" ON "QuizRetryGrant" ("grantedByUserId");

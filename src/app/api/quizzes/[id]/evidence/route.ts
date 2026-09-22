@@ -62,7 +62,13 @@ export async function POST(
   // own an attempt — but evidence capture is a privileged, file-writing path,
   // so it re-verifies the session gate itself.
   const access = await canAccessQuiz(student.id, quizId);
-  if (!access.allowed) return denyProgression(access.reason, "Quiz not found");
+  if (!access.allowed) return denyProgression(access.reason, "Quiz not found", {
+      state: access.evaluation?.state ?? null,
+      reason: access.evaluation?.reason ?? null,
+      reasonCode: access.evaluation?.reasonCode ?? null,
+      unmet: access.evaluation?.unmet ?? [],
+      holdBlocked: access.reason === "ABSENCE_HOLD",
+    });
 
   const contentType = req.headers.get("content-type") || "";
   let attemptId = "";

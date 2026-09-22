@@ -141,7 +141,13 @@ export async function GET(
     if (!s) return err("Student profile not found", 404);
 
     const access = await canAccessQuiz(s.id, id);
-    if (!access.allowed) return denyProgression(access.reason, "Quiz not found");
+    if (!access.allowed) return denyProgression(access.reason, "Quiz not found", {
+      state: access.evaluation?.state ?? null,
+      reason: access.evaluation?.reason ?? null,
+      reasonCode: access.evaluation?.reasonCode ?? null,
+      unmet: access.evaluation?.unmet ?? [],
+      holdBlocked: access.reason === "ABSENCE_HOLD",
+    });
 
     // Deterministic set: an open attempt pins the exact question list, and
     // only the questions eligible for THIS student's school type are served.

@@ -88,6 +88,21 @@ type LessonItem = {
   } | null;
   quiz: { id: string; title: string; titleAr: string } | null;
   homework: { id: string; title: string; titleAr: string } | null;
+  /**
+   * Phase H — the canonical engine row for this session. Unlocked rows carry
+   * the full matrix; LOCKED rows carry the safe subset only (state, Arabic
+   * reason + code, structured unmet) — never a bare LOCKED, never an oracle.
+   */
+  requirements?: {
+    lessonId?: string;
+    order?: number;
+    state?: string | null;
+    completed?: boolean;
+    unlocked?: boolean;
+    reason?: string | null;
+    reasonCode?: string | null;
+    unmet?: { kind: string; label?: string | null }[] | null;
+  } | null;
 };
 
 type TopicItem = {
@@ -173,8 +188,6 @@ type CourseData = {
 export function StudentCourseView() {
   const tr = useT();
   const setView = useApp((s) => s.setView);
-  const navParam = useApp((s) => s.navParam);
-  const courseSlug = useApp((s) => s.courseSlug);
   const setNavParam = useApp((s) => s.setNavParam);
   const setCourseSlug = useApp((s) => s.setCourseSlug);
 
@@ -188,28 +201,30 @@ export function StudentCourseView() {
     setError(null);
     // No hardcoded fallback slug: guessing a course here made an
     // unenrolled/direct-navigation user look like they were enrolled in
-    // whichever course happened to be hardcoded. When there is no navParam
-    // (e.g. the sidebar's Course tab navigates to this view with no slug),
-    // resolve the student's CURRENT COURSE from their own authorized data —
-    // GET /api/students/me/current-course applies the platform's existing
+    // whichever course happened to be hardcoded. The student's CURRENT
+    // COURSE is resolved from their own authorized data — GET
+    // /api/students/me/current-course applies the platform's existing
     // current-course rule (the student's group → that group's course, the
-    // same `group.course` the dashboard's "كل الكورس" flow navigates with) —
-    // and hand it to the SAME navParam mechanism every other flow uses. The
-    // resolved slug then flows through the unchanged authorized content
-    // fetch below, so this path can never open a course the student is not
-    // enrolled in: /api/courses/[slug] still 403s server-side.
-    // Always validate persisted navigation against the authoritative current
-    // course. Zustand persistence can retain an old slug after enrollment/group
-    // changes; never issue a request for that stale course.
+    // same `group.course` the dashboard's "كل الكورس" flow navigates with).
+    // Manual-QA stabilization: the slug in hand is ALREADY authoritative,
+    // so the content fetch issues IMMEDIATELY — never bounced through
+    // courseSlug/navParam state (nothing else reads that state; the old
+    // round-trip doubled every load to 2× current-course + 1× courses AND
+    // stalled the view on in-app navigation, when navParam is null and the
+    // old `if (navParam) setLoading(false)` never cleared the skeleton —
+    // the Ctrl+F5 defect). One current-course + one courses request per
+    // view entry; loading ALWAYS clears on success or failure; the store
+    // sync below is coherence-only and never gates this view's fetch.
+    // /api/courses/[slug] still 403s server-side for unenrolled slugs, so
+    // this path can never open a foreign course.
     fetch("/api/students/me/current-course")
       .then((r) => r.ok ? r.json() : Promise.reject(new Error(r.status === 403 || r.status === 401 ? "forbidden" : "fail")))
       .then((current) => {
         const authoritativeSlug = current?.course?.slug;
         if (!authoritativeSlug) throw new Error("empty");
-        if (courseSlug !== authoritativeSlug) {
+        if (useApp.getState().courseSlug !== authoritativeSlug) {
           setCourseSlug(authoritativeSlug);
           setNavParam(authoritativeSlug);
-          return;
         }
         return fetch(`/api/courses/${encodeURIComponent(authoritativeSlug)}`)
           .then((r) => r.ok ? r.json() : Promise.reject(new Error(r.status === 403 || r.status === 401 ? "forbidden" : "fail")))
@@ -220,13 +235,16 @@ export function StudentCourseView() {
             setOpenUnits(ids);
           });
       })
-      .then(() => { if (navParam) setLoading(false); })
+      .then(() => setLoading(false))
       .catch((e: Error) => {
         setError(tr(e.message === "forbidden" ? "course.212" : e.message === "empty" ? "course.213" : "course.034"));
         setLoading(false);
       });
     return;
-  }, [navParam, courseSlug, tr, setNavParam, setCourseSlug]);
+    // courseSlug/navParam intentionally NOT dependencies: the slug comparison
+    // reads the store snapshot directly (no subscription), and depending on
+    // them re-triggered this effect into a second full load on every entry.
+  }, [tr, setNavParam, setCourseSlug]);
 
   React.useEffect(() => {
     reload();
@@ -444,10 +462,15 @@ function LessonRow({ lesson }: { lesson: LessonItem }) {
   const setNavParam = useApp((s) => s.setNavParam);
 
   const isLocked = lesson.status === "locked";
+  // Phase H — the server-computed Arabic reason travels with the row, so a
+  // locked (or current) session always names its exact next action. The
+  // generic strings stay as fallbacks for stale payloads only.
+  const lockReason = lesson.requirements?.reason ?? null;
+  const unmet = lesson.requirements?.unmet ?? [];
 
   const open = () => {
     if (isLocked) {
-      toast.warning(tr("course.044"));
+      toast.warning(lockReason || tr("course.044"));
       return;
     }
     setView("student-lesson");
@@ -540,6 +563,26 @@ function LessonRow({ lesson }: { lesson: LessonItem }) {
             ) : null}
           </span>
         </div>
+        {/* Phase H — the canonical next action, rendered verbatim from the
+            engine row. Locked rows name why they are locked; the current row
+            names what finishes it. Completed rows stay clean. */}
+        {(isLocked || lesson.status === "current") && lockReason && (
+          <div className="text-[11px] text-amber-600 dark:text-amber-400 leading-snug mt-1">
+            {lockReason}
+          </div>
+        )}
+        {isLocked && unmet.length > 0 && (
+          <div className="flex items-center gap-1 flex-wrap mt-1">
+            {unmet.slice(0, 3).map((u, i) => (
+              <span
+                key={`${u.kind}-${i}`}
+                className="inline-flex items-center h-5 px-1.5 rounded-md text-[10px] font-semibold bg-amber-400/15 text-amber-600 dark:text-amber-400"
+              >
+                {u.label || u.kind}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
       {lesson.isCompleted && (
         <Badge
@@ -560,7 +603,9 @@ function LessonRow({ lesson }: { lesson: LessonItem }) {
       <li>
         <Tooltip>
           <TooltipTrigger asChild>{inner}</TooltipTrigger>
-          <TooltipContent side="top">{tr("course.046")}</TooltipContent>
+          <TooltipContent side="top">
+            {lockReason || tr("course.046")}
+          </TooltipContent>
         </Tooltip>
       </li>
     );

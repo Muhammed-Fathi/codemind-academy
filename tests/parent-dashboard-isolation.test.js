@@ -107,6 +107,11 @@ function makeMockDb() {
     // (the exact rule the session-video list uses); the fixtures carry no
     // Batch rows, so reconciliation resolves NO_BATCH and performs no write.
     batch: [],
+    // Phase H — the canonical progression engine's reads (empty world: no
+    // per-video watch state, no absence holds, no admin overrides).
+    sessionVideoView: [],
+    absenceHold: [],
+    progressionOverride: [],
   };
   const clone = (v) => (v === undefined ? v : structuredClone(v));
   const byId = (arr, id) => arr.find((r) => r.id === id) || null;
@@ -595,10 +600,14 @@ async function seed() {
   );
 
   // Quizzes + questions + homework
+  // Phase H: live assessments are PUBLISHED (the real default) — lifecycle
+  // is part of every requirement/read filter, so status-less fixtures would
+  // silently drop out of the engine. q3 is PUBLISHED deliberately: its 404
+  // below must come from the SCOPE gate, not the lifecycle filter.
   T.quiz.push(
-    { id: "q1", trackScope: "SHARED", lessonId: "l1", title: "Quiz One", titleAr: "اختبار واحد", description: null, passMark: 60, timeLimit: null, order: 0 },
-    { id: "q2", trackScope: "SHARED", lessonId: "l2", title: "Quiz Two", titleAr: "اختبار اثنين", description: null, passMark: 60, timeLimit: null, order: 0 },
-    { id: "q3", trackScope: "SHARED", lessonId: "l5", title: "Quiz C2", titleAr: "اختبار ك2", description: null, passMark: 60, timeLimit: null, order: 0 },
+    { id: "q1", status: "PUBLISHED", trackScope: "SHARED", lessonId: "l1", title: "Quiz One", titleAr: "اختبار واحد", description: null, passMark: 60, timeLimit: null, order: 0 },
+    { id: "q2", status: "PUBLISHED", trackScope: "SHARED", lessonId: "l2", title: "Quiz Two", titleAr: "اختبار اثنين", description: null, passMark: 60, timeLimit: null, order: 0 },
+    { id: "q3", status: "PUBLISHED", trackScope: "SHARED", lessonId: "l5", title: "Quiz C2", titleAr: "اختبار ك2", description: null, passMark: 60, timeLimit: null, order: 0 },
   );
   T.question.push({
     id: "qq1", quizId: "q1", type: "MCQ", prompt: "2+2?", promptAr: "٢+٢؟",
@@ -606,8 +615,8 @@ async function seed() {
     difficulty: "EASY", marks: 1, schoolType: null, createdAt: D(30),
   });
   T.homework.push(
-    { id: "h1", trackScope: "SHARED", lessonId: "l1", title: "HW One", titleAr: "واجب واحد", instructions: "do", deadline: FUT(3), maxMarks: 20, createdAt: D(10) },
-    { id: "h2", trackScope: "SHARED", lessonId: "l2", title: "HW Two", titleAr: "واجب اثنين", instructions: "do", deadline: FUT(5), maxMarks: 10, createdAt: D(10) },
+    { id: "h1", status: "PUBLISHED", trackScope: "SHARED", lessonId: "l1", title: "HW One", titleAr: "واجب واحد", instructions: "do", deadline: FUT(3), maxMarks: 20, createdAt: D(10) },
+    { id: "h2", status: "PUBLISHED", trackScope: "SHARED", lessonId: "l2", title: "HW Two", titleAr: "واجب اثنين", instructions: "do", deadline: FUT(5), maxMarks: 10, createdAt: D(10) },
   );
 
   // Students
