@@ -48,18 +48,32 @@ type WeeklyReport = {
   recentHomework: { title: string; status: string; grade: number | null; date: string }[];
 };
 
-export function WeeklyReportView({ onClose }: { onClose: () => void }) {
+export function WeeklyReportView({
+  onClose,
+  studentId,
+}: {
+  onClose: () => void;
+  /**
+   * Phase I — the linked child the report covers (defaults to every linked
+   * child). It is sent as `?studentId=`, which the server verifies against
+   * this parent's ParentStudentLink rows before answering.
+   */
+  studentId?: string | null;
+}) {
   const t = useT();
   const [data, setData] = React.useState<{ reports: WeeklyReport[] } | null>(null);
   const [loading, setLoading] = React.useState(true);
 
   React.useEffect(() => {
-    fetch("/api/parents/me/weekly-report")
+    const url = studentId
+      ? `/api/parents/me/weekly-report?studentId=${encodeURIComponent(studentId)}`
+      : "/api/parents/me/weekly-report";
+    fetch(url)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => setData(d))
       .catch(() => toast.error(t("parent.117")))
       .finally(() => setLoading(false));
-  }, []);
+  }, [studentId]);
 
   if (loading) {
     return (

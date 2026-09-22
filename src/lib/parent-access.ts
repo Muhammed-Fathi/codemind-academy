@@ -27,6 +27,7 @@ import {
   trackScopeWhere,
   type TrackScope,
 } from "@/lib/track-scope";
+import { STUDENT_HOMEWORK_LIST_FILTER } from "@/lib/student-visibility";
 
 /** Student ids explicitly linked to the parent identified by `parentUserId`. */
 export async function getLinkedStudentIds(
@@ -249,6 +250,12 @@ export async function getStudentCurriculumHomeworkIds(
   const rows = await db.homework.findMany({
     where: {
       ...trackScopeWhere(student.schoolType),
+      // Phase I — the Phase G lifecycle clause (PUBLISHED | CLOSED). Without
+      // it, a teacher's DRAFT assignment was counted in the analytics and
+      // weekly-report denominators: unpublished content the child cannot open
+      // was reported as the child's outstanding work. The constant is the ONE
+      // definition the student homework list uses.
+      ...STUDENT_HOMEWORK_LIST_FILTER,
       lessonId: { in: [...lessonIds] },
     },
     select: { id: true },

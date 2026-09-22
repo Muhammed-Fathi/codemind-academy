@@ -80,12 +80,19 @@ export function ParentAnalyticsView({
   const activeChild = tabOverride ?? initialIndex;
 
   React.useEffect(() => {
-    fetch("/api/parents/me/analytics")
+    // Phase I — the selected child travels as `?studentId=`. The server
+    // re-verifies the ParentStudentLink and answers 404 for anything that is
+    // not this parent's own child, so the reduced payload is a scope decision
+    // made server-side, never a client filter.
+    const url = initialStudentId
+      ? `/api/parents/me/analytics?studentId=${encodeURIComponent(initialStudentId)}`
+      : "/api/parents/me/analytics";
+    fetch(url)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => setData(d))
       .catch(() => toast.error(tr("parent.001")))
       .finally(() => setLoading(false));
-  }, []);
+  }, [initialStudentId]);
 
   if (loading) {
     return (

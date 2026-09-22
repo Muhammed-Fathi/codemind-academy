@@ -23,6 +23,14 @@ import {
 } from "@/components/shared/notifications-panel";
 import { ParentAnalyticsView } from "@/components/parent/analytics-view";
 import { WeeklyReportView } from "@/components/parent/weekly-report";
+// Phase I — the canonical academic follow-up surface.
+import {
+  AcademicFollowup,
+  AcademicFollowupError,
+  AcademicFollowupSkeleton,
+  type AcademicsPayload,
+} from "@/components/parent/academic-followup";
+import { ChildSwitcher, useSelectedChildId } from "@/components/parent/child-switcher";
 
 import {
   Card,
@@ -36,7 +44,6 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
@@ -307,16 +314,31 @@ export function ParentDashboard() {
     enabled: view !== "parent-notifications",
   });
 
-  const [activeChildId, setActiveChildId] = React.useState<string | null>(null);
+  // Phase I — the selected child is RETAINED in the shared store, so opening
+  // the analytics / weekly / monthly views and coming back keeps the same
+  // child. `useSelectedChildId` also drops a retained id that is no longer
+  // linked, so the UI can never ask the server for a ghost.
+  const [activeChildId, setActiveChildId] = useSelectedChildId(data?.children ?? []);
   const [showReport, setShowReport] = React.useState(false);
   const [showPrefs, setShowPrefs] = React.useState(false);
   const [showAnalytics, setShowAnalytics] = React.useState(false);
   const [showWeekly, setShowWeekly] = React.useState(false);
-  React.useEffect(() => {
-    if (data?.children?.length && !activeChildId) {
-      setActiveChildId(data.children[0].id);
-    }
-  }, [data, activeChildId]);
+  // Phase I — the canonical academic snapshot for the SELECTED child. The id
+  // is sent as `?studentId=`; the server re-verifies the ParentStudentLink on
+  // every call and answers 404 for anything that is not this parent's own
+  // child, so switching (or tampering) can never cross into another student.
+  const academicsQuery = useQuery({
+    queryKey: ["parent-academics", activeChildId],
+    queryFn: async () => {
+      const r = await fetch(
+        `/api/parents/me/academics${activeChildId ? `?studentId=${encodeURIComponent(activeChildId)}` : ""}`,
+        { cache: "no-store" }
+      );
+      if (!r.ok) throw new Error("failed to load academics");
+      return (await r.json()) as AcademicsPayload;
+    },
+    enabled: !!activeChildId && view !== "parent-notifications",
+  });
 
   // Post-launch fix: the Parent's own notifications live in the SHARED panel
   // (the bell used to route parents to the student-only notifications view).
@@ -349,7 +371,12 @@ export function ParentDashboard() {
   }
 
   if (showWeekly) {
-    return <WeeklyReportView onClose={() => setShowWeekly(false)} />;
+    return (
+      <WeeklyReportView
+        onClose={() => setShowWeekly(false)}
+        studentId={activeChildId}
+      />
+    );
   }
 
   if (showPrefs) {
@@ -472,21 +499,35 @@ export function ParentDashboard() {
         </div>
       </motion.div>
 
-      {/* Student selector (tabs) */}
-      {data.children.length > 1 && (
-        <motion.div variants={itemVariants}>
-          <Tabs value={child.id} onValueChange={setActiveChildId}>
-            <TabsList>
-              {data.children.map((c) => (
-                <TabsTrigger key={c.id} value={c.id} className="gap-1.5">
-                  <GraduationCap className="w-3.5 h-3.5" />
-                  {c.name}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-        </motion.div>
-      )}
+      {/* Phase I — Child Switcher. One control, horizontally scrollable so it
+          stays usable at normal laptop widths with many children. It only
+          changes WHICH child is asked for; the server verifies the link. */}
+      <motion.div variants={itemVariants}>
+        <ChildSwitcher
+          items={data.children.map((c) => ({
+            id: c.id,
+            name: c.name,
+            courseName: c.group?.course ? (curLocale() === "en" ? c.group.course.name : c.group.course.nameAr) : null,
+            avatarUrl: c.avatarUrl,
+          }))}
+          value={child.id}
+          onChange={setActiveChildId}
+        />
+      </motion.div>
+
+      {/* Phase I — the canonical academic follow-up: situation, Action Needed,
+          progression + lock reasons, sessions, absence/hold/catch-up, homework,
+          quiz outcomes and teacher feedback. Everything here is read from the
+          Phase F/G/H authorities; the component derives nothing. */}
+      <motion.div variants={itemVariants}>
+        {academicsQuery.isLoading ? (
+          <AcademicFollowupSkeleton />
+        ) : academicsQuery.isError || !academicsQuery.data ? (
+          <AcademicFollowupError onRetry={() => academicsQuery.refetch()} />
+        ) : (
+          <AcademicFollowup payload={academicsQuery.data} />
+        )}
+      </motion.div>
 
       {/* Child summary banner */}
       <motion.div variants={itemVariants}>

@@ -74,6 +74,13 @@ type AppState = {
   lessonId: string | null;
   quizId: string | null;
   homeworkId: string | null;
+  // Phase I — the Parent's SELECTED CHILD. Session-scoped on purpose (it is
+  // NOT persisted): a fresh tab must start from the parent's own first linked
+  // child rather than replaying a stale id. It is a UI convenience only —
+  // every Parent API re-verifies the ParentStudentLink server-side, so a wrong
+  // id resolves to 404 instead of another child's data.
+  parentChildId: string | null;
+  setParentChildId: (id: string | null) => void;
   setCourseSlug: (p: string | null) => void;
   setLessonId: (p: string | null) => void;
   setQuizId: (p: string | null) => void;
@@ -111,6 +118,8 @@ export const useApp = create<AppState>()(
       setLessonId: (lessonId) => set({ lessonId }),
       setQuizId: (quizId) => set({ quizId }),
       setHomeworkId: (homeworkId) => set({ homeworkId }),
+      parentChildId: null,
+      setParentChildId: (parentChildId) => set({ parentChildId }),
 
       user: null,
       setUser: (user) => set({ user }),

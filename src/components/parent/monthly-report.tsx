@@ -143,7 +143,14 @@ export function MonthlyReportView({
   const [loading, setLoading] = React.useState(true);
 
   React.useEffect(() => {
-    fetch("/api/parents/me/dashboard")
+    // Phase I — `?studentId=` keeps the report on the dashboard's selected
+    // child AND narrows the payload server-side (verified link, 404 otherwise).
+    // `selectReportChild` below still resolves defensively, so a null/absent
+    // id degrades to the first linked child exactly as before.
+    const url = studentId
+      ? `/api/parents/me/dashboard?studentId=${encodeURIComponent(studentId)}`
+      : "/api/parents/me/dashboard";
+    fetch(url)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         const child = selectReportChild(d?.children, studentId);

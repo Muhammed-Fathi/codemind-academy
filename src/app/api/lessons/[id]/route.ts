@@ -245,9 +245,19 @@ export async function GET(
   }
 
   // Determine whether to reveal quiz answers. Students only see answers after
-  // they have finished at least one attempt on the quiz. Staff (admin/teacher/
-  // parent) always see answers.
-  let revealQuizAnswers = user.role !== "STUDENT";
+  // they have finished at least one attempt on the quiz. Staff (admin/teacher)
+  // always see answers.
+  //
+  // PHASE I — a PARENT is NOT staff for this purpose. The old
+  // `user.role !== "STUDENT"` test silently granted every parent the answer key
+  // of every quiz hanging off any in-scope lesson, which contradicts the
+  // Phase I privacy contract. Withholding the key alone was still not enough:
+  // the parent received the question bank itself. `toQuizPayload` below now
+  // omits the whole `questions` array for a parent, so this flag only governs
+  // the roles that legitimately review a paper (staff, and a student after
+  // their own submission). The parent may still open the lesson — the child
+  // can — they simply never receive the assessment.
+  let revealQuizAnswers = user.role !== "STUDENT" && user.role !== "PARENT";
   if (user.role === "STUDENT") {
     const s = await db.student.findUnique({
       where: { userId: user.id },
@@ -344,23 +354,33 @@ export async function GET(
     }
   }
 
+  // PHASE I (CONTRACT CORRECTION): a PARENT receives a quiz DESCRIPTOR, never
+  // the assessment. The first pass withheld only `answer` / `explanation` and
+  // still shipped prompt text, options, question ids, difficulty and marks —
+  // i.e. the question bank itself. The `questions` array is therefore not
+  // "emptied field by field" (which invites the next field to leak) but never
+  // built at all for a parent: the mapping below is skipped entirely, and the
+  // parent response carries a stable empty list so any consumer stays safe.
+  const isParentViewer = user.role === "PARENT";
   const toQuizPayload = (q: (typeof lesson.quizzes)[number]) => ({
     id: q.id,
     title: q.title,
     titleAr: q.titleAr,
     description: q.description,
     passMark: q.passMark,
-    questions: q.questions.map((q2) => ({
-      id: q2.id,
-      type: q2.type,
-      prompt: q2.prompt,
-      promptAr: q2.promptAr,
-      options: safeParseOptions(q2.options),
-      answer: revealQuizAnswers ? q2.answer : undefined,
-      explanation: revealQuizAnswers ? q2.explanation : undefined,
-      difficulty: q2.difficulty,
-      marks: q2.marks,
-    })),
+    questions: isParentViewer
+      ? []
+      : q.questions.map((q2) => ({
+          id: q2.id,
+          type: q2.type,
+          prompt: q2.prompt,
+          promptAr: q2.promptAr,
+          options: safeParseOptions(q2.options),
+          answer: revealQuizAnswers ? q2.answer : undefined,
+          explanation: revealQuizAnswers ? q2.explanation : undefined,
+          difficulty: q2.difficulty,
+          marks: q2.marks,
+        })),
   });
 
   // Phase 14 — material descriptors replace raw pdfUrl for new delivery.

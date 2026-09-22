@@ -15,6 +15,9 @@ import {
   isParentAllowedTrackScope,
   isParentLessonPreviewAllowed,
 } from "@/lib/parent-access";
+// Phase I (contract correction) — the verified `?studentId=` selector, so a
+// quiz OUTCOME is only ever reported for a child this parent is linked to.
+import { readStudentIdParam, resolveLinkedChild } from "@/lib/parent-academics";
 import type { SchoolType } from "@/lib/school-type";
 
 // GET /api/quizzes/[id]
@@ -47,6 +50,11 @@ export async function GET(
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
 
+  // Phase I: a parent NEVER has the question bank selected into memory at all —
+  // not "selected and then stripped", which is the mistake the first pass made.
+  // The parent branch below needs the lesson chain for its authorization gate
+  // and nothing else.
+  const isParentViewer = user.role === "PARENT";
   const quiz = await db.quiz.findUnique({
     where: { id },
     include: {
@@ -60,7 +68,9 @@ export async function GET(
           topic: { include: { unit: { include: { part: { include: { course: true } } } } } },
         },
       },
-      questions: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] },
+      ...(isParentViewer
+        ? {}
+        : { questions: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] } }),
     },
   });
   if (!quiz) return err("Quiz not found", 404);
@@ -100,6 +110,84 @@ export async function GET(
     if (!(await isParentAllowedTrackScope(user.id, quiz.trackScope))) {
       return err("Quiz not found", 404);
     }
+
+    // ---- PHASE I (CONTRACT CORRECTION): PARENT = SUMMARY ONLY --------------
+    // The Parent product is academic FOLLOW-UP, not assessment review. Withholding
+    // only `answer` / `explanation` while still shipping the rest of the
+    // question bank (prompt text, options, question ids, difficulty, marks, the
+    // randomized blueprint) was NOT the approved contract — it left the parent
+    // holding the assessment itself.
+    //
+    // A parent therefore receives a STRICTLY SHAPED SUMMARY:
+    //   * quiz identity and lesson identity;
+    //   * `questions: []` — the question bank is never selected, mapped or
+    //     serialised for a parent, so no future field can leak through a
+    //     partial strip;
+    //   * outcome data (score / pass-fail / attempt count / completion time)
+    //     ONLY for a child named with a verified `?studentId=`. A parent with
+    //     two children in the same course must never be shown the other child's
+    //     result, so with no (or an unlinked) `?studentId=` the summary is
+    //     absent / the request is refused — never guessed.
+    //
+    // The child-scoped surface `GET /api/parents/me/academics?studentId=`
+    // remains the authority for quiz outcomes.
+    const requestedStudentId = readStudentIdParam(_req);
+    let summary: {
+      studentId: string;
+      attempts: number;
+      lastOutcome: "PASSED" | "FAILED" | null;
+      lastPercentage: number | null;
+      bestPercentage: number | null;
+      lastCompletedAt: string | null;
+    } | null = null;
+    if (requestedStudentId) {
+      const linked = await resolveLinkedChild(user.id, requestedStudentId);
+      // Fail closed, identically to every other Phase I `?studentId=`: a child
+      // this parent is not linked to is refused with 404, which never confirms
+      // that the id exists.
+      if (!linked) return err("Quiz not found", 404);
+      const rows = await db.quizAttempt.findMany({
+        where: { quizId: quiz.id, studentId: requestedStudentId, finishedAt: { not: null } },
+        orderBy: { finishedAt: "asc" },
+        select: { percentage: true, passed: true, finishedAt: true },
+      });
+      const last = rows.length > 0 ? rows[rows.length - 1] : null;
+      summary = {
+        studentId: requestedStudentId,
+        attempts: rows.length,
+        lastOutcome: last ? (last.passed ? "PASSED" : "FAILED") : null,
+        lastPercentage: last ? last.percentage : null,
+        bestPercentage:
+          rows.length > 0 ? Math.max(...rows.map((r) => r.percentage ?? 0)) : null,
+        lastCompletedAt: last?.finishedAt ? new Date(last.finishedAt).toISOString() : null,
+      };
+    }
+    return ok({
+      /** Marker: this is the parent-safe shape, not the runner payload. */
+      parentView: true,
+      /** True because detailed quiz content is withheld from a parent. */
+      restricted: true,
+      quiz: {
+        id: quiz.id,
+        title: quiz.title,
+        titleAr: quiz.titleAr,
+      },
+      lesson: quiz.lesson
+        ? {
+            id: quiz.lesson.id,
+            title: quiz.lesson.title,
+            titleAr: quiz.lesson.titleAr,
+            courseSlug:
+              quiz.lesson.unit?.part.course.slug ??
+              quiz.lesson.topic?.unit.part.course.slug ??
+              null,
+          }
+        : null,
+      /** NEVER populated for a parent — see the contract note above. */
+      questions: [],
+      bestAttempt: null,
+      summary,
+    });
   }
 
   const blueprint = resolveQuizBlueprint(quiz);
@@ -203,8 +291,14 @@ export async function GET(
   // Teachers and admins always see answers (needed for review/creation).
   // Students see answers only after submitting at least one attempt.
   // (Staff answer visibility is the documented Phase 1 audit decision.)
+  //
+  // PHASE I — PARENT IS READ-ONLY AND IS NOT AN ANSWER-REVIEW SURFACE.
+  // A PARENT never reaches this point at all: the parent branch above returns a
+  // summary-only payload before the question bank is ever mapped. What remains
+  // here is the documented Phase 1 rule for the roles that legitimately see the
+  // key (staff for review/authoring, a student after their own submission).
   const revealAnswers =
-    user.role === "ADMIN" || user.role === "TEACHER" || user.role === "PARENT" || studentHasAttempted;
+    user.role === "ADMIN" || user.role === "TEACHER" || studentHasAttempted;
 
   // Canonical chain first, legacy topic chain as fallback.
   const courseSlug =
@@ -216,7 +310,9 @@ export async function GET(
   // served. Phase 26D — when the student has an OPEN attempt the served list is
   // that attempt's frozen snapshot (already track-filtered and already in the
   // order the student saw), never the live bank.
-  const eligibleQuestions = quiz.questions.filter((q) =>
+  // The parent branch has already returned by now; `?? []` only satisfies the
+  // type for the parent query, which deliberately omitted the relation.
+  const eligibleQuestions = (quiz.questions ?? []).filter((q) =>
     user.role === "STUDENT"
       ? isQuestionEligible(studentSchoolType, q.schoolType)
       : true

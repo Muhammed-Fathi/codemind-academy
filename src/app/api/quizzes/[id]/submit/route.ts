@@ -12,6 +12,10 @@ import {
 } from "@/lib/session-quiz";
 import { getStudentSchoolType } from "@/lib/enrollment";
 import { createNotificationIfAllowed } from "@/lib/notify";
+// Phase I — the parent fan-out reuses the SAME recipient resolver the absence
+// and live-session families already use (`parentUserIdsForStudents`), so there
+// is no second notion of "who is this student's parent".
+import { parentUserIdsForStudents } from "@/lib/live-session-notifications";
 import { syncDerivedCompletion } from "@/lib/progression";
 import { maybeResolveCatchup } from "@/lib/catchup";
 
@@ -270,6 +274,12 @@ export async function POST(
       dedupeKey: `quiz-result:${attempt.id}`,
     }).catch(() => {});
 
+    // The student's display name, resolved ONCE and shared by the teacher
+    // and parent fan-outs below — one query, not one per recipient list.
+    const studentName =
+      (await db.user.findUnique({ where: { id: studentUser.userId }, select: { name: true } }))
+        ?.name || "طالب";
+
     // Teacher recipients are derived exclusively from the quiz lesson's
     // Course -> Group -> Teacher ownership chain. No client teacher id is
     // accepted, and the attempt id makes replay delivery idempotent.
@@ -286,7 +296,6 @@ export async function POST(
         where: { groups: { some: { courseId, teacherId: { not: null }, isActive: true } } },
         select: { userId: true },
       });
-      const studentName = (await db.user.findUnique({ where: { id: studentUser.userId }, select: { name: true } }))?.name || "طالب";
       await Promise.all(teachers.map((teacher) => createNotificationIfAllowed({
         userId: teacher.userId,
         type: "QUIZ_RESULT",
@@ -296,6 +305,35 @@ export async function POST(
         dedupeKey: `quiz-completed:${attempt.id}:teacher:${teacher.userId}`,
       }).catch(() => {})));
     }
+
+    // PHASE I — PARENT FAN-OUT (the smallest possible addition).
+    //
+    // Discovery found the gap: `QUIZ_RESULT` reached the student and the
+    // course's teachers but never the linked parents, although "important Quiz
+    // failure/result" is an approved parent signal. This reuses EVERYTHING
+    // that already exists:
+    //   * the notification TYPE (`QUIZ_RESULT`) — no new enum value;
+    //   * the preference mapping (`quizResult`) + quiet hours, enforced inside
+    //     `createNotificationIfAllowed` — no new preference surface;
+    //   * the recipient resolver (`parentUserIdsForStudents`) — the same one
+    //     the absence and live-session families use;
+    //   * the dedupe convention — `attempt.id` (terminal, so a replay or a
+    //     retry of this route can never duplicate) plus the recipient id.
+    // No new notification subsystem, no new cron, and one row per parent per
+    // attempt even if the submit is retried.
+    //
+    // The message carries the OUTCOME only (percentage, pass/fail, marks).
+    // It never carries a question, an answer, an explanation or evidence — a
+    // parent notification is not an answer-review surface.
+    const parentUserIds = await parentUserIdsForStudents([s.id]);
+    await Promise.all(parentUserIds.map((parentUserId) => createNotificationIfAllowed({
+      userId: parentUserId,
+      type: "QUIZ_RESULT",
+      title: `نتيجة اختبار ${studentName}: ${quiz.titleAr || quiz.title}`,
+      message: `${studentName} حصل على ${percentage}% (${score}/${totalMarks}) — ${passed ? "ناجح" : "لم ينجح"}.`,
+      link: null,
+      dedupeKey: `quiz-result:${attempt.id}:parent:${parentUserId}`,
+    }).catch(() => {})));
   }
 
   // Phase H — a submitted quiz may complete its lesson (pass) or complete a

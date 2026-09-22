@@ -14,6 +14,12 @@ import {
   getStudentCurriculumHomeworkIds,
   getStudentCurriculumLessonIds,
 } from "@/lib/parent-access";
+// Phase I — the verified `?studentId=` contract (see the dashboard route).
+import {
+  loadCanonicalCourseProgress,
+  readStudentIdParam,
+} from "@/lib/parent-academics";
+import type { NextRequest } from "next/server";
 import { fmtDate } from "@/lib/i18n-core";
 
 /** When an attendance record happened: its session, else its creation. */
@@ -21,7 +27,7 @@ function attendanceAt(a: { createdAt: Date; session?: { startAt: Date | null } |
   return a.session?.startAt || a.createdAt;
 }
 
-export async function GET() {
+export async function GET(req?: NextRequest) {
   const tApi = await getServerT();
   const loc = await serverLocale();
   const user = await requireUser();
@@ -64,6 +70,17 @@ export async function GET() {
     },
   });
   if (!parent) return err(tApi("api.119"), 404);
+
+  // ---- Phase I: `?studentId=` is verified, never trusted -------------------
+  // Same rule as the dashboard/analytics surfaces: an id outside this parent's
+  // own links is a 404, indistinguishable from an id that does not exist.
+  const requestedStudentId = readStudentIdParam(req);
+  if (
+    requestedStudentId &&
+    !parent.children.some((link) => link.student.id === requestedStudentId)
+  ) {
+    return err(tApi("api.368"), 404);
+  }
 
   // Per-child curriculum universes.
   //
@@ -111,7 +128,9 @@ export async function GET() {
     )
   );
 
-  const weeklyReports = parent.children.map((link) => {
+  // Phase I: the callback is async because it reads the canonical Phase H
+  // completion count (one engine load per child, batched by Promise.all).
+  const weeklyReports = await Promise.all(parent.children.map(async (link) => {
     const s = link.student;
 
     // Phase 26E: quiz activity is reported only for the child's own active
@@ -218,10 +237,19 @@ export async function GET() {
     // restricted to that active universe so archived history or a sibling's
     // track cannot inflate the fraction.
     const weeklyUniverseIds = childUniverse;
-    const completedLessons = s.lessonProgress.filter(
-      (lp) => lp.isCompleted && weeklyUniverseIds.has(lp.lessonId)
-    ).length;
-    const totalCourseLessons = weeklyUniverseIds.size;
+    // Phase I — the SAME canonical authority the dashboard, the analytics
+    // screen and the academic follow-up card read. This used to be a fourth
+    // independent recount of the legacy `LessonProgress.isCompleted` sticky
+    // flag, which the Phase H engine does not trust (it ignores
+    // sequentiality, absence holds and overrides), so the weekly report could
+    // disagree with the dashboard about the very same child. There is NO legacy
+    // fallback: a child with no valid active Enrollment / course academic
+    // context reports the explicit `NO_ACTIVE_COURSE` state over an empty
+    // universe, never a `LessonProgress.isCompleted` recount.
+    const canonical = await loadCanonicalCourseProgress(s.id, s.group?.courseId);
+    const hasAcademicContext = canonical.state === "OK";
+    const completedLessons = hasAcademicContext ? canonical.completed : 0;
+    const totalCourseLessons = hasAcademicContext ? canonical.total : 0;
     const completionPct =
       totalCourseLessons > 0
         ? Math.min(100, Math.round((completedLessons / totalCourseLessons) * 100))
@@ -232,6 +260,13 @@ export async function GET() {
 
     return {
       studentId: s.id,
+      /**
+       * Phase I — explicit academic-context state. `NO_ACTIVE_COURSE` means the
+       * child has no valid active Enrollment / course: the completion numbers
+       * below describe an EMPTY universe and are never legacy-derived.
+       */
+      academicContext: canonical.state,
+      hasAcademicContext,
       name: s.user.name,
       course: s.group?.course?.nameAr || s.group?.course?.name || "",
       groupName: s.group?.name || "",
@@ -273,7 +308,12 @@ export async function GET() {
         date: hw.submittedAt ? fmtDate(hw.submittedAt, loc) : "",
       })),
     };
-  });
+  }));
 
-  return ok({ reports: weeklyReports });
+  const scopedReports =
+    requestedStudentId && weeklyReports.length > 0
+      ? weeklyReports.filter((r) => r.studentId === requestedStudentId)
+      : weeklyReports;
+
+  return ok({ reports: scopedReports, selectedStudentId: requestedStudentId ?? null });
 }
