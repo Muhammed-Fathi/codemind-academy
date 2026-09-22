@@ -14,6 +14,9 @@
 //     + 20260919180000_phase_g_quiz_homework_workflow
 //     + 20260919190000_phase_g_camera_policy
 //     + 20260920120000_phase_h_progression_override
+//     + 20260921120000_session_video_progression_requirement
+//     + 20260921180000_session_video_requirement_modes
+//     + 20260922090000_readiness_reminder_recipients
 //   is catalog-identical — every column (+ type, nullability, default), every
 //   enum value in order, every index and every constraint — to the database
 //   produced by the generated baseline `scripts/db/postgres-baseline.sql`,
@@ -78,9 +81,32 @@ const CHAIN = [
   // Session-video requirement modes — the requirementMode enum column plus
   // the explicit liveSessionId absence source (SetNull FK + index).
   "20260921180000_session_video_requirement_modes",
+  // Teacher Readiness recipient choice — one appended NotificationType label
+  // (READINESS_REMINDER). Omitted once (2026-09-22): the chain then rebuilt
+  // 97 enum labels against the baseline's 98 and the verdict blamed the
+  // catalog. The coverage pre-check below fails loudly on any future
+  // omission instead.
+  "20260922090000_readiness_reminder_recipients",
 ];
 const read = (p) => fs.readFileSync(p, "utf8");
 const stmts = (p) => splitSqlStatements(read(p));
+
+// CHAIN-COVERAGE PRE-CHECK — every PostgreSQL migration directory must be
+// registered in CHAIN above (and every CHAIN entry must exist on disk). A
+// stale chain mis-reports its own omissions as catalog diffs, which reads
+// like a schema bug; an incomplete registration instead gets its own loud
+// verdict at the end. Silent when complete (the success path prints nothing
+// extra, so the CI verdict grep is unaffected).
+const pgMigrationDirs = fs
+  .readdirSync(PG_MIG, { withFileTypes: true })
+  .filter((e) => e.isDirectory() && (/^\d+_/.test(e.name) || e.name === "0_init"))
+  .map((e) => e.name)
+  .sort();
+const unregisteredMigrations = pgMigrationDirs.filter((d) => !CHAIN.includes(d));
+const danglingChainEntries = CHAIN.filter(
+  (name) => !fs.existsSync(path.join(PG_MIG, name, "migration.sql"))
+);
+const chainGaps = unregisteredMigrations.length + danglingChainEntries.length;
 
 /** Every scratch directory this run created (for best-effort cleanup). */
 const scratchDirs = [];
@@ -129,8 +155,17 @@ for (const key of ["cols", "enums", "idx", "cons"]) {
   for (const e of extra.slice(0, 8)) console.log("  + extra:  ", e);
   bad += missing.length + extra.length;
 }
-console.log(bad === 0 ? "PHASE_H_PG_CATALOG_IDENTICAL_OK" : `PHASE_H_PG_CATALOG_DIFF=${bad}`);
-process.exitCode = bad === 0 ? 0 : 1;
+if (chainGaps > 0) {
+  // The catalog comparison below ran against a known-incomplete chain, so
+  // its diffs are NOT the verdict — the registration gap is.
+  for (const m of unregisteredMigrations) console.log("  - unregistered PG migration:", m);
+  for (const d of danglingChainEntries) console.log("  - dangling CHAIN entry:", d);
+  console.log(`PHASE_H_PG_CHAIN_INCOMPLETE=${chainGaps}`);
+  process.exitCode = 1;
+} else {
+  console.log(bad === 0 ? "PHASE_H_PG_CATALOG_IDENTICAL_OK" : `PHASE_H_PG_CATALOG_DIFF=${bad}`);
+  process.exitCode = bad === 0 ? 0 : 1;
+}
 
 // Best-effort scratch cleanup: never allowed to change the verdict (on Windows
 // a directory handle can still be held briefly after close()).
