@@ -615,10 +615,42 @@ async function runSections(R, F) {
   const qs = `?studentId=${sB.id}&parentId=${parentB.id}&courseId=${c2.id}&childId=${sB.id}&trackScope=LANGUAGE`;
   const dashQA = await GET(R.pDash, url(`/api/parents/me/dashboard${qs}`));
   const anaQA = await GET(R.pAnalytics, url(`/api/parents/me/analytics${qs}`));
-  eq(ids(dashQA.json.children).sort(), ids(dashA.json.children).sort(), "E: query ids cannot widen the dashboard scope");
-  eq(ids(anaQA.json.children, "studentId").sort(), ids(anaA.json.children, "studentId").sort(), "E: query ids cannot widen the analytics scope");
-  ok(!allText(dashQA.json).includes("Child B"), "E: a foreign studentId in the URL changes nothing");
-  ok(!allText(anaQA.json).includes("Child B"), "E: a foreign studentId in the analytics URL changes nothing");
+  // Phase I: `?studentId=` is now a VERIFIED selector, not an inert hint. A
+  // studentId naming a child this parent is not linked to is REFUSED (404,
+  // the same non-enumerable answer the rest of the parent surface gives) when
+  // no foreign id is supplied the payload is the unchanged, full linked set.
+  // Neither outcome can widen the scope — which is what this probe guards.
+  const dashQIds = dashQA.status === 404 ? [] : ids(dashQA.json.children);
+  const anaQIds = anaQA.status === 404 ? [] : ids(anaQA.json.children, "studentId");
+  ok(
+    dashQIds.every((id) => [sAr.id, sLang.id, sNull.id, sFree.id].includes(id)) &&
+      dashQIds.length <= 4,
+    "E: query ids cannot widen the dashboard scope"
+  );
+  ok(
+    anaQIds.every((id) => [sAr.id, sLang.id, sNull.id, sFree.id].includes(id)) &&
+      anaQIds.length <= 4,
+    "E: query ids cannot widen the analytics scope"
+  );
+  ok(
+    !allText(dashQA.json ?? {}).includes("Child B") && !allText(anaQA.json ?? {}).includes("Child B"),
+    "E: a foreign studentId in the URL changes nothing"
+  );
+  ok(!dashQIds.includes(sB.id) && !anaQIds.includes(sB.id), "E: the foreign child never enters the payload");
+
+  // The positive half of the new contract: a LINKED studentId narrows to that
+  // child alone, and is echoed back so the client cannot drift.
+  const dashLinked = await GET(R.pDash, url(`/api/parents/me/dashboard?studentId=${sAr.id}`));
+  const anaLinked = await GET(R.pAnalytics, url(`/api/parents/me/analytics?studentId=${sAr.id}`));
+  const wkLinked = await GET(R.pWeekly, url(`/api/parents/me/weekly-report?studentId=${sAr.id}`));
+  eq(dashLinked.status, 200, "E: a LINKED studentId → 200 (dashboard)");
+  eq(ids(dashLinked.json.children), [sAr.id], "E: a linked studentId narrows the dashboard to that child");
+  eq(dashLinked.json.selectedStudentId, sAr.id, "E: the dashboard echoes the verified selection");
+  eq(ids(anaLinked.json.children, "studentId"), [sAr.id], "E: a linked studentId narrows analytics to that child");
+  eq(ids(wkLinked.json.reports, "studentId"), [sAr.id], "E: a linked studentId narrows the weekly report to that child");
+  // A studentId smuggled in the BODY stays inert — the server reads the query.
+  const dashBody = await GET(R.pDash, url("/api/parents/me/dashboard"), { studentId: sB.id });
+  eq(ids(dashBody.json.children).sort(), ids(dashA.json.children).sort(), "E: a studentId in the BODY is ignored entirely");
 
   // =========================================================================
   // F. linking lifecycle
@@ -754,8 +786,22 @@ async function runSections(R, F) {
   eq(A.courseProgress.completed, 1, "G: completed lessons count only in-universe completion");
   eq(A.courseProgress.pct, 50, "G: progress average is over the universe (100 + 50) / 3");
   eq(L.courseProgress.total, 2, "G: LANGUAGE child's universe = SHARED + LANGUAGE only");
-  eq(L.courseProgress.completed, 1, "G: the ARABIC lesson's progress never counts for the LANGUAGE child");
+  // Phase I: `completed` is the CANONICAL Phase H verdict, not a recount of the
+  // legacy `LessonProgress.isCompleted` sticky flag. Progression is SEQUENTIAL:
+  // this child has never passed the SHARED lesson's quiz, so the LANGUAGE
+  // lesson is still LOCKED and the engine counts ZERO effective completions —
+  // even though the fixture carries `isCompleted = true` progress rows for both
+  // the LANGUAGE lesson AND the out-of-universe ARABIC lesson (the sticky flag
+  // ignores sequentiality, absence holds and overrides; the engine does not).
+  // The isolation invariant is unchanged and now stronger: the ARABIC lesson's
+  // 100% progress row is not in this child's universe AND is not counted.
+  eq(L.courseProgress.completed, 0, "G: the ARABIC lesson's progress never counts for the LANGUAGE child (canonical: 0 — the LANGUAGE lesson is still locked behind the incomplete SHARED one)");
   eq(L.courseProgress.pct, 50, "G: LANGUAGE child average (100 / 2)");
+  eq(
+    rawDb.prepare('SELECT COUNT(*) AS c FROM "LessonProgress" WHERE "studentId" = ? AND "isCompleted" = 1').get(sLang.id).c,
+    2,
+    "G: the fixture really does hold two sticky isCompleted rows for the LANGUAGE child — the trap is real"
+  );
   eq(N.courseProgress.total, 1, "G: a NULL school type fails closed to SHARED only");
   eq(FREE.courseProgress.total, 0, "G: an unenrolled child has an empty universe (no crash)");
   eq(FREE.courseProgress.pct, 0, "G: empty universe → 0%, never NaN");

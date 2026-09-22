@@ -6,12 +6,24 @@ import { ok, err, requireUser, getParentProfile } from "@/lib/api";
 import type { ParentSubscriptionPayload } from "@/lib/parent-subscription";
 import { getVideoProgressForStudents } from "@/lib/progress";
 import { attemptsInCurriculumUniverse } from "@/lib/parent-access";
+// Phase I — the verified `?studentId=` contract. `resolveLinkedChild` re-checks
+// the ParentStudentLink on EVERY request; `readStudentIdParam` reads the id from
+// the query string only (never from a body), so a spoofed body field stays
+// inert.
+import {
+  loadCanonicalCourseProgress,
+  readStudentIdParam,
+  resolveLinkedChild,
+} from "@/lib/parent-academics";
 import { trackScopeWhere } from "@/lib/track-scope";
 import {
   EXCLUDE_ARCHIVED_LESSON,
   getCourseSessionProgress,
   lessonCourseChainOr,
 } from "@/lib/session-progress";
+import { STUDENT_HOMEWORK_LIST_FILTER } from "@/lib/student-visibility";
+// Phase I — the CANONICAL progression authority, shared with every other
+// Parent reporting surface (see `loadCanonicalCourseProgress`).
 
 // GET /api/parents/me/dashboard
 // Returns aggregated analytics for the current parent's children.
@@ -32,7 +44,7 @@ import {
 //   * Session unlock state (`sessionProgress`) is read from the Phase 4
 //     engine (`getCourseSessionProgress`), never computed here.
 //   * Read-only: this handler performs no create/update/upsert/delete.
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
   const tApi = await getServerT();
   const __loc = await serverLocale();
   const sp = (ar: string | null | undefined, en: string | null | undefined) => serverPick(__loc, ar, en);
@@ -42,6 +54,19 @@ export async function GET(_req: NextRequest) {
 
   const parent = await getParentProfile(user.id);
   if (!parent) return err("Parent profile not found", 404);
+
+  // ---- Phase I: `?studentId=` is verified, never trusted -------------------
+  // A parent with several children can pin ONE. The id is resolved against the
+  // parent's OWN links on every call; an id belonging to another student (or to
+  // nobody) resolves to 404, exactly like an id that does not exist — the
+  // response never confirms another child is real. No `studentId` means "every
+  // linked child", which is the historical (and still correct) behaviour: the
+  // set itself is server-derived.
+  const requestedStudentId = readStudentIdParam(req);
+  if (requestedStudentId) {
+    const linked = await resolveLinkedChild(user.id, requestedStudentId);
+    if (!linked) return err(tApi("api.368"), 404);
+  }
 
   // Video progress for ALL children in one batched call from the shared
   // progress service — the exact numbers the admin and teacher dashboards use.
@@ -87,12 +112,33 @@ export async function GET(_req: NextRequest) {
         })
       ).filter((p) => universeLessonIds.has(p.lessonId));
 
-      const completedLessons = lessonProgressRows.filter((p) => p.isCompleted).length;
+      // --- Phase I: the completed count is the CANONICAL Phase H verdict ----
+      // The legacy count (`LessonProgress.isCompleted`) is a STICKY flag the
+      // progression engine explicitly stopped trusting: it is the pre-Phase-H
+      // bookkeeping artefact, dual-written for backward compatibility only,
+      // and it can disagree with the engine about whether a lesson counts
+      // (a lesson is complete when it has ≥1 requirement and every required
+      // condition is satisfied — video / quiz / homework, holds and
+      // sequentiality included). Two numbers for one question is exactly the
+      // duplicate academic truth Phase I exists to remove, so the parent
+      // screen now reads the engine — the same authority the student's own
+      // screen reads — and the legacy count survives only as a fallback for a
+      // child whose course cannot be resolved at all (no group, lapsed
+      // entitlement): in that case the child has no universe and the legacy
+      // rows are filtered to an empty set anyway, so both agree on 0.
+      const canonical = await loadCanonicalCourseProgress(student.id, student.group?.courseId);
+      const completedLessons =
+        canonical?.completed ?? lessonProgressRows.filter((p) => p.isCompleted).length;
+      const lessonsInCourseCanonical = canonical?.total ?? lessonsInCourse;
+      // `pct` stays the LEGACY watch-engagement average (mean LessonProgress
+      // watch percent across the universe), which is a different measurement
+      // from completion and is what the existing parent UI has always shown
+      // next to `completed / total`. Only the completion truth was duplicated.
       const avgProgress =
-        lessonsInCourse > 0
+        lessonsInCourseCanonical > 0
           ? Math.round(
               (lessonProgressRows.reduce((s, p) => s + (p.progress || 0), 0) /
-                lessonsInCourse) as number
+                lessonsInCourseCanonical) as number
             )
           : 0;
 
@@ -282,6 +328,14 @@ export async function GET(_req: NextRequest) {
       const allHomeworks = await db.homework.findMany({
         where: {
           ...childTrack,
+          // Phase I — the Phase G lifecycle clause was MISSING here: the
+          // universe filtered the LESSON (published + not archived) but never
+          // the ASSIGNMENT, so a teacher's DRAFT homework was counted in the
+          // parent's denominator AND its title travelled in `recent` —
+          // unpublished content the child can never open. The student homework
+          // list already filters through this exact constant; the parent
+          // surface now shares it instead of inventing a second predicate.
+          ...STUDENT_HOMEWORK_LIST_FILTER,
           lesson: {
             ...LESSON_STUDENT_STATUS_FILTER,
             ...EXCLUDE_ARCHIVED_LESSON,
@@ -582,7 +636,7 @@ export async function GET(_req: NextRequest) {
           : null,
         courseProgress: {
           completed: completedLessons,
-          total: lessonsInCourse,
+          total: lessonsInCourseCanonical,
           pct: avgProgress,
         },
         // Video watch progress — same source of truth as Admin & Teacher.
@@ -639,6 +693,14 @@ export async function GET(_req: NextRequest) {
     })
   );
 
+  // An explicitly requested child narrows the payload to that child alone —
+  // "selected child" is a scope decision, not a UI filter, so a pinned request
+  // can never carry a sibling's data into the browser.
+  const scopedChildren =
+    requestedStudentId && children.length > 0
+      ? children.filter((c) => c.id === requestedStudentId)
+      : children;
+
   return ok({
     parent: {
       id: parent.id,
@@ -647,6 +709,7 @@ export async function GET(_req: NextRequest) {
       phone: parent.user.phone,
       avatarUrl: parent.user.avatarUrl,
     },
-    children,
+    children: scopedChildren,
+    selectedStudentId: requestedStudentId ?? null,
   });
 }

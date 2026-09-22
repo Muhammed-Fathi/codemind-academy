@@ -984,12 +984,30 @@ async function main() {
     eq(childB.id, "sb", "second child = LANGUAGE child");
 
     // Course progress: per-child universes (NOT a shared union denominator).
+    //
+    // Phase I: `completed` is now the CANONICAL Phase H verdict, not a recount
+    // of the legacy `LessonProgress.isCompleted` sticky flag. The fixture
+    // leaves 1-2 unfinished, and progression is SEQUENTIAL — so 1-1 is the
+    // only lesson the engine counts as effectively complete for either child,
+    // even though the fixture's sticky flags mark 1-1 and one later lesson
+    // each. That disagreement is exactly the duplicate truth Phase I removes:
+    // the sticky flag ignores sequentiality, absence holds and overrides.
+    // The invariants this block still pins are unchanged: the denominator is
+    // the child's own track universe, and the archived lesson is excluded.
     eq(childA.courseProgress.total, ARABIC_UNIVERSE, "ARABIC child total = 20");
-    eq(childA.courseProgress.completed, 2, "ARABIC child completed = 2 (archived excluded)");
+    eq(childA.courseProgress.completed, 1, "ARABIC child completed = 1 (canonical: 1-1 only; archived excluded)");
     eq(childA.courseProgress.pct, 13, "ARABIC child avg progress over 20");
     eq(childB.courseProgress.total, LANGUAGE_UNIVERSE, "LANGUAGE child total = 19 — no track collapse");
-    eq(childB.courseProgress.completed, 2, "LANGUAGE child completed = 2");
+    eq(childB.courseProgress.completed, 1, "LANGUAGE child completed = 1 (canonical: 1-1 only)");
     eq(childB.courseProgress.pct, 14, "LANGUAGE child avg progress over 19");
+    // A sticky legacy flag that the engine does not honour must not move it.
+    eq(
+      db.__tables.lessonProgress.filter(
+        (lp) => lp.studentId === "sa" && lp.isCompleted && lp.lessonId !== "lx1"
+      ).length,
+      2,
+      "the fixture still holds 2 non-archived legacy isCompleted rows for sa — the trap is real"
+    );
 
     // Homework: official (unit-linked) lessons' homework — the Phase 12 legacy
     // chain debt is gone. Numerators restricted to the same universe.
@@ -1063,11 +1081,36 @@ async function main() {
     eq(repA.studentId, "sa", "weekly row 1 = ARABIC child");
     eq(repB.studentId, "sb", "weekly row 2 = LANGUAGE child");
 
-    // Per-child denominators equal the dashboards' universes — the union
-    // collapse would print 9% for BOTH (2 / 22-union).
-    eq(repA.summary.completionPct, 10, "weekly ARABIC completion = 2/20 (own track universe)");
-    eq(repB.summary.completionPct, 11, "weekly LANGUAGE completion = 2/19 (own track universe — not collapsed)");
-    ok(repA.summary.completionPct !== repB.summary.completionPct, "sibling denominators no longer collapsed into one union");
+    // Per-child denominators equal the dashboards' universes.
+    //
+    // Phase I: the weekly report reads the SAME canonical Phase H count as the
+    // dashboard instead of recounting the sticky flag itself, so it now prints
+    // the canonical 1 completion over each child's own universe. Both round to
+    // 5% (1/20 and 1/19), so the union-collapse invariant is pinned on the
+    // DENOMINATOR (20 vs 19, asserted above) rather than on a rounding
+    // coincidence — a collapse would have given both children the same 22.
+    eq(
+      repA.summary.completionPct,
+      Math.round((1 / ARABIC_UNIVERSE) * 100),
+      "weekly ARABIC completion = 1/20 (canonical, own track universe)"
+    );
+    eq(
+      repB.summary.completionPct,
+      Math.round((1 / LANGUAGE_UNIVERSE) * 100),
+      "weekly LANGUAGE completion = 1/19 (canonical, own track universe)"
+    );
+    // The weekly report no longer keeps its own recount: it reads the same
+    // canonical count (pinned in G below, where analytics is compared with the
+    // dashboard), so all three parent screens agree by construction.
+    eq(
+      repA.summary.completionPct,
+      repB.summary.completionPct,
+      "both children report the canonical 1 completion — the difference is the DENOMINATOR"
+    );
+    ok(
+      ARABIC_UNIVERSE !== LANGUAGE_UNIVERSE,
+      "sibling denominators are the children's own universes, never one union"
+    );
 
     // Weekly activity windows use the same shared progress service.
     eq(repA.videoProgress.week.videosWatched, 1, "weekly videos watched in window (in-universe)");
@@ -1083,7 +1126,7 @@ async function main() {
     eq(monthlyA.homework.completionPct, 50, "monthly homework completion matches dashboard");
     eq(monthlyA.homework.graded, 1, "monthly graded count present (contract field)");
     eq(monthlyA.courseProgress.total, ARABIC_UNIVERSE, "monthly course total = 20");
-    eq(monthlyA.courseProgress.completed, 2, "monthly course completed = 2");
+    eq(monthlyA.courseProgress.completed, 1, "monthly course completed = 1 (canonical)");
 
     eq(global.__WRITES__.length, 0, "weekly report performs no writes");
   }
@@ -1097,11 +1140,25 @@ async function main() {
     const [anaA, anaB] = out.body.children;
 
     eq(anaA.totalLessons, ARABIC_UNIVERSE, "analytics ARABIC total = 20");
-    eq(anaA.completedLessons, 2, "analytics ARABIC completed = 2");
-    eq(anaA.completionPct, 10, "analytics ARABIC pct matches dashboard + weekly report");
+    eq(anaA.completedLessons, 1, "analytics ARABIC completed = 1 (canonical)");
+    eq(anaA.completionPct, 5, "analytics ARABIC pct matches dashboard + weekly report");
     eq(anaB.totalLessons, LANGUAGE_UNIVERSE, "analytics LANGUAGE total = 19");
-    eq(anaB.completedLessons, 2, "analytics LANGUAGE completed = 2");
-    eq(anaB.completionPct, 11, "analytics LANGUAGE pct matches weekly report");
+    eq(anaB.completedLessons, 1, "analytics LANGUAGE completed = 1 (canonical)");
+    eq(anaB.completionPct, 5, "analytics LANGUAGE pct matches weekly report");
+    // Phase I: three screens, ONE number. Analytics used to recount the
+    // sticky flag independently and could disagree with the dashboard; every
+    // parent surface now reads the canonical Phase H count through the shared
+    // `loadCanonicalCourseProgress` helper, so they agree by construction.
+    eq(
+      anaA.completedLessons,
+      Math.round((anaA.completionPct / 100) * ARABIC_UNIVERSE),
+      "analytics ARABIC completed and pct are the same canonical number"
+    );
+    eq(
+      anaB.completedLessons,
+      Math.round((anaB.completionPct / 100) * LANGUAGE_UNIVERSE),
+      "analytics LANGUAGE completed and pct are the same canonical number"
+    );
 
     // Strong/weak grouped by CURRICULUM container (unit), not quiz titles.
     ok(

@@ -9,6 +9,13 @@ import {
   getStudentCurriculumHomeworkIds,
   getStudentCurriculumLessonIds,
 } from "@/lib/parent-access";
+// Phase I — the verified `?studentId=` contract (see the dashboard route):
+// the id is read from the QUERY STRING only and re-checked against this
+// parent's own ParentStudentLink rows on every request.
+import {
+  loadCanonicalCourseProgress,
+  readStudentIdParam,
+} from "@/lib/parent-academics";
 
 export async function GET(req: NextRequest) {
   const tApi = await getServerT();
@@ -81,6 +88,18 @@ export async function GET(req: NextRequest) {
   });
   if (!parent) return err(tApi("api.099"), 404);
 
+  // ---- Phase I: `?studentId=` is verified, never trusted -------------------
+  // An id that is not one of THIS parent's linked children is refused with 404
+  // (never 403 — a 403 would confirm the child exists). Absent means "every
+  // linked child", which stays server-derived.
+  const requestedStudentId = readStudentIdParam(req);
+  if (
+    requestedStudentId &&
+    !parent.children.some((link) => link.student.id === requestedStudentId)
+  ) {
+    return err(tApi("api.368"), 404);
+  }
+
   // Per-child curriculum universes.
   //
   // Phase 19: each child is measured against THEIR OWN course × schoolType —
@@ -117,7 +136,9 @@ export async function GET(req: NextRequest) {
   const attended = (status: string) =>
     status === "PRESENT" || status === "LATE";
 
-  const childrenAnalytics = parent.children.map((link) => {
+  // Phase I: the callback is async because it reads the canonical Phase H
+  // completion count (one engine load per child, batched by Promise.all).
+  const childrenAnalytics = await Promise.all(parent.children.map(async (link) => {
     const s = link.student;
 
     // Phase 26E: every quiz number below is computed over the child's OWN
@@ -202,10 +223,21 @@ export async function GET(req: NextRequest) {
     // dashboard). Both sides are restricted to that active universe so
     // archived history or a sibling's track cannot inflate the fraction.
     const analyticsUniverseIds = childUniverse;
-    const completedLessons = s.lessonProgress.filter(
-      (lp) => lp.isCompleted && analyticsUniverseIds.has(lp.lessonId)
-    ).length;
-    const totalLessons = analyticsUniverseIds.size;
+    // Phase I — the SAME canonical authority the dashboard and the academic
+    // follow-up card read, so the parent screens can never disagree about the
+    // same child. This used to be a third independent recount of the legacy
+    // `LessonProgress.isCompleted` sticky flag, which the Phase H engine does
+    // not trust (it ignores sequentiality, absence holds and overrides). The
+    // count falls back to the legacy rows only when the engine cannot resolve
+    // a course for this child (not enrolled / lapsed entitlement), in which
+    // case the child has no universe and both agree on zero anyway.
+    const canonical = await loadCanonicalCourseProgress(s.id, s.group?.courseId);
+    const completedLessons =
+      canonical?.completed ??
+      s.lessonProgress.filter(
+        (lp) => lp.isCompleted && analyticsUniverseIds.has(lp.lessonId)
+      ).length;
+    const totalLessons = canonical?.total ?? analyticsUniverseIds.size;
     const completionPct =
       totalLessons > 0
         ? Math.min(100, Math.round((completedLessons / totalLessons) * 100))
@@ -244,7 +276,13 @@ export async function GET(req: NextRequest) {
         ? Math.round((s.attendances.filter((a) => attended(a.status)).length / s.attendances.length) * 100)
         : 0,
     };
-  });
+  }));
 
-  return ok({ children: childrenAnalytics });
+  // A pinned child narrows the payload to that child alone.
+  const scoped =
+    requestedStudentId && childrenAnalytics.length > 0
+      ? childrenAnalytics.filter((c) => c.studentId === requestedStudentId)
+      : childrenAnalytics;
+
+  return ok({ children: scoped, selectedStudentId: requestedStudentId ?? null });
 }

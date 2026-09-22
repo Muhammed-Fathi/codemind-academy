@@ -203,8 +203,17 @@ export async function GET(
   // Teachers and admins always see answers (needed for review/creation).
   // Students see answers only after submitting at least one attempt.
   // (Staff answer visibility is the documented Phase 1 audit decision.)
+  //
+  // PHASE I — PARENT IS READ-ONLY AND IS NOT AN ANSWER-REVIEW SURFACE.
+  // `PARENT` used to be listed here, which handed every parent the full answer
+  // key plus every explanation of a quiz their child could open. The Parent
+  // product is academic FOLLOW-UP: name, score, pass/fail, attempt count and
+  // completion time (surfaced by `/api/parents/me/academics`), never the
+  // student's submitted answers, never the correct answers, never the
+  // question-by-question review payload. The parent may still OPEN the quiz
+  // (the child can), so the route keeps returning 200 — only the key is gone.
   const revealAnswers =
-    user.role === "ADMIN" || user.role === "TEACHER" || user.role === "PARENT" || studentHasAttempted;
+    user.role === "ADMIN" || user.role === "TEACHER" || studentHasAttempted;
 
   // Canonical chain first, legacy topic chain as fallback.
   const courseSlug =

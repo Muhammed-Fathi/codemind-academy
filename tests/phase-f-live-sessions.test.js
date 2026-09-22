@@ -606,17 +606,46 @@ section("D. Absence review, holds and admin correction (25–35)");
   ok(!A.validateAbsenceReason(42).ok, "27e. a non-string is refused");
 }
 
-// 28. Only the student or a LINKED parent may submit.
+// 28. Only the STUDENT may submit.
+//
+// Phase I Decision 1 (binding): the parent is academically READ-ONLY. The
+// previous contract ("the student or a linked parent") let a linked parent
+// WRITE an absence excuse, which broke the Phase I read-only boundary — the
+// student's own justification cannot be authored by the parent. Linked parents
+// still READ the case, its reason, its review result and its hold
+// (GET /api/parents/me/academics), they simply cannot author it.
 {
   const route = read("src/app/api/absence-reviews/[id]/reason/route.ts");
   ok(
-    route.includes('student.id !== payload.student.id') &&
-      route.includes("children.includes(payload.student.id)"),
-    "28. the submitting actor is the case's own student or a linked parent"
+    route.includes('student.id !== payload.student.id'),
+    "28. the submitting actor must be the case's own student"
   );
   ok(
-    route.includes('"Only the student or a linked parent may submit a reason"'),
-    "28b. teachers and admins are refused on this endpoint"
+    route.includes('"PARENT_READ_ONLY"') && route.includes('if (user.role === "PARENT")'),
+    "28b. a PARENT is refused with PARENT_READ_ONLY before any linkage check"
+  );
+  ok(
+    !route.includes("children.includes(payload.student.id)"),
+    "28c. the parent is no longer an accepted submitter"
+  );
+  ok(
+    route.includes('"Only the student may submit a reason"'),
+    "28d. teachers, admins and parents are all refused on this endpoint"
+  );
+  // The read-only half of the contract is enforced in PARENT VIEW — the
+  // student-facing UI keeps its submit affordance, the parent copy does not.
+  const sessionsView = read("src/components/student/live-sessions-view.tsx");
+  ok(
+    sessionsView.includes("canSubmit={false}"),
+    "28e. the Parent absences view cannot render a submit affordance"
+  );
+  ok(
+    sessionsView.includes("onSubmitReason") && sessionsView.includes("{canSubmit ? ("),
+    "28f. the submit control is rendered only when submission is allowed"
+  );
+  ok(
+    (sessionsView.match(/\{canSubmit \? \(/g) || []).length >= 2,
+    "28g. BOTH the trigger button and the reason dialog are gated — the parent copy mounts no write surface at all"
   );
 }
 

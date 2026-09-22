@@ -328,8 +328,14 @@ function AbsenceCaseCard({
   onSubmitReason,
 }: {
   item: AbsenceCase;
+  /**
+   * Phase I — the write affordance is opt-in at the CALL SITE, not inferred
+   * from the case state. The parent view passes `false` and no handler: the
+   * read-only rule is enforced server-side (403 PARENT_READ_ONLY), and the UI
+   * simply never offers an action it may not perform.
+   */
   canSubmit: boolean;
-  onSubmitReason: (id: string, reason: string) => Promise<boolean>;
+  onSubmitReason?: (id: string, reason: string) => Promise<boolean>;
 }) {
   const t = useT();
   const locale = useApp((s) => (s.locale === "en" ? "en" : "ar")) as Locale;
@@ -342,6 +348,7 @@ function AbsenceCaseCard({
   const decided = item.status === "EXCUSED" || item.status === "UNEXCUSED" || item.status === "NO_ACTION_REQUIRED";
 
   const submit = async () => {
+    if (!onSubmitReason) return;
     const value = text.trim();
     if (value.length === 0) {
       toast.error(t("student.absences.reasonRequired"));
@@ -454,6 +461,12 @@ function AbsenceCaseCard({
         )}
       </CardContent>
 
+      {/* Phase I: the WRITE surface is not merely hidden — it is never
+          mounted. The parent copy (`canSubmit={false}`) therefore holds no
+          textarea, no submit button and no pending local reason text at all,
+          which matches the server's 403 PARENT_READ_ONLY rather than relying on
+          a hidden button to do the authorizing. */}
+      {canSubmit ? (
       <Dialog open={open} onOpenChange={setOpen}>
         {/* The dialog is height-bounded and scrolls internally (the same
             pattern as session-open-dialog.tsx): a long reason on a short
@@ -485,6 +498,7 @@ function AbsenceCaseCard({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      ) : null}
     </Card>
   );
 }
@@ -564,17 +578,6 @@ export function ParentAbsencesView() {
   const cases = (data?.cases ?? []).filter((c) => !childId || c.student.id === childId);
   const children = data?.children ?? [];
 
-  const submitReason = async (id: string, reason: string): Promise<boolean> => {
-    const result = await sendJson(`/api/absence-reviews/${id}/reason`, "POST", { reason });
-    if (!result.ok) {
-      toast.error(String(result.body?.error ?? t("student.absences.reasonRequired")));
-      return false;
-    }
-    toast.success(t("student.absences.submitted"));
-    reload();
-    return true;
-  };
-
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-2 flex-wrap">
@@ -634,11 +637,12 @@ export function ParentAbsencesView() {
               <p className="text-xs font-semibold px-1">
                 {t("parent.absences.child")}: {item.student.name}
               </p>
-              <AbsenceCaseCard
-                item={item}
-                canSubmit={item.status !== "NO_ACTION_REQUIRED"}
-                onSubmitReason={submitReason}
-              />
+              {/* Phase I — READ-ONLY. No submit handler is passed and the
+                  affordance is off: a parent follows the case, the submitted
+                  reason, the administrative decision and the hold, and cannot
+                  write any of them (the server refuses with 403
+                  PARENT_READ_ONLY even if this prop were flipped). */}
+              <AbsenceCaseCard item={item} canSubmit={false} />
             </div>
           ))}
         </div>

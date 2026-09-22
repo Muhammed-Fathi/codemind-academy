@@ -1048,8 +1048,12 @@ async function seed() {
   const q1a = await bodyOf(await quizRoute.GET({}, params({ id: "q1" })));
   ok(q1a.status === 200, `ParentA opens in-scope quiz → 200 (got ${q1a.status})`);
   ok(
-    q1a.body.questions[0].answer === "1",
-    "in-scope parent keeps the documented Phase 1 answer visibility"
+    q1a.body.questions[0].answer === undefined && q1a.body.questions[0].explanation === undefined,
+    "in-scope parent no longer receives the answer key (Phase I privacy closure)"
+  );
+  ok(
+    q1a.body.questions[0] && q1a.body.questions[0].id === "qq1",
+    "the parent still receives the question itself (they can see what is being practised)"
   );
   const q3a = await bodyOf(await quizRoute.GET({}, params({ id: "q3" })));
   ok(q3a.status === 404, `ParentA opens foreign quiz → 404 (got ${q3a.status})`);

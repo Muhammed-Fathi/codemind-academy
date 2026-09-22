@@ -245,9 +245,16 @@ export async function GET(
   }
 
   // Determine whether to reveal quiz answers. Students only see answers after
-  // they have finished at least one attempt on the quiz. Staff (admin/teacher/
-  // parent) always see answers.
-  let revealQuizAnswers = user.role !== "STUDENT";
+  // they have finished at least one attempt on the quiz. Staff (admin/teacher)
+  // always see answers.
+  //
+  // PHASE I — a PARENT is NOT staff for this purpose. The old
+  // `user.role !== "STUDENT"` test silently granted every parent the answer key
+  // of every quiz hanging off any in-scope lesson, which contradicts the
+  // Phase I privacy contract (parents see quiz OUTCOMES, never answers,
+  // explanations or the question blueprint). The parent may still open the
+  // lesson — the child can — so only the key is withheld.
+  let revealQuizAnswers = user.role !== "STUDENT" && user.role !== "PARENT";
   if (user.role === "STUDENT") {
     const s = await db.student.findUnique({
       where: { userId: user.id },

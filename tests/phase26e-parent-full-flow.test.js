@@ -105,10 +105,23 @@ assert(
   !/await getParentTrackScopes\(/.test(weekly),
   "weekly report must never use the parent-wide track union for a child's report"
 );
-assert(
-  !/from "next\/server";/.test(weekly) || weekly.includes("NextResponse"),
-  "weekly report must not keep an unused NextResponse import"
-);
+// Phase I: the handler now takes an optional `req?: NextRequest` so it can read
+// the verified `?studentId=` query parameter. The invariant being guarded is
+// UNUSED imports, not the next/server module itself, so the check now proves
+// every imported symbol is actually referenced in the body.
+{
+  const nextServerImport = weekly.match(/import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+"next\/server";/);
+  const bodyAfterImport = weekly.split('from "next/server";').slice(1).join('from "next/server";');
+  assert(
+    !nextServerImport ||
+      nextServerImport[1]
+        .split(",")
+        .map((sym) => sym.trim())
+        .filter(Boolean)
+        .every((sym) => bodyAfterImport.includes(sym)),
+    "weekly report must not keep an unused next/server import"
+  );
+}
 
 // ---------------------------------------------------------------------------
 // 3. LINKING — idempotent, race-safe, and non-enumerable
