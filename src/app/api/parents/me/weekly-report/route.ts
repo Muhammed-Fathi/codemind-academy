@@ -242,16 +242,14 @@ export async function GET(req?: NextRequest) {
     // independent recount of the legacy `LessonProgress.isCompleted` sticky
     // flag, which the Phase H engine does not trust (it ignores
     // sequentiality, absence holds and overrides), so the weekly report could
-    // disagree with the dashboard about the very same child. The legacy rows
-    // remain only as a fallback for a child with no resolvable course, where
-    // both agree on zero anyway.
+    // disagree with the dashboard about the very same child. There is NO legacy
+    // fallback: a child with no valid active Enrollment / course academic
+    // context reports the explicit `NO_ACTIVE_COURSE` state over an empty
+    // universe, never a `LessonProgress.isCompleted` recount.
     const canonical = await loadCanonicalCourseProgress(s.id, s.group?.courseId);
-    const completedLessons =
-      canonical?.completed ??
-      s.lessonProgress.filter(
-        (lp) => lp.isCompleted && weeklyUniverseIds.has(lp.lessonId)
-      ).length;
-    const totalCourseLessons = canonical?.total ?? weeklyUniverseIds.size;
+    const hasAcademicContext = canonical.state === "OK";
+    const completedLessons = hasAcademicContext ? canonical.completed : 0;
+    const totalCourseLessons = hasAcademicContext ? canonical.total : 0;
     const completionPct =
       totalCourseLessons > 0
         ? Math.min(100, Math.round((completedLessons / totalCourseLessons) * 100))
@@ -262,6 +260,13 @@ export async function GET(req?: NextRequest) {
 
     return {
       studentId: s.id,
+      /**
+       * Phase I — explicit academic-context state. `NO_ACTIVE_COURSE` means the
+       * child has no valid active Enrollment / course: the completion numbers
+       * below describe an EMPTY universe and are never legacy-derived.
+       */
+      academicContext: canonical.state,
+      hasAcademicContext,
       name: s.user.name,
       course: s.group?.course?.nameAr || s.group?.course?.name || "",
       groupName: s.group?.name || "",

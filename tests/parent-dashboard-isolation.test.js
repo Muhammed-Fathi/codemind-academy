@@ -513,6 +513,8 @@ const ok = (cond, label) => {
   if (cond) { pass++; console.log(`  ✓ ${label}`); }
   else { fail++; console.log(`  ✗ ${label}`); }
 };
+const eq = (actual, expected, label) =>
+  ok(actual === expected, `${label} (got ${JSON.stringify(actual)})`);
 const section = (t) => console.log(`\n${t}`);
 
 const dashboardRoute = require(compiled("src/app/api/parents/me/dashboard/route.ts"));
@@ -1047,13 +1049,35 @@ async function seed() {
   ok(l5a.status === 404, `ParentA opens foreign lesson → 404, existence hidden (got ${l5a.status})`);
   const q1a = await bodyOf(await quizRoute.GET({}, params({ id: "q1" })));
   ok(q1a.status === 200, `ParentA opens in-scope quiz → 200 (got ${q1a.status})`);
+  // Phase I (contract correction): a parent receives a QUIZ SUMMARY and ZERO
+  // question-bank content. Stripping only `answer` / `explanation` was not
+  // enough — the prompt text, the options, the question ids, the difficulty and
+  // the marks were still shipped. The array is now empty by construction.
+  eq(q1a.body.parentView, true, "the parent gets the explicitly parent-safe shape");
+  eq(q1a.body.restricted, true, "the response declares detailed content withheld");
+  eq(q1a.body.questions.length, 0, "in-scope parent receives ZERO questions");
+  eq(q1a.body.bestAttempt, null, "in-scope parent receives no per-attempt review object");
+  eq(q1a.body.quiz.titleAr, "اختبار واحد", "the parent still receives the quiz NAME (summary)");
+  {
+    const parentQuizJson = JSON.stringify(q1a.body);
+    for (const [label, needle] of [
+      ["question ids", '"qq1"'],
+      ["question text", "٢+٢؟"],
+      ["question text (en)", "2+2?"],
+      ["options", '"3","4","5"'],
+      ["correct answers", '"1"'],
+      ["explanations", "basic"],
+    ]) {
+      ok(
+        !parentQuizJson.includes(needle),
+        `in-scope parent receives no ${label}`
+      );
+    }
+  }
+  // The lesson payload embeds quizzes too — same contract.
   ok(
-    q1a.body.questions[0].answer === undefined && q1a.body.questions[0].explanation === undefined,
-    "in-scope parent no longer receives the answer key (Phase I privacy closure)"
-  );
-  ok(
-    q1a.body.questions[0] && q1a.body.questions[0].id === "qq1",
-    "the parent still receives the question itself (they can see what is being practised)"
+    l1a.body.quizzes.every((qz) => qz.questions.length === 0),
+    "the parent lesson payload embeds no question bank"
   );
   const q3a = await bodyOf(await quizRoute.GET({}, params({ id: "q3" })));
   ok(q3a.status === 404, `ParentA opens foreign quiz → 404 (got ${q3a.status})`);

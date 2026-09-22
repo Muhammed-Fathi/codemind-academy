@@ -365,6 +365,16 @@ export type ParentChildSnapshot = {
     track: string | null;
   } | null;
   group: { name: string; schedule: string | null } | null;
+  /**
+   * Phase I — the explicit academic-context state of this child.
+   *
+   * `NO_ACTIVE_COURSE` means the child has no valid active Enrollment / course
+   * academic context. Every number below is then an EMPTY universe (0), never
+   * a legacy-derived value and never a fabricated canonical one: the reader
+   * does not consult `LessonProgress` at all. Track and Enrollment isolation
+   * fails closed — a child without a course has no academic truth to report.
+   */
+  academicContext: "OK" | "NO_ACTIVE_COURSE";
   progress: {
     completedLessons: number;
     totalLessons: number;
@@ -658,23 +668,47 @@ function buildActionNeeded(input: {
  * finished). `total` is the engine's own universe size, so the pair can never
  * disagree.
  *
- * Returns `null` when the child has no resolvable course (not enrolled, lapsed
- * entitlement, course removed); callers keep their historical zero rather than
- * turning a reporting screen into a 500.
+ * A child with no valid active Enrollment / course academic context gets the
+ * explicit `NO_ACTIVE_COURSE` state — NEVER a legacy `LessonProgress.isCompleted`
+ * recount and NEVER a fabricated canonical number. Phase I must not introduce
+ * or preserve a second completion truth: one authority, one answer, and "there
+ * is nothing to measure" when there is nothing to measure.
  */
+/**
+ * The result of asking the canonical authority how much of a course is done.
+ *
+ * `NO_ACTIVE_COURSE` is an EXPLICIT state, not a zero: it means the child has
+ * no valid active Enrollment / course academic context, so there is nothing to
+ * measure. Callers must surface that state — they must NOT fall back to the
+ * legacy `LessonProgress.isCompleted` sticky flag, and they must NOT invent a
+ * canonical number. An empty universe is reported as an empty universe; a
+ * missing universe is reported as missing.
+ */
+export type CanonicalCourseProgress =
+  | { state: "OK"; completed: number; total: number }
+  | { state: "NO_ACTIVE_COURSE" };
+
+export const NO_ACTIVE_COURSE: CanonicalCourseProgress = { state: "NO_ACTIVE_COURSE" };
+
 export async function loadCanonicalCourseProgress(
   studentId: string,
-  courseId: string | null | undefined
-): Promise<{ completed: number; total: number } | null> {
-  if (!courseId) return null;
+  courseId: string | null | undefined,
+  options: { schoolType?: string | null } = {}
+): Promise<CanonicalCourseProgress> {
+  if (!courseId) return NO_ACTIVE_COURSE;
   try {
-    const progression = await loadCourseProgression(studentId, courseId);
+    const progression = await loadCourseProgression(studentId, courseId, {
+      ...(options.schoolType !== undefined ? { schoolType: options.schoolType } : {}),
+    });
     return {
+      state: "OK",
       completed: progression.lessons.filter((l) => l.completed && l.unlocked).length,
       total: progression.lessons.length,
     };
   } catch {
-    return null;
+    // Unenrolled, lapsed entitlement or a removed course: the child has no
+    // academic context to measure. Explicit state — never a legacy guess.
+    return NO_ACTIVE_COURSE;
   }
 }
 
@@ -1059,12 +1093,16 @@ export async function loadChildAcademicSnapshot(params: {
     group: student.group
       ? { name: student.group.name, schedule: student.group.schedule ?? null }
       : null,
+    // Explicit, never implied: when the child has no active course there is no
+    // academic context, and the numbers below are an empty universe rather
+    // than a legacy `LessonProgress.isCompleted` recount.
+    academicContext: progression ? "OK" : "NO_ACTIVE_COURSE",
     progress: {
-      completedLessons,
-      totalLessons,
-      pct,
-      currentLesson,
-      lockedLessons: lessons.filter((l) => !l.unlocked).length,
+      completedLessons: progression ? completedLessons : 0,
+      totalLessons: progression ? totalLessons : 0,
+      pct: progression ? pct : 0,
+      currentLesson: progression ? currentLesson : null,
+      lockedLessons: progression ? lessons.filter((l) => !l.unlocked).length : 0,
     },
     lessons,
     holds,

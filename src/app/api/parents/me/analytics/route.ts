@@ -65,21 +65,13 @@ export async function GET(req: NextRequest) {
               homeworkSubmits: {
                 include: { homework: { select: { titleAr: true, title: true } } },
               },
-              lessonProgress: {
-                include: {
-                  lesson: {
-                    select: {
-                      titleAr: true,
-                      title: true,
-                      // Phase 19: canonical chain first — official lessons are
-                      // unit-linked, so the unit title must ride along or the
-                      // analytics of an official lesson render empty.
-                      topic: { select: { titleAr: true, title: true } },
-                      unit: { select: { titleAr: true, title: true } },
-                    },
-                  },
-                },
-              },
+              // Phase I: `lessonProgress` is deliberately NO LONGER included.
+              // It existed only to recount completion from the legacy
+              // `LessonProgress.isCompleted` sticky flag — a second completion
+              // truth the Parent authority must not hold. Completion now comes
+              // from the canonical Phase H engine alone (see below), so the
+              // rows are not fetched at all: what is not fetched cannot be
+              // silently reinstated as a fallback.
             },
           },
         },
@@ -228,16 +220,14 @@ export async function GET(req: NextRequest) {
     // same child. This used to be a third independent recount of the legacy
     // `LessonProgress.isCompleted` sticky flag, which the Phase H engine does
     // not trust (it ignores sequentiality, absence holds and overrides). The
-    // count falls back to the legacy rows only when the engine cannot resolve
-    // a course for this child (not enrolled / lapsed entitlement), in which
-    // case the child has no universe and both agree on zero anyway.
+    // There is NO legacy fallback: a child with no valid active Enrollment /
+    // course academic context reports the explicit `NO_ACTIVE_COURSE` state
+    // over an empty universe, never a `LessonProgress.isCompleted` recount and
+    // never a fabricated canonical number.
     const canonical = await loadCanonicalCourseProgress(s.id, s.group?.courseId);
-    const completedLessons =
-      canonical?.completed ??
-      s.lessonProgress.filter(
-        (lp) => lp.isCompleted && analyticsUniverseIds.has(lp.lessonId)
-      ).length;
-    const totalLessons = canonical?.total ?? analyticsUniverseIds.size;
+    const hasAcademicContext = canonical.state === "OK";
+    const completedLessons = hasAcademicContext ? canonical.completed : 0;
+    const totalLessons = hasAcademicContext ? canonical.total : 0;
     const completionPct =
       totalLessons > 0
         ? Math.min(100, Math.round((completedLessons / totalLessons) * 100))
@@ -254,6 +244,13 @@ export async function GET(req: NextRequest) {
 
     return {
       studentId: s.id,
+      /**
+       * Phase I — explicit academic-context state. `NO_ACTIVE_COURSE` means the
+       * child has no valid active Enrollment / course: the numbers below
+       * describe an EMPTY universe and are never legacy-derived.
+       */
+      academicContext: canonical.state,
+      hasAcademicContext,
       name: s.user.name,
       email: s.user.email,
       course: s.group?.course?.nameAr || s.group?.course?.name || "",

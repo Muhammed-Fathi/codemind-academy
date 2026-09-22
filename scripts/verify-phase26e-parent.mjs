@@ -483,6 +483,13 @@ async function main() {
   await prog(sLang.id, lAr.id, { progress: 100, isCompleted: true, lastViewedAt: at(-2) }); // other track
   // Parent B's child
   await prog(sB.id, lB.id, { progress: 100, isCompleted: true, lastViewedAt: at(-1) });
+  // The UNENROLLED child (sFree) — Phase I Fix 2 TRAP. This child is LINKED but
+  // has no group, no course and therefore no valid active Enrollment / course
+  // academic context. These legacy `isCompleted = true` rows must move NOTHING:
+  // if any surviving completion fallback reads them, the parent screens would
+  // report "2 completed" for a child who is not in any course.
+  await prog(sFree.id, lShared.id, { progress: 100, isCompleted: true, lastViewedAt: at(-1) });
+  await prog(sFree.id, lAr.id, { progress: 100, isCompleted: true, lastViewedAt: at(-1) });
 
   const plan = await client.subscriptionPlan.create({ data: { name: "Plan A", nameAr: "خطة أ", durationMonths: 3, price: 1500 } });
   await client.subscription.create({ data: { studentId: sAr.id, planId: plan.id, status: "ACTIVE", startDate: at(-10), endDate: at(80) } });
@@ -803,8 +810,24 @@ async function runSections(R, F) {
     "G: the fixture really does hold two sticky isCompleted rows for the LANGUAGE child — the trap is real"
   );
   eq(N.courseProgress.total, 1, "G: a NULL school type fails closed to SHARED only");
+  // Phase I Fix 2 — an UNENROLLED linked child has NO academic context, and the
+  // Parent authority says so EXPLICITLY instead of falling back to the legacy
+  // `LessonProgress.isCompleted` sticky flag. The fixture seeds two of those
+  // rows for this child (see section A), so a surviving fallback would print 2.
   eq(FREE.courseProgress.total, 0, "G: an unenrolled child has an empty universe (no crash)");
   eq(FREE.courseProgress.pct, 0, "G: empty universe → 0%, never NaN");
+  eq(
+    FREE.courseProgress.state,
+    "NO_ACTIVE_COURSE",
+    "G: an unenrolled child reports the explicit NO_ACTIVE_COURSE state"
+  );
+  eq(FREE.courseProgress.hasAcademicContext, false, "G: hasAcademicContext is false");
+  eq(FREE.courseProgress.completed, 0, "G: no completion is derived for an unenrolled child");
+  eq(
+    rawDb.prepare('SELECT COUNT(*) AS c FROM "LessonProgress" WHERE "studentId" = ? AND "isCompleted" = 1').get(sFree.id).c,
+    2,
+    "G: the trap is real — 2 legacy isCompleted rows exist for the unenrolled child and move nothing"
+  );
 
   // Quizzes: FINISHED, IN-UNIVERSE attempts, Phase 26D retry history intact.
   eq(A.quizzes.attempts, 4, "G: only finished, IN-UNIVERSE attempts are counted");
@@ -974,6 +997,10 @@ async function runSections(R, F) {
   eq(aN.totalQuizzes, 1, "H: an unspecified school type fails closed to SHARED");
   eq(aF.totalQuizzes, 0, "H: unenrolled child → zeros");
   eq(aF.completionPct, 0, "H: unenrolled child → 0% (no division by zero)");
+  eq(aF.academicContext, "NO_ACTIVE_COURSE", "H: unenrolled child → explicit NO_ACTIVE_COURSE");
+  eq(aF.hasAcademicContext, false, "H: unenrolled child → hasAcademicContext false");
+  eq(aF.completedLessons, 0, "H: unenrolled child → no legacy-derived completion");
+  eq(aF.totalLessons, 0, "H: unenrolled child → no universe");
   eq(aF.homeworkAvgGrade, 0, "H: unenrolled child → 0 average (no NaN)");
 
   const aB = anaOf(anaB, sB.id);
@@ -1034,6 +1061,8 @@ async function runSections(R, F) {
   eq(wF.summary.quizzesTaken, 0, "I: empty week → zeros, no crash");
   eq(wF.summary.attendancePct, 0, "I: empty week → 0% attendance (no division by zero)");
   eq(wF.summary.completionPct, 0, "I: child with no universe → 0%");
+  eq(wF.academicContext, "NO_ACTIVE_COURSE", "I: unenrolled child → explicit NO_ACTIVE_COURSE");
+  eq(wF.hasAcademicContext, false, "I: unenrolled child → hasAcademicContext false");
   eq(wF.dailyActivity.reduce((n, d) => n + d.quizzes + d.homework + d.lessons, 0), 0, "I: empty week → empty daily activity");
   {
     const wB = reportOf(wkB, sB.id);

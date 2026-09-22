@@ -105,10 +105,15 @@ export async function GET(req: NextRequest) {
       const universeLessonIds = new Set(universeLessonRows.map((l) => l.id));
       const lessonsInCourse = universeLessonIds.size;
 
+      // `isCompleted` is deliberately NOT selected. Phase I removed the legacy
+      // completion recount from the Parent authority: the sticky flag is a
+      // pre-Phase-H artefact the engine does not trust, and selecting it here
+      // would only invite it back. Watch percent (`progress`) is still read —
+      // it feeds `pct`, a different measurement the parent UI has always shown.
       const lessonProgressRows = (
         await db.lessonProgress.findMany({
           where: { studentId: student.id },
-          select: { progress: true, isCompleted: true, lessonId: true },
+          select: { progress: true, lessonId: true },
         })
       ).filter((p) => universeLessonIds.has(p.lessonId));
 
@@ -126,10 +131,14 @@ export async function GET(req: NextRequest) {
       // child whose course cannot be resolved at all (no group, lapsed
       // entitlement): in that case the child has no universe and the legacy
       // rows are filtered to an empty set anyway, so both agree on 0.
+      // Phase I — ONE canonical authority, NO legacy fallback. A child with no
+      // valid active Enrollment / course academic context reports an explicit
+      // `NO_ACTIVE_COURSE` state over an EMPTY universe; it never falls back to
+      // `LessonProgress.isCompleted` and never fabricates a canonical number.
       const canonical = await loadCanonicalCourseProgress(student.id, student.group?.courseId);
-      const completedLessons =
-        canonical?.completed ?? lessonProgressRows.filter((p) => p.isCompleted).length;
-      const lessonsInCourseCanonical = canonical?.total ?? lessonsInCourse;
+      const hasAcademicContext = canonical.state === "OK";
+      const completedLessons = hasAcademicContext ? canonical.completed : 0;
+      const lessonsInCourseCanonical = hasAcademicContext ? canonical.total : 0;
       // `pct` stays the LEGACY watch-engagement average (mean LessonProgress
       // watch percent across the universe), which is a different measurement
       // from completion and is what the existing parent UI has always shown
@@ -638,6 +647,14 @@ export async function GET(req: NextRequest) {
           completed: completedLessons,
           total: lessonsInCourseCanonical,
           pct: avgProgress,
+          /**
+           * Phase I — the explicit academic-context state. `NO_ACTIVE_COURSE`
+           * means the child has no valid active Enrollment / course, so the
+           * numbers above describe an EMPTY universe. They are never derived
+           * from `LessonProgress.isCompleted` and never invented.
+           */
+          state: canonical.state,
+          hasAcademicContext,
         },
         // Video watch progress — same source of truth as Admin & Teacher.
         videoProgress: videoProgressMap.get(student.id) || {

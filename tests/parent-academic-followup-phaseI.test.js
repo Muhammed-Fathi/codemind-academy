@@ -125,7 +125,7 @@ function makeMockDb() {
     user: [], student: [], parent: [], parentStudentLink: [],
     course: [], group: [], part: [], unit: [], topic: [], lesson: [],
     quiz: [], question: [], homework: [], homeworkSubmission: [],
-    quizAttempt: [], lessonProgress: [], attendance: [], liveSession: [],
+    quizAttempt: [], quizAnswer: [], quizRetryGrant: [], lessonProgress: [], attendance: [], liveSession: [],
     teacher: [], teacherNote: [], subscription: [], subscriptionPlan: [],
     examAttempt: [], mockExam: [],
     // Phase F — the absence-review family the Parent surface reads.
@@ -190,6 +190,7 @@ function makeMockDb() {
       case "parentStudentLink.parent": return byId(t.parent, row.parentId);
       case "attendance.session": return byId(t.liveSession, row.sessionId);
       case "quizAttempt.quiz": return byId(t.quiz, row.quizId);
+      case "quizAttempt.student": return byId(t.student, row.studentId);
       case "homeworkSubmission.homework": return byId(t.homework, row.homeworkId);
       case "homework.lesson": return byId(t.lesson, row.lessonId);
       case "teacherNote.teacher": return byId(t.teacher, row.teacherId);
@@ -231,6 +232,7 @@ function makeMockDb() {
     "group.students": "student", "parent.user": "user", "parent.children": "parentStudentLink",
     "parentStudentLink.student": "student", "parentStudentLink.parent": "parent",
     "attendance.session": "liveSession", "quizAttempt.quiz": "quiz",
+    "quizAttempt.student": "student",
     "homeworkSubmission.homework": "homework", "homework.lesson": "lesson",
     "teacherNote.teacher": "teacher", "teacher.user": "user",
     "liveSession.group": "group", "liveSession.teacher": "teacher",
@@ -837,6 +839,30 @@ async function seed() {
 
   // --- Teacher feedback --------------------------------------------------------
   T.teacherNote.push({ id: "tn1", teacherId: "t1", studentId: "sa", note: "أداء ممتاز في الحصة", createdAt: D(2) });
+
+  // --- Child D: LINKED but NOT ENROLLED (no group, no course) -----------------
+  // Phase I Fix 2: this child has no valid active Enrollment / course academic
+  // context, so there is NOTHING to measure. It deliberately carries legacy
+  // `LessonProgress.isCompleted = true` rows, so any surviving legacy-derived
+  // completion fallback would report "2 completed" instead of the honest
+  // "no academic context". This is the trap the fallback has to survive.
+  T.user.push(
+    { id: "u-sd", email: "sd@test.local", name: "Child D", role: "STUDENT", isActive: true, status: "ACTIVE", phone: null, avatarUrl: null },
+    // A parent whose ONLY child is the unenrolled one, so ParentA's existing
+    // two-child expectations stay exactly as they were.
+    { id: "u-pe", email: "pe@test.local", name: "Parent E", role: "PARENT", isActive: true, status: "ACTIVE", phone: "01000000005", avatarUrl: null },
+  );
+  T.student.push({
+    id: "sd", userId: "u-sd", grade: "2nd Secondary", schoolName: "Nile", schoolType: "ARABIC",
+    nationalId: "30104041234567", parentPhone: "01000000005", studentCode: "CM-DDDD44",
+    groupId: null, batchId: null, enrolledAt: null,
+  });
+  T.parent.push({ id: "pe", userId: "u-pe" });
+  T.parentStudentLink.push({ id: "link-d", parentId: "pe", studentId: "sd", relation: "parent", createdAt: D(40) });
+  T.lessonProgress.push(
+    { id: "lp-d-1", studentId: "sd", lessonId: "l1", progress: 100, isCompleted: true, videoPercent: 100, videoCompleted: true, videoCompletedAt: D(5) },
+    { id: "lp-d-2", studentId: "sd", lessonId: "l2", progress: 100, isCompleted: true, videoPercent: 100, videoCompleted: true, videoCompletedAt: D(5) },
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1133,27 +1159,139 @@ async function seed() {
     "no submitted answers, evidence or anti-cheat fields in the snapshot"
   );
 
-  // The two routes that used to hand the key to every parent.
+  // ---------------------------------------------------------------------
+  // K2. FIX 1 — a PARENT gets a QUIZ SUMMARY and ZERO question-bank content.
+  //
+  // Withholding only `answer` / `explanation` was not the approved contract:
+  // the parent still received the prompt text, the options, the question ids,
+  // the difficulty and the marks — the assessment itself. Both surfaces that
+  // carry quiz data are audited here.
+  // ---------------------------------------------------------------------
   const qAsParent = await bodyOf(await quizRoute.GET(req(), params({ id: "q1" })));
   eq(qAsParent.status, 200, "a parent may still open an in-scope quiz");
+  eq(qAsParent.body.parentView, true, "the response is explicitly the parent-safe shape");
+  eq(qAsParent.body.restricted, true, "the response declares detailed content withheld");
+  eq(qAsParent.body.questions.length, 0, "GET /api/quizzes/[id] serves ZERO questions to a parent");
+  eq(qAsParent.body.bestAttempt, null, "no per-attempt review object is served to a parent");
+  eq(qAsParent.body.quiz.titleAr, "اختبار واحد", "the quiz NAME is served (that is summary, not content)");
+  eq(qAsParent.body.lesson?.courseSlug, "course-1", "the lesson identity is served");
+
+  // Everything the contract forbids, checked against the WHOLE payload.
+  const qParentJson = JSON.stringify(qAsParent.body);
+  for (const [label, needle] of [
+    ["question ids", '"qq1"'],
+    ["question text", "٢+٢؟"],
+    ["question text (en)", "2+2?"],
+    ["options", '"3","4","5"'],
+    ["correct answers", "SECRET-ANSWER-KEY"],
+    ["explanations", "explanation"],
+    ["difficulty", "difficulty"],
+    ["marks", "marks"],
+    ["blueprint config", "quizMode"],
+    ["anti-cheat / evidence", "camera"],
+  ]) {
+    ok(!qParentJson.includes(needle), `parent quiz payload carries no ${label}`);
+  }
   ok(
-    qAsParent.body.questions.every((q) => q.answer === undefined && q.explanation === undefined),
-    "GET /api/quizzes/[id] no longer returns the answer key to a parent"
+    !/"prompt"|"promptAr"|"options"/.test(qParentJson),
+    "the parent quiz payload has no prompt/options keys at all"
   );
+
+  // Outcome data is CHILD-SCOPED: absent without a verified ?studentId=,
+  // because a parent with two children in one course must never be handed the
+  // other child's result.
+  eq(qAsParent.body.summary, null, "no outcome summary without a verified ?studentId=");
+  {
+    const withChild = await bodyOf(
+      await quizRoute.GET(reqWithQuery("sa"), params({ id: "q1" }))
+    );
+    eq(withChild.status, 200, "a verified ?studentId= is accepted");
+    const sum = withChild.body.summary;
+    eq(sum?.studentId, "sa", "the summary is scoped to the verified child");
+    eq(sum?.attempts, 2, "attempt count");
+    eq(sum?.lastOutcome, "PASSED", "pass/fail");
+    eq(sum?.lastPercentage, 85, "score");
+    eq(sum?.bestPercentage, 85, "best score");
+    ok(!!sum?.lastCompletedAt, "completion timestamp is present");
+    ok(
+      JSON.stringify(withChild.body).indexOf("SECRET-ANSWER-KEY") === -1,
+      "the outcome summary still carries no question-bank content"
+    );
+    // A child this parent is NOT linked to is refused, never guessed.
+    const unlinked = await bodyOf(
+      await quizRoute.GET(reqWithQuery("sc"), params({ id: "q1" }))
+    );
+    eq(unlinked.status, 404, "an unlinked ?studentId= is refused (404, non-enumerable)");
+  }
+
+  // The LESSON payload embeds quizzes too — same contract.
   const lAsParent = await bodyOf(await lessonRoute.GET(req(), params({ id: "l1" })));
   eq(lAsParent.status, 200, "a parent may still open an in-scope lesson");
-  const lessonJson = JSON.stringify(lAsParent.body);
   ok(
-    !lessonJson.includes("SECRET-ANSWER-KEY"),
-    "GET /api/lessons/[id] no longer leaks quiz answers to a parent"
+    lAsParent.body.quizzes.length > 0,
+    "the parent still sees WHICH quizzes hang off the lesson"
   );
-  // Staff answer visibility is unchanged.
+  ok(
+    lAsParent.body.quizzes.every((qz) => qz.questions.length === 0),
+    "every embedded quiz serves ZERO questions to a parent"
+  );
+  ok(
+    lAsParent.body.quiz === null || lAsParent.body.quiz.questions.length === 0,
+    "the back-compat `quiz` field is equally empty"
+  );
+  const lessonJson = JSON.stringify(lAsParent.body);
+  for (const [label, needle] of [
+    ["question ids", '"qq1"'],
+    ["question text", "٢+٢؟"],
+    ["options", '"3","4","5"'],
+    ["correct answers", "SECRET-ANSWER-KEY"],
+    ["explanations", "SECRET-ANSWER-KEY-2"],
+  ]) {
+    ok(!lessonJson.includes(needle), `parent lesson payload carries no ${label}`);
+  }
+
+  // ---- Student / Teacher / Admin behaviour is UNCHANGED -----------------
+  await loginAs("u-sa");
+  const qAsStudent = await bodyOf(await quizRoute.GET(req(), params({ id: "q1" })));
+  eq(qAsStudent.status, 200, "the STUDENT can still open the quiz (runner unaffected)");
+  ok(qAsStudent.body.questions.length > 0, "the STUDENT still receives the question paper");
+  ok(
+    !!qAsStudent.body.questions[0].promptAr || !!qAsStudent.body.questions[0].prompt,
+    "the STUDENT still receives question text"
+  );
+  ok(
+    Array.isArray(qAsStudent.body.questions[0].options),
+    "the STUDENT still receives the options"
+  );
+  ok(
+    qAsStudent.body.questions.some((q) => q.answer === "1"),
+    "the STUDENT still sees the key after submitting (documented Phase 1 rule)"
+  );
+  const lAsStudent = await bodyOf(await lessonRoute.GET(req(), params({ id: "l1" })));
+  ok(
+    lAsStudent.status === 200 &&
+      lAsStudent.body.quizzes.some((qz) => qz.questions.length > 0),
+    "the STUDENT lesson payload still embeds the question bank"
+  );
+  await loginAs("u-t1");
+  const lAsTeacher = await bodyOf(await lessonRoute.GET(req(), params({ id: "l1" })));
+  ok(
+    lAsTeacher.status === 200 &&
+      lAsTeacher.body.quizzes.some((qz) => qz.questions.some((q) => q.answer === "1")),
+    "the TEACHER still sees the answer key on the lesson payload"
+  );
   await loginAs("u-ad");
   const qAsAdmin = await bodyOf(await quizRoute.GET(req(), params({ id: "q1" })));
   eq(qAsAdmin.status, 200, "admin preview unchanged");
   ok(
     qAsAdmin.body.questions.some((q) => q.answer === "1"),
     "the ADMIN still sees the answer key (review/authoring unchanged)"
+  );
+  const lAsAdmin = await bodyOf(await lessonRoute.GET(req(), params({ id: "l1" })));
+  ok(
+    lAsAdmin.status === 200 &&
+      lAsAdmin.body.quizzes.some((qz) => qz.questions.some((q) => q.answer === "1")),
+    "the ADMIN still sees the answer key on the lesson payload"
   );
   await loginAs("u-pa");
 
@@ -1400,6 +1538,104 @@ async function seed() {
       "[]",
       `no HOMEWORK_DEADLINE producer exists — the deferred Phase I gap is real, not hidden${producers.length ? ` (found ${producers.join(", ")})` : ""}`
     );
+  }
+
+  // =========================================================================
+  section("T. FIX 2 — no legacy completion fallback for an unenrolled child");
+  // =========================================================================
+  // Child D is LINKED to ParentE but has NO group, NO course and therefore no
+  // valid active Enrollment / course academic context. It deliberately carries
+  // two legacy `LessonProgress.isCompleted = true` rows, so ANY surviving
+  // legacy-derived completion fallback would report "2 completed".
+  {
+    await loginAs("u-pe");
+    const legacySticky = db.__tables.lessonProgress.filter(
+      (lp) => lp.studentId === "sd" && lp.isCompleted
+    ).length;
+    eq(legacySticky, 2, "the trap is real: 2 legacy isCompleted rows exist for Child D");
+
+    const acad = await bodyOf(await academicsRoute.GET(reqWithQuery("sd")));
+    eq(acad.status, 200, "a linked, UNENROLLED child still resolves (the link is what counts)");
+    eq(
+      acad.body.snapshot.academicContext,
+      "NO_ACTIVE_COURSE",
+      "academics reports the EXPLICIT no-active-course state"
+    );
+    eq(acad.body.snapshot.progress.completedLessons, 0, "no completion is reported");
+    eq(acad.body.snapshot.progress.totalLessons, 0, "no universe is reported");
+    eq(acad.body.snapshot.progress.pct, 0, "no percentage is reported");
+    eq(acad.body.snapshot.progress.currentLesson, null, "no current lesson is reported");
+    eq(acad.body.snapshot.lessons.length, 0, "no lessons are fabricated");
+    eq(acad.body.snapshot.course, null, "no course is invented");
+    ok(
+      acad.body.snapshot.progress.completedLessons !== legacySticky,
+      "the count is NOT the legacy LessonProgress recount"
+    );
+
+    const dash = await bodyOf(await dashboardRoute.GET(reqWithQuery("sd")));
+    eq(dash.status, 200, "dashboard: unenrolled child → 200");
+    eq(dash.body.children[0].courseProgress.completed, 0, "dashboard: completed is 0, never legacy-derived");
+    eq(dash.body.children[0].courseProgress.total, 0, "dashboard: total is 0");
+    eq(
+      dash.body.children[0].courseProgress.state,
+      "NO_ACTIVE_COURSE",
+      "dashboard: the state is explicit, not a silent zero"
+    );
+    eq(
+      dash.body.children[0].courseProgress.hasAcademicContext,
+      false,
+      "dashboard: hasAcademicContext is false"
+    );
+
+    const ana = await bodyOf(await analyticsRoute.GET(reqWithQuery("sd")));
+    eq(ana.status, 200, "analytics: unenrolled child → 200");
+    eq(ana.body.children[0].academicContext, "NO_ACTIVE_COURSE", "analytics: explicit state");
+    eq(ana.body.children[0].completedLessons, 0, "analytics: no legacy-derived completion");
+    eq(ana.body.children[0].totalLessons, 0, "analytics: no universe");
+    eq(ana.body.children[0].hasAcademicContext, false, "analytics: hasAcademicContext false");
+
+    const wk = await bodyOf(await weeklyRoute.GET(reqWithQuery("sd")));
+    eq(wk.status, 200, "weekly: unenrolled child → 200");
+    eq(wk.body.reports[0].academicContext, "NO_ACTIVE_COURSE", "weekly: explicit state");
+    eq(wk.body.reports[0].summary.completionPct, 0, "weekly: no legacy-derived completion");
+    eq(wk.body.reports[0].hasAcademicContext, false, "weekly: hasAcademicContext false");
+
+    // The fallback is not merely unreachable — it no longer exists in the
+    // Parent authority. A source scan proves `LessonProgress.isCompleted` is
+    // never read by any parent reporting route (comments excluded).
+    for (const route of [
+      "src/app/api/parents/me/dashboard/route.ts",
+      "src/app/api/parents/me/analytics/route.ts",
+      "src/app/api/parents/me/weekly-report/route.ts",
+      "src/lib/parent-academics.ts",
+    ]) {
+      const code = fs
+        .readFileSync(path.join(REPO, route), "utf8")
+        .split("\n")
+        .filter((line) => !line.trimStart().startsWith("//") && !line.trimStart().startsWith("*"))
+        .join("\n");
+      ok(
+        !/\.isCompleted\b/.test(code),
+        `${route}: no code path reads LessonProgress.isCompleted`
+      );
+    }
+    // The analytics route does not even select the rows any more: what is not
+    // fetched cannot be reinstated as a fallback.
+    const anaSrc = fs.readFileSync(
+      path.join(REPO, "src/app/api/parents/me/analytics/route.ts"),
+      "utf8"
+    );
+    ok(!/lessonProgress:/.test(anaSrc), "analytics no longer includes lessonProgress at all");
+
+    // The UI states the same thing in Arabic instead of printing a bare 0/0.
+    const rendered = render(React.createElement(AcademicFollowup, { payload: acad.body }));
+    ok(!rendered.error, `the follow-up card renders for an unenrolled child${rendered.error ? ` (${rendered.error.message})` : ""}`);
+    ok(
+      rendered.html.includes("الطالب مش مسجّل في كورس حالياً"),
+      "the card says there is no active course, in Arabic"
+    );
+    ok(!/0\s*\/\s*0/.test(rendered.html.replace(/<[^>]*>/g, " ")), "the card never prints a bare 0/0 completion");
+    await loginAs("u-pa");
   }
 
   // =========================================================================

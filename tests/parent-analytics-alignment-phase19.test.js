@@ -693,15 +693,31 @@ async function seed() {
     { id: "sc", userId: "u-sc", grade: "2nd Secondary", schoolName: "Nile", schoolType: "ARABIC", nationalId: "30103031234567", parentPhone: null, studentCode: "CM-CCCC33", groupId: "g1", batchId: null, enrolledAt: D(90) },
     { id: "se", userId: "u-se", grade: "2nd Secondary", schoolName: "Decoy", schoolType: "LANGUAGE", nationalId: "30104041234567", parentPhone: null, studentCode: "CM-DDDD44", groupId: "g3", batchId: null, enrolledAt: D(90) },
   );
+  // Phase I Fix 2 — an UNENROLLED child (no group, no course) linked to its own
+  // parent, so every existing multi-child expectation keeps its numbers. The
+  // child carries legacy `LessonProgress.isCompleted = true` rows: any surviving
+  // legacy-derived completion fallback would report a completion for a child who
+  // is not in any course.
+  T.user.push(
+    { id: "u-sf", email: "sf@test.local", name: "Child Free", role: "STUDENT", isActive: true, status: "ACTIVE", phone: null, avatarUrl: null },
+    { id: "u-pe", email: "pe@test.local", name: "Parent E", role: "PARENT", isActive: true, status: "ACTIVE", phone: null, avatarUrl: null },
+  );
+  T.student.push({
+    id: "sf", userId: "u-sf", grade: "2nd Secondary", schoolName: "Nile", schoolType: "ARABIC",
+    nationalId: "30105051234567", parentPhone: null, studentCode: "CM-FFFF55",
+    groupId: null, batchId: null, enrolledAt: null,
+  });
   T.parent.push(
     { id: "pa", userId: "u-pa" },
     { id: "pb", userId: "u-pb" },
     { id: "pc", userId: "u-pc" },
+    { id: "pe", userId: "u-pe" },
   );
   T.parentStudentLink.push(
     { id: "link-a", parentId: "pa", studentId: "sa", relation: "parent", createdAt: D(50) },
     { id: "link-b", parentId: "pa", studentId: "sb", relation: "parent", createdAt: D(50) },
     { id: "link-c", parentId: "pb", studentId: "sb", relation: "parent", createdAt: D(50) },
+    { id: "link-f", parentId: "pe", studentId: "sf", relation: "parent", createdAt: D(50) },
   );
 
   // --- Quiz attempts ----------------------------------------------------------
@@ -769,6 +785,9 @@ async function seed() {
   T.lessonProgress.push(lp("sc", "lx2", 100, true, null, 15));
   // se — decoy course activity.
   T.lessonProgress.push(lp("se", "dl1", 100, true, { percent: 100, completed: true }, 6));
+  // The unenrolled child's legacy sticky flags — the Phase I Fix 2 trap.
+  T.lessonProgress.push(lp("sf", "l-1-1", 100, true, { percent: 100, completed: true }, 3));
+  T.lessonProgress.push(lp("sf", "l-2-2", 100, true, { percent: 100, completed: true }, 3));
 
   // --- Attendance ---------------------------------------------------------------
   T.liveSession.push(
@@ -1271,6 +1290,43 @@ async function main() {
       ...paChildren.flatMap((c) => [c.courseProgress.pct, c.homework.completionPct, c.videoProgress.completionPercent]),
     ];
     ok(pcts.every((p) => p >= 0 && p <= 100), "every reported percentage is within [0, 100]");
+  }
+
+  // =========================================================================
+  section("L. Phase I Fix 2 — an unenrolled linked child has no completion truth");
+  // =========================================================================
+  {
+    const stickyRows = db.__tables.lessonProgress.filter(
+      (lp) => lp.studentId === "sf" && lp.isCompleted
+    ).length;
+    eq(stickyRows, 2, "the trap is real: 2 legacy isCompleted rows exist for the unenrolled child");
+
+    await loginAs("u-pe");
+    const d = await bodyOf(await parentDashboardRoute.GET(req()));
+    eq(d.status, 200, "an unenrolled LINKED child is still listed (the link is what counts)");
+    const free = d.body.children.find((c) => c.id === "sf");
+    ok(!!free, "the unenrolled child has a payload");
+    eq(free.courseProgress.completed, 0, "no completion is reported — never the legacy recount");
+    eq(free.courseProgress.total, 0, "no universe is reported");
+    eq(free.courseProgress.state, "NO_ACTIVE_COURSE", "the state is explicit, not a silent zero");
+    eq(free.courseProgress.hasAcademicContext, false, "hasAcademicContext is false");
+    ok(
+      free.courseProgress.completed !== stickyRows,
+      "the reported count is NOT the legacy LessonProgress recount"
+    );
+
+    const a = await bodyOf(await parentAnalyticsRoute.GET(req()));
+    const aFree = a.body.children.find((c) => c.studentId === "sf");
+    eq(aFree.academicContext, "NO_ACTIVE_COURSE", "analytics: explicit NO_ACTIVE_COURSE");
+    eq(aFree.hasAcademicContext, false, "analytics: hasAcademicContext false");
+    eq(aFree.completedLessons, 0, "analytics: no legacy-derived completion");
+    eq(aFree.totalLessons, 0, "analytics: no universe");
+
+    const w = await bodyOf(await weeklyReportRoute.GET(req()));
+    const wFree = w.body.reports.find((r) => r.studentId === "sf");
+    eq(wFree.academicContext, "NO_ACTIVE_COURSE", "weekly: explicit NO_ACTIVE_COURSE");
+    eq(wFree.hasAcademicContext, false, "weekly: hasAcademicContext false");
+    eq(wFree.summary.completionPct, 0, "weekly: no legacy-derived completion");
   }
 
   console.log(`\nparent & analytics alignment (phase 19): ${pass} passed, ${fail} failed`);
