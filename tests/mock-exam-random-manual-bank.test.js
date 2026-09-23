@@ -564,9 +564,9 @@ async function seed() {
   // Exams. `mx-empty-lang` is inserted directly: it stands for a bank that was
   // emptied AFTER publication, which the create guard cannot prevent.
   T.mockExam.push(
-    { id: "mx-random", title: "Random", titleAr: "\u0639\u0634\u0648\u0627\u0626\u064a", description: null, schoolType: "ARABIC", courseId: null, questionCount: 5, durationMin: 20, passMark: 70, difficulty: "MIXED", selectionMode: "RANDOM", isPublished: true, createdAt: D(5) },
-    { id: "mx-hard", title: "Hard", titleAr: "\u0635\u0639\u0628", description: null, schoolType: "ARABIC", courseId: null, questionCount: 5, durationMin: 20, passMark: 50, difficulty: "HARD", selectionMode: "RANDOM", isPublished: true, createdAt: D(4) },
-    { id: "mx-empty-lang", title: "Empty", titleAr: "\u0641\u0627\u0636\u064a", description: null, schoolType: "LANGUAGE", courseId: null, questionCount: 3, durationMin: 15, passMark: 60, difficulty: "MIXED", selectionMode: "RANDOM", isPublished: true, createdAt: D(3) },
+    { id: "mx-random", title: "Random", titleAr: "\u0639\u0634\u0648\u0627\u0626\u064a", description: null, schoolType: "ARABIC", courseId: "c1", questionCount: 5, durationMin: 20, passMark: 70, difficulty: "MIXED", selectionMode: "RANDOM", isPublished: true, createdAt: D(5) },
+    { id: "mx-hard", title: "Hard", titleAr: "\u0635\u0639\u0628", description: null, schoolType: "ARABIC", courseId: "c1", questionCount: 5, durationMin: 20, passMark: 50, difficulty: "HARD", selectionMode: "RANDOM", isPublished: true, createdAt: D(4) },
+    { id: "mx-empty-lang", title: "Empty", titleAr: "\u0641\u0627\u0636\u064a", description: null, schoolType: "LANGUAGE", courseId: "c2", questionCount: 3, durationMin: 15, passMark: 60, difficulty: "MIXED", selectionMode: "RANDOM", isPublished: true, createdAt: D(3) },
     // Course-bound ARABIC exams: each samples its OWN course's lessons + its
     // OWN attachments, nothing else (the cross-course regression fixtures).
     { id: "mx-c1", title: "Course One", titleAr: "\u0643\u0648\u0631\u0633 \u0661", description: null, schoolType: "ARABIC", courseId: "c1", questionCount: 4, durationMin: 20, passMark: 60, difficulty: "MIXED", selectionMode: "RANDOM", isPublished: true, createdAt: D(4) },
@@ -665,10 +665,13 @@ async function main() {
   // attach it to), plus the pool of each exam under test.
   // Phase K2 — every pool is COURSE-scoped: mock exams are curriculum-bound
   // (`courseId` required at creation), and a course-less scope admits no
-  // lesson-linked row. The legacy course-less fixtures (mx-random, mx-hard,
-  // mx-empty-lang) therefore serve ONLY their explicit attachments.
+  // lesson-linked row. Phase K3 made the binding a DB fact (courseId NOT
+  // NULL): the fixtures mx-random / mx-hard are c1 exams and mx-empty-lang is
+  // a c2 exam, so each serves its course's lesson-linked rows PLUS its own
+  // explicit attachments. The course-less scope itself is still probed
+  // (`courselessBase`) and must stay EMPTY.
   const basePool = expectedPool(T, "ARABIC", "c1", null);
-  const randomPool = expectedPool(T, "ARABIC", null, "mx-random");
+  const randomPool = expectedPool(T, "ARABIC", "c1", "mx-random");
   const courselessBase = expectedPool(T, "ARABIC", null, null);
   const c1Pool = expectedPool(T, "ARABIC", "c1", "mx-c1");
   const c2Pool = expectedPool(T, "ARABIC", "c2", "mx-c2");
@@ -696,8 +699,8 @@ async function main() {
     ok(randomPool.includes("mShare"), "a shared (schoolType null) attached manual row is eligible");
     ok(randomPool.includes("eqManual"), "an attached legacy bank-only ExamQuestion row is eligible too");
     ok(
-      randomPool.length === 13 + 1,
-      `legacy course-less exam pool = ONLY this exam's attachments, no lesson-linked rows (got ${randomPool.length})`
+      randomPool.length === 13 + 1 + basePool.length,
+      `a course-bound exam's pool = its course's lesson-linked rows + ONLY this exam's attachments (got ${randomPool.length})`
     );
     ok(
       courselessBase.length === 0,
@@ -737,7 +740,12 @@ async function main() {
       `admin reads the c1 exam-less pool size (${basePool.length}, got ${r.body.pool.total})`
     );
     ok(r.body.pool.bankOnly === 0, "no exam -> no attached free-bank rows are counted");
-    const scoped = await bodyOf(await eligibleRoute.GET(getReq("schoolType=ARABIC&mockExamId=mx-random")));
+    // K3: mx-random is bound to c1 (every exam is course-bound), so the
+    // exam-scoped preview must name the same course — and its total is the
+    // c1 lesson-linked rows PLUS its own attachments.
+    const scoped = await bodyOf(await eligibleRoute.GET(getReq("schoolType=ARABIC&courseId=c1&mockExamId=mx-random")));
+    const unbound = await bodyOf(await eligibleRoute.GET(getReq("schoolType=ARABIC&mockExamId=mx-random")));
+    ok(unbound.status === 404, "an exam-scoped preview without the exam's own course -> 404 (no crafted cross-scope counts)");
     ok(
       scoped.status === 200 && scoped.body.pool.attached === 13,
       `the exam-scoped pool reports its 13 attachments (got ${scoped.body.pool.attached})`
@@ -746,7 +754,7 @@ async function main() {
       scoped.body.pool.bankOnly === 13 && scoped.body.pool.total === randomPool.length,
       "the exam-scoped total includes the attached rows (and only its own)"
     );
-    const mismatched = await bodyOf(await eligibleRoute.GET(getReq("schoolType=LANGUAGE&mockExamId=mx-random")));
+    const mismatched = await bodyOf(await eligibleRoute.GET(getReq("schoolType=LANGUAGE&courseId=c1&mockExamId=mx-random")));
     ok(mismatched.status === 404, "an exam id from another bank -> 404 (no crafted cross-scope counts)");
   }
 

@@ -567,17 +567,17 @@ db.prepare(
   `INSERT INTO "Unit" ("id","partId","title","titleAr","order") VALUES ('gtg-unit','gtg-part','U','و','1')`
 ).run();
 db.prepare(
-  `INSERT INTO "Lesson" ("id","title","titleAr","order","unitId","status","trackScope","createdAt","updatedAt")
-   VALUES ('gtg-l1','Lesson one','درس واحد','1','gtg-unit','PUBLISHED','SHARED',?,?)`
+  `INSERT INTO "Lesson" ("id","title","titleAr","order","unitId","status","trackScope","createdAt","updatedAt","academicLevel")
+   VALUES ('gtg-l1','Lesson one','درس واحد','1','gtg-unit','PUBLISHED','SHARED',?,?,'SECOND_SECONDARY')`
 ).run(NOW, NOW);
 // Cross-track probes (non-official, last positions — never disturb lesson 1).
 db.prepare(
-  `INSERT INTO "Lesson" ("id","title","titleAr","order","unitId","status","trackScope","createdAt","updatedAt")
-   VALUES ('gtg-lesson-arabic','Arabic-only','درس عربي','98','gtg-unit','PUBLISHED','ARABIC',?,?)`
+  `INSERT INTO "Lesson" ("id","title","titleAr","order","unitId","status","trackScope","createdAt","updatedAt","academicLevel")
+   VALUES ('gtg-lesson-arabic','Arabic-only','درس عربي','98','gtg-unit','PUBLISHED','ARABIC',?,?,'SECOND_SECONDARY')`
 ).run(NOW, NOW);
 db.prepare(
-  `INSERT INTO "Lesson" ("id","title","titleAr","order","unitId","status","trackScope","createdAt","updatedAt")
-   VALUES ('gtg-lesson-language','Language-only','درس لغات','99','gtg-unit','PUBLISHED','LANGUAGE',?,?)`
+  `INSERT INTO "Lesson" ("id","title","titleAr","order","unitId","status","trackScope","createdAt","updatedAt","academicLevel")
+   VALUES ('gtg-lesson-language','Language-only','درس لغات','99','gtg-unit','PUBLISHED','LANGUAGE',?,?,'SECOND_SECONDARY')`
 ).run(NOW, NOW);
 
 // Groups — the audience matrix (ARABIC / LANGUAGE / UNCLASSIFIED / full).

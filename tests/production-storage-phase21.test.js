@@ -112,7 +112,7 @@ async function main() {
     // migration, so the frozen history is 12 + 1 + 2 + 1 = 16. Every PREVIOUS
     // migration must still be present — which is what the assertion below
     // actually protects.
-    ok(migs.length === 20, `20 migrations preserved (found ${migs.length})`);
+    ok(migs.length === 21, `21 migrations preserved (found ${migs.length})`);
     ok(
       migs.includes("20260915180000_phase26d_quiz_attempt_architecture") &&
         migs.includes("20260919120000_phase_f_live_session_lifecycle") &&
@@ -210,12 +210,14 @@ async function main() {
     // 25 enums + 61 tables + the 91 explicit CREATE INDEX statements (87
     // through Phase G + the 3 Phase H ProgressionOverride indexes + the
     // SessionVideo liveSessionId index; K1 added the AcademicLevel CREATE
-    // TYPE, no new tables/indexes) — the exact statement count is derived,
-    // never hand-tuned.
+    // TYPE, no new tables/indexes; K3 added MockExam_courseId_idx for the
+    // now-required MockExam.courseId FK → 92) — the exact statement count is
+    // derived, never hand-tuned.
     ok(
-      stmts.length === 25 + 61 + 91,
-      `baseline has ${25 + 61 + 91} statements (found ${stmts.length})`
+      stmts.length === 25 + 61 + 92,
+      `baseline has ${25 + 61 + 92} statements (found ${stmts.length})`
     );
+    ok(/CREATE INDEX "MockExam_courseId_idx"/.test(ddl), "baseline carries the K3 MockExam.courseId index");
     ok(/CREATE INDEX "Group_trackScope_idx"/.test(ddl), "baseline carries the Phase 26B group-audience index");
     const longIdents = [...ddl.matchAll(/"([A-Za-z0-9_]{64,})"/g)];
     ok(longIdents.length === 0, "no identifier exceeds the 63-byte PostgreSQL limit");

@@ -597,8 +597,8 @@ async function main() {
   // and is unaffected by an append at the end.
   // Phase G appended two workflow migrations and Phase H the audited
   // progression-override table — all authorized, all additive, all after F.
-  ok(migs.length === 20, `20 migrations in history (found ${migs.length}) — Phase 26B added the group-audience migration, Phase 26D the quiz attempt-architecture migration, Phase F the live-session lifecycle, Phase G two workflow migrations, Phase H the override table, session-video requirement the flag, requirement modes the mode + link, readiness-reminder recipients the student nudge type, and K1 the academic-level capability + backfill`);
-  ok(migs[migs.length - 1] === "20260923100000_k1_academic_level_capability", "the K1 academic-level capability migration sorts last (append-only history)");
+  ok(migs.length === 21, `21 migrations in history (found ${migs.length}) — Phase 26B added the group-audience migration, Phase 26D the quiz attempt-architecture migration, Phase F the live-session lifecycle, Phase G two workflow migrations, Phase H the override table, session-video requirement the flag, requirement modes the mode + link, readiness-reminder recipients the student nudge type, K1 the academic-level capability + backfill, and K3 the final academic-level constraints`);
+  ok(migs[migs.length - 1] === "20260923180000_k3_academic_level_constraints", "the K3 academic-level constraints migration sorts last (append-only history)");
   ok(migs.includes(MIGRATION_DIR), `new migration '${MIGRATION_DIR}' present`);
   ok(migs[9] === MIGRATION_DIR, "ledger migration still applies after its 9 predecessors (10th position)");
   ok(migs.includes("20260915120000_phase26b_group_track_scope"), "the Phase 26B group-audience migration is present (Phase 26D appended a later one)");

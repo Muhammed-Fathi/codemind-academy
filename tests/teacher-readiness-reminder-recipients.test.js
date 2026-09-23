@@ -296,7 +296,7 @@ test("Teacher readiness reminder recipients (T1–T16)", async () => {
   //   sReady — quiz passed + homework submitted (409 target)
   // ===========================================================================
   const course = await client.course.create({
-    data: { slug: "remind-a", name: "Course A", nameAr: "كورس أ", description: "remind" },
+    data: { slug: "remind-a", name: "Course A", nameAr: "كورس أ", description: "remind", academicLevel: "SECOND_SECONDARY" },
   });
   const part = await client.part.create({
     data: { courseId: course.id, title: "P1", titleAr: "P1", order: 1 },
@@ -306,6 +306,7 @@ test("Teacher readiness reminder recipients (T1–T16)", async () => {
   });
   const L1 = await client.lesson.create({
     data: {
+      academicLevel: "SECOND_SECONDARY",
       unitId: unit.id, order: 1, officialCode: "1-1",
       title: "Fractions", titleAr: "الكسور",
       trackScope: "SHARED", status: "PUBLISHED",
@@ -324,7 +325,7 @@ test("Teacher readiness reminder recipients (T1–T16)", async () => {
   });
   // A second teacher's group in a FOREIGN course (scope-closed lesson).
   const course2 = await client.course.create({
-    data: { slug: "remind-b", name: "Course B", nameAr: "كورس ب", description: "remind" },
+    data: { slug: "remind-b", name: "Course B", nameAr: "كورس ب", description: "remind", academicLevel: "SECOND_SECONDARY" },
   });
   const part2 = await client.part.create({
     data: { courseId: course2.id, title: "P1", titleAr: "P1", order: 1 },
@@ -334,6 +335,7 @@ test("Teacher readiness reminder recipients (T1–T16)", async () => {
   });
   const Lother = await client.lesson.create({
     data: {
+      academicLevel: "SECOND_SECONDARY",
       unitId: unit2.id, order: 1, officialCode: "9-9",
       title: "Foreign", titleAr: "أجنبي",
       trackScope: "SHARED", status: "PUBLISHED",
@@ -345,7 +347,7 @@ test("Teacher readiness reminder recipients (T1–T16)", async () => {
       data: { email: `${tag}@remind.test`, password: "x", name: tag, role: "STUDENT", ...userOver },
     });
     const s = await client.student.create({
-      data: { userId: u.id, schoolType: "ARABIC", groupId: group.id, batchId: batch.id },
+      data: { userId: u.id, academicLevel: "SECOND_SECONDARY", schoolType: "ARABIC", groupId: group.id, batchId: batch.id },
     });
     return { user: u, student: s };
   };

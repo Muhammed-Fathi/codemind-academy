@@ -986,11 +986,12 @@ async function main() {
   section("27. Official curriculum invariants survive the track dimension");
   // -------------------------------------------------------------------------
   {
-    // A lesson's officialCode is UNIQUE, so track metadata cannot create a
-    // second row for the same code.
+    // A lesson's officialCode is UNIQUE within its academic level (Phase K3:
+    // @@unique([academicLevel, officialCode]) replaced the global unique), so
+    // track metadata cannot create a second row for the same code.
     const schema = read("prisma/schema.prisma");
     const lessonModel = schema.slice(schema.indexOf("model Lesson {"), schema.indexOf("model Group {"));
-    ok(/officialCode\s+String\?\s+@unique/.test(lessonModel), "Lesson.officialCode is still UNIQUE");
+    ok(/@@unique\(\[academicLevel, officialCode\]\)/.test(lessonModel), "Lesson.officialCode is still UNIQUE (per academic level, K3)");
     ok(/trackScope\s+TrackScope\s+@default\(SHARED\)/.test(lessonModel), "Lesson.trackScope defaults to SHARED");
     ok(!/officialCode\[\]/.test(lessonModel), "there is no array of official codes (no per-track duplicates)");
   }

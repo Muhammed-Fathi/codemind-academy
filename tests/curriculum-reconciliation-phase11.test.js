@@ -281,13 +281,23 @@ function makeMockDb() {
     },
     lesson: {
       async findUnique({ where }) {
-        if (where.officialCode !== undefined)
+        // Phase K3 — the ONLY code lookup is the level-scoped compound unique
+        // (academicLevel, officialCode); a bare `officialCode` key no longer
+        // exists on the model, so the mock refuses it exactly like Prisma would.
+        if (where.academicLevel_officialCode !== undefined) {
+          const { academicLevel, officialCode } = where.academicLevel_officialCode;
+          if (!academicLevel || !officialCode) throw new Error("mock: academicLevel_officialCode needs both parts");
           return (
-            tables.lesson.find((l) => l.officialCode === where.officialCode) || null
+            tables.lesson.find(
+              (l) => l.officialCode === officialCode && (l.academicLevel ?? "SECOND_SECONDARY") === academicLevel
+            ) || null
           );
+        }
+        if (where.officialCode !== undefined)
+          throw new Error("mock: lesson.findUnique by bare officialCode is not a unique key after K3");
         if (where.id !== undefined)
           return tables.lesson.find((l) => l.id === where.id) || null;
-        throw new Error("mock: lesson.findUnique needs officialCode or id");
+        throw new Error("mock: lesson.findUnique needs academicLevel_officialCode or id");
       },
       async findMany({ where }) {
         return tables.lesson.filter((l) => matchLesson(l, where)).map((r) => ({ ...r }));
@@ -295,7 +305,11 @@ function makeMockDb() {
       async create({ data }) {
         if (
           data.officialCode &&
-          tables.lesson.some((l) => l.officialCode === data.officialCode)
+          tables.lesson.some(
+            (l) =>
+              l.officialCode === data.officialCode &&
+              (l.academicLevel ?? "SECOND_SECONDARY") === (data.academicLevel ?? "SECOND_SECONDARY")
+          )
         ) {
           const e = new Error("Unique constraint failed");
           e.code = "P2002";
@@ -345,6 +359,10 @@ function legacyLesson(topicId, overrides = {}) {
     summary: null,
     curriculumStatus: "DRAFT",
     officialCode: null,
+    // Phase K3: every persisted lesson carries its chain-derived level (the
+    // column is NOT NULL after K3; the K1 backfill set every legacy row to
+    // SECOND_SECONDARY). The level-scoped stray/archive queries rely on it.
+    academicLevel: "SECOND_SECONDARY",
     // Phase 13: a legacy row that was `isPublished: true` before the split is
     // exactly what the migration backfill turns into `status: "PUBLISHED"`.
     // The retired `isLocked` column is deliberately NOT modelled here: no

@@ -72,6 +72,7 @@ const MIG_SV_REQ = "20260921120000_session_video_progression_requirement";
 const MIG_SV_MODES = "20260921180000_session_video_requirement_modes";
 const MIG_REMIND_AUD = "20260922090000_readiness_reminder_recipients";
 const MIG_K1 = "20260923100000_k1_academic_level_capability";
+const MIG_K3 = "20260923180000_k3_academic_level_constraints";
 
 let pass = 0;
 const failures = [];
@@ -111,11 +112,11 @@ function partA() {
   // A1 — layout contract
   const sqliteMigrations = listMigrationDirs(SQLITE_MIGRATIONS);
   const pgMigrations = listMigrationDirs(PG_MIGRATIONS);
-  ok(sqliteMigrations.length === 20, `SQLite migrations dir carries all 20 historical migrations (got ${sqliteMigrations.length})`);
-  ok(pgMigrations.length === 10, `PG migrations dir carries the provider chain plus camera policy, Phase H, the session-video requirement, requirement modes, the readiness-reminder recipients and the K1 academic-level capability (got ${pgMigrations.length})`);
+  ok(sqliteMigrations.length === 21, `SQLite migrations dir carries all 21 historical migrations (got ${sqliteMigrations.length})`);
+  ok(pgMigrations.length === 11, `PG migrations dir carries the provider chain plus camera policy, Phase H, the session-video requirement, requirement modes, the readiness-reminder recipients, the K1 academic-level capability and the K3 academic-level constraints (got ${pgMigrations.length})`);
   ok(
-    pgMigrations[0] === "0_init" && pgMigrations[1] === MIG_26D && pgMigrations[2] === MIG_PHASE_F && pgMigrations[3] === MIG_PHASE_G && pgMigrations[4] === MIG_CAMERA && pgMigrations[5] === MIG_PHASE_H && pgMigrations[6] === MIG_SV_REQ && pgMigrations[7] === MIG_SV_MODES && pgMigrations[8] === MIG_REMIND_AUD && pgMigrations[9] === MIG_K1,
-    "PG migrations are 0_init, Phase 26D, Phase F, Phase G, camera, Phase H, session-video requirement, requirement modes, readiness-reminder recipients, K1 academic-level capability, in order"
+    pgMigrations[0] === "0_init" && pgMigrations[1] === MIG_26D && pgMigrations[2] === MIG_PHASE_F && pgMigrations[3] === MIG_PHASE_G && pgMigrations[4] === MIG_CAMERA && pgMigrations[5] === MIG_PHASE_H && pgMigrations[6] === MIG_SV_REQ && pgMigrations[7] === MIG_SV_MODES && pgMigrations[8] === MIG_REMIND_AUD && pgMigrations[9] === MIG_K1 && pgMigrations[10] === MIG_K3,
+    "PG migrations are 0_init, Phase 26D, Phase F, Phase G, camera, Phase H, session-video requirement, requirement modes, readiness-reminder recipients, K1 academic-level capability, K3 academic-level constraints, in order"
   );
   ok(fs.existsSync(PG_SCHEMA), "prisma/postgres/schema.prisma exists (PG schema owns its own directory)");
   ok(!fs.existsSync(OLD_PG_SCHEMA), "prisma/schema.postgresql.prisma does NOT exist (must never share prisma/ with SQLite again)");
@@ -168,6 +169,11 @@ function partA() {
     read(path.join(PG_MIGRATIONS, MIG_K1, "migration.sql")) !== read(path.join(SQLITE_MIGRATIONS, MIG_K1, "migration.sql")),
     "the PG and SQLite editions of the K1 academic-level capability are distinct files (provider-specific SQL)"
   );
+  ok(
+    fs.existsSync(path.join(PG_MIGRATIONS, MIG_K3, "migration.sql")) && fs.existsSync(path.join(SQLITE_MIGRATIONS, MIG_K3, "migration.sql")) &&
+    read(path.join(PG_MIGRATIONS, MIG_K3, "migration.sql")) !== read(path.join(SQLITE_MIGRATIONS, MIG_K3, "migration.sql")),
+    "the PG and SQLite editions of the K3 academic-level constraints are distinct files (provider-specific SQL)"
+  );
   const pgSchemaHeader = read(PG_SCHEMA).split("\n").slice(0, 35).join("\n");
   ok(/WHY THIS FILE LIVES IN prisma\/postgres\//.test(pgSchemaHeader), "PG schema header documents the directory contract");
 
@@ -200,6 +206,8 @@ function partA() {
     "20260922090000_readiness_reminder_recipients": "4f2696dca5d6afcbeff726b80ced3fd640fa61a144dd820d26ed9029784a09e4",
     // Multi-Level Expansion Phase K1 (academic-level capability + backfill):
     "20260923100000_k1_academic_level_capability": "48724a4505b6754477f27dc361b7ddb2f18042beb51f2c9ef0a5cd09d4c84c13",
+    // Multi-Level Expansion Phase K3 (NOT NULL levels, level-scoped officialCode unique, MockExam.courseId required):
+    "20260923180000_k3_academic_level_constraints": "b3ae35aa042e1ff47cfe638246ea5b6db5e4525fbf2745c1e6e6dcd1ccc888f2",
     // PostgreSQL history (frozen from this commit on):
     "0_init": "c7f5d3fa76931d02e48c5cd2c4bfdb972c0f25e528e3c0c116736d3729cefa80",
     "PG:20260915180000_phase26d_quiz_attempt_architecture": "2c1bdde167f7dfff9b79a61f116da3dbd93b13c6aa27825404a79312ec7be104",
@@ -214,6 +222,7 @@ function partA() {
     "PG:20260921180000_session_video_requirement_modes": "77f073e7973f396b3d29bbe774428acf9c77538f763afbbcc7424176b418fa88",
     "PG:20260922090000_readiness_reminder_recipients": "80cb5f164b947869a6c333b5bd3b27434dc2ac5809552b6eeb3b8085a97f0513",
     "PG:20260923100000_k1_academic_level_capability": "5c367c4a0a330c0486b1e6a130b5082b6e12b7596d7ed83871aaf58f7295bead",
+    "PG:20260923180000_k3_academic_level_constraints": "e5784f05973e30ae3585c4d79edb503efc720f5ff4f7c3d8fa831e47c5c6e573",
   };
   for (const [name, checksum] of Object.entries(PINNED)) {
     const isPg = name.startsWith("PG:") || name === "0_init";
@@ -279,11 +288,31 @@ function partA() {
     }
     // ALTER TABLE ... ADD CONSTRAINT "name" UNIQUE/FK (26D edition)
     for (const m of sql.matchAll(/ALTER TABLE\s+"[A-Za-z0-9_]+"\s+ADD CONSTRAINT\s+"([A-Za-z0-9_]+)"/g)) inv.constraints.add(m[1]);
+    // Phase K3 — the chain may now REMOVE objects: a throw-away in-migration
+    // guard table (created and dropped in the same file) and the historical
+    // global Lesson.officialCode unique (replaced by the level-scoped one).
+    // A table dropped within the file contributes nothing; constraint drops
+    // are recorded as deltas that `merge` applies to the accumulator.
+    inv.dropConstraints = new Set();
+    for (const m of sql.matchAll(/DROP TABLE (?:IF EXISTS )?"([A-Za-z0-9_]+)"/g)) {
+      const block = new RegExp(`CREATE TABLE "${m[1]}" \\(([\\s\\S]*?)\\n\\);`).exec(sql);
+      if (block) for (const c of block[1].matchAll(/CONSTRAINT "([A-Za-z0-9_]+)"/g)) inv.constraints.delete(c[1]);
+      inv.tables.delete(m[1]);
+    }
+    for (const m of sql.matchAll(/DROP CONSTRAINT (?:IF EXISTS )?"([A-Za-z0-9_]+)"/g)) inv.dropConstraints.add(m[1]);
+    for (const m of sql.matchAll(/DROP INDEX (?:IF EXISTS )?"([A-Za-z0-9_]+)"/g)) inv.dropConstraints.add(m[1]);
     return inv;
   };
   const merge = (a, b) => {
-    const out = { enums: new Set([...a.enums, ...b.enums]), enumAdds: new Map(a.enumAdds), tables: new Map(a.tables), indexes: new Set([...a.indexes, ...b.indexes]), constraints: new Set([...a.constraints, ...b.constraints]) };
+    const out = { enums: new Set([...a.enums, ...b.enums]), enumAdds: new Map(a.enumAdds), tables: new Map(a.tables), indexes: new Set([...a.indexes, ...b.indexes]), constraints: new Set([...a.constraints, ...b.constraints]), dropConstraints: new Set() };
     for (const [t, cols] of b.tables) out.tables.set(t, [...(out.tables.get(t) || []), ...cols]);
+    // K3 — a later file may drop an earlier constraint/index by canonical
+    // name (the only such drop in the chain is Lesson_officialCode_key).
+    for (const name of b.dropConstraints || []) { out.constraints.delete(name); out.indexes.delete(name); }
+    // …and an object the same file drops AND re-creates (the K3 MockExam FK,
+    // re-added under its canonical name with RESTRICT) stays present.
+    for (const c of b.constraints) out.constraints.add(c);
+    for (const i of b.indexes) out.indexes.add(i);
     for (const [name, n] of b.enumAdds) out.enumAdds.set(name, (out.enumAdds.get(name) || 0) + n);
     for (const [name, n] of out.enumAdds) {
       const existing = [...out.enums].find((e) => e.startsWith(`${name}(`));
@@ -303,6 +332,7 @@ function partA() {
   // into the accumulator and assumes the accumulator is already fully folded
   // (its own enumAdds cleared), so every file joins the chain one at a time.
   const got = merge(
+    merge(
     merge(
       merge(
         merge(
@@ -329,6 +359,8 @@ function partA() {
       parseInventory(read(path.join(PG_MIGRATIONS, MIG_REMIND_AUD, "migration.sql")))
     ),
     parseInventory(read(path.join(PG_MIGRATIONS, MIG_K1, "migration.sql")))
+    ),
+    parseInventory(read(path.join(PG_MIGRATIONS, MIG_K3, "migration.sql")))
   );
   {
     const diffs = [];
@@ -346,7 +378,7 @@ function partA() {
     for (const c of want.indexes) if (!got.indexes.has(c)) diffs.push(`missing index ${c}`);
     for (const c of got.indexes) if (!want.indexes.has(c)) diffs.push(`extra index ${c}`);
     ok(diffs.length === 0,
-      `0_init + PG Phase 26D + Phase F + Phase G + camera + Phase H + session-video requirement + requirement modes + readiness-reminder recipients + K1 academic-level capability == scripts/db/postgres-baseline.sql structurally (${want.tables.size} tables, ${[...want.tables.values()].reduce((a, c) => a + c.length, 0)} columns)`,
+      `0_init + PG Phase 26D + Phase F + Phase G + camera + Phase H + session-video requirement + requirement modes + readiness-reminder recipients + K1 academic-level capability + K3 academic-level constraints == scripts/db/postgres-baseline.sql structurally (${want.tables.size} tables, ${[...want.tables.values()].reduce((a, c) => a + c.length, 0)} columns)`,
       diffs.slice(0, 8).join("; "));
   }
 
@@ -527,7 +559,53 @@ function partA() {
     }
   }
 
-  // A6 — fresh SQLite through the repo's own harness: base DDL + 20 migrations.
+  // A5h — the two K3 editions enforce the same final constraints. The SQLite
+  // edition must REBUILD four tables (SQLite cannot alter nullability or
+  // swap a unique in place), so its only DROP TABLE statements are the
+  // rebuild's own (`new_X` copy → DROP X → RENAME) plus the empty guard
+  // table; the PG edition uses in-place ALTERs. Neither edition UPDATEs,
+  // DELETEs or TRUNCATEs application rows, and both carry the same seven
+  // named pre-flight proofs that fail loudly instead of rewriting data.
+  {
+    const sqliteK3 = stripSqlComments(read(path.join(SQLITE_MIGRATIONS, MIG_K3, "migration.sql")));
+    const pgK3 = stripSqlComments(read(path.join(PG_MIGRATIONS, MIG_K3, "migration.sql")));
+    const guards = (sql) => [...sql.matchAll(/CONSTRAINT "(K3_G\d_[A-Za-z0-9_]+)" CHECK/g)].map((m) => m[1]).join(",");
+    ok(guards(sqliteK3) === guards(pgK3) && guards(sqliteK3).split(",").length === 7,
+      "both K3 editions carry the same seven named pre-flight proofs (G1..G7)", guards(sqliteK3));
+    for (const [label, sql] of [["SQLite", sqliteK3], ["PG", pgK3]]) {
+      ok(!/\bUPDATE\s+"|DELETE FROM|TRUNCATE/i.test(sql), `K3 ${label} edition never UPDATEs, DELETEs or TRUNCATEs a row`);
+      ok(/"Lesson_academicLevel_officialCode_key"/.test(sql), `K3 ${label} edition creates the canonical composite unique Lesson_academicLevel_officialCode_key`);
+      ok(/"MockExam_courseId_idx"/.test(sql), `K3 ${label} edition creates the MockExam.courseId index`);
+      ok(/"MockExam_courseId_fkey" FOREIGN KEY \("courseId"\) REFERENCES "Course" \("id"\) ON (?:DELETE RESTRICT ON UPDATE CASCADE|UPDATE CASCADE ON DELETE RESTRICT)/.test(sql),
+        `K3 ${label} edition binds MockExam.courseId to Course with ON DELETE RESTRICT`);
+      ok(!/INSERT INTO "(Course|Student|Lesson|MockExam|Part|Unit|Topic)"[^;]*VALUES/i.test(sql), `K3 ${label} edition inserts no curriculum/data rows (no First Secondary import)`);
+    }
+    // PG edition: in-place ALTERs only; the only DROP TABLE is the guard table.
+    ok([...pgK3.matchAll(/DROP TABLE (?:IF EXISTS )?"([A-Za-z0-9_]+)"/g)].map((m) => m[1]).join(",") === "_k3_guard",
+      "K3 PG edition drops only its own throw-away guard table");
+    ok(!/PRAGMA|DATETIME|AUTOINCREMENT|`/.test(pgK3), "K3 PG edition carries no SQLite-only syntax");
+    for (const tbl of ["Course", "Student", "Lesson"]) {
+      ok(new RegExp(`ALTER TABLE "${tbl}" ALTER COLUMN "academicLevel" SET NOT NULL;`).test(pgK3), `K3 PG edition sets ${tbl}.academicLevel NOT NULL in place`);
+    }
+    ok(/ALTER TABLE "MockExam" ALTER COLUMN "courseId" SET NOT NULL;/.test(pgK3), "K3 PG edition sets MockExam.courseId NOT NULL in place");
+    ok(/ALTER TABLE "Lesson" DROP CONSTRAINT IF EXISTS "Lesson_officialCode_key";/.test(pgK3) && /DROP INDEX IF EXISTS "Lesson_officialCode_key";/.test(pgK3),
+      "K3 PG edition drops ONLY the old global officialCode unique (constraint or index form)");
+    ok([...pgK3.matchAll(/DROP CONSTRAINT (?:IF EXISTS )?"([A-Za-z0-9_]+)"/g)].map((m) => m[1]).sort().join(",") === "Lesson_officialCode_key,MockExam_courseId_fkey",
+      "K3 PG edition drops no other constraint (the FK is re-created with the same canonical name)");
+    // SQLite edition: rebuild pattern, every rebuilt table's DROP is paired
+    // with a new_X copy + RENAME, and the rebuilt tables are exactly the four.
+    const dropped = [...sqliteK3.matchAll(/DROP TABLE "([A-Za-z0-9_]+)"/g)].map((m) => m[1]);
+    ok(dropped.join(",") === "_k3_guard,Course,Student,Lesson,MockExam", "K3 SQLite edition rebuilds exactly Course, Student, Lesson and MockExam (plus the guard table)", dropped.join(","));
+    for (const tbl of ["Course", "Student", "Lesson", "MockExam"]) {
+      ok(new RegExp(`CREATE TABLE "new_${tbl}" \\(`).test(sqliteK3) && new RegExp(`INSERT INTO "new_${tbl}" \\(([^)]*)\\)\\s*SELECT \\1 FROM "${tbl}";`).test(sqliteK3) && new RegExp(`ALTER TABLE "new_${tbl}" RENAME TO "${tbl}";`).test(sqliteK3),
+        `K3 SQLite edition copies every column of ${tbl} into its rebuilt table with the same column list, then renames`);
+    }
+    ok(/PRAGMA defer_foreign_keys=ON;\s*PRAGMA foreign_keys=OFF;/.test(sqliteK3) && /PRAGMA foreign_keys=ON;\s*PRAGMA defer_foreign_keys=OFF;/.test(sqliteK3),
+      "K3 SQLite edition brackets the rebuild with the Prisma RedefineTables pragmas");
+    ok(!/"Lesson_officialCode_key"/.test(sqliteK3), "K3 SQLite edition does not re-create the global officialCode unique");
+  }
+
+  // A6 — fresh SQLite through the repo's own harness: base DDL + 21 migrations.
   {
     const { DatabaseSync } = require("node:sqlite");
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cm-mig-providers-"));
@@ -535,8 +613,8 @@ function partA() {
     const mig = require(path.join(REPO, "scripts", "lib", "migrate-sqlite.mjs"));
     const db = new DatabaseSync(dbPath);
     const applied = mig.applyMigrations(db, { withBaseSchema: true });
-    ok(applied.length === 20, `fresh SQLite applies all 20 migrations (got ${applied.length})`);
-    ok(applied[applied.length - 1] === MIG_K1, "the last applied SQLite migration is the K1 academic-level capability migration");
+    ok(applied.length === 21, `fresh SQLite applies all 21 migrations (got ${applied.length})`);
+    ok(applied[applied.length - 1] === MIG_K3, "the last applied SQLite migration is the K3 academic-level constraints migration");
     for (const [tbl, cols] of [
       ["Quiz", ["quizMode", "questionCount", "maxAttempts", "shuffleOptions", "difficultyPlan"]],
       ["QuizAttempt", ["attemptNumber", "status", "retryGrantId"]],
@@ -583,19 +661,23 @@ function partA() {
         ok(!!db.prepare(`SELECT name FROM sqlite_master WHERE type='index' AND name=?`).get(idx), `fresh SQLite schema carries ${idx}`);
       }
     }
-    // K1 — the nullable academicLevel capability lands on all three models
-    // (the column is added, and the global officialCode unique is untouched —
-    // the composite uniqueness is Phase K3 work).
+    // K1 added the academicLevel capability on all three models; K3 made it
+    // NOT NULL and replaced the global officialCode unique with the
+    // level-scoped composite unique.
     for (const tbl of ["Course", "Student", "Lesson"]) {
-      const present = new Set(db.prepare(`PRAGMA table_info("${tbl}")`).all().map((r) => r.name));
-      ok(present.has("academicLevel"), `fresh SQLite schema carries ${tbl}.academicLevel (K1 nullable capability)`);
+      const col = db.prepare(`PRAGMA table_info("${tbl}")`).all().find((r) => r.name === "academicLevel");
+      ok(!!col && col.notnull === 1, `fresh SQLite schema carries ${tbl}.academicLevel NOT NULL (K1 capability, K3 required)`);
     }
-    ok(!!db.prepare(`SELECT name FROM sqlite_master WHERE type='index' AND name='Lesson_officialCode_key'`).get(),
-      "fresh SQLite schema keeps the global Lesson.officialCode unique through K1 (composite uniqueness is K3)");
+    ok(!db.prepare(`SELECT name FROM sqlite_master WHERE type='index' AND name='Lesson_officialCode_key'`).get(),
+      "fresh SQLite schema no longer carries the global Lesson.officialCode unique (removed by K3)");
+    ok(!!db.prepare(`SELECT name FROM sqlite_master WHERE type='index' AND name='Lesson_academicLevel_officialCode_key'`).get(),
+      "fresh SQLite schema carries the K3 composite unique Lesson_academicLevel_officialCode_key");
+    ok(db.prepare(`PRAGMA table_info("MockExam")`).all().find((r) => r.name === "courseId")?.notnull === 1,
+      "fresh SQLite schema carries MockExam.courseId NOT NULL (K3)");
     // the harness ledger records the very checksums pinned in A2
     const rows = db.prepare('SELECT migration_name, checksum FROM "_prisma_migrations"').all();
     const pinned = rows.every((r) => r.checksum === PINNED[r.migration_name]);
-    ok(pinned && rows.length === 20, "fresh SQLite ledger carries exactly the pinned applied checksums");
+    ok(pinned && rows.length === 21, "fresh SQLite ledger carries exactly the pinned applied checksums");
     db.close();
     fs.rmSync(tmp, { recursive: true, force: true });
   }
@@ -978,7 +1060,7 @@ async function partC() {
     const query2 = async (t, p) => pool2.query(t, p);
     const snap = await catalogSnapshot(query2);
     const ledger = await query2(`SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NOT NULL ORDER BY migration_name`);
-    const expectedPgLedger = ["0_init", MIG_26D, MIG_PHASE_F, MIG_PHASE_G, MIG_CAMERA, MIG_PHASE_H, MIG_SV_REQ, MIG_SV_MODES, MIG_REMIND_AUD, MIG_K1];
+    const expectedPgLedger = ["0_init", MIG_26D, MIG_PHASE_F, MIG_PHASE_G, MIG_CAMERA, MIG_PHASE_H, MIG_SV_REQ, MIG_SV_MODES, MIG_REMIND_AUD, MIG_K1, MIG_K3];
     // The expected ledger is the migrations directory itself: this guard fails
     // loudly the moment a new migration lands without joining the explicit
     // list (a stale list previously blamed the engine for the test's own

@@ -109,8 +109,8 @@ for (const d of mig.assertColumnsMatchSchema(rawDb, SCHEMA_TABLES)) {
   // the honest legacy state: nothing delivered, no delivery timestamp.
   rawDb
     .prepare(
-      `INSERT INTO "Course" ("id","slug","name","nameAr","description","createdAt","updatedAt")
-       VALUES ('c-pre','pre','Pre','Pre','pre',0,0)`
+      `INSERT INTO "Course" ("id","slug","academicLevel","name","nameAr","description","createdAt","updatedAt")
+       VALUES ('c-pre','pre','SECOND_SECONDARY','Pre','Pre','pre',0,0)`
     )
     .run();
   rawDb
@@ -121,8 +121,8 @@ for (const d of mig.assertColumnsMatchSchema(rawDb, SCHEMA_TABLES)) {
     .run();
   rawDb
     .prepare(
-      `INSERT INTO "Lesson" ("id","unitId","title","titleAr","order","status","isPublished","trackScope","curriculumStatus","isLocked","duration","createdAt","updatedAt")
-       VALUES ('l-pre','u-pre','L','L',1,'PUBLISHED',1,'SHARED','OFFICIAL',0,90,0,0)`
+      `INSERT INTO "Lesson" ("id","unitId","academicLevel","title","titleAr","order","status","isPublished","trackScope","curriculumStatus","isLocked","duration","createdAt","updatedAt")
+       VALUES ('l-pre','u-pre','SECOND_SECONDARY','L','L',1,'PUBLISHED',1,'SHARED','OFFICIAL',0,90,0,0)`
     )
     .run();
   rawDb
@@ -387,10 +387,10 @@ async function main() {
   const uSusp = await mkUser("STUDENT", "susp@t.test", { status: "SUSPENDED_MULTI_DEVICE" });
 
   const courseA = await client.course.create({
-    data: { slug: "pa17-a", name: "Course A", nameAr: "أ", description: "A" },
+    data: { academicLevel: "SECOND_SECONDARY", slug: "pa17-a", name: "Course A", nameAr: "أ", description: "A" },
   });
   const courseB = await client.course.create({
-    data: { slug: "pa17-b", name: "Course B", nameAr: "ب", description: "B" },
+    data: { academicLevel: "SECOND_SECONDARY", slug: "pa17-b", name: "Course B", nameAr: "ب", description: "B" },
   });
   const groupA = await client.group.create({
     data: { name: "GA", courseId: courseA.id, isActive: true },
@@ -403,7 +403,7 @@ async function main() {
   });
 
   const mkStudent = (user, schoolType, groupId) =>
-    client.student.create({ data: { userId: user.id, schoolType, groupId } });
+    client.student.create({ data: { academicLevel: "SECOND_SECONDARY", userId: user.id, schoolType, groupId } });
   const sAr1 = await mkStudent(uAr1, "ARABIC", groupA.id);
   const sAr2 = await mkStudent(uAr2, "ARABIC", groupA.id);
   const sAr3 = await mkStudent(uAr3, "ARABIC", groupA.id);
@@ -435,6 +435,7 @@ async function main() {
     });
     return client.lesson.create({
       data: {
+        academicLevel: "SECOND_SECONDARY",
         unitId: u.id,
         officialCode: `P17-${code}`,
         title: `Session ${code}`,
@@ -585,6 +586,7 @@ async function main() {
     });
     const lessonSupp = await client.lesson.create({
       data: {
+        academicLevel: "SECOND_SECONDARY",
         unitId: unitB.id,
         officialCode: "P17-9-9",
         title: "Suppressed Session",
@@ -871,7 +873,7 @@ async function main() {
           data: { email: `${tag}${i}@t.test`, password: "x", name: `${tag}${i}`, role: "STUDENT" },
         });
         await client.student.create({
-          data: { userId: u.id, schoolType: i % 2 === 0 ? "ARABIC" : "LANGUAGE", groupId: groupA.id },
+          data: { academicLevel: "SECOND_SECONDARY", userId: u.id, schoolType: i % 2 === 0 ? "ARABIC" : "LANGUAGE", groupId: groupA.id },
         });
         rows.push(u.id);
       }

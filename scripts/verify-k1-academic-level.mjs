@@ -5,15 +5,24 @@
 //       (orphan lesson or a stop-condition check failed — do not continue to K2).
 //
 // WHAT IT PROVES (docs/MULTI_LEVEL_FINAL_CONTRACT.md §8/§9, K1 checkpoint)
-//   1. FRESH CHAIN — the repo's own SQLite harness applies base DDL + ALL 20
-//      migrations; K1 is the last one; the three nullable academicLevel
-//      columns exist; the global Lesson.officialCode unique is UNCHANGED.
+//   1. K1 CHECKPOINT CHAIN — the repo's own SQLite harness applies base DDL +
+//      the first 20 migrations (`upTo: K1`); K1 is the 20th; the three
+//      academicLevel columns exist and are NULLABLE at that checkpoint; the
+//      global Lesson.officialCode unique is UNCHANGED at that checkpoint.
+//      (Phase K3 later tightens all of this — see
+//      scripts/verify-k3-academic-level.mjs; the full chain is now 21.)
 //   2. PRODUCTION-SHAPED REHEARSAL — a scratch database is built through the
-//      first 19 migrations (the pre-K1 state), populated by the REAL
-//      `scripts/seed.ts` (settings, users, student, parent link, course,
-//      quizzes/homework, group, live sessions + the real Phase 11 reconciler:
-//      2 Parts / 7 Units / 23 official lessons), snapshotted byte-for-byte,
-//      then the K1 migration file is applied through the same harness.
+//      first 19 migrations (the pre-K1 state) and populated with the output
+//      of the REAL `scripts/seed.ts` (settings, users, student, parent link,
+//      course, quizzes/homework, group, live sessions + the real Phase 11
+//      reconciler: 2 Parts / 7 Units / 23 official lessons), snapshotted
+//      byte-for-byte, then the K1 migration file is applied through the same
+//      harness. Since Phase K2 the seed itself writes `academicLevel` (it
+//      cannot run against a schema without the column), so the seed runs on
+//      a K1-state scratch database and its rows are TRANSPLANTED table by
+//      table into the pre-K1 database, dropping ONLY the `academicLevel`
+//      column — exactly the value the K1 backfill must re-derive (check D
+//      proves the derivation reproduces it). Nothing else is altered.
 //      The seed is executed exactly the way the repo's own verify-* scripts
 //      execute real application code in this sandbox: compiled with the repo
 //      tsc, `src/lib/db` shimmed to `scripts/lib/sqlite-prisma-lite.mjs`
@@ -61,6 +70,7 @@ const { applyMigrations, listMigrations } = await import(
 
 const K1 = "20260923100000_k1_academic_level_capability";
 const LAST_BEFORE_K1 = "20260922090000_readiness_reminder_recipients";
+const K1_CHAIN_LENGTH = 20;
 
 let pass = 0;
 const failures = [];
@@ -109,15 +119,17 @@ function fullSnapshot(db, dropColumns = []) {
 }
 
 // ---------------------------------------------------------------------------
-// 1. FRESH CHAIN (base DDL + all 20 migrations)
+// 1. K1 CHECKPOINT CHAIN (base DDL + the first 20 migrations, up to K1)
 // ---------------------------------------------------------------------------
 
-section("1. FRESH CHAIN — base DDL + all migrations (repo harness)");
+section("1. K1 CHECKPOINT CHAIN — base DDL + migrations up to K1 (repo harness)");
 {
   const db = new DatabaseSync(path.join(WORK, "fresh.db"));
-  const applied = applyMigrations(db, { withBaseSchema: true, label: "fresh " });
-  ok(applied.length === 20, `fresh chain applies all 20 migrations (got ${applied.length})`);
-  ok(applied[applied.length - 1] === K1, `last applied migration is K1 (got ${applied[applied.length - 1]})`);
+  const applied = applyMigrations(db, { withBaseSchema: true, upTo: K1, label: "fresh " });
+  ok(applied.length === K1_CHAIN_LENGTH, `chain up to K1 applies ${K1_CHAIN_LENGTH} migrations (got ${applied.length})`);
+  ok(applied[applied.length - 1] === K1, `the ${K1_CHAIN_LENGTH}th applied migration is K1 (got ${applied[applied.length - 1]})`);
+  ok(listMigrations().length > K1_CHAIN_LENGTH && listMigrations()[K1_CHAIN_LENGTH - 1] === K1,
+    `the repository chain continues past K1 (${listMigrations().length} migrations; K1 at position ${K1_CHAIN_LENGTH})`);
   for (const tbl of ["Course", "Student", "Lesson"]) {
     const col = db.prepare(`PRAGMA table_info("${tbl}")`).all().find((r) => r.name === "academicLevel");
     ok(!!col, `fresh schema carries ${tbl}.academicLevel`);
@@ -125,7 +137,7 @@ section("1. FRESH CHAIN — base DDL + all migrations (repo harness)");
   }
   ok(
     !!db.prepare(`SELECT name FROM sqlite_master WHERE type='index' AND name='Lesson_officialCode_key'`).get(),
-    "global Lesson.officialCode unique is UNCHANGED in K1 (composite uniqueness is K3)"
+    "global Lesson.officialCode unique is UNCHANGED at the K1 checkpoint (composite uniqueness is K3)"
   );
   // A fresh (empty) chain has no rows — nothing to backfill, nothing to orphan.
   ok(db.prepare(`SELECT COUNT(*) AS c FROM "Lesson"`).get().c === 0, "fresh chain carries no curriculum rows (empty platform)");
@@ -151,7 +163,17 @@ ok(
 //    (compiled with the repo tsc; db shimmed to sqlite-prisma-lite; child process)
 // ---------------------------------------------------------------------------
 
-section("3. REAL SEED — scripts/seed.ts on the pre-K1 database (real reconciler)");
+section("3. REAL SEED — scripts/seed.ts on a K1-state database, transplanted into pre-K1");
+// The seed runs against a K1-state scratch database (the earliest schema the
+// K2+ seed can populate); its rows are then copied into the pre-K1 database
+// minus the `academicLevel` column (see header).
+const SEED_PATH = path.join(WORK, "seed-k1-state.db");
+{
+  const seedDb = new DatabaseSync(SEED_PATH);
+  applyMigrations(seedDb, { upTo: K1, withBaseSchema: true, label: "seed-K1 " });
+  ok(seedDb.prepare(`SELECT COUNT(*) AS c FROM "_prisma_migrations"`).get().c === K1_CHAIN_LENGTH, "seed scratch database is at the K1 checkpoint (20 migrations)");
+  seedDb.close();
+}
 {
   const out = fs.mkdtempSync(path.join(os.tmpdir(), "cm-k1-seed-"));
   const tscBin = path.join(REPO, "node_modules", "typescript", "bin", "tsc");
@@ -270,7 +292,7 @@ process.exit(0);
 `
   );
 
-  const seedRes = spawnSync(process.execPath, [path.join(out, "run-seed.mjs"), PRE_PATH], {
+  const seedRes = spawnSync(process.execPath, [path.join(out, "run-seed.mjs"), SEED_PATH], {
     cwd: REPO,
     encoding: "utf8",
     env: {
@@ -283,9 +305,36 @@ process.exit(0);
       SEED_DEMO_PASSWORD: "k1-verify-disposable-demo-password",
     },
   });
-  ok(seedRes.status === 0, `real scripts/seed.ts populates the pre-K1 database${seedRes.status === 0 ? "" : ` (exit ${seedRes.status})`}`,
+  ok(seedRes.status === 0, `real scripts/seed.ts populates the K1-state database${seedRes.status === 0 ? "" : ` (exit ${seedRes.status})`}`,
     (seedRes.stderr || seedRes.stdout || "").slice(-500));
   fs.rmSync(out, { recursive: true, force: true });
+}
+// Transplant: every application table, every row, every column EXCEPT
+// academicLevel (which does not exist pre-K1). Row order and ids are kept.
+{
+  const seedDb = new DatabaseSync(SEED_PATH);
+  let tables = 0;
+  let rows = 0;
+  pre.exec("PRAGMA foreign_keys=OFF");
+  pre.exec("BEGIN");
+  for (const t of tableNames(seedDb)) {
+    const cols = pre.prepare(`PRAGMA table_info("${t}")`).all().map((r) => r.name).filter((c) => c !== "academicLevel");
+    const data = seedDb.prepare(`SELECT ${cols.map((c) => `"${c}"`).join(",")} FROM "${t}" ORDER BY rowid`).all();
+    if (!data.length) continue;
+    const ins = pre.prepare(`INSERT INTO "${t}" (${cols.map((c) => `"${c}"`).join(",")}) VALUES (${cols.map(() => "?").join(",")})`);
+    for (const r of data) ins.run(...cols.map((c) => r[c]));
+    tables += 1;
+    rows += data.length;
+  }
+  pre.exec("COMMIT");
+  pre.exec("PRAGMA foreign_keys=ON");
+  const fkViolations = pre.prepare("PRAGMA foreign_key_check").all().length;
+  ok(rows > 0 && fkViolations === 0, `seeded rows transplanted into the pre-K1 schema (${tables} tables, ${rows} rows, ${fkViolations} FK violations)`);
+  ok(
+    !pre.prepare(`PRAGMA table_info("Lesson")`).all().some((r) => r.name === "academicLevel"),
+    "the pre-K1 database still has no academicLevel column after the transplant (K1 must derive it)"
+  );
+  seedDb.close();
 }
 
 // Pre-K1 shape: the reconciled official curriculum is 2 Parts / 7 Units / 23 lessons.
@@ -317,8 +366,8 @@ const preOfficialCodes = pre
 // ---------------------------------------------------------------------------
 
 section("4. Apply K1 migration");
-const appliedK1 = applyMigrations(pre, { label: "K1 " });
-ok(appliedK1.length === 1 && appliedK1[0] === K1, `only the K1 migration is pending and it applied (got ${JSON.stringify(appliedK1)})`);
+const appliedK1 = applyMigrations(pre, { upTo: K1, label: "K1 " });
+ok(appliedK1.length === 1 && appliedK1[0] === K1, `only the K1 migration is applied at this step (got ${JSON.stringify(appliedK1)})`);
 ok(
   pre.prepare(`SELECT checksum FROM "_prisma_migrations" WHERE migration_name=?`).get(K1)?.checksum ===
     sha256(fs.readFileSync(path.join(REPO, "prisma", "migrations", K1, "migration.sql"), "utf8").replace(/\r\n/g, "\n")),
@@ -413,7 +462,7 @@ for (const tbl of Object.keys(preIds)) {
     rejected = true;
   }
   pre.exec("ROLLBACK");
-  ok(rejected, `I. inserting a duplicate officialCode ('${code}') is still rejected by the global unique`);
+  ok(rejected, `I. inserting a duplicate officialCode ('${code}') is still rejected by the global unique at the K1 checkpoint`);
   ok(pre.prepare(`SELECT COUNT(*) AS c FROM "Lesson" WHERE "id"='k1-dup-probe'`).get().c === 0, "I. the probe row left no trace (rolled back)");
 }
 

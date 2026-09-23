@@ -335,8 +335,8 @@ db.prepare(
 // Student profile for the logged-in student (also the parent-registration link
 // target: nationalId + studentCode + parentPhone must match).
 db.prepare(
-  `INSERT INTO "Student" ("id","userId","grade","schoolType","nationalId","studentCode","parentPhone","schoolName","createdAt","updatedAt","enrolledAt")
-   VALUES (?,?,?,?,?,?,?,?,?,?,?)`
+  `INSERT INTO "Student" ("id","userId","grade","schoolType","nationalId","studentCode","parentPhone","schoolName","createdAt","updatedAt","enrolledAt","academicLevel")
+   VALUES (?,?,?,?,?,?,?,?,?,?,?,'SECOND_SECONDARY')`
 ).run(
   "s-student",
   "u-student",

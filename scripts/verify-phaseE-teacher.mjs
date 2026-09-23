@@ -426,10 +426,10 @@ async function main() {
   const teacherB = await client.teacher.create({ data: { userId: teacherUserB.id } });
 
   const courseA = await client.course.create({
-    data: { slug: "phaseE-a", name: "Phase E A", nameAr: "مرحلة ئ أ", description: "d" },
+    data: { academicLevel: "SECOND_SECONDARY", slug: "phaseE-a", name: "Phase E A", nameAr: "مرحلة ئ أ", description: "d" },
   });
   const courseB = await client.course.create({
-    data: { slug: "phaseE-b", name: "Phase E B", nameAr: "مرحلة ئ ب", description: "d" },
+    data: { academicLevel: "SECOND_SECONDARY", slug: "phaseE-b", name: "Phase E B", nameAr: "مرحلة ئ ب", description: "d" },
   });
   const partA = await client.part.create({
     data: { courseId: courseA.id, title: "Part A", titleAr: "جزء أ", order: 1 },
@@ -452,7 +452,7 @@ async function main() {
   });
 
   const student = await client.student.create({
-    data: { userId: studentUser.id, groupId: groupA.id, schoolType: "ARABIC" },
+    data: { academicLevel: "SECOND_SECONDARY", userId: studentUser.id, groupId: groupA.id, schoolType: "ARABIC" },
   });
   ok(true, "C: teachers, groups, courses, chain and a student seeded");
 
@@ -460,6 +460,7 @@ async function main() {
   // The session the workflow completes (all four readiness items satisfied).
   L.complete = await client.lesson.create({
     data: {
+      academicLevel: "SECOND_SECONDARY",
       unitId: unitA.id, officialCode: "PE-01", title: "Complete session", titleAr: "حصة كاملة",
       order: 1, trackScope: "SHARED", status: "DRAFT", curriculumStatus: "OFFICIAL",
     },
@@ -467,6 +468,7 @@ async function main() {
   // Same course — an ARCHIVED session must be visible but not writeable.
   L.archived = await client.lesson.create({
     data: {
+      academicLevel: "SECOND_SECONDARY",
       unitId: unitA.id, officialCode: "PE-02", title: "Archived session", titleAr: "حصة مؤرشفة",
       order: 2, trackScope: "SHARED", status: "ARCHIVED", curriculumStatus: "ARCHIVED",
     },
@@ -474,6 +476,7 @@ async function main() {
   // A track-specific session for the containment material/quiz matrix.
   L.ar = await client.lesson.create({
     data: {
+      academicLevel: "SECOND_SECONDARY",
       unitId: unitA.id, officialCode: "PE-03", title: "Arabic session", titleAr: "حصة عربي",
       order: 3, trackScope: "ARABIC", status: "DRAFT", curriculumStatus: "OFFICIAL",
     },
@@ -481,6 +484,7 @@ async function main() {
   // The OTHER teacher's session — cross-scope must fail closed everywhere.
   L.foreign = await client.lesson.create({
     data: {
+      academicLevel: "SECOND_SECONDARY",
       unitId: unitB.id, officialCode: "PE-B1", title: "Foreign session", titleAr: "حصة غير مملوكة",
       order: 1, trackScope: "SHARED", status: "DRAFT", curriculumStatus: "OFFICIAL",
     },
@@ -1262,6 +1266,7 @@ async function main() {
   // it, so the assertions can be exact about rows and bytes.
   const svcLesson = await client.lesson.create({
     data: {
+      academicLevel: "SECOND_SECONDARY",
       unitId: unitA.id, officialCode: "PE-K1", title: "Presigned manage-own session",
       titleAr: "حصة ادارة-الملكية", order: 90, trackScope: "SHARED",
       status: "DRAFT", curriculumStatus: "OFFICIAL",
@@ -1321,6 +1326,7 @@ async function main() {
   //      replaces it: new row ACTIVE, old row deactivated.
   const svcLesson2 = await client.lesson.create({
     data: {
+      academicLevel: "SECOND_SECONDARY",
       unitId: unitA.id, officialCode: "PE-K2", title: "Presigned manage-own replace session",
       titleAr: "حصة استبدال-الملكية", order: 91, trackScope: "SHARED",
       status: "DRAFT", curriculumStatus: "OFFICIAL",

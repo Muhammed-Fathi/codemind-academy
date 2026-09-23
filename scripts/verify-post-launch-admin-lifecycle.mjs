@@ -317,8 +317,8 @@ const LESSON_IDS = rawDb.prepare(`SELECT "id" FROM "Lesson"`).all().map((r) => r
 const QUIZ_LESSON = LESSON_IDS[0];
 
 // Empty course (no groups/parts/enrollments/mockExams/batches) — deletable.
-rawDb.prepare(`INSERT INTO "Course" ("id","slug","name","nameAr","description","color","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?,?)`)
-  .run("v-empty-course", "verifier-empty-course", "Empty Course", "كورس فاضي", "unused", "#10b981", NOW, NOW);
+rawDb.prepare(`INSERT INTO "Course" ("id","slug","academicLevel","name","nameAr","description","color","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?,?,?)`)
+  .run("v-empty-course", "verifier-empty-course", "SECOND_SECONDARY", "Empty Course", "كورس فاضي", "unused", "#10b981", NOW, NOW);
 
 // Batches + groups + students
 rawDb.prepare(`INSERT INTO "Batch" ("id","name","nameAr","schoolType","courseId","isActive","createdAt","updatedAt") VALUES (?,?,?,?,?,1,?,?)`).run("v-batch-ar", "Arabic Batch", "مجموعة عربي", "ARABIC", COURSE_ID, NOW, NOW);
@@ -337,8 +337,8 @@ for (let i = 0; i < 6; i++) {
   const sid = `v-stu-row-${i}`;
   const isAr = i < 4;
   insertUser(uid, `v-stu-${i}@local.test`, "STUDENT", "VerifierStudent1!", `Student ${i}`);
-  rawDb.prepare(`INSERT INTO "Student" ("id","userId","grade","schoolName","schoolType","groupId","batchId","enrolledAt","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?,?,?,?)`)
-    .run(sid, uid, "2nd Secondary", "Verifier School", isAr ? "ARABIC" : "LANGUAGE", isAr ? "v-group-ar" : "v-group-lang", isAr ? "v-batch-ar" : "v-batch-lang", NOW, NOW, NOW);
+  rawDb.prepare(`INSERT INTO "Student" ("id","userId","grade","schoolName","schoolType","academicLevel","groupId","batchId","enrolledAt","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(sid, uid, "2nd Secondary", "Verifier School", isAr ? "ARABIC" : "LANGUAGE", "SECOND_SECONDARY", isAr ? "v-group-ar" : "v-group-lang", isAr ? "v-batch-ar" : "v-batch-lang", NOW, NOW, NOW);
   studentIds.push({ uid, sid, isAr });
 }
 
@@ -399,7 +399,7 @@ insertQuestion("v-q-pinned", null, "Pinned bank question");
 rawDb.prepare(`INSERT INTO "QuizAnswer" ("id","attemptId","questionId","selected","isCorrect") VALUES (?,?,?,?,?)`)
   .run("v-qans-0", "v-qa-0", "v-q-frozen", "0", 1);
 rawDb.prepare(`INSERT INTO "MockExam" ("id","title","titleAr","description","schoolType","courseId","questionCount","durationMin","passMark","difficulty","selectionMode","isPublished","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-  .run("v-me-fixed", "Fixed Exam", "امتحان ثابت", null, "ARABIC", null, 10, 30, 60, "MIXED", "FIXED", 0, NOW, NOW);
+  .run("v-me-fixed", "Fixed Exam", "امتحان ثابت", null, "ARABIC", COURSE_ID /* K3: courseId NOT NULL */, 10, 30, 60, "MIXED", "FIXED", 0, NOW, NOW);
 rawDb.prepare(`INSERT INTO "MockExamQuestion" ("id","mockExamId","questionId","examQuestionId","order") VALUES (?,?,?,?,?)`)
   .run("v-meq-0", "v-me-fixed", "v-q-pinned", null, 0);
 

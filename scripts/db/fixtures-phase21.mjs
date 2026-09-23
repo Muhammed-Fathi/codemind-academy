@@ -95,18 +95,20 @@ function insertFixtures(db) {
   run(`INSERT INTO "Parent" ("id","userId","createdAt","updatedAt") VALUES ('p21-p1','p21-u-p1',?,?)`, T0, T0);
 
   // ---- curriculum: 1 course, 1 part, 1 unit, 1 topic, 3 lessons ----
-  run(`INSERT INTO "Course" ("id","slug","name","nameAr","description","color","createdAt","updatedAt")
-       VALUES ('p21-c1','programming-ai-2nd-sec','Programming & AI','البرمجة والذكاء الاصطناعي','Official course','#10b981',?,?)`, T0, T0);
+  // Phase K3: Course/Student/Lesson.academicLevel are NOT NULL at the current
+  // head, and every lesson level is the chain-derived course level.
+  run(`INSERT INTO "Course" ("id","slug","academicLevel","name","nameAr","description","color","createdAt","updatedAt")
+       VALUES ('p21-c1','programming-ai-2nd-sec','SECOND_SECONDARY','Programming & AI','البرمجة والذكاء الاصطناعي','Official course','#10b981',?,?)`, T0, T0);
   run(`INSERT INTO "Part" ("id","courseId","title","titleAr","order") VALUES ('p21-part1','p21-c1','Part 1','الجزء الأول',1)`);
   run(`INSERT INTO "Unit" ("id","partId","title","titleAr","order") VALUES ('p21-unit1','p21-part1','Unit 1','الوحدة الأولى',1)`);
   run(`INSERT INTO "Topic" ("id","unitId","title","titleAr","order") VALUES ('p21-topic1','p21-unit1','Legacy topic','موضوع قديم',1)`);
   // Two official PUBLISHED sessions + one legacy row (never in the universe).
-  run(`INSERT INTO "Lesson" ("id","unitId","officialCode","curriculumStatus","trackScope","status","title","titleAr","order","duration","isLocked","isPublished","createdAt","updatedAt")
-       VALUES ('p21-l1','p21-unit1','1-1','OFFICIAL','SHARED','PUBLISHED','Intro to AI','مقدمة في الذكاء الاصطناعي',1,90,0,1,?,?)`, T0, T1);
-  run(`INSERT INTO "Lesson" ("id","unitId","officialCode","curriculumStatus","trackScope","status","title","titleAr","order","duration","isLocked","isPublished","createdAt","updatedAt")
-       VALUES ('p21-l2','p21-unit1','1-2','OFFICIAL','LANGUAGE','PUBLISHED','Data Basics','أساسيات البيانات',2,90,0,1,?,?)`, T0, T1);
-  run(`INSERT INTO "Lesson" ("id","topicId","curriculumStatus","trackScope","status","title","titleAr","order","duration","isLocked","isPublished","createdAt","updatedAt")
-       VALUES ('p21-llegacy','p21-topic1','LEGACY','SHARED','DRAFT','What is IT?','ما هي تقنية المعلومات؟',99,90,1,0,?,?)`, T0, T0);
+  run(`INSERT INTO "Lesson" ("id","unitId","officialCode","academicLevel","curriculumStatus","trackScope","status","title","titleAr","order","duration","isLocked","isPublished","createdAt","updatedAt")
+       VALUES ('p21-l1','p21-unit1','1-1','SECOND_SECONDARY','OFFICIAL','SHARED','PUBLISHED','Intro to AI','مقدمة في الذكاء الاصطناعي',1,90,0,1,?,?)`, T0, T1);
+  run(`INSERT INTO "Lesson" ("id","unitId","officialCode","academicLevel","curriculumStatus","trackScope","status","title","titleAr","order","duration","isLocked","isPublished","createdAt","updatedAt")
+       VALUES ('p21-l2','p21-unit1','1-2','SECOND_SECONDARY','OFFICIAL','LANGUAGE','PUBLISHED','Data Basics','أساسيات البيانات',2,90,0,1,?,?)`, T0, T1);
+  run(`INSERT INTO "Lesson" ("id","topicId","academicLevel","curriculumStatus","trackScope","status","title","titleAr","order","duration","isLocked","isPublished","createdAt","updatedAt")
+       VALUES ('p21-llegacy','p21-topic1','SECOND_SECONDARY','LEGACY','SHARED','DRAFT','What is IT?','ما هي تقنية المعلومات؟',99,90,1,0,?,?)`, T0, T0);
   run(`INSERT INTO "SessionPublication" ("id","lessonId","segment","publishedAt","publishedByUserId","notifiedCount","notifiedAt")
        VALUES ('p21-pub1','p21-l1','SHARED',?,?,2,?)`, T1, "p21-u-admin", T2);
 
@@ -121,10 +123,10 @@ function insertFixtures(db) {
        VALUES ('p21-b-ar','Batch AR','دفعة عربي','ARABIC','p21-c1',1,?,?)`, T0, T0);
   run(`INSERT INTO "Batch" ("id","name","nameAr","schoolType","courseId","isActive","createdAt","updatedAt")
        VALUES ('p21-b-lang','Batch LANG','دفعة لغات','LANGUAGE','p21-c1',1,?,?)`, T0, T0);
-  run(`INSERT INTO "Student" ("id","userId","grade","schoolType","nationalId","parentPhone","studentCode","groupId","batchId","enrolledAt","createdAt","updatedAt")
-       VALUES ('p21-s1','p21-u-s1','2nd Secondary','ARABIC','29001011234567','01011112222','CM-000001','p21-g1','p21-b-ar',?,?,?)`, T0, T0, T0);
-  run(`INSERT INTO "Student" ("id","userId","grade","schoolType","nationalId","parentPhone","studentCode","groupId","batchId","enrolledAt","createdAt","updatedAt")
-       VALUES ('p21-s2','p21-u-s2','2nd Secondary','LANGUAGE','29002021234568','01222223333','CM-000002','p21-g1','p21-b-lang',?,?,?)`, T0, T0, T0);
+  run(`INSERT INTO "Student" ("id","userId","grade","schoolType","academicLevel","nationalId","parentPhone","studentCode","groupId","batchId","enrolledAt","createdAt","updatedAt")
+       VALUES ('p21-s1','p21-u-s1','2nd Secondary','ARABIC','SECOND_SECONDARY','29001011234567','01011112222','CM-000001','p21-g1','p21-b-ar',?,?,?)`, T0, T0, T0);
+  run(`INSERT INTO "Student" ("id","userId","grade","schoolType","academicLevel","nationalId","parentPhone","studentCode","groupId","batchId","enrolledAt","createdAt","updatedAt")
+       VALUES ('p21-s2','p21-u-s2','2nd Secondary','LANGUAGE','SECOND_SECONDARY','29002021234568','01222223333','CM-000002','p21-g1','p21-b-lang',?,?,?)`, T0, T0, T0);
   run(`INSERT INTO "ParentStudentLink" ("id","parentId","studentId","relation","createdAt")
        VALUES ('p21-link1','p21-p1','p21-s1','parent',?)`, T0);
   run(`INSERT INTO "Enrollment" ("id","studentId","courseId","trackId","status","startsAt","createdAt")

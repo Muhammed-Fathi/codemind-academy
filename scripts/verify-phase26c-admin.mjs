@@ -341,7 +341,7 @@ insertSession("qa26c-student-ar-session","qa26c-student-ar","qa26c-ar-raw-token"
 rawDb.prepare(`INSERT INTO "Course" ("id","slug","name","nameAr","description","color","academicLevel","createdAt","updatedAt") VALUES ('qa26c-course-other','qa26c-other','Other','آخر','other','#123','SECOND_SECONDARY',?,?)`).run(NOW,NOW);
 rawDb.prepare(`INSERT INTO "Part" ("id","courseId","title","titleAr","order") VALUES ('qa26c-part-other','qa26c-course-other','P','ص',1)`).run();
 rawDb.prepare(`INSERT INTO "Unit" ("id","partId","title","titleAr","order") VALUES ('qa26c-unit-other','qa26c-part-other','U','و',1)`).run();
-rawDb.prepare(`INSERT INTO "Lesson" ("id","title","titleAr","order","unitId","status","trackScope","createdAt","updatedAt") VALUES ('qa26c-lesson-other','Other','آخر',1,'qa26c-unit-other','PUBLISHED','SHARED',?,?)`).run(NOW,NOW);
+rawDb.prepare(`INSERT INTO "Lesson" ("id","title","titleAr","order","unitId","status","trackScope","createdAt","updatedAt","academicLevel") VALUES ('qa26c-lesson-other','Other','آخر',1,'qa26c-unit-other','PUBLISHED','SHARED',?,?,'SECOND_SECONDARY')`).run(NOW,NOW);
 rawDb.prepare(`INSERT INTO "Group" ("id","name","capacity","isActive","courseId","trackScope","createdAt","updatedAt") VALUES ('qa26c-group-other','Other Course Group',30,1,'qa26c-course-other','ARABIC',?,?)`).run(NOW,NOW);
 
 console.log("[26C] fixtures ready");
@@ -553,7 +553,7 @@ function record(id, desc, pass, detail=""){
   const partId = rawDb.prepare(`SELECT id FROM "Part" WHERE courseId=? LIMIT 1`).get(COURSE_ID).id;
   const unitId = rawDb.prepare(`SELECT id FROM "Unit" WHERE partId=? LIMIT 1`).get(partId).id;
   const lessonId = "qa26c-publish-lesson";
-  try { rawDb.prepare(`INSERT INTO "Lesson" ("id","title","titleAr","order","unitId","status","trackScope","videoUrl","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?,?,?,?)`).run(lessonId,"Publish Test","اختبار نشر",99,unitId,"DRAFT","SHARED","https://example.com/video",NOW,NOW); } catch {}
+  try { rawDb.prepare(`INSERT INTO "Lesson" ("id","title","titleAr","order","unitId","status","trackScope","videoUrl","createdAt","updatedAt","academicLevel") VALUES (?,?,?,?,?,?,?,?,?,?,'SECOND_SECONDARY')`).run(lessonId,"Publish Test","اختبار نشر",99,unitId,"DRAFT","SHARED","https://example.com/video",NOW,NOW); } catch {}
   // Create quiz for lesson
   try { rawDb.prepare(`INSERT INTO "Quiz" ("id","lessonId","title","titleAr","trackScope","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?)`).run("qa26c-quiz-publish",lessonId,"Quiz","اختبار","SHARED",NOW,NOW); } catch {}
   try { rawDb.prepare(`INSERT INTO "Question" ("id","quizId","type","prompt","options","answer","difficulty","marks","schoolType","createdAt") VALUES (?,?,?,?,?,?,?,?,?,?)`).run("qa26c-q1","qa26c-quiz-publish","MCQ","What?","[\"A\",\"B\"]","0","EASY",1,null,NOW); } catch {}
@@ -577,7 +577,7 @@ function record(id, desc, pass, detail=""){
   record("ADMIN-17-real-g","POST unpublish via real route", unpublish.status===200, `status=${unpublish.status} ${JSON.stringify(unpublish.json||{}).slice(0,200)}`);
   // Invalid cases
   const invalidLessonId = "qa26c-invalid-lesson";
-  try { rawDb.prepare(`INSERT INTO "Lesson" ("id","title","titleAr","order","unitId","status","trackScope","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?,?,?)`).run(invalidLessonId,"Invalid","غير صالح",100,unitId,"DRAFT","SHARED",NOW,NOW); } catch {}
+  try { rawDb.prepare(`INSERT INTO "Lesson" ("id","title","titleAr","order","unitId","status","trackScope","createdAt","updatedAt","academicLevel") VALUES (?,?,?,?,?,?,?,?,?,'SECOND_SECONDARY')`).run(invalidLessonId,"Invalid","غير صالح",100,unitId,"DRAFT","SHARED",NOW,NOW); } catch {}
   // No quiz, no homework, no video -> readiness should be blocked
   const readinessInvalid = await call("GET",`/api/admin/lessons/${invalidLessonId}/readiness`,{ cookie:ADMIN_COOKIE });
   const isBlocked = readinessInvalid.json?.readiness?.items?.some(i=>!i.ok) || readinessInvalid.json?.readiness?.ok===false;
@@ -588,12 +588,12 @@ function record(id, desc, pass, detail=""){
   record("ADMIN-17-real-j","Open invalid lesson rejected", openInvalid.status===409 || openInvalid.status===400, `status=${openInvalid.status}`);
   // Archived lesson
   const archivedId = "qa26c-archived-lesson";
-  try { rawDb.prepare(`INSERT INTO "Lesson" ("id","title","titleAr","order","unitId","status","trackScope","curriculumStatus","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?,?,?,?)`).run(archivedId,"Archived","مؤرشف",101,unitId,"DRAFT","SHARED","ARCHIVED",NOW,NOW); } catch {}
+  try { rawDb.prepare(`INSERT INTO "Lesson" ("id","title","titleAr","order","unitId","status","trackScope","curriculumStatus","createdAt","updatedAt","academicLevel") VALUES (?,?,?,?,?,?,?,?,?,?,'SECOND_SECONDARY')`).run(archivedId,"Archived","مؤرشف",101,unitId,"DRAFT","SHARED","ARCHIVED",NOW,NOW); } catch {}
   const openArchived = await call("POST",`/api/admin/lessons/${archivedId}/open`,{ body:{}, cookie:ADMIN_COOKIE });
   record("ADMIN-17-real-k","Open archived lesson rejected", openArchived.status===404 || openArchived.status===409, `status=${openArchived.status}`);
   // Illegal transition DRAFT→PUBLISHED directly should be blocked (must go READY first) - we already test via invalid lesson, but also test DRAFT lesson with prerequisites but try open without mark-ready
   const draftDirectId = "qa26c-draft-direct";
-  try { rawDb.prepare(`INSERT INTO "Lesson" ("id","title","titleAr","order","unitId","status","trackScope","videoUrl","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?,?,?,?)`).run(draftDirectId,"Draft Direct","مباشر",102,unitId,"DRAFT","SHARED","https://example.com/video",NOW,NOW); } catch {}
+  try { rawDb.prepare(`INSERT INTO "Lesson" ("id","title","titleAr","order","unitId","status","trackScope","videoUrl","createdAt","updatedAt","academicLevel") VALUES (?,?,?,?,?,?,?,?,?,?,'SECOND_SECONDARY')`).run(draftDirectId,"Draft Direct","مباشر",102,unitId,"DRAFT","SHARED","https://example.com/video",NOW,NOW); } catch {}
   try { rawDb.prepare(`INSERT INTO "Quiz" ("id","lessonId","title","titleAr","trackScope","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?)`).run("qa26c-quiz-direct",draftDirectId,"Quiz","اختبار","SHARED",NOW,NOW); } catch {}
   try { rawDb.prepare(`INSERT INTO "Question" ("id","quizId","type","prompt","options","answer","difficulty","marks","schoolType","createdAt") VALUES (?,?,?,?,?,?,?,?,?,?)`).run("qa26c-q-direct","qa26c-quiz-direct","MCQ","What?","[\"A\",\"B\"]","0","EASY",1,null,NOW); } catch {}
   try { rawDb.prepare(`INSERT INTO "Homework" ("id","lessonId","title","instructions","trackScope","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?)`).run("qa26c-hw-direct",draftDirectId,"HW","Do it","SHARED",NOW,NOW); } catch {}
@@ -614,7 +614,7 @@ function record(id, desc, pass, detail=""){
   const activePlanId = "qa26c-plan-active-del";
   rawDb.prepare(`INSERT INTO "SubscriptionPlan" ("id","name","nameAr","description","durationMonths","price","isPromo","isActive","createdAt") VALUES (?,?,?,?,?,?,?,?,?)`).run(activePlanId,"ActiveDel","نشط","active",6,1000,0,1,NOW);
   rawDb.prepare(`INSERT INTO "User" ("id","email","password","name","role","isActive","status","createdAt","updatedAt") VALUES ('qa26c-user-active-del','active-del@local.test','x','ActiveDel','STUDENT',1,'ACTIVE',?,?)`).run(NOW,NOW);
-  rawDb.prepare(`INSERT INTO "Student" ("id","userId","schoolType","createdAt","updatedAt") VALUES ('qa26c-student-active-del','qa26c-user-active-del','ARABIC',?,?)`).run(NOW,NOW);
+  rawDb.prepare(`INSERT INTO "Student" ("id","userId","schoolType","createdAt","updatedAt","academicLevel") VALUES ('qa26c-student-active-del','qa26c-user-active-del','ARABIC',?,?,'SECOND_SECONDARY')`).run(NOW,NOW);
   rawDb.prepare(`INSERT INTO "Subscription" ("id","studentId","planId","status","createdAt","updatedAt") VALUES ('qa26c-sub-active-del','qa26c-student-active-del',?, 'ACTIVE',?,?)`).run(activePlanId,NOW,NOW);
   const delActive = await call("DELETE",`/api/admin/plans/${activePlanId}`,{ cookie:ADMIN_COOKIE });
   record("ADMIN-07-del-c","DELETE plan with ACTIVE sub rejected 409", delActive.status===409, `status=${delActive.status}`);
@@ -622,7 +622,7 @@ function record(id, desc, pass, detail=""){
   const expiredPlanId = "qa26c-plan-expired-del";
   rawDb.prepare(`INSERT INTO "SubscriptionPlan" ("id","name","nameAr","description","durationMonths","price","isPromo","isActive","createdAt") VALUES (?,?,?,?,?,?,?,?,?)`).run(expiredPlanId,"ExpiredDel","منتهي","expired",6,1000,0,1,NOW);
   rawDb.prepare(`INSERT INTO "User" ("id","email","password","name","role","isActive","status","createdAt","updatedAt") VALUES ('qa26c-user-exp-del','exp-del@local.test','x','ExpDel','STUDENT',1,'ACTIVE',?,?)`).run(NOW,NOW);
-  rawDb.prepare(`INSERT INTO "Student" ("id","userId","schoolType","createdAt","updatedAt") VALUES ('qa26c-student-exp-del','qa26c-user-exp-del','ARABIC',?,?)`).run(NOW,NOW);
+  rawDb.prepare(`INSERT INTO "Student" ("id","userId","schoolType","createdAt","updatedAt","academicLevel") VALUES ('qa26c-student-exp-del','qa26c-user-exp-del','ARABIC',?,?,'SECOND_SECONDARY')`).run(NOW,NOW);
   rawDb.prepare(`INSERT INTO "Subscription" ("id","studentId","planId","status","createdAt","updatedAt") VALUES ('qa26c-sub-exp-del','qa26c-student-exp-del',?, 'EXPIRED',?,?)`).run(expiredPlanId,NOW,NOW);
   const delExpired = await call("DELETE",`/api/admin/plans/${expiredPlanId}`,{ cookie:ADMIN_COOKIE });
   record("ADMIN-07-del-d","DELETE plan with EXPIRED history rejected 409", delExpired.status===409, `status=${delExpired.status}`);

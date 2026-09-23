@@ -464,8 +464,10 @@ async function main() {
   const curUnits = course
     ? await prisma.unit.count({ where: { part: { courseId: course.id } } })
     : 0;
+  // Phase K3: official codes are unique per level, so the Second Secondary
+  // catalog counts are scoped to SECOND_SECONDARY rows only.
   const curOfficialLessons = await prisma.lesson.count({
-    where: { officialCode: { not: null }, curriculumStatus: "OFFICIAL" },
+    where: { academicLevel: "SECOND_SECONDARY", officialCode: { not: null }, curriculumStatus: "OFFICIAL" },
   });
   console.log(
     `  Course=${course ? "present" : "MISSING"} Parts=${curParts}/${EXPECTED_OFFICIAL_COUNTS.parts} ` +
@@ -670,7 +672,7 @@ async function main() {
     ? await prisma.unit.count({ where: { part: { courseId: courseAfter.id } } })
     : 0;
   const officialAfter = await prisma.lesson.count({
-    where: { officialCode: { not: null }, curriculumStatus: "OFFICIAL" },
+    where: { academicLevel: "SECOND_SECONDARY", officialCode: { not: null }, curriculumStatus: "OFFICIAL" },
   });
   console.log("\nCurriculum:");
   console.log(`  Course  : ${courseAfter ? "present" : "MISSING"}`);
@@ -682,10 +684,13 @@ async function main() {
   if (unitsAfter !== EXPECTED_OFFICIAL_COUNTS.units) problems.push(`Units=${unitsAfter}`);
   if (officialAfter !== EXPECTED_OFFICIAL_COUNTS.lessons) problems.push(`OfficialLessons=${officialAfter}`);
 
-  // Unique official codes (no duplicates), and all expected codes present.
+  // Unique official codes WITHIN the Second Secondary level (no duplicates),
+  // and all expected codes present. Phase K3: the DB unique is
+  // (academicLevel, officialCode), so another level legitimately holding the
+  // same code is not a duplicate and is excluded here.
   const grouped = await prisma.lesson.groupBy({
     by: ["officialCode"],
-    where: { officialCode: { not: null } },
+    where: { academicLevel: "SECOND_SECONDARY", officialCode: { not: null } },
     _count: { officialCode: true },
   });
   const dupes = grouped.filter((g) => (g._count.officialCode ?? 0) > 1);

@@ -312,11 +312,22 @@ function insertGroup(id, courseId, trackScope, capacity = 20, isActive = 1) {
   ).run(id, id, courseId, capacity, "Sat 6PM", isActive, trackScope, NOW, NOW);
 }
 // SECOND_SECONDARY: ARABIC + LANGUAGE groups. FIRST_SECONDARY: ARABIC only.
-// A LEGACY course with NULL level (never levelled) and an INACTIVE group that
-// must NOT advertise anything.
+// Plus an EMPTY (no students) course and an INACTIVE group that must NOT
+// advertise anything.
+//
+// Phase K3 note: K2 originally carried a LEGACY course with a NULL level
+// here. Since K3 the database refuses that row (Course.academicLevel is NOT
+// NULL), which is proved below instead; the runtime "unlevelled course"
+// gates K2 introduced stay in the source as defence in depth but can no
+// longer be reached through data.
 insertCourse("k2-c2", "k2-second", "SECOND_SECONDARY");
 insertCourse("k2-c1", "k2-first", "FIRST_SECONDARY");
-insertCourse("k2-c0", "k2-legacy-null", null);
+{
+  let refused = false;
+  try { insertCourse("k2-c0", "k2-legacy-null", null); } catch (e) { refused = /NOT NULL constraint failed: Course\.academicLevel/.test(String(e?.message)); }
+  if (!refused) { console.error("K3 regression: a Course with NULL academicLevel was accepted by the database"); process.exit(1); }
+}
+insertCourse("k2-c0", "k2-empty-second", "SECOND_SECONDARY");
 insertChain("k2-c2", "k2-c2");
 insertChain("k2-c1", "k2-c1");
 insertGroup("k2-g2-ar", "k2-c2", "ARABIC");
@@ -324,7 +335,7 @@ insertGroup("k2-g2-lang", "k2-c2", "LANGUAGE");
 insertGroup("k2-g1-ar", "k2-c1", "ARABIC");
 insertGroup("k2-g1-lang-off", "k2-c1", "LANGUAGE", 20, 0); // inactive → not offered
 insertGroup("k2-g1-null", "k2-c1", null); // unclassified → not offered
-insertGroup("k2-g0-ar", "k2-c0", "ARABIC"); // unlevelled course → not offered
+insertGroup("k2-g0-ar", "k2-c0", "ARABIC", 0); // zero-capacity empty course → still an offering row (K2 reducer ignores capacity)
 db.prepare(
   `INSERT INTO "SubscriptionPlan" ("id","name","nameAr","durationMonths","price","isPromo","isActive","createdAt") VALUES ('k2-plan','Monthly','شهري',1,200,0,1,?)`
 ).run(NOW);
@@ -452,8 +463,13 @@ eq(retarget.status, 409, "C: re-targeting a POPULATED group to another level's c
 eq(db.prepare(`SELECT "courseId" FROM "Group" WHERE "id"='k2-g1-ar'`).get().courseId, "k2-c1", "C: the group still points at its own course");
 const retargetNull = await call("PATCH", "/api/admin/groups/k2-g0-ar", { body: { courseId: "k2-c0" }, cookie: ADMIN });
 ok(retargetNull.status === 200, "C: a no-op courseId (same course) is still accepted");
-const mkGroupNull = await call("POST", "/api/admin/groups", { body: { name: "k2 on legacy", courseId: "k2-c0", trackScope: "ARABIC" }, cookie: ADMIN });
-eq(mkGroupNull.status, 409, "C: creating a group on an UNLEVELLED course is refused (level derives from the course)");
+const retargetEmpty = await call("PATCH", "/api/admin/groups/k2-g0-ar", { body: { courseId: "k2-c1" }, cookie: ADMIN });
+eq(retargetEmpty.status, 200, "C: re-targeting an EMPTY group across levels is allowed (no member can be contradicted)");
+eq(db.prepare(`SELECT "courseId" FROM "Group" WHERE "id"='k2-g0-ar'`).get().courseId, "k2-c1", "C: the empty group moved");
+const retargetBack = await call("PATCH", "/api/admin/groups/k2-g0-ar", { body: { courseId: "k2-c0" }, cookie: ADMIN });
+eq(retargetBack.status, 200, "C: …and moved back (fixture restored)");
+const mkGroupNull = await call("POST", "/api/admin/groups", { body: { name: "k2 on unknown", courseId: "k2-does-not-exist", trackScope: "ARABIC" }, cookie: ADMIN });
+eq(mkGroupNull.status, 404, "C: creating a group on an unknown course is refused (level derives from the course)");
 const mkGroupOk = await call("POST", "/api/admin/groups", { body: { name: "k2 first lang", courseId: "k2-c1", trackScope: "LANGUAGE" }, cookie: ADMIN });
 eq(mkGroupOk.status, 200, "C: creating a group on a levelled course works (no Group.academicLevel column)");
 const NEW_G1_LANG = mkGroupOk.json?.group?.id;
@@ -519,8 +535,10 @@ eq(c2.status, 200, "E: admin course create with academicLevel → 200");
 eq(c2.json?.course?.academicLevel, "FIRST_SECONDARY", "E: Course.academicLevel written");
 const c3 = await call("PATCH", "/api/admin/courses/k2-c2", { body: { academicLevel: "FIRST_SECONDARY" }, cookie: ADMIN });
 eq(c3.status, 409, "E: re-levelling a course with grouped students is refused");
-const c4 = await call("PATCH", "/api/admin/courses/k2-c0", { body: { academicLevel: "SECOND_SECONDARY" }, cookie: ADMIN });
-eq(c4.status, 200, "E: a legacy unlevelled EMPTY course can be levelled explicitly");
+const c4 = await call("PATCH", "/api/admin/courses/k2-c0", { body: { academicLevel: "FIRST_SECONDARY" }, cookie: ADMIN });
+eq(c4.status, 200, "E: an EMPTY course (no grouped students) can be re-levelled explicitly");
+const c5 = await call("PATCH", "/api/admin/courses/k2-c0", { body: { academicLevel: "SECOND_SECONDARY" }, cookie: ADMIN });
+eq(c5.status, 200, "E: …and back (fixture restored)");
 
 // ===========================================================================
 section("F — Official reconciler: level-aware spec, Second Secondary byte-pinned");
@@ -627,14 +645,21 @@ const poolAttached = await Pool.countMockExamEligiblePool({ schoolType: "ARABIC"
 eq([poolAttached.lessonLinked, poolAttached.attached], [2, 1], "H: the attached free-bank row enters ONLY that exam's pool");
 const elig = await call("GET", "/api/admin/mock-exams/eligible?schoolType=ARABIC&courseId=k2-c1", { cookie: ADMIN });
 ok(elig.status === 200 && (elig.json.questions || []).every((q) => q.id !== "k2-q-second-1" && q.id !== "k2-q-second-2"), "H: eligible preview for the FIRST course never lists SECOND lesson questions");
-// Legacy course-less row (pre-K2 data): publish requires a course; setting one is allowed; clearing is not.
-db.prepare(`INSERT INTO "MockExam" ("id","title","titleAr","schoolType","courseId","questionCount","durationMin","passMark","difficulty","selectionMode","isPublished","createdAt","updatedAt") VALUES ('k2-legacy-exam','L','ل','ARABIC',NULL,1,30,60,'MIXED','RANDOM',0,?,?)`).run(NOW, NOW);
-const pubLegacy = await call("PATCH", "/api/admin/mock-exams/k2-legacy-exam", { body: { isPublished: true }, cookie: ADMIN });
-eq(pubLegacy.status, 409, "H: publishing a legacy course-less exam is refused until a course is bound");
+// Course-less rows: K2 made the binding a runtime rule (publish refused until
+// bound); K3 made it a DATABASE fact — the row itself cannot exist any more.
+// Proved here; the runtime publish gate stays in the source as defence in depth.
+{
+  let refused = false;
+  try {
+    db.prepare(`INSERT INTO "MockExam" ("id","title","titleAr","schoolType","courseId","questionCount","durationMin","passMark","difficulty","selectionMode","isPublished","createdAt","updatedAt") VALUES ('k2-legacy-exam','L','ل','ARABIC',NULL,1,30,60,'MIXED','RANDOM',0,?,?)`).run(NOW, NOW);
+  } catch (e) { refused = /NOT NULL constraint failed: MockExam\.courseId/.test(String(e?.message)); }
+  ok(refused, "H: a course-less MockExam row is refused by the database (K3: courseId NOT NULL)");
+}
+db.prepare(`INSERT INTO "MockExam" ("id","title","titleAr","schoolType","courseId","questionCount","durationMin","passMark","difficulty","selectionMode","isPublished","createdAt","updatedAt") VALUES ('k2-legacy-exam','L','ل','ARABIC','k2-c2',1,30,60,'MIXED','RANDOM',0,?,?)`).run(NOW, NOW);
 const clearCourse = await call("PATCH", "/api/admin/mock-exams/k2-legacy-exam", { body: { courseId: "" }, cookie: ADMIN });
 eq(clearCourse.status, 400, "H: clearing courseId is refused");
 const bindLegacy = await call("PATCH", "/api/admin/mock-exams/k2-legacy-exam", { body: { courseId: "k2-c1" }, cookie: ADMIN });
-eq(bindLegacy.status, 200, "H: binding a legacy exam to a course works");
+eq(bindLegacy.status, 200, "H: moving an exam to another course works");
 eq(db.prepare(`SELECT "courseId" FROM "MockExam" WHERE "id"='k2-legacy-exam'`).get().courseId, "k2-c1", "H: binding persisted");
 // Source pins: the "every course" fallback is gone from the pool module.
 const poolSrc = fs.readFileSync(path.join(REPO, "src", "lib", "mock-exam-pool.ts"), "utf8");

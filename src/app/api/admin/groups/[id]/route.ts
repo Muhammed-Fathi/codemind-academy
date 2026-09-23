@@ -56,10 +56,10 @@ export async function PATCH(
     if (!target) return err(tApi("api.022"), 404);
     const level = normalizeAcademicLevel(target.academicLevel);
     if (!level) return err(tApi("api.375"), 409);
-    // NULL-level members count as incompatible (no evidence of eligibility),
-    // hence the explicit OR rather than a bare NOT-equals (which skips NULL).
+    // Phase K3: Student.academicLevel is NOT NULL at the database, so a
+    // NOT-equals is exhaustive (there is no unlevelled member to skip).
     const incompatible = await db.student.count({
-      where: { groupId: id, OR: [{ academicLevel: null }, { NOT: { academicLevel: level } }] },
+      where: { groupId: id, NOT: { academicLevel: level } },
     });
     if (incompatible > 0) return err(tApi("api.377"), 409);
     nextCourseLevel = level;

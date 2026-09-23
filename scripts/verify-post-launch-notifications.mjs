@@ -322,7 +322,7 @@ async function main() {
   await client.parentStudentLink.create({ data: { parentId: parentB.id, studentId: studentB.id } });
 
   const lesson = await client.lesson.create({
-    data: { unitId: unit.id, title: "Post Launch Session", titleAr: "حصة", order: 1, status: "PUBLISHED", trackScope: "ARABIC", videoUrl: "https://v/pl.mp4" },
+    data: { academicLevel: "SECOND_SECONDARY", unitId: unit.id, title: "Post Launch Session", titleAr: "حصة", order: 1, status: "PUBLISHED", trackScope: "ARABIC", videoUrl: "https://v/pl.mp4" },
   });
 
   // ---- D. notification deep-link contract (pure) ---------------------------
@@ -543,7 +543,7 @@ async function main() {
     data: { partId: part2.id, title: "U2", titleAr: "و٢", order: 1 },
   });
   const lesson2 = await client.lesson.create({
-    data: { unitId: unit2.id, title: "Foreign Session", titleAr: "حصة خارج", order: 1, status: "PUBLISHED", trackScope: "ARABIC" },
+    data: { academicLevel: "SECOND_SECONDARY", unitId: unit2.id, title: "Foreign Session", titleAr: "حصة خارج", order: 1, status: "PUBLISHED", trackScope: "ARABIC" },
   });
   // Even with a VALID notification deep link to lesson2, student A cannot open
   // it: the destination API enforces enrollment, not the link.

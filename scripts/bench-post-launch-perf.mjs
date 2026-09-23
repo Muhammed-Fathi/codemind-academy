@@ -344,8 +344,8 @@ for (let i = 0; i < 40; i++) {
   const sid = `bench-stu-row-${i}`;
   const isAr = i < 25;
   insertUser(uid, `bench-stu-${i}@local.test`, "STUDENT", "BenchStudent1!", `Student ${i}`);
-  rawDb.prepare(`INSERT INTO "Student" ("id","userId","grade","schoolName","schoolType","groupId","batchId","enrolledAt","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?,?,?,?)`)
-    .run(sid, uid, "2nd Secondary", "Bench School", isAr ? "ARABIC" : "LANGUAGE", isAr ? "bench-group-ar" : "bench-group-lang", isAr ? "bench-batch-ar" : "bench-batch-lang", NOW, NOW, NOW);
+  rawDb.prepare(`INSERT INTO "Student" ("id","userId","grade","schoolName","schoolType","academicLevel","groupId","batchId","enrolledAt","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(sid, uid, "2nd Secondary", "Bench School", isAr ? "ARABIC" : "LANGUAGE", "SECOND_SECONDARY", isAr ? "bench-group-ar" : "bench-group-lang", isAr ? "bench-batch-ar" : "bench-batch-lang", NOW, NOW, NOW);
   studentIds.push({ uid, sid, isAr });
   if (i % 2 === 0) {
     rawDb.prepare(`INSERT INTO "Subscription" ("id","studentId","planId","status","startDate","endDate","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?,?)`)

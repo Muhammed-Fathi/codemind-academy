@@ -407,10 +407,10 @@ test("Phase A: Lesson is the canonical academic session for video linking", asyn
   asUser(admin);
 
   const course = await client.course.create({
-    data: { slug: "pa1", name: "PA1", nameAr: "PA1", description: "phase A" },
+    data: { slug: "pa1", name: "PA1", nameAr: "PA1", description: "phase A", academicLevel: "SECOND_SECONDARY" },
   });
   const otherCourse = await client.course.create({
-    data: { slug: "pa2", name: "PA2", nameAr: "PA2", description: "other" },
+    data: { slug: "pa2", name: "PA2", nameAr: "PA2", description: "other", academicLevel: "SECOND_SECONDARY" },
   });
   const part1 = await client.part.create({
     data: { courseId: course.id, title: "P1", titleAr: "P1", order: 1 },
@@ -434,6 +434,7 @@ test("Phase A: Lesson is the canonical academic session for video linking", asyn
   // officialCode models the "1-1" style code the Admin UI shows.
   const L_AR = await client.lesson.create({
     data: {
+      academicLevel: "SECOND_SECONDARY",
       unitId: unit1.id, officialCode: "1-1",
       title: "Arabic lesson", titleAr: "حصة عربية",
       order: 1, trackScope: "ARABIC", isPublished: false,
@@ -441,6 +442,7 @@ test("Phase A: Lesson is the canonical academic session for video linking", asyn
   });
   const L_LANG = await client.lesson.create({
     data: {
+      academicLevel: "SECOND_SECONDARY",
       unitId: unit2.id, officialCode: "2-1",
       title: "Language lesson", titleAr: "حصة لغة",
       order: 1, trackScope: "LANGUAGE", isPublished: false,
@@ -448,6 +450,7 @@ test("Phase A: Lesson is the canonical academic session for video linking", asyn
   });
   const L_SHARED = await client.lesson.create({
     data: {
+      academicLevel: "SECOND_SECONDARY",
       unitId: unit1.id, officialCode: "1-2",
       title: "Shared lesson", titleAr: "حصة مشتركة",
       order: 2, trackScope: "SHARED", isPublished: false,
@@ -455,6 +458,7 @@ test("Phase A: Lesson is the canonical academic session for video linking", asyn
   });
   const L_ARCHIVED = await client.lesson.create({
     data: {
+      academicLevel: "SECOND_SECONDARY",
       unitId: unit1.id, officialCode: "1-3",
       title: "Archived lesson", titleAr: "حصة مؤرشفة",
       order: 3, trackScope: "SHARED", isPublished: false,
@@ -463,6 +467,7 @@ test("Phase A: Lesson is the canonical academic session for video linking", asyn
   });
   const L_OTHER = await client.lesson.create({
     data: {
+      academicLevel: "SECOND_SECONDARY",
       unitId: unitOther.id, officialCode: "0-1",
       title: "Other course lesson", titleAr: "حصة كورس تاني",
       order: 1, trackScope: "SHARED", isPublished: false,
@@ -836,6 +841,7 @@ test("Phase A: Lesson is the canonical academic session for video linking", asyn
   // ARCHIVED and the contract never demanded PUBLISHED/READY for Admin.
   const L_DRAFT_OFFICIAL = await client.lesson.create({
     data: {
+      academicLevel: "SECOND_SECONDARY",
       unitId: unit1.id, officialCode: "1-9",
       title: "Draft official shared", titleAr: "رسمية مشتركة مسودة",
       order: 9, trackScope: "SHARED", isPublished: false,
@@ -851,6 +857,7 @@ test("Phase A: Lesson is the canonical academic session for video linking", asyn
   // a course-declaring batch, accepted by a pool batch (no course declared).
   const L_NO_COURSE = await client.lesson.create({
     data: {
+      academicLevel: "SECOND_SECONDARY",
       title: "Orphan lesson", titleAr: "حصة يتيمة",
       order: 10, trackScope: "SHARED", isPublished: false,
     },

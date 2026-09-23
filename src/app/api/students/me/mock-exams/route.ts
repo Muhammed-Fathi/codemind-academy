@@ -37,7 +37,11 @@ export async function GET(_req: NextRequest) {
     where: {
       isPublished: true,
       schoolType: studentSchoolType,
-      OR: [{ courseId: null }, { courseId: enrollment.courseId }],
+      // Phase K3: every mock exam is bound to exactly one course (courseId is
+      // NOT NULL) — a student sees only the exams of the course they are
+      // enrolled in. The pre-K3 "course-less exam visible to everyone" case
+      // no longer exists.
+      courseId: enrollment.courseId,
     },
     orderBy: { createdAt: "desc" },
     select: {

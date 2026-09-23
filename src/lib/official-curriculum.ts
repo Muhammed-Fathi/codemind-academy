@@ -352,7 +352,10 @@ function sameRecord(row: Record<string, any>, data: Record<string, any>): boolea
  *     order-value) matching is REQUIRED: the legacy P2 units carry orders
  *     1,2,3 while the official model numbers chapters globally (5,6,7).
  *     No new Topic rows are ever created (ADR-003).
- *  4. Upsert official lessons by UNIQUE officialCode. On match only the
+ *  4. Upsert official lessons by the LEVEL-SCOPED unique
+ *     (academicLevel, officialCode) — Phase K3 replaced the global
+ *     officialCode unique, so a code is looked up together with the spec's
+ *     level, never alone. On match only the
  *     canonical fields are written (unitId, titles, order, description,
  *     status, published, locked) — media, topic links and every relation
  *     (progress, quizzes, homework, videos, bookmarks, notes) are preserved.
@@ -503,7 +506,7 @@ export async function reconcileOfficialCurriculum(
     );
   }
 
-  // 4. Official lessons by UNIQUE officialCode.
+  // 4. Official lessons by the LEVEL-SCOPED unique (academicLevel, officialCode).
   let lessonsCreated = 0;
   let lessonsUpdated = 0;
   const officialCodes: string[] = [];
@@ -531,19 +534,14 @@ export async function reconcileOfficialCurriculum(
           curriculumStatus: "OFFICIAL",
           academicLevel: level,
         };
-        // Lookup by code is LEVEL-SCOPED (pre-K3 the global officialCode
-        // unique is still in force, so a code can exist at most once; a row
-        // with this code at ANOTHER level is a conflict, never adopted).
-        const existing = await client.lesson
-          .findUnique({ where: { officialCode: lessonModel.code } })
-          .catch(() => null);
+        // Lookup by code is LEVEL-SCOPED through the K3 compound unique
+        // `academicLevel_officialCode`: the same code at ANOTHER level is a
+        // different, legitimate row (FIRST "1-1" ≠ SECOND "1-1") and is
+        // never adopted, never touched. No global officialCode lookup remains.
+        const existing = await client.lesson.findUnique({
+          where: { academicLevel_officialCode: { academicLevel: level, officialCode: lessonModel.code } },
+        });
         if (existing) {
-          const existingLevel = normalizeAcademicLevel(existing.academicLevel);
-          if (existingLevel && existingLevel !== level) {
-            throw new Error(
-              `Reconciliation refused: officialCode ${lessonModel.code} belongs to ${existingLevel}, spec is ${level}`
-            );
-          }
           if (!sameRecord(existing, data)) {
             await client.lesson.update({ where: { id: existing.id }, data });
             lessonsUpdated++;
@@ -592,7 +590,7 @@ export async function reconcileOfficialCurriculum(
 
   // 6. Post-state assertions (fail-closed: a partial reconcile never reports success).
   const officialRows = await client.lesson.findMany({
-    where: { officialCode: { in: officialCodes } },
+    where: { academicLevel: level, officialCode: { in: officialCodes } },
     select: {
       id: true,
       officialCode: true,
@@ -617,6 +615,7 @@ export async function reconcileOfficialCurriculum(
   // lessons are not strays of this run.
   const strayOfficial = await client.lesson.findMany({
     where: {
+      academicLevel: level,
       officialCode: { not: null },
       curriculumStatus: "OFFICIAL",
       NOT: { officialCode: { in: officialCodes } },

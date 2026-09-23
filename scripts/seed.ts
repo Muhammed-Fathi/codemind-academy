@@ -214,11 +214,16 @@ async function main() {
       `(${reconcileReport.archivedLessonIds.length} archived)`
   );
 
-  // Sample quiz + homework on the FIRST official lesson (code 1-1), so the
-  // demo student has something to open. Guarded: re-running the seed must
-  // not stack duplicate quizzes onto the lesson.
+  // Sample quiz + homework on the FIRST official lesson (code 1-1) of the
+  // SECOND SECONDARY curriculum, so the demo student has something to open.
+  // Phase K3: official codes are unique PER LEVEL (FIRST_SECONDARY may hold
+  // its own "1-1"), so the lookup goes through the level-scoped compound
+  // unique, never a bare code. Guarded: re-running the seed must not stack
+  // duplicate quizzes onto the lesson.
   const firstLesson = await db.lesson.findUnique({
-    where: { officialCode: "1-1" },
+    where: {
+      academicLevel_officialCode: { academicLevel: "SECOND_SECONDARY", officialCode: "1-1" },
+    },
     select: { id: true },
   });
   if (firstLesson) {

@@ -338,7 +338,7 @@ test("SessionVideo progression requirement (REQUIRED-vs-OPTIONAL)", async () => 
   //     chain-locked behind uncompletable Lopt, never in a student flow
   // ===========================================================================
   const course = await client.course.create({
-    data: { slug: "svreq-a", name: "Course A", nameAr: "كورس أ", description: "svreq" },
+    data: { slug: "svreq-a", name: "Course A", nameAr: "كورس أ", description: "svreq", academicLevel: "SECOND_SECONDARY" },
   });
   const partA = await client.part.create({
     data: { courseId: course.id, title: "P1", titleAr: "P1", order: 1 },
@@ -349,6 +349,7 @@ test("SessionVideo progression requirement (REQUIRED-vs-OPTIONAL)", async () => 
   const mkLesson = (over) =>
     client.lesson.create({
       data: {
+        academicLevel: "SECOND_SECONDARY",
         unitId: unitA.id,
         trackScope: "SHARED",
         status: "PUBLISHED",
@@ -381,7 +382,7 @@ test("SessionVideo progression requirement (REQUIRED-vs-OPTIONAL)", async () => 
       data: { email: `${tag}@svreq.test`, password: "x", name: tag, role: "STUDENT" },
     });
     const s = await client.student.create({
-      data: { userId: u.id, schoolType, groupId: groupA.id, batchId },
+      data: { userId: u.id, academicLevel: "SECOND_SECONDARY", schoolType, groupId: groupA.id, batchId },
     });
     return { user: u, student: s };
   };

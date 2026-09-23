@@ -46,13 +46,17 @@ section("K2-A0. Schema — no duplicated academic authority; K1 columns stay nul
   ok(!/academicLevel/.test(block("Group")), "A0: no Group.academicLevel (level derives from Group.courseId → Course)");
   ok(!/academicLevel/.test(block("Teacher")), "A0: no Teacher.academicLevel (scope derives from groups)");
   ok(!/\bcourseId\b/.test(block("Lesson")), "A0: no Lesson.courseId (chain stays the only course link)");
-  ok(/academicLevel\s+AcademicLevel\?/.test(block("Course")), "A0: Course.academicLevel still nullable (K3 tightens)");
-  ok(/academicLevel\s+AcademicLevel\?/.test(block("Student")), "A0: Student.academicLevel still nullable (K3 tightens)");
-  ok(/academicLevel\s+AcademicLevel\?/.test(block("Lesson")), "A0: Lesson.academicLevel still nullable (K3 tightens)");
-  ok(/courseId\s+String\?/.test(block("MockExam")), "A0: MockExam.courseId still nullable in the DB (K2 = runtime rule; K3 = NOT NULL)");
-  ok(/officialCode\s+String\?\s+@unique/.test(block("Lesson")), "A0: global Lesson.officialCode unique untouched (composite unique is K3)");
+  // K2 shipped these as nullable "K3 tightens" pins; K3 has tightened them,
+  // so the same guards now pin the FINAL contract (required, no global code
+  // unique, level-scoped composite unique, course-bound mock exams).
+  ok(/academicLevel\s+AcademicLevel\s*$/m.test(block("Course")), "A0: Course.academicLevel required (K3)");
+  ok(/academicLevel\s+AcademicLevel\s*$/m.test(block("Student")), "A0: Student.academicLevel required (K3)");
+  ok(/academicLevel\s+AcademicLevel\s*$/m.test(block("Lesson")), "A0: Lesson.academicLevel required (K3)");
+  ok(/courseId\s+String\s*$/m.test(block("MockExam")) && /course\s+Course\s+@relation/.test(block("MockExam")), "A0: MockExam.courseId / course required at the DB (K3)");
+  ok(!/officialCode\s+String\??\s+@unique/.test(block("Lesson")), "A0: no global Lesson.officialCode unique remains (K3)");
+  ok(/@@unique\(\[academicLevel, officialCode\]\)/.test(block("Lesson")), "A0: Lesson carries @@unique([academicLevel, officialCode]) (K3)");
   const migs = fs.readdirSync(path.join(REPO, "prisma", "migrations")).filter((d) => fs.existsSync(path.join(REPO, "prisma", "migrations", d, "migration.sql")));
-  ok(migs.length === 20 && migs[migs.length - 1] === "20260923100000_k1_academic_level_capability", "A0: K2 adds NO migration (history still ends at K1)");
+  ok(migs.length === 21 && migs[migs.length - 1] === "20260923180000_k3_academic_level_constraints" && migs[migs.length - 2] === "20260923100000_k1_academic_level_capability", "A0: K2 added NO migration (history goes K1 → K3 directly; the constraint tightening is the K3 file)");
 }
 
 // ---------------------------------------------------------------------------

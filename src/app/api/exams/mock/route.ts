@@ -110,9 +110,10 @@ export async function GET(req: NextRequest) {
     if (!mockExam || !mockExam.isPublished) return err(tApi("api.211"), 404);
     if (mockExam.schoolType !== studentSchoolType)
       return err(tApi("api.212"), 403);
-    // A course-bound exam is invisible outside that course. 404 (not 403) so
-    // the response never confirms a foreign course's exam exists.
-    if (mockExam.courseId && mockExam.courseId !== courseId)
+    // Every exam is course-bound (Phase K3: MockExam.courseId is NOT NULL)
+    // and invisible outside its course. 404 (not 403) so the response never
+    // confirms a foreign course's exam exists.
+    if (mockExam.courseId !== courseId)
       return err(tApi("api.211"), 404);
     count = mockExam.questionCount;
     difficulty = mockExam.difficulty === "MIXED" ? "mixed" : mockExam.difficulty;
@@ -639,7 +640,7 @@ export async function POST(req: NextRequest) {
       exam &&
       exam.isPublished &&
       exam.schoolType === studentSchoolType &&
-      (!exam.courseId || exam.courseId === enrollment.courseId)
+      exam.courseId === enrollment.courseId
     ) {
       linkedExam = exam;
     }

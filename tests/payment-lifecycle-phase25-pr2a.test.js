@@ -729,13 +729,13 @@ async function main() {
     // workflow + the camera policy); Phase H appended one (the audited
     // progression-override table). The invariant this gate protects is "no
     // migration was silently removed or reordered", not a frozen number.
-    ok(migrations.length === 20, `migration history: exactly 20 migrations (found ${migrations.length}) — the 10 PR2a-era migrations, Phase 26B, Phase 26D, Phase F, two Phase G workflow migrations, the Phase H override migration, the session-video requirement migration, the requirement-modes migration, the readiness-reminder-recipients migration, and the K1 academic-level capability migration`);
+    ok(migrations.length === 21, `migration history: exactly 21 migrations (found ${migrations.length}) — the 10 PR2a-era migrations, Phase 26B, Phase 26D, Phase F, two Phase G workflow migrations, the Phase H override migration, the session-video requirement migration, the requirement-modes migration, the readiness-reminder-recipients migration, the K1 academic-level capability migration, and the K3 academic-level constraints migration`);
     ok(migrations.includes("20260919180000_phase_g_quiz_homework_workflow"), "the Phase G quiz/homework workflow migration is in history");
     ok(migrations.includes("20260919190000_phase_g_camera_policy"), "the Phase G camera-policy migration is in history");
     ok(migrations.includes("20260920120000_phase_h_progression_override"), "the Phase H progression-override migration is in history");
     ok(migrations.includes("20260914120000_payment_lifecycle_redesign"), "PR1's ledger migration remains in history");
     ok(migrations.includes("20260915120000_phase26b_group_track_scope"), "the Phase 26B group-audience migration is in history");
-    ok(migrations.indexOf("20260923100000_k1_academic_level_capability") === migrations.length - 1, "the K1 academic-level capability migration is the newest entry (append-only history)");
+    ok(migrations.indexOf("20260923180000_k3_academic_level_constraints") === migrations.length - 1, "the K3 academic-level constraints migration is the newest entry (append-only history)");
   }
 
   section("\n" + "=".repeat(60));

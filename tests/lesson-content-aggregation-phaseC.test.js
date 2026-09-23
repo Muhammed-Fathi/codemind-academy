@@ -318,10 +318,10 @@ test("Phase C: lesson content aggregation", async () => {
   // locked behind it — exactly the Phase N scenario.
   // ===========================================================================
   const course = await client.course.create({
-    data: { slug: "phasec-a", name: "Course A", nameAr: "كورس أ", description: "phase C" },
+    data: { slug: "phasec-a", name: "Course A", nameAr: "كورس أ", description: "phase C", academicLevel: "SECOND_SECONDARY" },
   });
   const courseB = await client.course.create({
-    data: { slug: "phasec-b", name: "Course B", nameAr: "كورس ب", description: "other course" },
+    data: { slug: "phasec-b", name: "Course B", nameAr: "كورس ب", description: "other course", academicLevel: "SECOND_SECONDARY" },
   });
   const partA = await client.part.create({
     data: { courseId: course.id, title: "P1", titleAr: "الجزء الأول", order: 1 },
@@ -339,6 +339,7 @@ test("Phase C: lesson content aggregation", async () => {
   const mkLesson = (over) =>
     client.lesson.create({
       data: {
+        academicLevel: "SECOND_SECONDARY",
         unitId: unitA.id,
         trackScope: "SHARED",
         status: "PUBLISHED",
@@ -375,6 +376,7 @@ test("Phase C: lesson content aggregation", async () => {
   });
   const LB1 = await client.lesson.create({
     data: {
+      academicLevel: "SECOND_SECONDARY",
       unitId: unitB.id, order: 1, officialCode: "9-1", title: "Other course session", titleAr: "حصة كورس تاني",
       trackScope: "SHARED", status: "PUBLISHED", curriculumStatus: "OFFICIAL", isPublished: true,
     },
@@ -399,7 +401,7 @@ test("Phase C: lesson content aggregation", async () => {
       data: { email: `${tag}@phasec.test`, password: "x", name: tag, role: "STUDENT" },
     });
     const s = await client.student.create({
-      data: { userId: u.id, schoolType, groupId: groupId ?? null, batchId: batchId ?? null },
+      data: { userId: u.id, academicLevel: "SECOND_SECONDARY", schoolType, groupId: groupId ?? null, batchId: batchId ?? null },
     });
     return { user: u, student: s };
   };
