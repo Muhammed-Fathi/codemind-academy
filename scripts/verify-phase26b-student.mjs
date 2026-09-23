@@ -623,8 +623,8 @@ insertGroup("qa26b-group-null", "Group NULL — غير مصنفة", COURSE_ID, {
 // The FULL group's seat holder (a plain fixture student, never a driver).
 insertUser("qa26b-seat-user", "qa26b-seat@local.test", "STUDENT", "Qa26bSeatLocal1!", "Seat Holder");
 db.prepare(
-  `INSERT INTO "Student" ("id","userId","grade","schoolName","schoolType","nationalId","parentPhone","groupId","enrolledAt","createdAt","updatedAt")
-   VALUES ('qa26b-seat-student','qa26b-seat-user','2nd Secondary','QA School','ARABIC','30000000001111','01000000001','qa26b-group-full',?,?,?)`
+  `INSERT INTO "Student" ("id","userId","grade","academicLevel","schoolName","schoolType","nationalId","parentPhone","groupId","enrolledAt","createdAt","updatedAt")
+   VALUES ('qa26b-seat-student','qa26b-seat-user','2nd Secondary','SECOND_SECONDARY','QA School','ARABIC','30000000001111','01000000001','qa26b-group-full',?,?,?)`
 ).run(NOW, NOW, NOW);
 
 // 5d. Plans — Monthly + Early Bird (active) + one CLOSED plan.
@@ -713,6 +713,9 @@ async function registerStudent(email, name, schoolType, nationalId) {
       nationalId,
       schoolName: "QA26B School",
       schoolType,
+      // Phase K2 — typed level is required; the reconciled course is
+      // SECOND_SECONDARY, so this is the offered pair for both tracks.
+      academicLevel: "SECOND_SECONDARY",
     },
   });
 }
@@ -758,6 +761,7 @@ const regBad = await call("POST", "/api/auth/register", {
     nationalId: "30303033404567",
     schoolName: "QA26B School",
     schoolType: "AMERICAN",
+    academicLevel: "SECOND_SECONDARY",
   },
 });
 ok(regBad.status === 400, "STUDENT-02: unrecognised school type is rejected server-side (400)");
@@ -1476,8 +1480,8 @@ section("STUDENT-23 — Grandfathered student (group, no subscription)");
 // ===========================================================================
 insertUser("qa26b-grand-user", "qa26b-grand@local.test", "STUDENT", "Qa26bStudent1!", "عمر طارق سعيد");
 db.prepare(
-  `INSERT INTO "Student" ("id","userId","grade","schoolName","schoolType","nationalId","parentPhone","groupId","enrolledAt","createdAt","updatedAt")
-   VALUES ('qa26b-grand-student','qa26b-grand-user','2nd Secondary','Legacy School','ARABIC','30505055606789','01111111111','qa26b-group-ar',?,?,?)`
+  `INSERT INTO "Student" ("id","userId","grade","academicLevel","schoolName","schoolType","nationalId","parentPhone","groupId","enrolledAt","createdAt","updatedAt")
+   VALUES ('qa26b-grand-student','qa26b-grand-user','2nd Secondary','SECOND_SECONDARY','Legacy School','ARABIC','30505055606789','01111111111','qa26b-group-ar',?,?,?)`
 ).run(NOW, NOW, NOW);
 const grandLogin = await call("POST", "/api/auth/login", { body: { email: "qa26b-grand@local.test", password: "Qa26bStudent1!" } });
 const GRAND = cookieOf(grandLogin);

@@ -297,7 +297,8 @@ async function main() {
   const parentB = await client.parent.create({ data: { userId: uParentB.id } });
 
   const course = await client.course.create({
-    data: { slug: "pl-course", name: "Post Launch Course", nameAr: "كورس", description: "d" },
+    // Phase K2 — levelled course + levelled students (I1 gate on /api/enroll).
+    data: { slug: "pl-course", name: "Post Launch Course", nameAr: "كورس", description: "d", academicLevel: "SECOND_SECONDARY" },
   });
   const part = await client.part.create({
     data: { courseId: course.id, title: "Part 1", titleAr: "جزء", order: 1 },
@@ -312,10 +313,10 @@ async function main() {
     data: { name: "Group B", courseId: course.id, teacherId: teacherB.id, trackScope: "ARABIC" },
   });
   const studentA = await client.student.create({
-    data: { userId: uStudentA.id, groupId: groupA.id, schoolType: "ARABIC", nationalId: "30011011234567", parentPhone: "01100000001", studentCode: "PL-STA001" },
+    data: { userId: uStudentA.id, groupId: groupA.id, schoolType: "ARABIC", academicLevel: "SECOND_SECONDARY", nationalId: "30011011234567", parentPhone: "01100000001", studentCode: "PL-STA001" },
   });
   const studentB = await client.student.create({
-    data: { userId: uStudentB.id, groupId: groupB.id, schoolType: "ARABIC", nationalId: "30011011234568", parentPhone: "01100000002", studentCode: "PL-STB001" },
+    data: { userId: uStudentB.id, groupId: groupB.id, schoolType: "ARABIC", academicLevel: "SECOND_SECONDARY", nationalId: "30011011234568", parentPhone: "01100000002", studentCode: "PL-STB001" },
   });
   await client.parentStudentLink.create({ data: { parentId: parentA.id, studentId: studentA.id } });
   await client.parentStudentLink.create({ data: { parentId: parentB.id, studentId: studentB.id } });
@@ -533,7 +534,7 @@ async function main() {
   // gate (not the notification) we use a NON-enrolled student for a lesson in
   // a course they cannot open: create course-2 lesson + student in group A only.
   const course2 = await client.course.create({
-    data: { slug: "pl-course2", name: "Post Launch Course 2", nameAr: "كورس ٢", description: "d" },
+    data: { slug: "pl-course2", name: "Post Launch Course 2", nameAr: "كورس ٢", description: "d", academicLevel: "SECOND_SECONDARY" },
   });
   const part2 = await client.part.create({
     data: { courseId: course2.id, title: "P2", titleAr: "ج٢", order: 1 },

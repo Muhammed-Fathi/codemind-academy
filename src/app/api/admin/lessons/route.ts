@@ -15,6 +15,7 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireRole } from "@/lib/api";
+import { normalizeAcademicLevel } from "@/lib/academic-level";
 import {
   parseCreateLessonInput,
   parseLessonListQuery,
@@ -319,9 +320,18 @@ export async function POST(req: NextRequest) {
 
   const unit = await db.unit.findUnique({
     where: { id: input.unitId },
-    select: { id: true, part: { select: { id: true, courseId: true } } },
+    select: {
+      id: true,
+      part: { select: { id: true, courseId: true, course: { select: { academicLevel: true } } } },
+    },
   });
   if (!unit) return err("UNIT_NOT_FOUND", 404);
+  // Phase K2 — `Lesson.academicLevel` is DERIVED from the owning course
+  // through the canonical chain (I2). It is not part of the input contract
+  // (the strict parser drops any client value); an unlevelled course fails
+  // closed rather than creating a lesson with a NULL/guessed level.
+  const academicLevel = normalizeAcademicLevel(unit.part.course?.academicLevel);
+  if (!academicLevel) return err("COURSE_LEVEL_REQUIRED", 409);
 
   let order = input.order;
   if (order === null) {
@@ -343,6 +353,7 @@ export async function POST(req: NextRequest) {
       // LEGACY standing. The reconciler remains the only writer of OFFICIAL.
       officialCode: null,
       curriculumStatus: "LEGACY",
+      academicLevel,
       trackScope: input.trackScope,
       description: input.description,
       summary: input.summary,

@@ -35,6 +35,12 @@ import {
 } from "@/lib/registration";
 import { createStudentWithCode } from "@/lib/curriculum-seed";
 import { requireSchoolType } from "@/lib/school-type";
+import {
+  gradeLabelFor,
+  isOfferedPair,
+  loadRegistrationOfferings,
+  requireAcademicLevel,
+} from "@/lib/academic-level";
 import { reconcileStudentBatch } from "@/lib/enrollment";
 import { submitTeacherApplication } from "@/lib/teacher-applications";
 
@@ -240,6 +246,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ act
       // unrecognised value is rejected, so `Student.schoolType` can only ever
       // hold a canonical enum value.
       const schoolTypeCheck = requireSchoolType(body.schoolType);
+      // Phase K2 — the student's ACADEMIC LEVEL is a REQUIRED typed input.
+      // It is never derived from the grade string, never inferred from the
+      // track, and (below) only accepted as part of an OFFERED Level × Track
+      // pair recomputed server-side — the client list is display-only.
+      const academicLevelCheck = requireAcademicLevel(body.academicLevel);
 
       if (!isValidArabicThreePartName(name))
         return err(tApi("api.063"), 400);
@@ -252,6 +263,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ act
       if (!schoolName) return err(tApi("api.067"), 400);
       if (!schoolTypeCheck.ok) return err(tApi("api.068"), 400);
       const schoolType = schoolTypeCheck.value;
+      if (!academicLevelCheck.ok) return err(tApi("api.371"), 400);
+      const academicLevel = academicLevelCheck.value;
+      // Offering revalidation (never trust the submitted pair): a level with
+      // no operational group for this track is refused with the same generic
+      // message, so a prober learns nothing beyond "not offered".
+      const offerings = await loadRegistrationOfferings();
+      if (!isOfferedPair(offerings, academicLevel, schoolType))
+        return err(tApi("api.372"), 400);
 
       const nationalTaken = await (db as any).student.findUnique({
         where: { nationalId },
@@ -270,7 +289,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ act
 
       const student = await createStudentWithCode(db, {
         userId: user.id,
-        grade: "2nd Secondary",
+        // Phase K2 — typed level is the authority; `grade` is its derived
+        // display mirror (byte-identical "2nd Secondary" for Second Secondary).
+        academicLevel,
+        grade: gradeLabelFor(academicLevel),
         schoolName,
         schoolType,
         nationalId,

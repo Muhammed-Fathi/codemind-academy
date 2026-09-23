@@ -135,6 +135,8 @@ function freshStore() {
     students: [],
     // Phase 26B — the fixture group carries the ARABIC audience; every
     // student fixture below is ARABIC, so eligibility behaves as before.
+    // Phase K2 — the fixture course is SECOND_SECONDARY, as is every student.
+    courses: [{ id: "c1", academicLevel: "SECOND_SECONDARY" }],
     groups: [{ id: "gA", name: "Racy Group", courseId: "c1", isActive: true, capacity: 20, trackScope: "ARABIC" }],
     plans: [{ id: "p1", name: "Monthly", durationMonths: 1, price: 300, isActive: true }],
     subscriptions: [],
@@ -152,10 +154,10 @@ function freshStore() {
 function seedContenders(store, tag) {
   // 19 existing members + two NEW contenders, each wanting the group's LAST
   // seat (capacity 20).
-  for (let i = 1; i <= 19; i++) store.students.push({ id: `mem-${tag}-${i}`, userId: `u-m${tag}-${i}`, groupId: "gA", schoolType: "ARABIC" });
+  for (let i = 1; i <= 19; i++) store.students.push({ id: `mem-${tag}-${i}`, userId: `u-m${tag}-${i}`, groupId: "gA", schoolType: "ARABIC", academicLevel: "SECOND_SECONDARY" });
   for (const who of ["A", "B"]) {
     const stuId = `stu-${tag}-${who}`;
-    store.students.push({ id: stuId, userId: `u-${tag}-${who}`, groupId: null, schoolType: "ARABIC" });
+    store.students.push({ id: stuId, userId: `u-${tag}-${who}`, groupId: null, schoolType: "ARABIC", academicLevel: "SECOND_SECONDARY" });
     const sub = { id: `sub-${tag}-${who}`, studentId: stuId, planId: "p1", status: "PENDING", startDate: null, endDate: null };
     store.subscriptions.push(sub);
     store.payments.push({
@@ -183,6 +185,7 @@ const studentView = (store, s) => {
     userId: s.userId,
     groupId: s.groupId ?? null,
     schoolType: s.schoolType ?? null, // Phase 26B eligibility input
+    academicLevel: s.academicLevel ?? null, // Phase K2 eligibility input (I1)
     group: s.groupId
       ? (() => {
           const g = store.groups.find((x) => x.id === s.groupId);
@@ -361,6 +364,13 @@ function makeDb(store, mode, interleave = null, dbState = null) {
       },
       subscriptionPlan: { findUnique: async ({ where }) => Promise.resolve(planView(store, where.id)) },
       group: { findUnique: async ({ where }) => Promise.resolve(groupView(store, where.id)) },
+      // Phase K2 — the target group's course level (I1 gate input).
+      course: {
+        findUnique: async ({ where }) => {
+          const c = store.courses.find((x) => x.id === where.id);
+          return c ? { academicLevel: c.academicLevel ?? null } : null;
+        },
+      },
       subscription: {
         create: async ({ data }) => {
           if (interleave && interleave.op === "subscription.create") await interleave.gate;
@@ -544,8 +554,8 @@ async function main() {
   {
     process.env.DATABASE_URL = "postgresql://user:pass@host:5432/db";
     const store = freshStore();
-    for (let i = 1; i <= 19; i++) store.students.push({ id: `m${i}`, userId: `u${i}`, groupId: "gA", schoolType: "ARABIC" });
-    store.students.push({ id: "stu-me", userId: "u-me", groupId: "gA", schoolType: "ARABIC" }); // the 20th member
+    for (let i = 1; i <= 19; i++) store.students.push({ id: `m${i}`, userId: `u${i}`, groupId: "gA", schoolType: "ARABIC", academicLevel: "SECOND_SECONDARY" });
+    store.students.push({ id: "stu-me", userId: "u-me", groupId: "gA", schoolType: "ARABIC", academicLevel: "SECOND_SECONDARY" }); // the 20th member
     const sub = { id: "sub-me", studentId: "stu-me", planId: "p1", status: "ACTIVE", startDate: at("2026-01-01T00:00:00.000Z"), endDate: at("2026-10-01T00:00:00.000Z") };
     store.subscriptions.push(sub);
     store.payments.push({

@@ -17,6 +17,7 @@
 import { db } from "@/lib/db";
 import { evaluateAccessDecision } from "@/lib/subscription-entitlement";
 import { normalizeSchoolType, type SchoolType } from "@/lib/school-type";
+import { normalizeAcademicLevel, type AcademicLevel } from "@/lib/academic-level";
 
 export type Enrollment = {
   isEnrolled: boolean;
@@ -25,6 +26,13 @@ export type Enrollment = {
   groupId: string | null;
   batchId: string | null;
   schoolType: SchoolType | null;
+  /**
+   * Phase K2 — the academic level of the ACTIVE assignment, derived from
+   * Student.groupId → Group.courseId → Course.academicLevel (the single read
+   * surface for it). `null` when ungrouped or the course is unlevelled.
+   * Read-only, same posture as `schoolType`; never `Student.grade`.
+   */
+  academicLevel: AcademicLevel | null;
   /**
    * Raw Subscription.status, surfaced for the dashboard//me/enrollment UI
    * (renewal banners, "expiring soon" prompts). It is the STORED value —
@@ -58,12 +66,19 @@ export async function getEnrollment(studentId: string): Promise<Enrollment> {
       groupId: true,
       batchId: true,
       schoolType: true,
-      group: { select: { id: true, isActive: true, course: { select: { id: true, slug: true } } } },
+      group: {
+        select: {
+          id: true,
+          isActive: true,
+          course: { select: { id: true, slug: true, academicLevel: true } },
+        },
+      },
       subscription: { select: { status: true, endDate: true } },
     },
   });
 
   const schoolType = normalizeSchoolType(student?.schoolType);
+  const academicLevel = normalizeAcademicLevel(student?.group?.course?.academicLevel);
 
   const groupActiveCourse =
     !!student?.group?.isActive && !!student.group.course;
@@ -83,6 +98,7 @@ export async function getEnrollment(studentId: string): Promise<Enrollment> {
       groupId: student?.groupId ?? null,
       batchId: student?.batchId ?? null,
       schoolType,
+      academicLevel,
       subscriptionStatus: student?.subscription?.status ?? null,
       hasSubscription: entitlement.hasSubscription,
       grandfathered: entitlement.grandfathered,
@@ -96,6 +112,7 @@ export async function getEnrollment(studentId: string): Promise<Enrollment> {
     groupId: student.group.id,
     batchId: student.batchId,
     schoolType,
+    academicLevel,
     subscriptionStatus: student.subscription?.status ?? null,
     hasSubscription: entitlement.hasSubscription,
     grandfathered: entitlement.grandfathered,

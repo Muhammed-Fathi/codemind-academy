@@ -7,7 +7,12 @@ import { requireSchoolType, normalizeSchoolType } from "@/lib/school-type";
 // Phase 26C hotfix — the GENERATED Prisma enum is the only type this route may
 // persist for `Student.schoolType`; it is imported type-only (erased at build
 // time) and used to type the `pendingSchoolType` holder below.
-import type { SchoolType } from "@prisma/client";
+import type { SchoolType, AcademicLevel } from "@prisma/client";
+import {
+  gradeLabelFor,
+  groupLevelEligible,
+  requireAcademicLevel,
+} from "@/lib/academic-level";
 import { reconcileStudentBatch } from "@/lib/enrollment";
 import { logSecurityEvent } from "@/lib/security";
 import { revokeAllSessions } from "@/lib/auth";
@@ -64,6 +69,20 @@ export async function PATCH(
     pendingSchoolType = check.value;
   }
 
+  // Phase K2 — pre-parse the typed ACADEMIC LEVEL the same way (so a group
+  // assignment in the same request validates against the NEW level). It is
+  // the only level authority; `grade` is derived from it below and a
+  // client-supplied `grade` is ignored. `null`/blank is rejected: an admin
+  // can never clear a student's level.
+  let pendingAcademicLevel: AcademicLevel | undefined = undefined;
+  if (body.academicLevel !== undefined) {
+    const check = requireAcademicLevel(body.academicLevel);
+    if (!check.ok) return err(tApi("api.371"), 400);
+    pendingAcademicLevel = check.value;
+  }
+  const effectiveAcademicLevel =
+    pendingAcademicLevel !== undefined ? pendingAcademicLevel : student.academicLevel;
+
   let groupChanged = false;
   let targetGroupIdForSchoolTypeCheck: string | null | undefined = undefined;
   if (typeof body.groupId === "string" || body.groupId === null) {
@@ -77,7 +96,16 @@ export async function PATCH(
     if (body.groupId) {
       const group = await db.group.findUnique({
         where: { id: body.groupId },
-        select: { id: true, trackScope: true, isActive: true, capacity: true, courseId: true, _count: { select: { students: true } } },
+        select: {
+          id: true,
+          trackScope: true,
+          isActive: true,
+          capacity: true,
+          courseId: true,
+          // Phase K2 — the course level feeds the I1 gate below.
+          course: { select: { academicLevel: true } },
+          _count: { select: { students: true } },
+        },
       });
       if (!group) return err(tApi("api.020"), 404);
       if (!group.isActive) return err(tApi("api.085"), 409);
@@ -86,6 +114,13 @@ export async function PATCH(
       const effectiveSchoolType = pendingSchoolType !== undefined ? pendingSchoolType : student.schoolType;
       if (normalizeSchoolType(effectiveSchoolType) !== audience) {
         return err(tApi("api.286"), 409);
+      }
+      // Phase K2 — ACADEMIC LEVEL gate (I1), orthogonal to the track gate:
+      // the student's (new or existing) typed level must equal the group's
+      // course level. Fail-closed; the student's level is never rewritten to
+      // make the assignment fit.
+      if (!groupLevelEligible(effectiveAcademicLevel, group.course?.academicLevel)) {
+        return err(tApi("api.373"), 409);
       }
       // Capacity check when actually moving to a different group
       if (student.groupId !== body.groupId) {
@@ -103,8 +138,29 @@ export async function PATCH(
     });
     groupChanged = true;
   }
-  if (typeof body.grade === "string") {
-    await db.student.update({ where: { id }, data: { grade: body.grade } });
+  // Phase K2 — `grade` is a DERIVED display mirror of the typed level. The
+  // former free-text `grade` write is retired: a client-supplied `grade` is
+  // ignored, and the mirror is rewritten only when the level changes.
+  if (pendingAcademicLevel !== undefined && pendingAcademicLevel !== student.academicLevel) {
+    // A level change must not leave the student attached to a group of
+    // another level (I1). The effective group is the one assigned in THIS
+    // request (already validated above against the new level) or the
+    // student's current one.
+    const effectiveGroupId =
+      targetGroupIdForSchoolTypeCheck !== undefined ? targetGroupIdForSchoolTypeCheck : student.groupId;
+    if (effectiveGroupId) {
+      const group = await db.group.findUnique({
+        where: { id: effectiveGroupId },
+        select: { course: { select: { academicLevel: true } } },
+      });
+      if (group && !groupLevelEligible(pendingAcademicLevel, group.course?.academicLevel)) {
+        return err(tApi("api.374"), 409);
+      }
+    }
+    await db.student.update({
+      where: { id },
+      data: { academicLevel: pendingAcademicLevel, grade: gradeLabelFor(pendingAcademicLevel) },
+    });
   }
   if (typeof body.schoolName === "string") {
     await db.student.update({ where: { id }, data: { schoolName: body.schoolName } });

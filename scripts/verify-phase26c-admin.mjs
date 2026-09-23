@@ -334,10 +334,11 @@ rawDb.prepare(`INSERT INTO "SubscriptionPlan" ("id","name","nameAr","description
 rawDb.prepare(`INSERT INTO "SubscriptionPlan" ("id","name","nameAr","description","durationMonths","price","isPromo","isActive","createdAt") VALUES (?,?,?,?,?,?,?,?,?)`).run(EARLY_BIRD_ID,"Early Bird","عرض مبكر","early bird",6,500,1,1,NOW);
 
 insertUser("qa26c-student-ar","qa26c-ar@local.test","STUDENT","Qa26cStudent1!","QA AR Student");
-rawDb.prepare(`INSERT INTO "Student" ("id","userId","schoolType","groupId","createdAt","updatedAt") VALUES (?,?,?,?,?,?)`).run("qa26c-student-ar-row","qa26c-student-ar","ARABIC",null,NOW,NOW);
+// Phase K2 — fixtures carry the K1 post-backfill level (SECOND_SECONDARY).
+rawDb.prepare(`INSERT INTO "Student" ("id","userId","schoolType","academicLevel","groupId","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?)`).run("qa26c-student-ar-row","qa26c-student-ar","ARABIC","SECOND_SECONDARY",null,NOW,NOW);
 insertSession("qa26c-student-ar-session","qa26c-student-ar","qa26c-ar-raw-token");
 
-rawDb.prepare(`INSERT INTO "Course" ("id","slug","name","nameAr","description","color","createdAt","updatedAt") VALUES ('qa26c-course-other','qa26c-other','Other','آخر','other','#123',?,?)`).run(NOW,NOW);
+rawDb.prepare(`INSERT INTO "Course" ("id","slug","name","nameAr","description","color","academicLevel","createdAt","updatedAt") VALUES ('qa26c-course-other','qa26c-other','Other','آخر','other','#123','SECOND_SECONDARY',?,?)`).run(NOW,NOW);
 rawDb.prepare(`INSERT INTO "Part" ("id","courseId","title","titleAr","order") VALUES ('qa26c-part-other','qa26c-course-other','P','ص',1)`).run();
 rawDb.prepare(`INSERT INTO "Unit" ("id","partId","title","titleAr","order") VALUES ('qa26c-unit-other','qa26c-part-other','U','و',1)`).run();
 rawDb.prepare(`INSERT INTO "Lesson" ("id","title","titleAr","order","unitId","status","trackScope","createdAt","updatedAt") VALUES ('qa26c-lesson-other','Other','آخر',1,'qa26c-unit-other','PUBLISHED','SHARED',?,?)`).run(NOW,NOW);
@@ -406,7 +407,7 @@ function record(id, desc, pass, detail=""){
   const fullGroupId="qa26c-full-group";
   try { rawDb.prepare(`INSERT INTO "Group" ("id","name","capacity","isActive","courseId","trackScope","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?,?)`).run(fullGroupId,"Full Group",1,1,COURSE_ID,"ARABIC",NOW,NOW); } catch {}
   try { rawDb.prepare(`INSERT INTO "User" ("id","email","password","name","role","isActive","status","createdAt","updatedAt") VALUES ('qa26c-dummy','qa26c-dummy@local.test','x','Dummy','STUDENT',1,'ACTIVE',?,?)`).run(NOW,NOW); } catch {}
-  try { rawDb.prepare(`INSERT INTO "Student" ("id","userId","schoolType","groupId","createdAt","updatedAt") VALUES ('qa26c-dummy-row','qa26c-dummy','ARABIC',?, ?, ?)`).run(fullGroupId,NOW,NOW); } catch {}
+  try { rawDb.prepare(`INSERT INTO "Student" ("id","userId","schoolType","academicLevel","groupId","createdAt","updatedAt") VALUES ('qa26c-dummy-row','qa26c-dummy','ARABIC','SECOND_SECONDARY',?, ?, ?)`).run(fullGroupId,NOW,NOW); } catch {}
   const res6 = await call("PATCH",`/api/admin/students/qa26c-student-ar-row`,{ body:{ groupId: fullGroupId }, cookie:ADMIN_COOKIE });
   record("ADMIN-05f","Assign to full group rejected (api.274)", res6.status===409, `status=${res6.status}`);
   const inactiveGroupId="qa26c-inactive-group";

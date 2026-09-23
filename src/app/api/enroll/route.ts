@@ -47,6 +47,7 @@ import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
 import { reconcileStudentBatch } from "@/lib/enrollment";
 import { groupTrackScopeEligible } from "@/lib/track-scope";
+import { groupLevelEligible } from "@/lib/academic-level";
 import {
   submitPaymentRequest,
   validateEnrollmentSubmission,
@@ -102,7 +103,8 @@ export async function POST(req: NextRequest) {
 
   const course = await db.course.findUnique({
     where: { id: courseId },
-    select: { id: true },
+    // Phase K2 — `academicLevel` feeds the level gate below.
+    select: { id: true, academicLevel: true },
   });
   if (!course) return err(tApi("api.085"), 404);
 
@@ -139,6 +141,15 @@ export async function POST(req: NextRequest) {
   // every group (fail-closed). The refusal reuses the "group not available"
   // message so a prober learns nothing about which group ids exist.
   if (!groupTrackScopeEligible(student.schoolType, group.trackScope))
+    return err(tApi("api.085"), 400);
+
+  // Phase K2 — ACADEMIC LEVEL ELIGIBILITY (I1), orthogonal to the track gate
+  // above: the student's OWN typed `Student.academicLevel` must equal the
+  // requested group's `Course.academicLevel`. Exact equality, fail-closed
+  // (an unlevelled student or course is refused); nothing is inferred from
+  // the track or the grade string and nothing is rewritten. Same generic
+  // "group not available" message — no level oracle for a prober.
+  if (!groupLevelEligible(student.academicLevel, course.academicLevel))
     return err(tApi("api.085"), 400);
 
   // Pre-check only: the seat may be gone by the time an admin approves; the

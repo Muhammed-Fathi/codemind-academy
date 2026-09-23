@@ -224,6 +224,17 @@ function makeMockDb() {
     // batch exists" — which is exactly the real outcome for a brand-new
     // student, and `reconcileStudentBatch` must no-op on it.
     batch: empty,
+    // Phase K2: registration recomputes the offered Level × Track pairs from
+    // ACTIVE classified groups. One SECOND_SECONDARY / LANGUAGE group makes
+    // the scenario's registration (SECOND_SECONDARY + LANGUAGE) an offered
+    // pair — the same population a real deployment has today.
+    group: {
+      async findMany() {
+        return [{ trackScope: "LANGUAGE", course: { academicLevel: "SECOND_SECONDARY" } }];
+      },
+      async findUnique() { return null; },
+      async count() { return 0; },
+    },
 
     // Security/session tables introduced by the 2026 upgrade. These are
     // exercised implicitly by every login in this test (single-device
@@ -461,6 +472,7 @@ const NO_SUB_LINE_2 = "لما ابنك يشترك في باقة، التقرير
       nationalId: "30101011234567",
       schoolName: "مدرسة النيل",
       schoolType: "LANGUAGE",
+      academicLevel: "SECOND_SECONDARY",
     }),
     params("register")
   );

@@ -467,9 +467,10 @@ async function seed() {
     { id: "u-sc", email: "sc@test.local", name: "Student C", role: "STUDENT", isActive: true, status: "ACTIVE", phone: null, avatarUrl: null },
     { id: "u-sd", email: "sd@test.local", name: "Student D", role: "STUDENT", isActive: true, status: "ACTIVE", phone: null, avatarUrl: null },
   );
+  // Phase K2 — courses carry the academic level (K1 backfill state).
   T.course.push(
-    { id: "c1", slug: "course-1", name: "Course One", nameAr: "كورس ١" },
-    { id: "c2", slug: "course-2", name: "Course Two", nameAr: "كورس ٢" },
+    { id: "c1", slug: "course-1", name: "Course One", nameAr: "كورس ١", academicLevel: "SECOND_SECONDARY" },
+    { id: "c2", slug: "course-2", name: "Course Two", nameAr: "كورس ٢", academicLevel: "SECOND_SECONDARY" },
   );
   T.group.push(
     { id: "g1", name: "Group 1", courseId: "c1", isActive: true },
@@ -866,27 +867,32 @@ async function main() {
   }
   {
     const sat = await bodyOf(
-      await adminRoute.POST(postReq({ title: "New random", titleAr: "جديد", schoolType: "ARABIC", questionCount: 5, difficulty: "MIXED", selectionMode: "RANDOM" }))
+      await adminRoute.POST(postReq({ title: "New random", titleAr: "جديد", schoolType: "ARABIC", questionCount: 5, difficulty: "MIXED", selectionMode: "RANDOM", courseId: "c1" }))
     );
     ok(sat.status === 200, "create RANDOM satisfiable-by-combined-pool (5 > 3 Q-only, <= 5 total) -> 200");
     const justOver = await bodyOf(
-      await adminRoute.POST(postReq({ title: "Just over", schoolType: "ARABIC", questionCount: 6 }))
+      await adminRoute.POST(postReq({ title: "Just over", schoolType: "ARABIC", questionCount: 6, courseId: "c1" }))
     );
     ok(justOver.status === 400, "create one past the combined pool (6 > 5) -> 400");
     const over = await bodyOf(
-      await adminRoute.POST(postReq({ title: "Too big", schoolType: "ARABIC", questionCount: 99 }))
+      await adminRoute.POST(postReq({ title: "Too big", schoolType: "ARABIC", questionCount: 99, courseId: "c1" }))
     );
     ok(over.status === 400, "create beyond the combined pool -> 400");
-    const noTitle = await bodyOf(await adminRoute.POST(postReq({ schoolType: "ARABIC" })));
+    const noTitle = await bodyOf(await adminRoute.POST(postReq({ schoolType: "ARABIC", courseId: "c1" })));
     ok(noTitle.status === 400, "create without title -> 400");
-    const noType = await bodyOf(await adminRoute.POST(postReq({ title: "x" })));
+    const noType = await bodyOf(await adminRoute.POST(postReq({ title: "x", courseId: "c1" })));
     ok(noType.status === 400, "create without schoolType -> 400");
     const bogusCourse = await bodyOf(
       await adminRoute.POST(postReq({ title: "x", schoolType: "ARABIC", questionCount: 1, courseId: "no-such-course" }))
     );
     ok(bogusCourse.status === 400, "create with an unknown courseId -> 400 (no dangling binding)");
+    // Phase K2 — a mock exam is curriculum-bound: no course, no exam.
+    const noCourse = await bodyOf(
+      await adminRoute.POST(postReq({ title: "Courseless", schoolType: "ARABIC", questionCount: 1 }))
+    );
+    ok(noCourse.status === 400, "create WITHOUT courseId -> 400 (K2: mock exams are course-bound)");
     const fx = await bodyOf(
-      await adminRoute.POST(postReq({ title: "New fixed", schoolType: "ARABIC", questionCount: 3, selectionMode: "FIXED" }))
+      await adminRoute.POST(postReq({ title: "New fixed", schoolType: "ARABIC", questionCount: 3, selectionMode: "FIXED", courseId: "c1" }))
     );
     ok(fx.status === 200, "create FIXED -> 200");
     const pins = T.mockExamQuestion.filter((l) => l.mockExamId === fx.body.exam.id);
@@ -898,7 +904,7 @@ async function main() {
   {
     // Publish guard: inflate the count, then try to publish.
     const mk = await bodyOf(
-      await adminRoute.POST(postReq({ title: "Draft big", schoolType: "ARABIC", questionCount: 2 }))
+      await adminRoute.POST(postReq({ title: "Draft big", schoolType: "ARABIC", questionCount: 2, courseId: "c1" }))
     );
     const id = mk.body.exam.id;
     const inflate = await bodyOf(await adminIdRoute.PATCH(postReq({ questionCount: 50 }), params({ id })));

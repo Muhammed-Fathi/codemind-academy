@@ -537,6 +537,13 @@ function OverviewView() {
 // ============================================================
 // 2. Students
 // ============================================================
+/** Phase K2 — localized academic-level label (never hardcoded in JSX). */
+function academicLevelLabel(tr: (k: string) => string, level: string | null | undefined): string {
+  if (level === "FIRST_SECONDARY") return tr("admin.643");
+  if (level === "SECOND_SECONDARY") return tr("admin.644");
+  return tr("admin.645");
+}
+
 type StudentRow = {
   id: string;
   userId: string;
@@ -545,6 +552,10 @@ type StudentRow = {
   phone: string | null;
   isActive: boolean;
   grade: string;
+  /** Phase K2 — typed academic level (authority); `grade` is its display mirror. */
+  academicLevel?: "FIRST_SECONDARY" | "SECOND_SECONDARY" | null;
+  /** Phase K2 — server-computed I1 diagnostic: grouped, but level ≠ group course level. */
+  levelMismatch?: boolean;
   schoolName: string | null;
   schoolType?: string | null;
   nationalId?: string | null;
@@ -739,7 +750,7 @@ function StudentsView() {
                   <TableHead>{tr("admin.019")}</TableHead>
                   <TableHead>{tr("admin.020")}</TableHead>
                   <TableHead>{tr("admin.021")}</TableHead>
-                  <TableHead>{tr("admin.022")}</TableHead>
+                  <TableHead>{tr("admin.642")}</TableHead>
                   <TableHead>{tr("admin.023")}</TableHead>
                   <TableHead>{tr("admin.220")}</TableHead>
                   <TableHead>{tr("admin.024")}</TableHead>
@@ -764,7 +775,16 @@ function StudentsView() {
                       )}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">{s.email}</TableCell>
-                    <TableCell>{s.grade}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1.5">
+                        <span>{academicLevelLabel(tr, s.academicLevel)}</span>
+                        {s.levelMismatch && (
+                          <Badge variant="destructive" title={tr("admin.646")} className="text-[10px]">
+                            !
+                          </Badge>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell>{s.group?.name || "—"}</TableCell>
                     <TableCell>
                       {s.videoProgress && s.videoProgress.totalVideos > 0 ? (
@@ -859,13 +879,15 @@ function AddStudentDialog({
     email: "",
     password: "",
     phone: "",
-    grade: "2nd Secondary",
+    // Phase K2 — typed academic level replaces the free-text grade input;
+    // the server derives `grade` from it.
+    academicLevel: "SECOND_SECONDARY" as "FIRST_SECONDARY" | "SECOND_SECONDARY",
     schoolName: "",
   });
   const [saving, setSaving] = React.useState(false);
 
   const submit = async () => {
-    if (!form.name || !form.email || !form.password) {
+    if (!form.name || !form.email || !form.password || !form.academicLevel) {
       toast.error(tr("admin.026"));
       return;
     }
@@ -881,7 +903,7 @@ function AddStudentDialog({
       toast.success(tr("admin.028"));
       onCreated();
       onOpenChange(false);
-      setForm({ name: "", email: "", password: "", phone: "", grade: "2nd Secondary", schoolName: "" });
+      setForm({ name: "", email: "", password: "", phone: "", academicLevel: "SECOND_SECONDARY", schoolName: "" });
     } catch (e: any) {
       toast.error(e.message || tr("admin.001"));
     } finally {
@@ -915,8 +937,19 @@ function AddStudentDialog({
               <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
             </div>
             <div>
-              <Label>{tr("admin.022")}</Label>
-              <Input value={form.grade} onChange={(e) => setForm({ ...form, grade: e.target.value })} />
+              <Label>{tr("admin.642")}</Label>
+              <Select
+                value={form.academicLevel}
+                onValueChange={(v) => setForm({ ...form, academicLevel: v as "FIRST_SECONDARY" | "SECOND_SECONDARY" })}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="FIRST_SECONDARY">{tr("admin.643")}</SelectItem>
+                  <SelectItem value="SECOND_SECONDARY">{tr("admin.644")}</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <div>
@@ -992,12 +1025,46 @@ function StudentProfileDrawer({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ groupId: groupId || null }),
       });
-      if (!res.ok) throw new Error("err");
+      if (!res.ok) {
+        // Surface the server's explicit gate message (track / level mismatch,
+        // capacity, unclassified group) instead of a generic error.
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j?.error || "err");
+      }
       toast.success(tr("admin.044"));
       onUpdated();
       onClose();
-    } catch {
-      toast.error(tr("admin.001"));
+    } catch (e: any) {
+      toast.error(e?.message && e.message !== "err" ? e.message : tr("admin.001"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Derived default + explicit choice (no effect-driven state sync): the
+  // control shows the stored level until the admin picks another one.
+  const [levelChoice, setLevelChoice] = React.useState<{ id: string; value: string } | null>(null);
+  const level =
+    levelChoice && student && levelChoice.id === student.id ? levelChoice.value : student?.academicLevel || "";
+  const setLevel = (v: string) => student && setLevelChoice({ id: student.id, value: v });
+  const saveLevel = async () => {
+    if (!student || !level) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/admin/students/${student.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ academicLevel: level }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j?.error || "err");
+      }
+      toast.success(tr("admin.044"));
+      onUpdated();
+      onClose();
+    } catch (e: any) {
+      toast.error(e?.message && e.message !== "err" ? e.message : tr("admin.001"));
     } finally {
       setSaving(false);
     }
@@ -1050,8 +1117,9 @@ function StudentProfileDrawer({
                   <div className="font-medium mt-1 font-mono" dir="ltr">{student.nationalId || "—"}</div>
                 </div>
                 <div className="rounded-lg border p-3">
-                  <div className="text-xs text-muted-foreground">{tr("admin.022")}</div>
-                  <div className="font-medium mt-1">{student.grade}</div>
+                  <div className="text-xs text-muted-foreground">{tr("admin.642")}</div>
+                  <div className="font-medium mt-1">{academicLevelLabel(tr, student.academicLevel)}</div>
+                  <div className="text-[11px] text-muted-foreground">{student.grade}</div>
                 </div>
                 <div className="rounded-lg border p-3">
                   <div className="text-xs text-muted-foreground">{tr("admin.037")}</div>
@@ -1084,6 +1152,31 @@ function StudentProfileDrawer({
                 ) : (
                   <div className="text-sm text-muted-foreground">{tr("admin.061")}</div>
                 )}
+              </div>
+
+              {student.levelMismatch && (
+                <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-xs text-destructive">
+                  {tr("admin.646")}
+                </div>
+              )}
+
+              {/* Phase K2 — typed academic level (the ONLY level authority;
+                  the server derives `grade` and refuses a change that would
+                  leave the student in a group of another level). */}
+              <div className="rounded-lg border p-3 space-y-2">
+                <div className="text-xs text-muted-foreground">{tr("admin.642")}</div>
+                <Select value={level} onValueChange={setLevel}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder={tr("admin.645")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="FIRST_SECONDARY">{tr("admin.643")}</SelectItem>
+                    <SelectItem value="SECOND_SECONDARY">{tr("admin.644")}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button size="sm" variant="outline" onClick={saveLevel} disabled={saving || !level} className="w-full">
+                  {tr("admin.040")}
+                </Button>
               </div>
 
               <div className="rounded-lg border p-3 space-y-2">

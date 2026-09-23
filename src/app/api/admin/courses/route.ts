@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireRole } from "@/lib/api";
 import { reconcileOfficialCurriculum } from "@/lib/official-curriculum";
+import { requireAcademicLevel } from "@/lib/academic-level";
 
 export async function POST(req: NextRequest) {
   const tApi = await getServerT();
@@ -36,6 +37,12 @@ export async function POST(req: NextRequest) {
   const description = String(body.description || "").trim();
   const color = String(body.color || "#10b981").trim();
   if (!name || !nameAr) return err(tApi("api.018"), 400);
+  // Phase K2 — `Course.academicLevel` is the curriculum authority and is
+  // REQUIRED for every new operational course (the DB column stays nullable
+  // until K3). Never defaulted, never inferred from the name.
+  const levelCheck = requireAcademicLevel(body.academicLevel);
+  if (!levelCheck.ok) return err(tApi("api.375"), 400);
+  const academicLevel = levelCheck.value;
 
   const slugBase = (body.slug ? String(body.slug) : name)
     .toLowerCase()
@@ -50,7 +57,7 @@ export async function POST(req: NextRequest) {
   }
 
   const course = await db.course.create({
-    data: { slug, name, nameAr, description, color },
+    data: { slug, name, nameAr, description, color, academicLevel },
   });
   return ok({ ok: true, course });
 }
@@ -150,6 +157,7 @@ export async function GET(req: NextRequest) {
         nameAr: c.nameAr,
         description: c.description,
         color: c.color,
+        academicLevel: c.academicLevel ?? null,
         partsCount: parts.length,
         lessonsCount,
         activeLessonsCount,

@@ -2789,4 +2789,49 @@ export const DICT_2026: Record<string, DictEntry> = {
   "parent.feedback.fromHomework": { ar: "تعليق على الواجب", en: "Homework feedback" },
   "parent.feedback.fromTeacher": { ar: "ملاحظة من المعلم", en: "Note from the teacher" },
   "parent.feedback.empty": { ar: "مفيش ملاحظات", en: "No feedback yet" },
+
+  // ---- Phase K2: academic level (First / Second Secondary) ----
+  "api.371": { ar: "الصف الدراسي مطلوب (أولى ثانوي أو تانية ثانوي)", en: "Academic level is required (First or Second Secondary)" },
+  "api.372": {
+    ar: "التسجيل غير متاح حاليًا للصف ونوع المدرسة المختارين",
+    en: "Registration is not currently available for the selected level and school type",
+  },
+  "api.373": {
+    ar: "الصف الدراسي للطالب لا يطابق صف الكورس الخاص بالمجموعة",
+    en: "The student's academic level does not match the academic level of the group's course",
+  },
+  "api.374": {
+    ar: "لا يمكن تغيير الصف الدراسي والطالب مسجل في مجموعة من صف آخر — انقله أولًا",
+    en: "Cannot change the academic level while the student is assigned to a group of another level — move them first",
+  },
+  "api.375": { ar: "الصف الدراسي للكورس مطلوب", en: "The course academic level is required" },
+  "api.376": {
+    ar: "الامتحان التجريبي لازم يكون مرتبط بكورس",
+    en: "A mock exam must be bound to a course",
+  },
+  "api.377": {
+    ar: "لا يمكن تغيير كورس مجموعة فيها طلاب من صف دراسي آخر — انقلهم أولًا",
+    en: "Cannot change the course of a group whose students belong to another academic level — move them first",
+  },
+  "admin.642": { ar: "الصف الدراسي", en: "Academic level" },
+  "admin.643": { ar: "أولى ثانوي", en: "First Secondary" },
+  "admin.644": { ar: "تانية ثانوي", en: "Second Secondary" },
+  "admin.645": { ar: "غير محدد", en: "Unspecified" },
+  "admin.646": {
+    ar: "تعارض في الصف الدراسي: صف الطالب لا يطابق صف كورس المجموعة",
+    en: "Academic level mismatch: the student's level differs from the group's course level",
+  },
+  "admin.647": { ar: "الكورس (مطلوب)", en: "Course (required)" },
+  "auth.228": { ar: "الصف الدراسي", en: "Academic level" },
+  "auth.229": { ar: "اختر الصف الدراسي", en: "Select academic level" },
+  "auth.230": { ar: "أولى ثانوي", en: "First Secondary" },
+  "auth.231": { ar: "تانية ثانوي", en: "Second Secondary" },
+  "auth.232": {
+    ar: "مفيش تسجيل متاح حاليًا لهذا الصف — اختر صفًا آخر",
+    en: "No registration is available for this level right now — choose another level",
+  },
+  "auth.233": {
+    ar: "تعذّر تحميل خيارات التسجيل — حاول تاني",
+    en: "Could not load registration options — try again",
+  },
 };

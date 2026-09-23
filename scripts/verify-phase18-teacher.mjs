@@ -381,10 +381,11 @@ async function main() {
   const teacherB = await client.teacher.create({ data: { userId: teacherUserB.id } });
 
   const courseA = await client.course.create({
-    data: { slug: "phase18-a", name: "Phase 18 A", nameAr: "مرحلة 18 أ", description: "d" },
+    // Phase K2 — levelled courses (mock exams are course-bound; lesson level derives).
+    data: { slug: "phase18-a", name: "Phase 18 A", nameAr: "مرحلة 18 أ", description: "d", academicLevel: "SECOND_SECONDARY" },
   });
   const courseB = await client.course.create({
-    data: { slug: "phase18-b", name: "Phase 18 B", nameAr: "مرحلة 18 ب", description: "d" },
+    data: { slug: "phase18-b", name: "Phase 18 B", nameAr: "مرحلة 18 ب", description: "d", academicLevel: "SECOND_SECONDARY" },
   });
   const partA = await client.part.create({
     data: { courseId: courseA.id, title: "Part A1", titleAr: "جزء أ1", order: 1 },
@@ -976,6 +977,8 @@ async function main() {
     questionCount: 1,
     selectionMode: "FIXED",
     difficulty: "MIXED",
+    // Phase K2 — mock exams are course-bound at the application layer.
+    courseId: courseA.id,
   });
   eq(examCreate.status, 200, "L: the admin FIXED-exam ceremony still creates exams");
   const newExamId = examCreate.json.exam.id;

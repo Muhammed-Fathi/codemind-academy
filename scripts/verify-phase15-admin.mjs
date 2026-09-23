@@ -396,7 +396,9 @@ async function main() {
   });
 
   const course = await client.course.create({
-    data: { slug: "p15", name: "P15", nameAr: "P15", description: "phase 15" },
+    // Phase K2 — admin lesson creation derives Lesson.academicLevel from the
+    // owning course (I2), so the fixture course must be levelled.
+    data: { slug: "p15", name: "P15", nameAr: "P15", description: "phase 15", academicLevel: "SECOND_SECONDARY" },
   });
   const part1 = await client.part.create({
     data: { courseId: course.id, title: "P1", titleAr: "P1", order: 1 },

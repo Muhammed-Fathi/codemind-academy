@@ -285,18 +285,19 @@ seedUser("u-bob", "bob@students.test", "STUDENT", "x");
 seedSession("sess-bob", "u-bob", "bob-token");
 
 db.prepare(
-  `INSERT INTO "Student" ("id","userId","grade","schoolType","createdAt","updatedAt","enrolledAt") VALUES (?,?,?,?,?,?,?)`
-).run("s-alice", "u-alice", "2nd Secondary", "LANGUAGE", now, now, now);
+  // Phase K2 — fixtures carry the K1 post-backfill level (SECOND_SECONDARY).
+  `INSERT INTO "Student" ("id","userId","grade","academicLevel","schoolType","createdAt","updatedAt","enrolledAt") VALUES (?,?,?,?,?,?,?,?)`
+).run("s-alice", "u-alice", "2nd Secondary", "SECOND_SECONDARY", "LANGUAGE", now, now, now);
 db.prepare(
-  `INSERT INTO "Student" ("id","userId","grade","schoolType","createdAt","updatedAt","enrolledAt") VALUES (?,?,?,?,?,?,?)`
-).run("s-bob", "u-bob", "2nd Secondary", "LANGUAGE", now, now, now);
+  `INSERT INTO "Student" ("id","userId","grade","academicLevel","schoolType","createdAt","updatedAt","enrolledAt") VALUES (?,?,?,?,?,?,?,?)`
+).run("s-bob", "u-bob", "2nd Secondary", "SECOND_SECONDARY", "LANGUAGE", now, now, now);
 
 // A real account whose password we know, for the login-throttle run.
 seedUser("u-carol", "carol@students.test", "STUDENT", hashPassword("CorrectHorse42"));
 seedSession("sess-carol", "u-carol", "carol-token");
 db.prepare(
-  `INSERT INTO "Student" ("id","userId","grade","schoolType","createdAt","updatedAt","enrolledAt") VALUES (?,?,?,?,?,?,?)`
-).run("s-carol", "u-carol", "2nd Secondary", "LANGUAGE", now, now, now);
+  `INSERT INTO "Student" ("id","userId","grade","academicLevel","schoolType","createdAt","updatedAt","enrolledAt") VALUES (?,?,?,?,?,?,?,?)`
+).run("s-carol", "u-carol", "2nd Secondary", "SECOND_SECONDARY", "LANGUAGE", now, now, now);
 
 function seedTask(id, studentId, title) {
   db.prepare(
@@ -308,11 +309,11 @@ seedTask("task-bob", "s-bob", "Bob private task");
 
 // Two courses, each with an active group — for the enrolment binding test.
 db.prepare(
-  `INSERT INTO "Course" ("id","slug","name","nameAr","description","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?)`
-).run("c-lang", "course-language", "Language Course", "كورس لغات", "d", now, now);
+  `INSERT INTO "Course" ("id","slug","name","nameAr","description","academicLevel","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?,?)`
+).run("c-lang", "course-language", "Language Course", "كورس لغات", "d", "SECOND_SECONDARY", now, now);
 db.prepare(
-  `INSERT INTO "Course" ("id","slug","name","nameAr","description","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?)`
-).run("c-arb", "course-arabic", "Arabic Course", "كورس عربي", "d", now, now);
+  `INSERT INTO "Course" ("id","slug","name","nameAr","description","academicLevel","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?,?)`
+).run("c-arb", "course-arabic", "Arabic Course", "كورس عربي", "d", "SECOND_SECONDARY", now, now);
 // Phase 26B: groups carry an explicit audience (Group.trackScope). The
 // students here are LANGUAGE, so the enrolment group is seeded LANGUAGE.
 function seedGroup(id, name, courseId, trackScope) {
@@ -746,6 +747,7 @@ try {
         nationalId: "29901010101011",
         schoolName: "STEM Cairo",
         schoolType: "LANGUAGE",
+        academicLevel: "SECOND_SECONDARY",
       },
     });
     eq(short.status, 400, "self-registration rejects a 5-character password");
@@ -760,6 +762,7 @@ try {
         nationalId: "29901010101011",
         schoolName: "STEM Cairo",
         schoolType: "LANGUAGE",
+        academicLevel: "SECOND_SECONDARY",
       },
     });
     eq(short7.status, 400, "self-registration rejects a 7-character password (the old floor was 6)");

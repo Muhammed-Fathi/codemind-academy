@@ -248,8 +248,9 @@ function seedSession(sessionId, userId, token) {
 }
 function seedStudent(id, userId, groupId) {
   db.prepare(
-    `INSERT INTO "Student" ("id","userId","grade","schoolType","groupId","createdAt","updatedAt") VALUES (?,?,?,?,?, ?,?)`
-  ).run(id, userId, "2nd Secondary", "LANGUAGE", groupId ?? null, now, now);
+    // Phase K2 — fixtures carry the K1 post-backfill level (SECOND_SECONDARY).
+    `INSERT INTO "Student" ("id","userId","grade","academicLevel","schoolType","groupId","createdAt","updatedAt") VALUES (?,?,?,?,?,?, ?,?)`
+  ).run(id, userId, "2nd Secondary", "SECOND_SECONDARY", "LANGUAGE", groupId ?? null, now, now);
 }
 function seedGroup(id, name, courseId, capacity) {
   // Phase 26B — fixture groups carry the LANGUAGE audience: every seeded
@@ -282,8 +283,8 @@ seedStudent("s-imp", "u-imp", null);
 seedGroup("g-main", "Main Group", "c-one", 20);
 seedGroup("g-full", "Full Group", "c-one", 2);
 db.prepare(
-  `INSERT INTO "Course" ("id","slug","name","nameAr","description","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?)`
-).run("c-one", "course-one", "Course One", "كورس واحد", "d", now, now);
+  `INSERT INTO "Course" ("id","slug","name","nameAr","description","academicLevel","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?,?)`
+).run("c-one", "course-one", "Course One", "كورس واحد", "d", "SECOND_SECONDARY", now, now);
 db.prepare(
   `INSERT INTO "SubscriptionPlan" ("id","name","nameAr","durationMonths","price","isPromo","createdAt") VALUES (?,?,?,?,?,0,?)`
 ).run("p-monthly", "Monthly", "شهري", 1, 200, now);

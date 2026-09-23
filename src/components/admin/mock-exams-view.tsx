@@ -474,11 +474,18 @@ function CreateMockExamDialog({
   const poolTooSmall =
     pool !== null && availableWithAttachments < (isFixed ? 1 : requestedCount);
   const selectedTooFew = isFixed && selectedIds.length === 0;
-  const blocked = saving || poolTooSmall || selectedTooFew;
+  // Phase K2 — a mock exam is curriculum-bound: the course is REQUIRED (the
+  // server refuses a course-less exam with api.376).
+  const courseMissing = !form.courseId;
+  const blocked = saving || poolTooSmall || selectedTooFew || courseMissing;
 
   const submit = async () => {
     if (!form.title.trim()) {
       toast.error(tr("api.187"));
+      return;
+    }
+    if (!form.courseId) {
+      toast.error(tr("api.376"));
       return;
     }
     if (selectedTooFew) {
@@ -574,24 +581,25 @@ function CreateMockExamDialog({
             </Select>
           </div>
 
-          {/* Course scope — a course-bound exam is visible only to that
-              course's students and samples that course's questions; manual
-              free-bank questions still have to be attached to THIS exam. */}
+          {/* Course scope — REQUIRED (Phase K2): a mock exam is bound to one
+              course, is visible only to that course's students and samples
+              that course's lesson questions; manual free-bank questions still
+              have to be attached to THIS exam. There is no "all courses"
+              option any more — that scope would span every academic level. */}
           <div>
-            <Label>{tr("admin.558")}</Label>
+            <Label>{tr("admin.647")}</Label>
             <Select
-              value={form.courseId || "__all__"}
+              value={form.courseId || ""}
               onValueChange={(v) => {
-                setForm({ ...form, courseId: v === "__all__" ? "" : v });
+                setForm({ ...form, courseId: v });
                 setSelectedIds([]);
                 setListData(null);
               }}
             >
               <SelectTrigger className="mt-1 w-full">
-                <SelectValue />
+                <SelectValue placeholder={tr("admin.647")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="__all__">{tr("admin.559")}</SelectItem>
                 {courses.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
                     {pickAuto(c.nameAr, c.name)}

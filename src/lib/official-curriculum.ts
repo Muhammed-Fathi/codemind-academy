@@ -28,10 +28,34 @@
 
 import { db } from "@/lib/db";
 import { LESSON_NEW_LIFECYCLE } from "@/lib/session-lifecycle";
+import { normalizeAcademicLevel, type AcademicLevel } from "@/lib/academic-level";
 import knowledgeModelFile from "../../docs/curriculum/knowledge-model.json";
 
 /** Minimal surface of the Prisma client used here (allows mock injection in tests). */
 export type ReconcileClient = any;
+
+// ---------------------------------------------------------------------------
+// Phase K2 — ONE engine, PARAMETERISED by a level-curriculum SPEC.
+//
+// Nothing in the reconciler below assumes "Second Secondary", one course
+// slug, 2 parts, 7 units or 23 lessons: every such fact lives in a
+// `LevelCurriculumSpec`. `SECOND_SECONDARY_SPEC` byte-pins the existing
+// Second Secondary behaviour (same slug, same counts, same codes, same
+// course metadata, same knowledge-model file) and remains the default, so
+// every pre-K2 caller behaves identically. First Secondary is CAPABILITY
+// only here: its spec/knowledge model are added in Phase L — no First
+// Secondary curriculum row is created by anything in this module.
+// ---------------------------------------------------------------------------
+
+export type LevelCurriculumSpec = {
+  academicLevel: AcademicLevel;
+  courseSlug: string;
+  course: { name: string; nameAr: string; description: string; color: string };
+  expectedCounts: { parts: number; units: number; lessons: number };
+  expectedCodes: readonly string[];
+  /** Raw knowledge-model JSON for this level (validated by `loadLevelCurriculumModel`). */
+  knowledgeModel: unknown;
+};
 
 export const OFFICIAL_COURSE_SLUG = "programming-ai-2nd-sec";
 
@@ -118,6 +142,21 @@ export const EXPECTED_OFFICIAL_COUNTS = {
   lessons: 23,
 } as const;
 
+/** Second Secondary — the byte-pinned existing official curriculum. */
+export const SECOND_SECONDARY_SPEC: LevelCurriculumSpec = {
+  academicLevel: "SECOND_SECONDARY",
+  courseSlug: OFFICIAL_COURSE_SLUG,
+  course: {
+    name: "Programming & AI",
+    nameAr: "البرمجة والذكاء الاصطناعي",
+    description: "كورس Programming & AI لطلاب الصف الثاني الثانوي.",
+    color: "#10b981",
+  },
+  expectedCounts: EXPECTED_OFFICIAL_COUNTS,
+  expectedCodes: OFFICIAL_LESSON_CODES,
+  knowledgeModel: knowledgeModelFile,
+};
+
 function isNonEmptyString(v: unknown): v is string {
   return typeof v === "string" && v.trim().length > 0;
 }
@@ -130,6 +169,16 @@ function isNonEmptyString(v: unknown): v is string {
 export function loadOfficialCurriculumModel(
   source: unknown = knowledgeModelFile
 ): OfficialCurriculumModel {
+  return loadLevelCurriculumModel({ ...SECOND_SECONDARY_SPEC, knowledgeModel: source });
+}
+
+/**
+ * Phase K2 — the level-aware loader: validates `spec.knowledgeModel` against
+ * the spec's OWN expected counts and code set (no platform-wide constant).
+ */
+export function loadLevelCurriculumModel(spec: LevelCurriculumSpec): OfficialCurriculumModel {
+  const source = spec.knowledgeModel;
+  const expectedCounts = spec.expectedCounts;
   const file = source as {
     schemaVersion?: unknown;
     parts?: KnowledgePart[];
@@ -137,9 +186,9 @@ export function loadOfficialCurriculumModel(
   if (!file || !Array.isArray(file.parts)) {
     throw new Error("Official curriculum model is missing `parts`");
   }
-  if (file.parts.length !== EXPECTED_OFFICIAL_COUNTS.parts) {
+  if (file.parts.length !== expectedCounts.parts) {
     throw new Error(
-      `Official curriculum must define exactly ${EXPECTED_OFFICIAL_COUNTS.parts} parts`
+      `Official curriculum must define exactly ${expectedCounts.parts} parts`
     );
   }
 
@@ -209,17 +258,17 @@ export function loadOfficialCurriculumModel(
   });
 
   const unitCount = parts.reduce((n, p) => n + p.units.length, 0);
-  if (unitCount !== EXPECTED_OFFICIAL_COUNTS.units) {
+  if (unitCount !== expectedCounts.units) {
     throw new Error(
-      `Official curriculum must define exactly ${EXPECTED_OFFICIAL_COUNTS.units} units`
+      `Official curriculum must define exactly ${expectedCounts.units} units`
     );
   }
-  if (seenCodes.size !== EXPECTED_OFFICIAL_COUNTS.lessons) {
+  if (seenCodes.size !== expectedCounts.lessons) {
     throw new Error(
-      `Official curriculum must define exactly ${EXPECTED_OFFICIAL_COUNTS.lessons} lessons`
+      `Official curriculum must define exactly ${expectedCounts.lessons} lessons`
     );
   }
-  const expected = new Set<string>(OFFICIAL_LESSON_CODES);
+  const expected = new Set<string>(spec.expectedCodes);
   for (const code of seenCodes) {
     if (!expected.has(code)) throw new Error(`Unexpected lesson code in model: ${code}`);
   }
@@ -244,6 +293,8 @@ export function loadOfficialCurriculumModel(
 export type ReconcileReport = {
   courseId: string;
   courseSlug: string;
+  /** Phase K2 — the level this run reconciled (== spec.academicLevel). */
+  academicLevel: AcademicLevel;
   courseCreated: boolean;
   modelVersion: string;
   partsReconciled: number;
@@ -312,28 +363,51 @@ function sameRecord(row: Record<string, any>, data: Record<string, any>): boolea
  */
 export async function reconcileOfficialCurriculum(
   client: ReconcileClient = db,
-  model: OfficialCurriculumModel = loadOfficialCurriculumModel()
+  modelOrSpec: OfficialCurriculumModel | LevelCurriculumSpec = SECOND_SECONDARY_SPEC
 ): Promise<ReconcileReport> {
+  // Phase K2 — accept either a SPEC (level-aware) or, for backward
+  // compatibility with pre-K2 callers/tests that inject a pre-validated
+  // Second Secondary model, a bare model (reconciled under the Second
+  // Secondary spec exactly as before).
+  const spec: LevelCurriculumSpec =
+    "academicLevel" in modelOrSpec ? modelOrSpec : SECOND_SECONDARY_SPEC;
+  const model: OfficialCurriculumModel =
+    "academicLevel" in modelOrSpec ? loadLevelCurriculumModel(modelOrSpec) : modelOrSpec;
   const warnings: string[] = [];
+  const level = spec.academicLevel;
 
   // 1. Course (matched by UNIQUE slug — never touches other courses).
+  //
+  // G7 / I3 — LEVEL AUTHORITY CHECK before any write: a course that already
+  // exists under this slug with a DIFFERENT stored level is a configuration
+  // conflict (the spec would silently re-level an entire curriculum, its
+  // groups and its students). Refuse. A legacy NULL level is adopted (the
+  // K1 backfill sets every existing course; NULL means "never levelled").
   const existingCourse = await client.course
-    .findUnique({ where: { slug: OFFICIAL_COURSE_SLUG }, select: { id: true } })
+    .findUnique({ where: { slug: spec.courseSlug }, select: { id: true, academicLevel: true } })
     .catch(() => null);
+  const storedLevel = normalizeAcademicLevel(existingCourse?.academicLevel);
+  if (existingCourse && storedLevel && storedLevel !== level) {
+    throw new Error(
+      `Reconciliation refused: course ${spec.courseSlug} is ${storedLevel}, spec is ${level}`
+    );
+  }
   const course = await client.course.upsert({
-    where: { slug: OFFICIAL_COURSE_SLUG },
+    where: { slug: spec.courseSlug },
     update: {
-      name: "Programming & AI",
-      nameAr: "البرمجة والذكاء الاصطناعي",
-      description: "كورس Programming & AI لطلاب الصف الثاني الثانوي.",
-      color: "#10b981",
+      name: spec.course.name,
+      nameAr: spec.course.nameAr,
+      description: spec.course.description,
+      color: spec.course.color,
+      academicLevel: level,
     },
     create: {
-      slug: OFFICIAL_COURSE_SLUG,
-      name: "Programming & AI",
-      nameAr: "البرمجة والذكاء الاصطناعي",
-      description: "كورس Programming & AI لطلاب الصف الثاني الثانوي.",
-      color: "#10b981",
+      slug: spec.courseSlug,
+      name: spec.course.name,
+      nameAr: spec.course.nameAr,
+      description: spec.course.description,
+      color: spec.course.color,
+      academicLevel: level,
     },
   });
 
@@ -445,6 +519,9 @@ export async function reconcileOfficialCurriculum(
         // make it a second publisher, silently re-opening a session an admin
         // had unpublished and flipping a staged one open without the
         // ceremony. `status` belongs to the OPEN ceremony alone.
+        // Phase K2 — `academicLevel` is the DERIVED level of the owning
+        // course (I2): it is written from the spec (== course level, proven
+        // above), never from the model file or a caller.
         const data = {
           unitId,
           title: lessonModel.title,
@@ -452,11 +529,21 @@ export async function reconcileOfficialCurriculum(
           order: lessonModel.order,
           description: lessonModel.description || null,
           curriculumStatus: "OFFICIAL",
+          academicLevel: level,
         };
+        // Lookup by code is LEVEL-SCOPED (pre-K3 the global officialCode
+        // unique is still in force, so a code can exist at most once; a row
+        // with this code at ANOTHER level is a conflict, never adopted).
         const existing = await client.lesson
           .findUnique({ where: { officialCode: lessonModel.code } })
           .catch(() => null);
         if (existing) {
+          const existingLevel = normalizeAcademicLevel(existing.academicLevel);
+          if (existingLevel && existingLevel !== level) {
+            throw new Error(
+              `Reconciliation refused: officialCode ${lessonModel.code} belongs to ${existingLevel}, spec is ${level}`
+            );
+          }
           if (!sameRecord(existing, data)) {
             await client.lesson.update({ where: { id: existing.id }, data });
             lessonsUpdated++;
@@ -526,11 +613,17 @@ export async function reconcileOfficialCurriculum(
       throw new Error(`Official lesson ${row.officialCode} is misconfigured after reconcile`);
     }
   }
+  // Scoped to THIS course's chain (Phase K2): another level's official
+  // lessons are not strays of this run.
   const strayOfficial = await client.lesson.findMany({
     where: {
       officialCode: { not: null },
       curriculumStatus: "OFFICIAL",
       NOT: { officialCode: { in: officialCodes } },
+      OR: [
+        { unit: { part: { courseId: course.id } } },
+        { topic: { unit: { part: { courseId: course.id } } } },
+      ],
     },
     select: { officialCode: true },
   });
@@ -546,7 +639,8 @@ export async function reconcileOfficialCurriculum(
 
   return {
     courseId: course.id,
-    courseSlug: OFFICIAL_COURSE_SLUG,
+    courseSlug: spec.courseSlug,
+    academicLevel: level,
     courseCreated: !existingCourse,
     modelVersion: model.schemaVersion,
     partsReconciled: model.parts.length,
