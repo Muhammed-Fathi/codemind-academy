@@ -135,12 +135,12 @@ name: PG17 trusted catalog references (pre-26D + POST-26D full chain)
 #       Phase G / H / session-video / readiness objects BY NAME (Phase G
 #       previously had no object assertions at all), and the full chain must
 #       match the measured catalog size exactly:
-#           607 columns / 98 enum values / 190 indexes /
+#           610 columns / 100 enum values / 190 indexes /
 #           192 primary+unique+foreign-key constraints
 #       (measured on a real PostgreSQL engine via the read-only inspector's
 #       own queries; the p/u/f subset is PostgreSQL-major-stable, the raw
 #       pg_constraint total is not: 192 on PG17, 611 on PG18);
-#     * the POST-26D ledger must be exactly the nine migrations in order, and
+#     * the POST-26D ledger must be exactly the ten migrations in order, and
 #       the reference's recorded repository checksums must cover EXACTLY the
 #       same set, so a future migration fails loudly here instead of drifting.
 
@@ -513,8 +513,8 @@ env:
       ' indexes=' + ref.catalog.indexes.length + ' con(p+u+f)=' +
       ref.catalog.constraints.filter(k => ['p', 'u', 'f'].includes(k.contype)).length +
       ' con(total)=' + ref.catalog.constraints.length;
-    assert.equal(ref.catalog.columns.length, 607, 'full chain must have 607 columns — ' + size);
-    assert.equal(enumValues, 98, 'full chain must have 98 enum values — ' + size);
+    assert.equal(ref.catalog.columns.length, 610, 'full chain must have 610 columns — ' + size);
+    assert.equal(enumValues, 100, 'full chain must have 100 enum values — ' + size);
     assert.equal(ref.catalog.indexes.length, 190, 'full chain must have 190 indexes — ' + size);
     //
     // Constraints are asserted through their TYPED subset (p = primary key,
@@ -551,7 +551,8 @@ env:
        '20260920120000_phase_h_progression_override',
        '20260921120000_session_video_progression_requirement',
        '20260921180000_session_video_requirement_modes',
-       '20260922090000_readiness_reminder_recipients'];
+       '20260922090000_readiness_reminder_recipients',
+       '20260923100000_k1_academic_level_capability'];
     assert.deepEqual(ref.ledger.map(r => r.migration_name), EXPECTED_CHAIN,
       'ledger is exactly the PostgreSQL chain, in order (never the SQLite names)');
     for (const r of ref.ledger) {
