@@ -131,16 +131,20 @@ name: PG17 trusted catalog references (pre-26D + POST-26D full chain)
 #     * the PRE-26D validator additionally proves the absence of every Phase
 #       G / H / session-video / readiness object and pins NotificationType to
 #       EXACTLY its 12 historical labels, so the frozen reference cannot drift;
-#     * the POST-26D validator pins all nine migration SHA-256s, asserts the
-#       Phase G / H / session-video / readiness objects BY NAME (Phase G
-#       previously had no object assertions at all), and the full chain must
-#       match the measured catalog size exactly:
-#           610 columns / 100 enum values / 190 indexes /
+#     * the POST-26D validator pins all eleven migration SHA-256s, asserts the
+#       Phase G / H / session-video / readiness / K1 / K3 objects BY NAME
+#       (Phase G previously had no object assertions at all), and the full
+#       chain must match the measured catalog size exactly:
+#           610 columns / 100 enum values / 191 indexes /
 #           192 primary+unique+foreign-key constraints
+#       (Phase K3 swaps the global Lesson_officialCode_key unique for the
+#       level-scoped Lesson_academicLevel_officialCode_key — one unique out,
+#       one in — and adds the MockExam_courseId_idx index: 190 → 191 indexes,
+#       p/u/f constraints unchanged at 192);
 #       (measured on a real PostgreSQL engine via the read-only inspector's
 #       own queries; the p/u/f subset is PostgreSQL-major-stable, the raw
 #       pg_constraint total is not: 192 on PG17, 611 on PG18);
-#     * the POST-26D ledger must be exactly the ten migrations in order, and
+#     * the POST-26D ledger must be exactly the eleven migrations in order, and
 #       the reference's recorded repository checksums must cover EXACTLY the
 #       same set, so a future migration fails loudly here instead of drifting.
 
@@ -162,6 +166,8 @@ env:
   SESSION_VIDEO_REQ_SQL_SHA256: dea2dd69badf709a2e2dda87735baca7da68cc0f355d03f556f82e42e9cba687
   SESSION_VIDEO_MODES_SQL_SHA256: 77f073e7973f396b3d29bbe774428acf9c77538f763afbbcc7424176b418fa88
   READINESS_REMINDER_SQL_SHA256: 80cb5f164b947869a6c333b5bd3b27434dc2ac5809552b6eeb3b8085a97f0513
+  K1_ACADEMIC_LEVEL_SQL_SHA256: 5c367c4a0a330c0486b1e6a130b5082b6e12b7596d7ed83871aaf58f7295bead
+  K3_ACADEMIC_LEVEL_SQL_SHA256: e5784f05973e30ae3585c4d79edb503efc720f5ff4f7c3d8fa831e47c5c6e573
 
   # Inline verification scripts, carried as env values (block scalars) and piped
   # into node. This keeps the change strictly workflow-only while avoiding the
@@ -310,6 +316,12 @@ env:
     assert.equal(
       ref.repositoryMigrationChecksums['prisma/postgres/migrations/20260922090000_readiness_reminder_recipients'],
       process.env.READINESS_REMINDER_SQL_SHA256, 'repository readiness-reminder SHA-256 pinned');
+    assert.equal(
+      ref.repositoryMigrationChecksums['prisma/postgres/migrations/20260923100000_k1_academic_level_capability'],
+      process.env.K1_ACADEMIC_LEVEL_SQL_SHA256, 'repository K1 academic-level capability SHA-256 pinned');
+    assert.equal(
+      ref.repositoryMigrationChecksums['prisma/postgres/migrations/20260923180000_k3_academic_level_constraints'],
+      process.env.K3_ACADEMIC_LEVEL_SQL_SHA256, 'repository K3 academic-level constraints SHA-256 pinned');
     for (const s of ['tables', 'columns', 'enums', 'constraints', 'indexes']) {
       assert(Array.isArray(ref.catalog[s]) && ref.catalog[s].length > 0, 'catalog section ' + s);
     }
@@ -499,6 +511,24 @@ env:
        'ABSENCE_REMINDER',
        'READINESS_REMINDER'],
       'exact full-chain NotificationType labels (history + Phase F + readiness, in order)');
+    // ---- MULTI-LEVEL objects (K1 capability, K3 final constraints) ----------
+    assert.deepEqual(ref.catalog.enums.find(e => e.name === 'AcademicLevel').values,
+      ['FIRST_SECONDARY', 'SECOND_SECONDARY'], 'exact AcademicLevel labels (K1)');
+    for (const table of ['Course', 'Student', 'Lesson']) {
+      assert(col(table, 'academicLevel'), 'K1 column ' + table + '.academicLevel exists');
+      assert(col(table, 'academicLevel').not_null, 'K3: ' + table + '.academicLevel is NOT NULL');
+    }
+    assert(!con('Lesson_officialCode_key') && !idx('Lesson_officialCode_key'),
+      'K3: the global Lesson_officialCode_key unique is gone');
+    assert(con('Lesson_academicLevel_officialCode_key'), 'K3 constraint Lesson_academicLevel_officialCode_key exists');
+    assert.equal(con('Lesson_academicLevel_officialCode_key').contype, 'u', 'K3: level-scoped official code key is a UNIQUE constraint');
+    assert(/UNIQUE \("academicLevel", "officialCode"\)/.test(con('Lesson_academicLevel_officialCode_key').definition),
+      'K3: Lesson unique is exactly ("academicLevel", "officialCode")');
+    assert(col('MockExam', 'courseId').not_null, 'K3: MockExam.courseId is NOT NULL');
+    assert(con('MockExam_courseId_fkey'), 'K3 constraint MockExam_courseId_fkey exists');
+    assert(/ON DELETE RESTRICT/.test(con('MockExam_courseId_fkey').definition),
+      'K3: MockExam.courseId FK is ON DELETE RESTRICT (a course with mock exams cannot be deleted)');
+    assert(idx('MockExam_courseId_idx'), 'K3 index MockExam_courseId_idx exists');
     // Catalog health.
     assert(ref.catalog.indexes.every(i => i.indisvalid && i.indisready), 'no invalid indexes');
     assert(ref.catalog.constraints.every(k => k.convalidated), 'no unvalidated constraints');
@@ -515,7 +545,7 @@ env:
       ' con(total)=' + ref.catalog.constraints.length;
     assert.equal(ref.catalog.columns.length, 610, 'full chain must have 610 columns — ' + size);
     assert.equal(enumValues, 100, 'full chain must have 100 enum values — ' + size);
-    assert.equal(ref.catalog.indexes.length, 190, 'full chain must have 190 indexes — ' + size);
+    assert.equal(ref.catalog.indexes.length, 191, 'full chain must have 191 indexes — ' + size);
     //
     // Constraints are asserted through their TYPED subset (p = primary key,
     // u = unique, f = foreign key), never through the raw pg_constraint total,
@@ -552,7 +582,8 @@ env:
        '20260921120000_session_video_progression_requirement',
        '20260921180000_session_video_requirement_modes',
        '20260922090000_readiness_reminder_recipients',
-       '20260923100000_k1_academic_level_capability'];
+       '20260923100000_k1_academic_level_capability',
+       '20260923180000_k3_academic_level_constraints'];
     assert.deepEqual(ref.ledger.map(r => r.migration_name), EXPECTED_CHAIN,
       'ledger is exactly the PostgreSQL chain, in order (never the SQLite names)');
     for (const r of ref.ledger) {
@@ -738,6 +769,8 @@ jobs:
           echo "$SESSION_VIDEO_REQ_SQL_SHA256  prisma/postgres/migrations/20260921120000_session_video_progression_requirement/migration.sql" | sha256sum -c -
           echo "$SESSION_VIDEO_MODES_SQL_SHA256  prisma/postgres/migrations/20260921180000_session_video_requirement_modes/migration.sql" | sha256sum -c -
           echo "$READINESS_REMINDER_SQL_SHA256  prisma/postgres/migrations/20260922090000_readiness_reminder_recipients/migration.sql" | sha256sum -c -
+          echo "$K1_ACADEMIC_LEVEL_SQL_SHA256  prisma/postgres/migrations/20260923100000_k1_academic_level_capability/migration.sql" | sha256sum -c -
+          echo "$K3_ACADEMIC_LEVEL_SQL_SHA256  prisma/postgres/migrations/20260923180000_k3_academic_level_constraints/migration.sql" | sha256sum -c -
           echo "PostgreSQL migration chain to apply (exactly this directory, in order):"
           ls prisma/postgres/migrations
 
