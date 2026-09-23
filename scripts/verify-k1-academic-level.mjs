@@ -48,12 +48,16 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(__dirname, "..");
-const { applyMigrations, listMigrations } = await import(path.join(REPO, "scripts", "lib", "migrate-sqlite.mjs"));
+// ESM import() rejects raw Windows paths (ERR_UNSUPPORTED_ESM_URL_SCHEME,
+// protocol "e:"). Filesystem paths must be file:// URLs.
+const { applyMigrations, listMigrations } = await import(
+  pathToFileURL(path.join(REPO, "scripts", "lib", "migrate-sqlite.mjs")).href
+);
 
 const K1 = "20260923100000_k1_academic_level_capability";
 const LAST_BEFORE_K1 = "20260922090000_readiness_reminder_recipients";
@@ -206,7 +210,8 @@ section("3. REAL SEED — scripts/seed.ts on the pre-K1 database (real reconcile
 import { Module } from "node:module";
 import fs from "node:fs";
 import path from "node:path";
-import { createSqlitePrisma } from ${JSON.stringify(path.join(REPO, "scripts", "lib", "sqlite-prisma-lite.mjs"))};
+import { pathToFileURL } from "node:url";
+import { createSqlitePrisma } from ${JSON.stringify(pathToFileURL(path.join(REPO, "scripts", "lib", "sqlite-prisma-lite.mjs")).href)};
 
 const dbPath = process.argv[2];
 const outDir = ${JSON.stringify(out)};
@@ -252,7 +257,7 @@ Module._resolveFilename = function (request, ...rest) {
 };
 
 try {
-  await import(path.join(outDir, "scripts", "seed.js"));
+  await import(pathToFileURL(path.join(outDir, "scripts", "seed.js")).href);
   await Promise.race([
     seedDone,
     new Promise((_, rej) => setTimeout(() => rej(new Error("seed did not complete within 90s")), 90000)),
