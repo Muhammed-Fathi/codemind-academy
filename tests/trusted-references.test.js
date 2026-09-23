@@ -31,8 +31,8 @@
 //   S3. 0_init structurally lacks every later migration's signature object.
 //   S4. the workflow PRE validator asserts the frozen history (absence of
 //       every later object + the exact 12 historical NotificationType labels).
-//   S5. the workflow POST validator is current (9-migration EXPECTED_CHAIN in
-//       canonical order, 607/98/190/192, all nine SHA pins, by-name coverage
+//   S5. the workflow POST validator is current (10-migration EXPECTED_CHAIN in
+//       canonical order, 610/100/190/192, all ten SHA pins, by-name coverage
 //       of every newer phase).
 //   S6. the providers engine ledger contract is current (expected ledger ==
 //       the migrations directory, SQLite-only derivation, PG camera pin).
@@ -208,10 +208,10 @@ test("trusted PRE/POST reference contracts stay current and isolated (S1–S6)",
   const chainSrc = /const EXPECTED_CHAIN = \[([\s\S]*?)\];/.exec(postBlock)?.[1] ?? "";
   const expectedChain = [...chainSrc.matchAll(/'([^']+)'/g)].map((m) => m[1]);
   eq(expectedChain, pgMigrationDirs, "S5: EXPECTED_CHAIN is exactly the PG migrations directory in canonical order");
-  eq(expectedChain.length, 9, "S5: the current chain holds nine migrations");
+  eq(expectedChain.length, 10, "S5: the current chain holds ten migrations");
   for (const [re, label] of [
-    [/columns\.length, 607/, "607 columns"],
-    [/enumValues, 98/, "98 enum values"],
+    [/columns\.length, 610/, "610 columns"],
+    [/enumValues, 100/, "100 enum values"],
     [/indexes\.length, 190/, "190 indexes"],
     [/typedConstraints\.length, 192/, "192 typed constraints"],
   ]) {

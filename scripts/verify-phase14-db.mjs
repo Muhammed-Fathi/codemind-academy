@@ -62,9 +62,29 @@ const PRISMA_TO_SQLITE = {
 
 const BASE_SKIP_COLUMNS = {
   User: ["status"],
-  Student: ["nationalId", "parentPhone", "schoolType", "studentCode", "batchId"],
-  Course: ["trackId"],
-  Lesson: ["unitId", "officialCode", "curriculumStatus", "trackScope", "status"],
+  Student: [
+    "nationalId",
+    "parentPhone",
+    "schoolType",
+    "studentCode",
+    "batchId",
+    // Phase K1 — added by 20260923100000_k1_academic_level_capability.
+    "academicLevel",
+  ],
+  Course: [
+    "trackId",
+    // Phase K1 — added by 20260923100000_k1_academic_level_capability.
+    "academicLevel",
+  ],
+  Lesson: [
+    "unitId",
+    "officialCode",
+    "curriculumStatus",
+    "trackScope",
+    "status",
+    // Phase K1 — added by 20260923100000_k1_academic_level_capability.
+    "academicLevel",
+  ],
   LessonProgress: [
     "videoDurationSec",
     "videoWatchedSec",

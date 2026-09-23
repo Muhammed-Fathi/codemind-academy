@@ -53,6 +53,12 @@ model Student {
   nationalId        String?              @unique
   parentPhone       String?
   studentCode       String?              @unique
+  /// Phase K1 — the student's declared/current academic level: the typed
+  /// authority for the student (admin-managed; `grade` stays a display
+  /// mirror only). K1 nullable (additive; backfilled to SECOND_SECONDARY for
+  /// every existing row); required from Phase K3. See the AcademicLevel
+  /// enum docs.
+  academicLevel     AcademicLevel?
   groupId           String?
   batchId           String?
   enrolledAt        DateTime             @default(now())
@@ -200,6 +206,10 @@ model Enrollment {
 model Course {
   id          String   @id @default(cuid())
   slug        String   @unique
+  /// Phase K1 — curriculum authority: which academic level this course
+  /// teaches. K1 nullable (additive; backfilled to SECOND_SECONDARY for every
+  /// existing row); required from Phase K3. See the AcademicLevel enum docs.
+  academicLevel AcademicLevel?
   name        String
   nameAr      String
   description String
@@ -263,6 +273,15 @@ model Lesson {
   topicId       String?
   unitId        String?
   officialCode  String?          @unique
+  /// Phase K1 — DERIVED denormalized value only: the academic level of this
+  /// lesson's Course, resolved through Unit→Part→Course (canonical) or
+  /// Topic→Unit→Part→Course (legacy). It is NEVER independently editable —
+  /// no write path accepts it; the K1 backfill and every K2+ writer derive
+  /// it from the parent chain, and the K1/K3 audits assert stored value ==
+  /// chain-derived value. Exists to carry the Phase K3
+  /// @@unique([academicLevel, officialCode]) (two levels may both hold
+  /// officialCode "1-1"). K1 nullable (additive); required from K3.
+  academicLevel AcademicLevel?
   curriculumStatus CurriculumStatus @default(LEGACY)
   /// Phase 12 — which school type this session belongs to. Track metadata,
   /// not a second curriculum: officialCode stays UNIQUE, so a track-specific
@@ -1740,6 +1759,34 @@ enum MaterialKind {
 enum SchoolType {
   ARABIC
   LANGUAGE
+}
+
+/// Phase K1 — the academic-level dimension of the multi-level platform
+/// (docs/MULTI_LEVEL_FINAL_CONTRACT.md). Levels and tracks are SEPARATE
+/// dimensions; every one of the four Level × Track combinations is valid.
+///
+/// Ownership (the Phase J source-of-truth contract):
+///   * Course.academicLevel  — curriculum authority: which level's curriculum
+///     this course teaches.
+///   * Student.academicLevel — the student's declared/current level (the typed
+///     authority for the student; `Student.grade` remains a display mirror
+///     only and never an academic authority).
+///   * Lesson.academicLevel  — DERIVED, denormalized value only: the level of
+///     the lesson's Course via the Unit→Part→Course (canonical) or
+///     Topic→Unit→Part→Course (legacy) chain. It is NEVER an independent
+///     authority: no write path accepts it from a client or an admin form,
+///     every writer derives it from the parent chain, and the K1/K3 audits
+///     assert stored value == chain-derived value (fail closed on mismatch).
+///
+/// K1 keeps every column NULLABLE on purpose: the migration is additive and
+/// behaviour-preserving, and it backfills every existing row (the whole
+/// current platform is Second Secondary) explicitly — Courses/Students to the
+/// constant SECOND_SECONDARY, Lessons from their resolved Course (orphans are
+/// left NULL and are a stop condition, never guessed). Required-ness and the
+/// final @@unique([academicLevel, officialCode]) on Lesson land in Phase K3.
+enum AcademicLevel {
+  FIRST_SECONDARY
+  SECOND_SECONDARY
 }
 
 /// Phase 12 — the content-eligibility dimension of the ONE shared course.

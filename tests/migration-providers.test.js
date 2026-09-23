@@ -71,6 +71,7 @@ const MIG_PHASE_H = "20260920120000_phase_h_progression_override";
 const MIG_SV_REQ = "20260921120000_session_video_progression_requirement";
 const MIG_SV_MODES = "20260921180000_session_video_requirement_modes";
 const MIG_REMIND_AUD = "20260922090000_readiness_reminder_recipients";
+const MIG_K1 = "20260923100000_k1_academic_level_capability";
 
 let pass = 0;
 const failures = [];
@@ -110,11 +111,11 @@ function partA() {
   // A1 — layout contract
   const sqliteMigrations = listMigrationDirs(SQLITE_MIGRATIONS);
   const pgMigrations = listMigrationDirs(PG_MIGRATIONS);
-  ok(sqliteMigrations.length === 19, `SQLite migrations dir carries all 19 historical migrations (got ${sqliteMigrations.length})`);
-  ok(pgMigrations.length === 9, `PG migrations dir carries the provider chain plus camera policy, Phase H, the session-video requirement, requirement modes and the readiness-reminder recipients (got ${pgMigrations.length})`);
+  ok(sqliteMigrations.length === 20, `SQLite migrations dir carries all 20 historical migrations (got ${sqliteMigrations.length})`);
+  ok(pgMigrations.length === 10, `PG migrations dir carries the provider chain plus camera policy, Phase H, the session-video requirement, requirement modes, the readiness-reminder recipients and the K1 academic-level capability (got ${pgMigrations.length})`);
   ok(
-    pgMigrations[0] === "0_init" && pgMigrations[1] === MIG_26D && pgMigrations[2] === MIG_PHASE_F && pgMigrations[3] === MIG_PHASE_G && pgMigrations[4] === MIG_CAMERA && pgMigrations[5] === MIG_PHASE_H && pgMigrations[6] === MIG_SV_REQ && pgMigrations[7] === MIG_SV_MODES && pgMigrations[8] === MIG_REMIND_AUD,
-    "PG migrations are 0_init, Phase 26D, Phase F, Phase G, camera, Phase H, session-video requirement, requirement modes, readiness-reminder recipients, in order"
+    pgMigrations[0] === "0_init" && pgMigrations[1] === MIG_26D && pgMigrations[2] === MIG_PHASE_F && pgMigrations[3] === MIG_PHASE_G && pgMigrations[4] === MIG_CAMERA && pgMigrations[5] === MIG_PHASE_H && pgMigrations[6] === MIG_SV_REQ && pgMigrations[7] === MIG_SV_MODES && pgMigrations[8] === MIG_REMIND_AUD && pgMigrations[9] === MIG_K1,
+    "PG migrations are 0_init, Phase 26D, Phase F, Phase G, camera, Phase H, session-video requirement, requirement modes, readiness-reminder recipients, K1 academic-level capability, in order"
   );
   ok(fs.existsSync(PG_SCHEMA), "prisma/postgres/schema.prisma exists (PG schema owns its own directory)");
   ok(!fs.existsSync(OLD_PG_SCHEMA), "prisma/schema.postgresql.prisma does NOT exist (must never share prisma/ with SQLite again)");
@@ -162,6 +163,11 @@ function partA() {
     read(path.join(PG_MIGRATIONS, MIG_REMIND_AUD, "migration.sql")) !== read(path.join(SQLITE_MIGRATIONS, MIG_REMIND_AUD, "migration.sql")),
     "the PG and SQLite editions of the readiness-reminder recipients are distinct files (provider-specific SQL)"
   );
+  ok(
+    !fs.existsSync(path.join(PG_MIGRATIONS, MIG_K1, "migration.sql")) === false &&
+    read(path.join(PG_MIGRATIONS, MIG_K1, "migration.sql")) !== read(path.join(SQLITE_MIGRATIONS, MIG_K1, "migration.sql")),
+    "the PG and SQLite editions of the K1 academic-level capability are distinct files (provider-specific SQL)"
+  );
   const pgSchemaHeader = read(PG_SCHEMA).split("\n").slice(0, 35).join("\n");
   ok(/WHY THIS FILE LIVES IN prisma\/postgres\//.test(pgSchemaHeader), "PG schema header documents the directory contract");
 
@@ -192,6 +198,8 @@ function partA() {
     "20260921120000_session_video_progression_requirement": "0e6ab013989ce633b586b014d2675b1303f328b64aae7c7e992b76b5213a075b",
     "20260921180000_session_video_requirement_modes": "942e1a893b1bb91d574d5b7d445a8145a6f7b04653c38481e49e8b4300ff1d4f",
     "20260922090000_readiness_reminder_recipients": "4f2696dca5d6afcbeff726b80ced3fd640fa61a144dd820d26ed9029784a09e4",
+    // Multi-Level Expansion Phase K1 (academic-level capability + backfill):
+    "20260923100000_k1_academic_level_capability": "48724a4505b6754477f27dc361b7ddb2f18042beb51f2c9ef0a5cd09d4c84c13",
     // PostgreSQL history (frozen from this commit on):
     "0_init": "c7f5d3fa76931d02e48c5cd2c4bfdb972c0f25e528e3c0c116736d3729cefa80",
     "PG:20260915180000_phase26d_quiz_attempt_architecture": "2c1bdde167f7dfff9b79a61f116da3dbd93b13c6aa27825404a79312ec7be104",
@@ -205,6 +213,7 @@ function partA() {
     "PG:20260921120000_session_video_progression_requirement": "dea2dd69badf709a2e2dda87735baca7da68cc0f355d03f556f82e42e9cba687",
     "PG:20260921180000_session_video_requirement_modes": "77f073e7973f396b3d29bbe774428acf9c77538f763afbbcc7424176b418fa88",
     "PG:20260922090000_readiness_reminder_recipients": "80cb5f164b947869a6c333b5bd3b27434dc2ac5809552b6eeb3b8085a97f0513",
+    "PG:20260923100000_k1_academic_level_capability": "5c367c4a0a330c0486b1e6a130b5082b6e12b7596d7ed83871aaf58f7295bead",
   };
   for (const [name, checksum] of Object.entries(PINNED)) {
     const isPg = name.startsWith("PG:") || name === "0_init";
@@ -290,29 +299,36 @@ function partA() {
     return out;
   };
   const want = parseInventory(read(BASELINE_SQL));
+  // Strict LEFT fold: `merge` folds the right-hand file's ALTER TYPE adds
+  // into the accumulator and assumes the accumulator is already fully folded
+  // (its own enumAdds cleared), so every file joins the chain one at a time.
   const got = merge(
-    merge(
-    merge(
-    merge(
     merge(
       merge(
         merge(
           merge(
-            parseInventory(read(path.join(PG_MIGRATIONS, "0_init", "migration.sql"))),
-            parseInventory(read(path.join(PG_MIGRATIONS, MIG_26D, "migration.sql")))
+            merge(
+              merge(
+                merge(
+                  merge(
+                    parseInventory(read(path.join(PG_MIGRATIONS, "0_init", "migration.sql"))),
+                    parseInventory(read(path.join(PG_MIGRATIONS, MIG_26D, "migration.sql")))
+                  ),
+                  parseInventory(read(path.join(PG_MIGRATIONS, MIG_PHASE_F, "migration.sql")))
+                ),
+                parseInventory(read(path.join(PG_MIGRATIONS, MIG_PHASE_G, "migration.sql")))
+              ),
+              parseInventory(read(path.join(PG_MIGRATIONS, MIG_CAMERA, "migration.sql")))
+            ),
+            parseInventory(read(path.join(PG_MIGRATIONS, MIG_PHASE_H, "migration.sql")))
           ),
-          parseInventory(read(path.join(PG_MIGRATIONS, MIG_PHASE_F, "migration.sql")))
+          parseInventory(read(path.join(PG_MIGRATIONS, MIG_SV_REQ, "migration.sql")))
         ),
-        parseInventory(read(path.join(PG_MIGRATIONS, MIG_PHASE_G, "migration.sql")))
+        parseInventory(read(path.join(PG_MIGRATIONS, MIG_SV_MODES, "migration.sql")))
       ),
-      parseInventory(read(path.join(PG_MIGRATIONS, MIG_CAMERA, "migration.sql")))
-      ),
-      parseInventory(read(path.join(PG_MIGRATIONS, MIG_PHASE_H, "migration.sql")))
+      parseInventory(read(path.join(PG_MIGRATIONS, MIG_REMIND_AUD, "migration.sql")))
     ),
-    parseInventory(read(path.join(PG_MIGRATIONS, MIG_SV_REQ, "migration.sql")))
-    ),
-    parseInventory(read(path.join(PG_MIGRATIONS, MIG_SV_MODES, "migration.sql")))),
-    parseInventory(read(path.join(PG_MIGRATIONS, MIG_REMIND_AUD, "migration.sql")))
+    parseInventory(read(path.join(PG_MIGRATIONS, MIG_K1, "migration.sql")))
   );
   {
     const diffs = [];
@@ -330,7 +346,7 @@ function partA() {
     for (const c of want.indexes) if (!got.indexes.has(c)) diffs.push(`missing index ${c}`);
     for (const c of got.indexes) if (!want.indexes.has(c)) diffs.push(`extra index ${c}`);
     ok(diffs.length === 0,
-      `0_init + PG Phase 26D + Phase F + Phase G + camera + Phase H + session-video requirement + requirement modes + readiness-reminder recipients == scripts/db/postgres-baseline.sql structurally (${want.tables.size} tables, ${[...want.tables.values()].reduce((a, c) => a + c.length, 0)} columns)`,
+      `0_init + PG Phase 26D + Phase F + Phase G + camera + Phase H + session-video requirement + requirement modes + readiness-reminder recipients + K1 academic-level capability == scripts/db/postgres-baseline.sql structurally (${want.tables.size} tables, ${[...want.tables.values()].reduce((a, c) => a + c.length, 0)} columns)`,
       diffs.slice(0, 8).join("; "));
   }
 
@@ -477,7 +493,41 @@ function partA() {
       "the recipients migration is additive in both providers (no table/column change, no row write)");
   }
 
-  // A6 — fresh SQLite through the repo's own harness: base DDL + 19 migrations.
+  // A5g — the two K1 academic-level editions add the same logical objects:
+  // one nullable academicLevel column on Course/Student/Lesson. The PG
+  // edition creates the native AcademicLevel enum (SQLite stores enums as
+  // TEXT and needs no type DDL). Unlike the readiness migration, K1
+  // INTENTIONALLY writes rows: the in-migration backfill is the Phase J
+  // contract (existing data is explicitly Second Secondary, zero inference),
+  // so the destructive-statement scan below checks every destructive form
+  // except the authorized UPDATE backfill.
+  {
+    const sqliteK1 = read(path.join(SQLITE_MIGRATIONS, MIG_K1, "migration.sql"));
+    const pgK1 = read(path.join(PG_MIGRATIONS, MIG_K1, "migration.sql"));
+    const cols = (sql) => [...sql.matchAll(/ADD COLUMN "([A-Za-z0-9_]+)"/g)].map((m) => m[1]).sort().join(",");
+    ok(cols(sqliteK1) === cols(pgK1) && cols(sqliteK1) === "academicLevel,academicLevel,academicLevel",
+      "both K1 editions add exactly the three academicLevel columns");
+    const tables = (sql) => [...sql.matchAll(/ALTER TABLE "([A-Za-z0-9_]+)" ADD COLUMN/g)].map((m) => m[1]).sort().join(",");
+    ok(tables(sqliteK1) === tables(pgK1) && tables(sqliteK1) === "Course,Lesson,Student",
+      "both K1 editions add the column to exactly Course, Lesson and Student");
+    ok((pgK1.match(/CREATE TYPE "AcademicLevel" AS ENUM \('FIRST_SECONDARY', 'SECOND_SECONDARY'\);/g) || []).length === 1,
+      "the PG edition creates exactly the native AcademicLevel enum (two values, canonical order)");
+    ok(!/CREATE TYPE/i.test(sqliteK1), "the SQLite edition carries no type DDL (enums are TEXT)");
+    for (const sql of [sqliteK1, pgK1]) {
+      ok(/UPDATE "Course" SET "academicLevel" = 'SECOND_SECONDARY';/.test(stripSqlComments(sql)),
+        "K1 explicitly backfills every Course to SECOND_SECONDARY (constant, zero inference)");
+      ok(/UPDATE "Student" SET "academicLevel" = 'SECOND_SECONDARY';/.test(stripSqlComments(sql)),
+        "K1 explicitly backfills every Student to SECOND_SECONDARY (constant, zero inference)");
+      ok(/WHERE "Lesson"\."unitId" IS NOT NULL;/.test(stripSqlComments(sql)),
+        "K1 backfills lessons through the canonical Unit→Part→Course chain");
+      ok(/FROM "Topic" t/.test(stripSqlComments(sql)),
+        "K1 backfills legacy-topic lessons through the Topic→Unit→Part→Course chain");
+      ok(!/DROP TABLE|DROP COLUMN|DELETE FROM|TRUNCATE/i.test(stripSqlComments(sql)),
+        "K1 has no destructive DDL or row deletion (both editions)");
+    }
+  }
+
+  // A6 — fresh SQLite through the repo's own harness: base DDL + 20 migrations.
   {
     const { DatabaseSync } = require("node:sqlite");
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cm-mig-providers-"));
@@ -485,8 +535,8 @@ function partA() {
     const mig = require(path.join(REPO, "scripts", "lib", "migrate-sqlite.mjs"));
     const db = new DatabaseSync(dbPath);
     const applied = mig.applyMigrations(db, { withBaseSchema: true });
-    ok(applied.length === 19, `fresh SQLite applies all 19 migrations (got ${applied.length})`);
-    ok(applied[applied.length - 1] === MIG_REMIND_AUD, "the last applied SQLite migration is the readiness-reminder-recipients migration");
+    ok(applied.length === 20, `fresh SQLite applies all 20 migrations (got ${applied.length})`);
+    ok(applied[applied.length - 1] === MIG_K1, "the last applied SQLite migration is the K1 academic-level capability migration");
     for (const [tbl, cols] of [
       ["Quiz", ["quizMode", "questionCount", "maxAttempts", "shuffleOptions", "difficultyPlan"]],
       ["QuizAttempt", ["attemptNumber", "status", "retryGrantId"]],
@@ -533,10 +583,19 @@ function partA() {
         ok(!!db.prepare(`SELECT name FROM sqlite_master WHERE type='index' AND name=?`).get(idx), `fresh SQLite schema carries ${idx}`);
       }
     }
+    // K1 — the nullable academicLevel capability lands on all three models
+    // (the column is added, and the global officialCode unique is untouched —
+    // the composite uniqueness is Phase K3 work).
+    for (const tbl of ["Course", "Student", "Lesson"]) {
+      const present = new Set(db.prepare(`PRAGMA table_info("${tbl}")`).all().map((r) => r.name));
+      ok(present.has("academicLevel"), `fresh SQLite schema carries ${tbl}.academicLevel (K1 nullable capability)`);
+    }
+    ok(!!db.prepare(`SELECT name FROM sqlite_master WHERE type='index' AND name='Lesson_officialCode_key'`).get(),
+      "fresh SQLite schema keeps the global Lesson.officialCode unique through K1 (composite uniqueness is K3)");
     // the harness ledger records the very checksums pinned in A2
     const rows = db.prepare('SELECT migration_name, checksum FROM "_prisma_migrations"').all();
     const pinned = rows.every((r) => r.checksum === PINNED[r.migration_name]);
-    ok(pinned && rows.length === 19, "fresh SQLite ledger carries exactly the pinned applied checksums");
+    ok(pinned && rows.length === 20, "fresh SQLite ledger carries exactly the pinned applied checksums");
     db.close();
     fs.rmSync(tmp, { recursive: true, force: true });
   }
@@ -919,7 +978,7 @@ async function partC() {
     const query2 = async (t, p) => pool2.query(t, p);
     const snap = await catalogSnapshot(query2);
     const ledger = await query2(`SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NOT NULL ORDER BY migration_name`);
-    const expectedPgLedger = ["0_init", MIG_26D, MIG_PHASE_F, MIG_PHASE_G, MIG_CAMERA, MIG_PHASE_H, MIG_SV_REQ, MIG_SV_MODES, MIG_REMIND_AUD];
+    const expectedPgLedger = ["0_init", MIG_26D, MIG_PHASE_F, MIG_PHASE_G, MIG_CAMERA, MIG_PHASE_H, MIG_SV_REQ, MIG_SV_MODES, MIG_REMIND_AUD, MIG_K1];
     // The expected ledger is the migrations directory itself: this guard fails
     // loudly the moment a new migration lands without joining the explicit
     // list (a stale list previously blamed the engine for the test's own

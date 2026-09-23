@@ -199,10 +199,30 @@ function applyMigrations(db, { upTo = null, label = "", withBaseSchema = false }
 /** Columns that did not exist before the first migration. */
 const BASE_SKIP_COLUMNS = {
   User: ["status"],
-  Student: ["nationalId", "parentPhone", "schoolType", "studentCode", "batchId"],
-  Course: ["trackId"],
+  Student: [
+    "nationalId",
+    "parentPhone",
+    "schoolType",
+    "studentCode",
+    "batchId",
+    // Phase K1 — added by 20260923100000_k1_academic_level_capability.
+    "academicLevel",
+  ],
+  Course: [
+    "trackId",
+    // Phase K1 — added by 20260923100000_k1_academic_level_capability.
+    "academicLevel",
+  ],
   Group: ["trackScope"],
-  Lesson: ["unitId", "officialCode", "curriculumStatus", "trackScope", "status"],
+  Lesson: [
+    "unitId",
+    "officialCode",
+    "curriculumStatus",
+    "trackScope",
+    "status",
+    // Phase K1 — added by 20260923100000_k1_academic_level_capability.
+    "academicLevel",
+  ],
   LessonProgress: [
     "videoDurationSec",
     "videoWatchedSec",

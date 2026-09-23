@@ -16,6 +16,7 @@ CREATE TYPE "CurriculumStatus" AS ENUM ('OFFICIAL', 'LEGACY', 'ARCHIVED');
 CREATE TYPE "EnrollmentStatus" AS ENUM ('ACTIVE', 'PAUSED', 'COMPLETED', 'CANCELLED');
 CREATE TYPE "MaterialKind" AS ENUM ('GENERATED', 'ADMIN_UPLOADED');
 CREATE TYPE "SchoolType" AS ENUM ('ARABIC', 'LANGUAGE');
+CREATE TYPE "AcademicLevel" AS ENUM ('FIRST_SECONDARY', 'SECOND_SECONDARY');
 CREATE TYPE "TrackScope" AS ENUM ('SHARED', 'ARABIC', 'LANGUAGE');
 CREATE TYPE "AccountStatus" AS ENUM ('ACTIVE', 'INACTIVE', 'SUSPENDED_MULTI_DEVICE');
 CREATE TYPE "MediaKind" AS ENUM ('VIDEO', 'IMAGE', 'DOCUMENT');
@@ -182,6 +183,7 @@ CREATE TABLE "Track" (
 CREATE TABLE "Course" (
   "id" TEXT NOT NULL,
   "slug" TEXT NOT NULL,
+  "academicLevel" "AcademicLevel",
   "name" TEXT NOT NULL,
   "nameAr" TEXT NOT NULL,
   "description" TEXT NOT NULL,
@@ -265,6 +267,7 @@ CREATE TABLE "Lesson" (
   "topicId" TEXT,
   "unitId" TEXT,
   "officialCode" TEXT,
+  "academicLevel" "AcademicLevel",
   "curriculumStatus" "CurriculumStatus" NOT NULL DEFAULT 'LEGACY',
   "trackScope" "TrackScope" NOT NULL DEFAULT 'SHARED',
   "status" "LessonStatus" NOT NULL DEFAULT 'DRAFT',
@@ -601,6 +604,7 @@ CREATE TABLE "Student" (
   "nationalId" TEXT,
   "parentPhone" TEXT,
   "studentCode" TEXT,
+  "academicLevel" "AcademicLevel",
   "groupId" TEXT,
   "batchId" TEXT,
   "enrolledAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
