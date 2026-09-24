@@ -219,10 +219,14 @@ const FIXTURE = `
 
   INSERT INTO "User"    ("id","email","password","name","updatedAt")
     VALUES ('p26d-user-1','p26d-student@example.test','x','P26D Student', now());
-  INSERT INTO "Student" ("id","userId","updatedAt")
-    VALUES ('${STUDENT}','p26d-user-1', now());
-  INSERT INTO "Lesson"  ("id","title","titleAr","order","updatedAt")
-    VALUES ('p26d-lesson-1','P26D Lesson','درس',1, now());
+  -- Phase K3 made Student.academicLevel / Lesson.academicLevel NOT NULL with
+  -- no default (a level is never inferred). The fixture states the level the
+  -- historical Phase 26D rows always were: Second Secondary. Schema
+  -- conformance only — the concurrency proof below is unchanged.
+  INSERT INTO "Student" ("id","userId","academicLevel","updatedAt")
+    VALUES ('${STUDENT}','p26d-user-1','SECOND_SECONDARY', now());
+  INSERT INTO "Lesson"  ("id","academicLevel","title","titleAr","order","updatedAt")
+    VALUES ('p26d-lesson-1','SECOND_SECONDARY','P26D Lesson','درس',1, now());
   INSERT INTO "Quiz"    ("id","lessonId","title","titleAr","quizMode","maxAttempts")
     VALUES ('${QUIZ}','p26d-lesson-1','P26D Quiz','اختبار','FIXED',1);
   INSERT INTO "Question"("id","quizId","prompt","options","answer","difficulty","marks")
