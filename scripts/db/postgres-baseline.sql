@@ -16,6 +16,7 @@ CREATE TYPE "CurriculumStatus" AS ENUM ('OFFICIAL', 'LEGACY', 'ARCHIVED');
 CREATE TYPE "EnrollmentStatus" AS ENUM ('ACTIVE', 'PAUSED', 'COMPLETED', 'CANCELLED');
 CREATE TYPE "MaterialKind" AS ENUM ('GENERATED', 'ADMIN_UPLOADED');
 CREATE TYPE "SchoolType" AS ENUM ('ARABIC', 'LANGUAGE');
+CREATE TYPE "AcademicLevel" AS ENUM ('FIRST_SECONDARY', 'SECOND_SECONDARY');
 CREATE TYPE "TrackScope" AS ENUM ('SHARED', 'ARABIC', 'LANGUAGE');
 CREATE TYPE "AccountStatus" AS ENUM ('ACTIVE', 'INACTIVE', 'SUSPENDED_MULTI_DEVICE');
 CREATE TYPE "MediaKind" AS ENUM ('VIDEO', 'IMAGE', 'DOCUMENT');
@@ -182,6 +183,7 @@ CREATE TABLE "Track" (
 CREATE TABLE "Course" (
   "id" TEXT NOT NULL,
   "slug" TEXT NOT NULL,
+  "academicLevel" "AcademicLevel" NOT NULL,
   "name" TEXT NOT NULL,
   "nameAr" TEXT NOT NULL,
   "description" TEXT NOT NULL,
@@ -215,7 +217,7 @@ CREATE TABLE "MockExam" (
   "titleAr" TEXT NOT NULL,
   "description" TEXT,
   "schoolType" "SchoolType" NOT NULL,
-  "courseId" TEXT,
+  "courseId" TEXT NOT NULL,
   "questionCount" INTEGER NOT NULL DEFAULT 10,
   "durationMin" INTEGER NOT NULL DEFAULT 30,
   "passMark" INTEGER NOT NULL DEFAULT 60,
@@ -225,7 +227,7 @@ CREATE TABLE "MockExam" (
   "createdAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" TIMESTAMPTZ(3) NOT NULL,
   CONSTRAINT "MockExam_pkey" PRIMARY KEY ("id"),
-  CONSTRAINT "MockExam_courseId_fkey" FOREIGN KEY ("courseId") REFERENCES "Course" ("id") ON UPDATE CASCADE ON DELETE SET NULL
+  CONSTRAINT "MockExam_courseId_fkey" FOREIGN KEY ("courseId") REFERENCES "Course" ("id") ON UPDATE CASCADE ON DELETE RESTRICT
 );
 
 CREATE TABLE "Part" (
@@ -265,6 +267,7 @@ CREATE TABLE "Lesson" (
   "topicId" TEXT,
   "unitId" TEXT,
   "officialCode" TEXT,
+  "academicLevel" "AcademicLevel" NOT NULL,
   "curriculumStatus" "CurriculumStatus" NOT NULL DEFAULT 'LEGACY',
   "trackScope" "TrackScope" NOT NULL DEFAULT 'SHARED',
   "status" "LessonStatus" NOT NULL DEFAULT 'DRAFT',
@@ -281,7 +284,7 @@ CREATE TABLE "Lesson" (
   "createdAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" TIMESTAMPTZ(3) NOT NULL,
   CONSTRAINT "Lesson_pkey" PRIMARY KEY ("id"),
-  CONSTRAINT "Lesson_officialCode_key" UNIQUE ("officialCode"),
+  CONSTRAINT "Lesson_academicLevel_officialCode_key" UNIQUE ("academicLevel", "officialCode"),
   CONSTRAINT "Lesson_topicId_fkey" FOREIGN KEY ("topicId") REFERENCES "Topic" ("id") ON UPDATE CASCADE ON DELETE SET NULL,
   CONSTRAINT "Lesson_unitId_fkey" FOREIGN KEY ("unitId") REFERENCES "Unit" ("id") ON UPDATE CASCADE ON DELETE SET NULL
 );
@@ -601,6 +604,7 @@ CREATE TABLE "Student" (
   "nationalId" TEXT,
   "parentPhone" TEXT,
   "studentCode" TEXT,
+  "academicLevel" "AcademicLevel" NOT NULL,
   "groupId" TEXT,
   "batchId" TEXT,
   "enrolledAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1028,6 +1032,7 @@ CREATE INDEX "TeacherActivationToken_applicationId_usedAt_idx" ON "TeacherActiva
 CREATE INDEX "TeacherActivationToken_expiresAt_idx" ON "TeacherActivationToken" ("expiresAt");
 CREATE INDEX "Batch_schoolType_idx" ON "Batch" ("schoolType");
 CREATE INDEX "MockExam_schoolType_isPublished_idx" ON "MockExam" ("schoolType", "isPublished");
+CREATE INDEX "MockExam_courseId_idx" ON "MockExam" ("courseId");
 CREATE INDEX "Part_courseId_idx" ON "Part" ("courseId");
 CREATE INDEX "Unit_partId_idx" ON "Unit" ("partId");
 CREATE INDEX "Topic_unitId_idx" ON "Topic" ("unitId");

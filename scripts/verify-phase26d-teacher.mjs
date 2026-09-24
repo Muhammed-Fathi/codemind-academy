@@ -317,8 +317,8 @@ async function main() {
   const teacherA = await client.teacher.create({ data: { userId: teacherUserA.id } });
   const teacherB = await client.teacher.create({ data: { userId: teacherUserB.id } });
 
-  const courseA = await client.course.create({ data: { slug: "p26d-a", name: "26D A", nameAr: "كورس أ", description: "d" } });
-  const courseB = await client.course.create({ data: { slug: "p26d-b", name: "26D B", nameAr: "كورس ب", description: "d" } });
+  const courseA = await client.course.create({ data: { academicLevel: "SECOND_SECONDARY", slug: "p26d-a", name: "26D A", nameAr: "كورس أ", description: "d" } });
+  const courseB = await client.course.create({ data: { academicLevel: "SECOND_SECONDARY", slug: "p26d-b", name: "26D B", nameAr: "كورس ب", description: "d" } });
   const partA = await client.part.create({ data: { courseId: courseA.id, title: "Part A", titleAr: "جزء أ", order: 1 } });
   const partB = await client.part.create({ data: { courseId: courseB.id, title: "Part B", titleAr: "جزء ب", order: 1 } });
   const unitA = await client.unit.create({ data: { partId: partA.id, title: "Unit A", titleAr: "وحدة أ", order: 1 } });
@@ -327,14 +327,14 @@ async function main() {
   const groupA = await client.group.create({ data: { name: "Group A", courseId: courseA.id, teacherId: teacherA.id, isActive: true, trackScope: "ARABIC" } });
   const groupB = await client.group.create({ data: { name: "Group B", courseId: courseB.id, teacherId: teacherB.id, isActive: true, trackScope: "ARABIC" } });
 
-  const studentAr = await client.student.create({ data: { userId: studentUserAr.id, groupId: groupA.id, schoolType: "ARABIC" } });
-  const studentAr2 = await client.student.create({ data: { userId: studentUserAr2.id, groupId: groupA.id, schoolType: "ARABIC" } });
-  const studentLang = await client.student.create({ data: { userId: studentUserLang.id, groupId: groupA.id, schoolType: "LANGUAGE" } });
+  const studentAr = await client.student.create({ data: { academicLevel: "SECOND_SECONDARY", userId: studentUserAr.id, groupId: groupA.id, schoolType: "ARABIC" } });
+  const studentAr2 = await client.student.create({ data: { academicLevel: "SECOND_SECONDARY", userId: studentUserAr2.id, groupId: groupA.id, schoolType: "ARABIC" } });
+  const studentLang = await client.student.create({ data: { academicLevel: "SECOND_SECONDARY", userId: studentUserLang.id, groupId: groupA.id, schoolType: "LANGUAGE" } });
 
   const L = {};
-  L.pub = await client.lesson.create({ data: { unitId: unitA.id, officialCode: "P26D-01", title: "Shared lesson", titleAr: "حصة مشتركة", order: 1, trackScope: "SHARED", status: "PUBLISHED", curriculumStatus: "OFFICIAL" } });
-  L.draft = await client.lesson.create({ data: { unitId: unitA.id, officialCode: "P26D-02", title: "Draft lesson", titleAr: "حصة مسودة", order: 2, trackScope: "SHARED", status: "DRAFT", curriculumStatus: "OFFICIAL" } });
-  L.b = await client.lesson.create({ data: { unitId: unitB.id, officialCode: "P26D-B1", title: "Other course lesson", titleAr: "حصة كورس آخر", order: 1, trackScope: "SHARED", status: "PUBLISHED", curriculumStatus: "OFFICIAL" } });
+  L.pub = await client.lesson.create({ data: { academicLevel: "SECOND_SECONDARY", unitId: unitA.id, officialCode: "P26D-01", title: "Shared lesson", titleAr: "حصة مشتركة", order: 1, trackScope: "SHARED", status: "PUBLISHED", curriculumStatus: "OFFICIAL" } });
+  L.draft = await client.lesson.create({ data: { academicLevel: "SECOND_SECONDARY", unitId: unitA.id, officialCode: "P26D-02", title: "Draft lesson", titleAr: "حصة مسودة", order: 2, trackScope: "SHARED", status: "DRAFT", curriculumStatus: "OFFICIAL" } });
+  L.b = await client.lesson.create({ data: { academicLevel: "SECOND_SECONDARY", unitId: unitB.id, officialCode: "P26D-B1", title: "Other course lesson", titleAr: "حصة كورس آخر", order: 1, trackScope: "SHARED", status: "PUBLISHED", curriculumStatus: "OFFICIAL" } });
   ok(true, "C: fixtures created (2 teachers, 3 students, 2 courses, 3 lessons)");
 
   // A LEGACY quiz: created the pre-26D way (no blueprint columns supplied), so
@@ -841,7 +841,7 @@ async function main() {
   // A fresh student with a genuinely OPEN attempt (studentAr2's was submitted
   // above), so the "no key while open" rule is tested against a real open row.
   const ar3User = await client.user.create({ data: { email: "sar3@cm.test", password: "x", name: "Student AR3", role: "STUDENT" } });
-  await client.student.create({ data: { userId: ar3User.id, groupId: groupA.id, schoolType: "ARABIC" } });
+  await client.student.create({ data: { academicLevel: "SECOND_SECONDARY", userId: ar3User.id, groupId: groupA.id, schoolType: "ARABIC" } });
   asUser(ar3User);
   const openStart = await POST(R.quizStart, url(`/api/quizzes/${bpQuiz.id}/start`), {}, { id: bpQuiz.id });
   eq(openStart.status, 200, "QUIZ-26: a fresh student can start the quiz");
@@ -1141,7 +1141,7 @@ async function main() {
       }));
     }
     const hzUser = await client.user.create({ data: { email: "hz26d@cm.test", password: "x", name: "HZ Student", role: "STUDENT" } });
-    await client.student.create({ data: { userId: hzUser.id, groupId: groupA.id, schoolType: "ARABIC" } });
+    await client.student.create({ data: { academicLevel: "SECOND_SECONDARY", userId: hzUser.id, groupId: groupA.id, schoolType: "ARABIC" } });
 
     // (1) Start a real attempt through the shipped handler.
     asUser(hzUser);
@@ -1289,7 +1289,7 @@ async function main() {
       });
     }
     const poolUser = await client.user.create({ data: { email: "pool26d@cm.test", password: "x", name: "Pool Student", role: "STUDENT" } });
-    await client.student.create({ data: { userId: poolUser.id, groupId: groupA.id, schoolType: "ARABIC" } });
+    await client.student.create({ data: { academicLevel: "SECOND_SECONDARY", userId: poolUser.id, groupId: groupA.id, schoolType: "ARABIC" } });
 
     asUser(poolUser);
     const poolStart = await POST(R.quizStart, url(`/api/quizzes/${poolQuiz.id}/start`), {}, { id: poolQuiz.id });

@@ -17,9 +17,11 @@
 // gated by /api/courses/[slug], which independently re-checks enrollment.
 
 import { NextRequest } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { ok, err, requireUser } from "@/lib/api";
 import { db } from "@/lib/db";
 import { getEnrollment } from "@/lib/enrollment";
+import { normalizeAcademicLevel } from "@/lib/academic-level";
 
 /** Public, non-sensitive fields only — safe for the enrollment picker. */
 const PUBLIC_COURSE_FIELDS = {
@@ -32,6 +34,21 @@ const PUBLIC_COURSE_FIELDS = {
   iconUrl: true,
 } as const;
 
+/**
+ * Phase K2 — the catalogue scope per viewer: staff see every course; a
+ * STUDENT sees only courses of their OWN typed academic level, and an
+ * unlevelled student sees nothing (`null` ⇒ empty catalogue, fail-closed).
+ */
+async function catalogScopeFor(user: { id: string; role: string }): Promise<Prisma.CourseWhereInput | null> {
+  if (user.role !== "STUDENT") return {};
+  const me = await db.student.findUnique({
+    where: { userId: user.id },
+    select: { academicLevel: true },
+  });
+  const level = normalizeAcademicLevel(me?.academicLevel);
+  return level ? { academicLevel: level } : null;
+}
+
 export async function GET(req: NextRequest) {
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
@@ -43,7 +60,13 @@ export async function GET(req: NextRequest) {
   // Used by the enroll flow, where a student must be able to pick a course they
   // are not yet enrolled in. Marketing fields only; no parts/units/lessons.
   if (catalog) {
+    // Phase K2 — a STUDENT's enrollment catalogue is scoped to courses of
+    // their OWN typed academic level (fail-closed: an unlevelled student
+    // sees an empty catalogue). Staff keep the full catalogue.
+    const where = await catalogScopeFor(user);
+    if (!where) return ok({ courses: [], catalog: true });
     const courses = await db.course.findMany({
+      where,
       orderBy: { createdAt: "asc" },
       select: PUBLIC_COURSE_FIELDS,
     });

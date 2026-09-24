@@ -279,6 +279,51 @@ function AuthForm({ mode, role, setMode }: { mode: "login" | "register"; role: R
   const [schoolType, setSchoolType] = React.useState("");
   const [createdCode, setCreatedCode] = React.useState<string | null>(null);
 
+  // Phase K2 — Academic Level × Track OFFERINGS. The server advertises only
+  // real combinations (`/api/registration/options`); the level selection
+  // decides which track choices exist. Display-only: the POST revalidates the
+  // pair server-side. A fetch failure leaves the level control disabled
+  // with a retry (fail-closed; never a silent default).
+  type Offering = { academicLevel: "FIRST_SECONDARY" | "SECOND_SECONDARY"; tracks: ("ARABIC" | "LANGUAGE")[] };
+  const [offerings, setOfferings] = React.useState<Offering[] | null>(null);
+  const [offeringsError, setOfferingsError] = React.useState(false);
+  const [academicLevelRaw, setAcademicLevelRaw] = React.useState("");
+  const [offeringsAttempt, setOfferingsAttempt] = React.useState(0);
+  const loadOfferings = () => setOfferingsAttempt((n) => n + 1);
+  const needsOfferings = mode === "register" && role === "STUDENT";
+  React.useEffect(() => {
+    if (!needsOfferings) return;
+    let cancelled = false;
+    fetch("/api/registration/options")
+      .then(async (r) => {
+        const j = await r.json();
+        if (!r.ok || !Array.isArray(j?.offerings)) throw new Error("bad");
+        if (cancelled) return;
+        setOfferingsError(false);
+        setOfferings(j.offerings);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setOfferings(null);
+        setOfferingsError(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [needsOfferings, offeringsAttempt]);
+  // DERIVED (no state sync): the selected level only counts while it is
+  // still offered, and the selected track only while the selected level
+  // offers it — so a level change can never leave a stale track behind.
+  const academicLevel =
+    offerings?.some((o) => o.academicLevel === academicLevelRaw) ? academicLevelRaw : "";
+  const availableTracks: ("ARABIC" | "LANGUAGE")[] =
+    offerings?.find((o) => o.academicLevel === academicLevel)?.tracks ?? [];
+  const setAcademicLevel = (v: string) => {
+    setAcademicLevelRaw(v);
+    const next = offerings?.find((o) => o.academicLevel === v)?.tracks ?? [];
+    if (schoolType && !next.includes(schoolType as "ARABIC" | "LANGUAGE")) setSchoolType("");
+  };
+
   const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
@@ -342,11 +387,15 @@ function AuthForm({ mode, role, setMode }: { mode: "login" | "register"; role: R
         toast.error(tr("auth.012"));
         return;
       }
+      if (academicLevel !== "FIRST_SECONDARY" && academicLevel !== "SECOND_SECONDARY") {
+        toast.error(tr("auth.229"));
+        return;
+      }
       if (schoolType !== "LANGUAGE" && schoolType !== "ARABIC") {
         toast.error(tr("auth.013"));
         return;
       }
-      Object.assign(payload, { studentPhone, parentPhone, nationalId, schoolName, schoolType });
+      Object.assign(payload, { studentPhone, parentPhone, nationalId, schoolName, schoolType, academicLevel });
     } else if (role === "PARENT") {
       const parentPhone = String(fd.get("parentPhone") || "").trim();
       const studentNationalId = String(fd.get("studentNationalId") || "").trim();
@@ -466,16 +515,46 @@ function AuthForm({ mode, role, setMode }: { mode: "login" | "register"; role: R
               />
             </div>
             <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">{tr("auth.228")} *</Label>
+              <Select value={academicLevel} onValueChange={setAcademicLevel} disabled={!offerings}>
+                <SelectTrigger className="h-11">
+                  <SelectValue placeholder={tr("auth.229")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {(offerings ?? []).map((o) => (
+                    <SelectItem key={o.academicLevel} value={o.academicLevel}>
+                      {o.academicLevel === "FIRST_SECONDARY" ? tr("auth.230") : tr("auth.231")}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {offeringsError && (
+                <button type="button" className="text-xs text-destructive underline" onClick={loadOfferings}>
+                  {tr("auth.233")}
+                </button>
+              )}
+              {offerings && offerings.length === 0 && (
+                <p className="text-xs text-muted-foreground">{tr("auth.232")}</p>
+              )}
+            </div>
+            <div className="space-y-1.5">
               <Label className="text-xs font-semibold">{t.auth.schoolType} *</Label>
-              <Select value={schoolType} onValueChange={setSchoolType}>
+              <Select value={schoolType} onValueChange={setSchoolType} disabled={!academicLevel}>
                 <SelectTrigger className="h-11">
                   <SelectValue placeholder={tr("auth.025")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="LANGUAGE">{t.auth.schoolTypeLang} (Language)</SelectItem>
-                  <SelectItem value="ARABIC">{t.auth.schoolTypeAr} (Arabic)</SelectItem>
+                  {availableTracks.includes("LANGUAGE") && (
+                    <SelectItem value="LANGUAGE">{t.auth.schoolTypeLang} (Language)</SelectItem>
+                  )}
+                  {availableTracks.includes("ARABIC") && (
+                    <SelectItem value="ARABIC">{t.auth.schoolTypeAr} (Arabic)</SelectItem>
+                  )}
                 </SelectContent>
               </Select>
+              {academicLevel && availableTracks.length === 0 && (
+                <p className="text-xs text-muted-foreground">{tr("auth.232")}</p>
+              )}
             </div>
           </>
         )}

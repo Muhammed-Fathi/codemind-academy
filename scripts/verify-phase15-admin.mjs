@@ -396,7 +396,9 @@ async function main() {
   });
 
   const course = await client.course.create({
-    data: { slug: "p15", name: "P15", nameAr: "P15", description: "phase 15" },
+    // Phase K2 — admin lesson creation derives Lesson.academicLevel from the
+    // owning course (I2), so the fixture course must be levelled.
+    data: { slug: "p15", name: "P15", nameAr: "P15", description: "phase 15", academicLevel: "SECOND_SECONDARY" },
   });
   const part1 = await client.part.create({
     data: { courseId: course.id, title: "P1", titleAr: "P1", order: 1 },
@@ -418,24 +420,28 @@ async function main() {
   // the mirror; hand seeds spell the steady state explicitly).
   const LA = await client.lesson.create({
     data: {
+      academicLevel: "SECOND_SECONDARY",
       unitId: unitU.id, title: "Arabic session", titleAr: "حصة عربي",
       order: 1, trackScope: "ARABIC", isPublished: false,
     },
   });
   const LS = await client.lesson.create({
     data: {
+      academicLevel: "SECOND_SECONDARY",
       unitId: unitU.id, title: "Shared session", titleAr: "حصة مشتركة",
       order: 2, trackScope: "SHARED", isPublished: false,
     },
   });
   const LE = await client.lesson.create({
     data: {
+      academicLevel: "SECOND_SECONDARY",
       unitId: unitU2.id, title: "Empty session", titleAr: "حصة فارغة",
       order: 1, trackScope: "SHARED", isPublished: false,
     },
   });
   const LL = await client.lesson.create({
     data: {
+      academicLevel: "SECOND_SECONDARY",
       unitId: null, topicId: topicT.id, title: "Legacy chain", titleAr: "سلسلة قديمة",
       order: 1, trackScope: "SHARED", isPublished: false,
     },
@@ -504,6 +510,7 @@ async function main() {
   const mxFixed = await client.mockExam.create({
     data: {
       title: "Fixed exam", titleAr: "امتحان ثابت", schoolType: "ARABIC",
+      courseId: course.id, // K3: MockExam.courseId is NOT NULL
       selectionMode: "FIXED",
     },
   });
@@ -515,6 +522,7 @@ async function main() {
   await client.mockExam.create({
     data: {
       title: "Random exam", titleAr: "امتحان عشوائي", schoolType: "LANGUAGE",
+      courseId: course.id, // K3: MockExam.courseId is NOT NULL
       selectionMode: "RANDOM",
     },
   });

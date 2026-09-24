@@ -345,10 +345,10 @@ test("Phase B: student session media alignment", async () => {
   // Course B: LB1 (9-1, SHARED) — video lives on the POOL Arabic batch.
   // ===========================================================================
   const course = await client.course.create({
-    data: { slug: "phaseb-a", name: "Course A", nameAr: "كورس أ", description: "phase B" },
+    data: { slug: "phaseb-a", name: "Course A", nameAr: "كورس أ", description: "phase B", academicLevel: "SECOND_SECONDARY" },
   });
   const courseB = await client.course.create({
-    data: { slug: "phaseb-b", name: "Course B", nameAr: "كورس ب", description: "other course" },
+    data: { slug: "phaseb-b", name: "Course B", nameAr: "كورس ب", description: "other course", academicLevel: "SECOND_SECONDARY" },
   });
   const partA = await client.part.create({
     data: { courseId: course.id, title: "P1", titleAr: "P1", order: 1 },
@@ -366,6 +366,7 @@ test("Phase B: student session media alignment", async () => {
   const mkLesson = (over) =>
     client.lesson.create({
       data: {
+        academicLevel: "SECOND_SECONDARY",
         unitId: unitA.id,
         trackScope: "SHARED",
         status: "PUBLISHED",
@@ -390,6 +391,7 @@ test("Phase B: student session media alignment", async () => {
   const L_DRAFT = await mkLesson({ order: 8, officialCode: "1-8", title: "Draft", titleAr: "مسودة", status: "DRAFT", isPublished: false });
   const LB1 = await client.lesson.create({
     data: {
+      academicLevel: "SECOND_SECONDARY",
       unitId: unitB.id, order: 1, officialCode: "9-1", title: "Other course session", titleAr: "حصة كورس تاني",
       trackScope: "SHARED", status: "PUBLISHED", curriculumStatus: "OFFICIAL", isPublished: true,
     },
@@ -417,7 +419,7 @@ test("Phase B: student session media alignment", async () => {
       data: { email: `${tag}@phaseb.test`, password: "x", name: tag, role: "STUDENT" },
     });
     const s = await client.student.create({
-      data: { userId: u.id, schoolType, groupId: groupId ?? null, batchId: batchId ?? null },
+      data: { userId: u.id, academicLevel: "SECOND_SECONDARY", schoolType, groupId: groupId ?? null, batchId: batchId ?? null },
     });
     return { user: u, student: s };
   };

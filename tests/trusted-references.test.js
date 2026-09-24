@@ -31,8 +31,8 @@
 //   S3. 0_init structurally lacks every later migration's signature object.
 //   S4. the workflow PRE validator asserts the frozen history (absence of
 //       every later object + the exact 12 historical NotificationType labels).
-//   S5. the workflow POST validator is current (9-migration EXPECTED_CHAIN in
-//       canonical order, 607/98/190/192, all nine SHA pins, by-name coverage
+//   S5. the workflow POST validator is current (10-migration EXPECTED_CHAIN in
+//       canonical order, 610/100/190/192, all ten SHA pins, by-name coverage
 //       of every newer phase).
 //   S6. the providers engine ledger contract is current (expected ledger ==
 //       the migrations directory, SQLite-only derivation, PG camera pin).
@@ -208,11 +208,11 @@ test("trusted PRE/POST reference contracts stay current and isolated (S1–S6)",
   const chainSrc = /const EXPECTED_CHAIN = \[([\s\S]*?)\];/.exec(postBlock)?.[1] ?? "";
   const expectedChain = [...chainSrc.matchAll(/'([^']+)'/g)].map((m) => m[1]);
   eq(expectedChain, pgMigrationDirs, "S5: EXPECTED_CHAIN is exactly the PG migrations directory in canonical order");
-  eq(expectedChain.length, 9, "S5: the current chain holds nine migrations");
+  eq(expectedChain.length, 11, "S5: the current chain holds eleven migrations");
   for (const [re, label] of [
-    [/columns\.length, 607/, "607 columns"],
-    [/enumValues, 98/, "98 enum values"],
-    [/indexes\.length, 190/, "190 indexes"],
+    [/columns\.length, 610/, "610 columns"],
+    [/enumValues, 100/, "100 enum values"],
+    [/indexes\.length, 191/, "191 indexes"],
     [/typedConstraints\.length, 192/, "192 typed constraints"],
   ]) {
     ok(re.test(postBlock), `S5: the POST validator asserts ${label}`);
@@ -224,6 +224,7 @@ test("trusted PRE/POST reference contracts stay current and isolated (S1–S6)",
   for (const marker of [
     "ProgressionOverride", "SessionVideoRequirementMode", "cameraPolicy",
     "Homework_attachmentId_fkey", "SessionVideo_liveSessionId_fkey", "READINESS_REMINDER",
+    "AcademicLevel", "Lesson_academicLevel_officialCode_key", "MockExam_courseId_idx",
   ]) {
     ok(postBlock.includes(marker), `S5: the POST validator asserts the newer object ${marker} by name`);
   }
@@ -231,6 +232,7 @@ test("trusted PRE/POST reference contracts stay current and isolated (S1–S6)",
     "INIT_SQL_SHA256", "PHASE26D_SQL_SHA256", "PHASE_F_SQL_SHA256", "PHASE_G_SQL_SHA256",
     "PHASE_G_CAMERA_SQL_SHA256", "PHASE_H_SQL_SHA256", "SESSION_VIDEO_REQ_SQL_SHA256",
     "SESSION_VIDEO_MODES_SQL_SHA256", "READINESS_REMINDER_SQL_SHA256",
+    "K1_ACADEMIC_LEVEL_SQL_SHA256", "K3_ACADEMIC_LEVEL_SQL_SHA256",
   ]) {
     ok(workflow.includes(`${pin}:`) && postBlock.includes(`process.env.${pin}`),
       `S5: migration provenance pin ${pin} is declared and asserted`);

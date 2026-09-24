@@ -139,6 +139,17 @@ function applyMigrations(db, { upTo = null, label = "", withBaseSchema = false }
     const sql = fs.readFileSync(file, "utf8");
     const checksum = canonicalChecksum(sql);
     const started = Date.now();
+    // Table-rebuild migrations (Prisma "RedefineTables": phase12, K3) open
+    // with `PRAGMA foreign_keys=OFF`. That pragma is a no-op inside a
+    // transaction, and node:sqlite enables foreign keys by default, so the
+    // rebuild's DROP TABLE would CASCADE / SET NULL every child row (Quiz,
+    // Material, Enrollment, MockExamQuestion, Batch.courseId, ...). Prisma's
+    // own deploy runs the script outside a transaction, where the pragma
+    // takes effect; mirror that by toggling enforcement around the
+    // transaction while keeping the file atomic.
+    const wantsFkOff = /PRAGMA\s+foreign_keys\s*=\s*OFF/i.test(sql);
+    const fkWasOn = wantsFkOff && db.prepare("PRAGMA foreign_keys").get().foreign_keys === 1;
+    if (fkWasOn) db.exec("PRAGMA foreign_keys=OFF");
     db.exec("BEGIN");
     try {
       // node:sqlite's exec runs the whole script; Prisma splits per statement.
@@ -146,11 +157,17 @@ function applyMigrations(db, { upTo = null, label = "", withBaseSchema = false }
       for (const stmt of splitStatements(sql)) {
         db.exec(stmt);
       }
+      if (fkWasOn) {
+        const bad = db.prepare("PRAGMA foreign_key_check").all();
+        if (bad.length) throw new Error(`foreign_key_check reported ${bad.length} violation(s) after rebuild`);
+      }
       db.exec("COMMIT");
     } catch (e) {
       db.exec("ROLLBACK");
+      if (fkWasOn) db.exec("PRAGMA foreign_keys=ON");
       throw new Error(`Migration ${name} failed: ${e.message}`);
     }
+    if (fkWasOn) db.exec("PRAGMA foreign_keys=ON");
     db.prepare(
       `INSERT INTO "_prisma_migrations"
        ("id","checksum","finished_at","migration_name","logs","rolled_back_at","started_at","applied_steps_count")
@@ -199,10 +216,30 @@ function applyMigrations(db, { upTo = null, label = "", withBaseSchema = false }
 /** Columns that did not exist before the first migration. */
 const BASE_SKIP_COLUMNS = {
   User: ["status"],
-  Student: ["nationalId", "parentPhone", "schoolType", "studentCode", "batchId"],
-  Course: ["trackId"],
+  Student: [
+    "nationalId",
+    "parentPhone",
+    "schoolType",
+    "studentCode",
+    "batchId",
+    // Phase K1 — added by 20260923100000_k1_academic_level_capability.
+    "academicLevel",
+  ],
+  Course: [
+    "trackId",
+    // Phase K1 — added by 20260923100000_k1_academic_level_capability.
+    "academicLevel",
+  ],
   Group: ["trackScope"],
-  Lesson: ["unitId", "officialCode", "curriculumStatus", "trackScope", "status"],
+  Lesson: [
+    "unitId",
+    "officialCode",
+    "curriculumStatus",
+    "trackScope",
+    "status",
+    // Phase K1 — added by 20260923100000_k1_academic_level_capability.
+    "academicLevel",
+  ],
   LessonProgress: [
     "videoDurationSec",
     "videoWatchedSec",

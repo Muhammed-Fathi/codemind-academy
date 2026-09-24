@@ -5,6 +5,7 @@ import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireRole } from "@/lib/api";
 import { normalizeSchoolType } from "@/lib/school-type";
+import { normalizeAcademicLevel } from "@/lib/academic-level";
 import {
   parseQuestionSchoolTypeInput,
   resolveQuestionSchoolType,
@@ -41,6 +42,18 @@ export async function GET(req: NextRequest) {
   if (type === "MCQ" || type === "TRUE_FALSE") {
     where.type = type;
   }
+  // Academic-level VIEW filter (Phase K manual-QA pass). A question carries
+  // NO level of its own: the only level it can be attributed to is the one
+  // DERIVED from its quiz's lesson (Lesson.academicLevel, a K3-maintained
+  // cache of the course chain). Free-bank questions (no quiz) therefore have
+  // no single level and are excluded by any level filter — that is the
+  // truth, not a default. Independent of the track (schoolType) selector.
+  const levelParam = (url.searchParams.get("academicLevel") || "").trim();
+  if (levelParam && levelParam !== "all") {
+    const level = normalizeAcademicLevel(levelParam);
+    if (!level) return err("Invalid academicLevel", 400);
+    where.quiz = { lesson: { academicLevel: level } };
+  }
   if (search) {
     // Combine with a possible bank OR-clause without overwriting it.
     const searchClause = [
@@ -66,7 +79,16 @@ export async function GET(req: NextRequest) {
               id: true,
               title: true,
               titleAr: true,
-              lesson: { select: { id: true, titleAr: true } },
+              lesson: {
+                select: {
+                  id: true,
+                  title: true,
+                  titleAr: true,
+                  officialCode: true,
+                  // Derived level context (never an authority on the question).
+                  academicLevel: true,
+                },
+              },
             },
           },
         },

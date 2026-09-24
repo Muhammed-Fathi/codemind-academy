@@ -20,6 +20,7 @@ import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { useApp } from "@/lib/store";
 import { useT, pickAuto } from "@/lib/i18n";
+import { academicLevelLabel } from "@/components/admin/academic-level-ui";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -413,8 +414,13 @@ function IdentityGrid({ detail }: { detail: AdminSessionDetail }) {
     return <p className="text-sm text-muted-foreground">{tr("admin.373")}</p>;
   }
   const cells: { label: string; value: string }[] = [];
-  if (identity.course)
+  if (identity.course) {
     cells.push({ label: tr("admin.369"), value: pickAuto(identity.course.nameAr, identity.course.name) });
+    // Phase K — the session's level is its COURSE's (canonical); the detail
+    // endpoint exposes it read-only on identity.course (never editable here).
+    const courseLevel = (identity.course as { academicLevel?: string | null }).academicLevel ?? null;
+    cells.push({ label: tr("admin.642"), value: academicLevelLabel(tr, courseLevel) });
+  }
   if (identity.part)
     cells.push({ label: tr("admin.370"), value: pickAuto(identity.part.titleAr, identity.part.title) });
   if (identity.unit)

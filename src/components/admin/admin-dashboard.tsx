@@ -1,5 +1,12 @@
 "use client";
 import { useT , pickAuto, useLocale } from "@/lib/i18n";
+import {
+  ACADEMIC_LEVEL_OPTIONS,
+  AcademicLevelBadge,
+  AcademicLevelFilterSelect,
+  academicLevelLabel,
+  courseWithLevelLabel,
+} from "@/components/admin/academic-level-ui";
 // Finding 8 — the ONE mapping from NotificationType to a localized label key
 // (pure module, safe in the browser). Raw enum names never reach the UI.
 import { notificationTypeLabelKey } from "@/lib/notification-labels";
@@ -537,6 +544,8 @@ function OverviewView() {
 // ============================================================
 // 2. Students
 // ============================================================
+// Phase K — academic-level UI helpers are shared with the mock-exam, session
+// and session-video views (see ./academic-level-ui).
 type StudentRow = {
   id: string;
   userId: string;
@@ -545,6 +554,10 @@ type StudentRow = {
   phone: string | null;
   isActive: boolean;
   grade: string;
+  /** Phase K2 — typed academic level (authority); `grade` is its display mirror. */
+  academicLevel?: "FIRST_SECONDARY" | "SECOND_SECONDARY" | null;
+  /** Phase K2 — server-computed I1 diagnostic: grouped, but level ≠ group course level. */
+  levelMismatch?: boolean;
   schoolName: string | null;
   schoolType?: string | null;
   nationalId?: string | null;
@@ -588,6 +601,9 @@ function StudentsView() {
   const [search, setSearch] = React.useState("");
   const [status, setStatus] = React.useState("all");
   const [schoolType, setSchoolType] = React.useState<string>("ARABIC");
+  // Academic-level filter ("" = all). Sent to the server, which filters on
+  // the TYPED Student.academicLevel column — never the grade string.
+  const [academicLevel, setAcademicLevel] = React.useState<string>("");
   const [page, setPage] = React.useState(1);
   const [openAdd, setOpenAdd] = React.useState(false);
   const [selected, setSelected] = React.useState<StudentRow | null>(null);
@@ -595,7 +611,7 @@ function StudentsView() {
   // Reset to the first page whenever the view or a filter changes.
   React.useEffect(() => {
     setPage(1);
-  }, [search, status, schoolType]);
+  }, [search, status, schoolType, academicLevel]);
 
   const query = React.useMemo(() => {
     const params = new URLSearchParams();
@@ -605,15 +621,17 @@ function StudentsView() {
     // NULL). Filtering that case on the client would only search the current
     // page and hide matching students on later pages.
     params.set("schoolType", schoolType);
+    if (academicLevel) params.set("academicLevel", academicLevel);
     params.set("page", String(page));
     params.set("withProgress", "1");
     return `/api/admin/students?${params.toString()}`;
-  }, [search, status, schoolType, page]);
+  }, [search, status, schoolType, academicLevel, page]);
 
   const { data, loading, error, reload } = useApi<StudentsResponse>(query, [
     search,
     status,
     schoolType,
+    academicLevel,
     page,
   ]);
 
@@ -723,6 +741,7 @@ function StudentsView() {
               <SelectItem value="suspended">{tr("admin.227")}</SelectItem>
             </SelectContent>
           </Select>
+          <AcademicLevelFilterSelect value={academicLevel} onChange={setAcademicLevel} />
         </div>
 
         {loading ? (
@@ -739,7 +758,7 @@ function StudentsView() {
                   <TableHead>{tr("admin.019")}</TableHead>
                   <TableHead>{tr("admin.020")}</TableHead>
                   <TableHead>{tr("admin.021")}</TableHead>
-                  <TableHead>{tr("admin.022")}</TableHead>
+                  <TableHead>{tr("admin.642")}</TableHead>
                   <TableHead>{tr("admin.023")}</TableHead>
                   <TableHead>{tr("admin.220")}</TableHead>
                   <TableHead>{tr("admin.024")}</TableHead>
@@ -764,7 +783,16 @@ function StudentsView() {
                       )}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">{s.email}</TableCell>
-                    <TableCell>{s.grade}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1.5">
+                        <span>{academicLevelLabel(tr, s.academicLevel)}</span>
+                        {s.levelMismatch && (
+                          <Badge variant="destructive" title={tr("admin.646")} className="text-[10px]">
+                            !
+                          </Badge>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell>{s.group?.name || "—"}</TableCell>
                     <TableCell>
                       {s.videoProgress && s.videoProgress.totalVideos > 0 ? (
@@ -859,13 +887,15 @@ function AddStudentDialog({
     email: "",
     password: "",
     phone: "",
-    grade: "2nd Secondary",
+    // Phase K2 — typed academic level replaces the free-text grade input;
+    // the server derives `grade` from it.
+    academicLevel: "SECOND_SECONDARY" as "FIRST_SECONDARY" | "SECOND_SECONDARY",
     schoolName: "",
   });
   const [saving, setSaving] = React.useState(false);
 
   const submit = async () => {
-    if (!form.name || !form.email || !form.password) {
+    if (!form.name || !form.email || !form.password || !form.academicLevel) {
       toast.error(tr("admin.026"));
       return;
     }
@@ -881,7 +911,7 @@ function AddStudentDialog({
       toast.success(tr("admin.028"));
       onCreated();
       onOpenChange(false);
-      setForm({ name: "", email: "", password: "", phone: "", grade: "2nd Secondary", schoolName: "" });
+      setForm({ name: "", email: "", password: "", phone: "", academicLevel: "SECOND_SECONDARY", schoolName: "" });
     } catch (e: any) {
       toast.error(e.message || tr("admin.001"));
     } finally {
@@ -915,8 +945,19 @@ function AddStudentDialog({
               <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
             </div>
             <div>
-              <Label>{tr("admin.022")}</Label>
-              <Input value={form.grade} onChange={(e) => setForm({ ...form, grade: e.target.value })} />
+              <Label>{tr("admin.642")}</Label>
+              <Select
+                value={form.academicLevel}
+                onValueChange={(v) => setForm({ ...form, academicLevel: v as "FIRST_SECONDARY" | "SECOND_SECONDARY" })}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="FIRST_SECONDARY">{tr("admin.643")}</SelectItem>
+                  <SelectItem value="SECOND_SECONDARY">{tr("admin.644")}</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <div>
@@ -992,12 +1033,46 @@ function StudentProfileDrawer({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ groupId: groupId || null }),
       });
-      if (!res.ok) throw new Error("err");
+      if (!res.ok) {
+        // Surface the server's explicit gate message (track / level mismatch,
+        // capacity, unclassified group) instead of a generic error.
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j?.error || "err");
+      }
       toast.success(tr("admin.044"));
       onUpdated();
       onClose();
-    } catch {
-      toast.error(tr("admin.001"));
+    } catch (e: any) {
+      toast.error(e?.message && e.message !== "err" ? e.message : tr("admin.001"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Derived default + explicit choice (no effect-driven state sync): the
+  // control shows the stored level until the admin picks another one.
+  const [levelChoice, setLevelChoice] = React.useState<{ id: string; value: string } | null>(null);
+  const level =
+    levelChoice && student && levelChoice.id === student.id ? levelChoice.value : student?.academicLevel || "";
+  const setLevel = (v: string) => student && setLevelChoice({ id: student.id, value: v });
+  const saveLevel = async () => {
+    if (!student || !level) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/admin/students/${student.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ academicLevel: level }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j?.error || "err");
+      }
+      toast.success(tr("admin.044"));
+      onUpdated();
+      onClose();
+    } catch (e: any) {
+      toast.error(e?.message && e.message !== "err" ? e.message : tr("admin.001"));
     } finally {
       setSaving(false);
     }
@@ -1050,8 +1125,9 @@ function StudentProfileDrawer({
                   <div className="font-medium mt-1 font-mono" dir="ltr">{student.nationalId || "—"}</div>
                 </div>
                 <div className="rounded-lg border p-3">
-                  <div className="text-xs text-muted-foreground">{tr("admin.022")}</div>
-                  <div className="font-medium mt-1">{student.grade}</div>
+                  <div className="text-xs text-muted-foreground">{tr("admin.642")}</div>
+                  <div className="font-medium mt-1">{academicLevelLabel(tr, student.academicLevel)}</div>
+                  <div className="text-[11px] text-muted-foreground">{student.grade}</div>
                 </div>
                 <div className="rounded-lg border p-3">
                   <div className="text-xs text-muted-foreground">{tr("admin.037")}</div>
@@ -1084,6 +1160,31 @@ function StudentProfileDrawer({
                 ) : (
                   <div className="text-sm text-muted-foreground">{tr("admin.061")}</div>
                 )}
+              </div>
+
+              {student.levelMismatch && (
+                <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-xs text-destructive">
+                  {tr("admin.646")}
+                </div>
+              )}
+
+              {/* Phase K2 — typed academic level (the ONLY level authority;
+                  the server derives `grade` and refuses a change that would
+                  leave the student in a group of another level). */}
+              <div className="rounded-lg border p-3 space-y-2">
+                <div className="text-xs text-muted-foreground">{tr("admin.642")}</div>
+                <Select value={level} onValueChange={setLevel}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder={tr("admin.645")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="FIRST_SECONDARY">{tr("admin.643")}</SelectItem>
+                    <SelectItem value="SECOND_SECONDARY">{tr("admin.644")}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button size="sm" variant="outline" onClick={saveLevel} disabled={saving || !level} className="w-full">
+                  {tr("admin.040")}
+                </Button>
               </div>
 
               <div className="rounded-lg border p-3 space-y-2">
@@ -1626,6 +1727,8 @@ type GroupRow = {
   courseId: string;
   courseName: string | null;
   courseColor: string | null;
+  /** Phase K2 — DERIVED from the group's course (Group has no level column). */
+  academicLevel?: string | null;
   teacherId: string | null;
   teacherName: string | null;
   capacity: number;
@@ -1682,8 +1785,11 @@ function GroupsView() {
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <div className="text-sm font-bold truncate">{g.name}</div>
-                    <div className="text-xs text-muted-foreground truncate">
-                      {g.courseName || "—"}
+                    <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                      <span className="truncate">{g.courseName || "—"}</span>
+                      {/* Level is the COURSE's (derived), shown so two groups of
+                          the same course name across levels can't be confused. */}
+                      <AcademicLevelBadge level={g.academicLevel} />
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
@@ -1769,9 +1875,12 @@ function CreateGroupDialog({
     // LANGUAGE). Never inferred, never defaulted, SHARED not offered.
     trackScope: "",
   });
-  const [courses, setCourses] = React.useState<{ id: string; nameAr: string; name?: string }[]>([]);
+  const [courses, setCourses] = React.useState<
+    { id: string; nameAr: string; name?: string; academicLevel?: string | null }[]
+  >([]);
   const [teachers, setTeachers] = React.useState<{ id: string; name: string }[]>([]);
   const [saving, setSaving] = React.useState(false);
+  const selectedCourse = courses.find((c) => c.id === form.courseId) || null;
 
   React.useEffect(() => {
     if (open) {
@@ -1829,10 +1938,19 @@ function CreateGroupDialog({
               </SelectTrigger>
               <SelectContent>
                 {courses.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>{pickAuto(c.nameAr, c.name)}</SelectItem>
+                  <SelectItem key={c.id} value={c.id}>{courseWithLevelLabel(tr, c)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {/* The group's level IS its course's level (no Group.academicLevel);
+                surface it before saving so the audience choice below is made
+                with the level in view. The server still gates (api.375). */}
+            {selectedCourse && (
+              <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <span>{tr("admin.642")}:</span>
+                <AcademicLevelBadge level={selectedCourse.academicLevel} />
+              </div>
+            )}
           </div>
           <div>
             <Label>{tr("admin.101")}</Label>
@@ -1995,6 +2113,12 @@ function ManageGroupDialog({
         </DialogHeader>
         {group && (
           <div className="space-y-3">
+            {/* Read-only context: Group → Course → Level (derived, not editable here). */}
+            <div className="flex flex-wrap items-center gap-1.5 rounded-lg border bg-muted/30 px-3 py-2 text-xs">
+              <span className="text-muted-foreground">{tr("admin.099")}:</span>
+              <span className="font-semibold">{group.courseName || "—"}</span>
+              <AcademicLevelBadge level={group.academicLevel} />
+            </div>
             <div>
               <Label>{tr("admin.522")}</Label>
               <Input value={name} onChange={(e) => setName(e.target.value)} />
@@ -2117,6 +2241,8 @@ type CourseRow = {
   nameAr: string;
   description: string;
   color: string;
+  /** Course.academicLevel — THE curriculum level authority (null = legacy). */
+  academicLevel?: string | null;
   partsCount: number;
   lessonsCount: number;
   activeLessonsCount?: number;
@@ -2165,6 +2291,14 @@ function CoursesView() {
   // (the server refuses while groups/parts/enrollments/exams reference it).
   const [editingCourse, setEditingCourse] = React.useState<CourseRow | null>(null);
   const [deletingCourse, setDeletingCourse] = React.useState<CourseRow | null>(null);
+  // Level VIEW filter ("" = all levels). The list is small and already
+  // loaded in full, so narrowing it here is exact (no pagination to fight);
+  // the badge on every card comes from the canonical Course.academicLevel.
+  const [levelFilter, setLevelFilter] = React.useState<string>("");
+  const visibleCourses = React.useMemo(
+    () => (data?.courses || []).filter((c) => !levelFilter || c.academicLevel === levelFilter),
+    [data, levelFilter]
+  );
 
   const deleteCourse = async (c: CourseRow) => {
     try {
@@ -2210,7 +2344,7 @@ function CoursesView() {
       if (!res.ok) throw new Error(j.error || tr("admin.121"));
       const report = j.report || {};
       toast.success(
-        tr("admin.320", {
+        tr("admin.654", {
           p1: report.officialLessonCodes?.length ?? 0,
           p2: report.archivedLessonIds?.length ?? 0,
         })
@@ -2251,7 +2385,7 @@ function CoursesView() {
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={reconcileNow} disabled={reconciling}>
             {reconciling ? <Loader2 className="w-4 h-4 ms-2 animate-spin" /> : <Download className="w-4 h-4 ms-2" />}
-            {reconciling ? tr("admin.319") : tr("admin.318")}
+            {reconciling ? tr("admin.653") : tr("admin.652")}
           </Button>
           <Button size="sm" onClick={() => setOpenAdd(true)}>
             <Plus className="w-4 h-4 ms-2" />
@@ -2270,12 +2404,20 @@ function CoursesView() {
           <EmptyBlock message={tr("admin.129")} />
           <Button className="mt-4" onClick={reconcileNow} disabled={reconciling}>
             {reconciling ? <Loader2 className="w-4 h-4 ms-2 animate-spin" /> : <Download className="w-4 h-4 ms-2" />}
-            {reconciling ? tr("admin.319") : tr("admin.318")}
+            {reconciling ? tr("admin.653") : tr("admin.652")}
           </Button>
         </Card>
       ) : (
+        <>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted-foreground">{tr("admin.642")}</span>
+          <AcademicLevelFilterSelect value={levelFilter} onChange={setLevelFilter} />
+        </div>
+        {visibleCourses.length === 0 ? (
+          <EmptyBlock message={tr("admin.129")} />
+        ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 stagger-in">
-          {data.courses.map((c) => (
+          {visibleCourses.map((c) => (
             <Card key={c.id} className="p-4 card-hover">
               <div className="flex items-start gap-3">
                 <div
@@ -2285,7 +2427,10 @@ function CoursesView() {
                   <BookOpen className="w-5 h-5" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-base font-bold truncate">{pickAuto(c.nameAr, c.name)}</div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-base font-bold truncate">{pickAuto(c.nameAr, c.name)}</span>
+                    <AcademicLevelBadge level={c.academicLevel} />
+                  </div>
                   <div className="text-xs text-muted-foreground">{c.name}</div>
                   <div className="text-xs text-muted-foreground mt-1 line-clamp-2">{c.description}</div>
                 </div>
@@ -2344,6 +2489,8 @@ function CoursesView() {
             </Card>
           ))}
         </div>
+        )}
+        </>
       )}
 
       {/* Course metadata edit */}
@@ -2447,12 +2594,19 @@ function AddCourseDialog({
     nameAr: "",
     description: "",
     color: "#10b981",
+    // Phase K — REQUIRED, never defaulted: the admin must pick the level
+    // explicitly (the server refuses a course without one — api.375).
+    academicLevel: "",
   });
   const [saving, setSaving] = React.useState(false);
 
   const submit = async () => {
     if (!form.name.trim() || !form.nameAr.trim()) {
       toast.error(tr("admin.136"));
+      return;
+    }
+    if (!form.academicLevel) {
+      toast.error(tr("admin.649"));
       return;
     }
     setSaving(true);
@@ -2467,7 +2621,7 @@ function AddCourseDialog({
       toast.success(tr("admin.138"));
       onCreated();
       onOpenChange(false);
-      setForm({ name: "", nameAr: "", description: "", color: "#10b981" });
+      setForm({ name: "", nameAr: "", description: "", color: "#10b981", academicLevel: "" });
     } catch (e: any) {
       toast.error(e.message || tr("admin.001"));
     } finally {
@@ -2483,6 +2637,22 @@ function AddCourseDialog({
           <DialogDescription>{tr("admin.141")}</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
+          <div>
+            <Label>{tr("admin.642")} *</Label>
+            <Select
+              value={form.academicLevel}
+              onValueChange={(v) => setForm({ ...form, academicLevel: v })}
+            >
+              <SelectTrigger className="w-full" aria-label={tr("admin.642")}>
+                <SelectValue placeholder={tr("admin.649")} />
+              </SelectTrigger>
+              <SelectContent>
+                {ACADEMIC_LEVEL_OPTIONS.map((l) => (
+                  <SelectItem key={l} value={l}>{academicLevelLabel(tr, l)}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div>
             <Label>{tr("admin.142")}</Label>
             <Input
@@ -2520,7 +2690,7 @@ function AddCourseDialog({
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {tr("admin.038")}</Button>
-          <Button onClick={submit} disabled={saving}>
+          <Button onClick={submit} disabled={saving || !form.academicLevel}>
             {saving ? tr("admin.039") : tr("admin.040")}
           </Button>
         </DialogFooter>
@@ -2542,6 +2712,10 @@ function EditCourseDialog({
 }) {
   const tr = useT();
   const [form, setForm] = React.useState({ name: "", nameAr: "", description: "", color: "#10b981" });
+  // Canonical Course.academicLevel, edited separately: it is sent ONLY when
+  // it actually changed, and the server fails closed (409 api.378) while
+  // students/lessons/enrollments depend on the course — nothing is cascaded.
+  const [academicLevel, setAcademicLevel] = React.useState<string>("");
   const [saving, setSaving] = React.useState(false);
 
   React.useEffect(() => {
@@ -2552,8 +2726,15 @@ function EditCourseDialog({
         description: course.description || "",
         color: course.color || "#10b981",
       });
+      setAcademicLevel(course.academicLevel || "");
     }
   }, [course]);
+
+  // Client-side HINT only (the server is the gate): a course that already
+  // has lessons or groups is expected to be locked — say so up front.
+  const levelLikelyLocked =
+    !!course && ((course.lessonsCount ?? 0) > 0 || (course.groupsCount ?? 0) > 0);
+  const levelChanged = !!course && !!academicLevel && academicLevel !== (course.academicLevel || "");
 
   const submit = async () => {
     if (!course) return;
@@ -2566,7 +2747,7 @@ function EditCourseDialog({
       const res = await fetch(`/api/admin/courses/${course.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify(levelChanged ? { ...form, academicLevel } : form),
       });
       const j = await res.json().catch(() => ({} as any));
       if (!res.ok) throw new Error(j.error || "err");
@@ -2588,6 +2769,25 @@ function EditCourseDialog({
           <DialogDescription>{course ? pickAuto(course.nameAr, course.name) : ""}</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
+          <div>
+            <Label>{tr("admin.642")}</Label>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <AcademicLevelBadge level={course?.academicLevel} />
+              <Select value={academicLevel} onValueChange={setAcademicLevel}>
+                <SelectTrigger className="w-48" aria-label={tr("admin.642")}>
+                  <SelectValue placeholder={tr("admin.649")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {ACADEMIC_LEVEL_OPTIONS.map((l) => (
+                    <SelectItem key={l} value={l}>{academicLevelLabel(tr, l)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {levelLikelyLocked && levelChanged && (
+              <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">{tr("admin.651")}</p>
+            )}
+          </div>
           <div>
             <Label>{tr("admin.142")}</Label>
             <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
@@ -2639,7 +2839,17 @@ type QuestionRow = {
   difficulty: "EASY" | "MEDIUM" | "HARD";
   marks: number;
   schoolType?: "ARABIC" | "LANGUAGE" | null;
-  quiz: { title: string; titleAr: string | null; lesson: { titleAr: string; title?: string } | null } | null;
+  quiz: {
+    title: string;
+    titleAr: string | null;
+    lesson: {
+      titleAr: string;
+      title?: string;
+      officialCode?: string | null;
+      /** DERIVED lesson level (course chain). A question has no level of its own. */
+      academicLevel?: string | null;
+    } | null;
+  } | null;
 };
 
 /**
@@ -2660,6 +2870,10 @@ function QuestionBankView() {
   const [difficulty, setDifficulty] = React.useState("all");
   const [type, setType] = React.useState("all");
   const [bank, setBank] = React.useState<string>("ARABIC");
+  // Level VIEW filter ("" = all). Derived through quiz → lesson → course only;
+  // free-bank questions (no quiz) have no single level and drop out of any
+  // level-narrowed view. Independent of the track (bank) tabs.
+  const [levelFilter, setLevelFilter] = React.useState<string>("");
   const [openAdd, setOpenAdd] = React.useState(false);
   const [showAiGen, setShowAiGen] = React.useState(false);
   // Phase 15: the session detail deep-links here with the lesson id, so AI
@@ -2741,13 +2955,14 @@ function QuestionBankView() {
     if (difficulty !== "all") params.set("difficulty", difficulty);
     if (type !== "all") params.set("type", type);
     if (bank !== "all") params.set("schoolType", bank);
+    if (levelFilter) params.set("academicLevel", levelFilter);
     return `/api/admin/question-bank?${params.toString()}`;
-  }, [search, difficulty, type, bank]);
+  }, [search, difficulty, type, bank, levelFilter]);
 
   const { data, loading, error, reload } = useApi<{
     questions: QuestionRow[];
     counts: { ARABIC: number; LANGUAGE: number; SHARED: number };
-  }>(query, [search, difficulty, type, bank]);
+  }>(query, [search, difficulty, type, bank, levelFilter]);
 
   // Post-launch lifecycle: a question the admin created must also be
   // editable/removable — with the SAME frozen-history guards the teacher
@@ -2964,6 +3179,7 @@ function QuestionBankView() {
               <SelectItem value="TRUE_FALSE">True / False</SelectItem>
             </SelectContent>
           </Select>
+          <AcademicLevelFilterSelect value={levelFilter} onChange={setLevelFilter} className="w-40" />
         </div>
 
         {loading ? (
@@ -3038,13 +3254,21 @@ function QuestionBankView() {
                         ))}
                       </div>
                     )}
-                    {q.quiz && (
-                      <div className="text-[10px] text-muted-foreground mt-2 flex items-center gap-1">
-                        <Library className="w-3 h-3" />
-                        {pickAuto(q.quiz.titleAr, q.quiz.title)}
-                        {q.quiz.lesson && ` · ${pickAuto(q.quiz.lesson.titleAr, q.quiz.lesson.title)}`}
-                      </div>
-                    )}
+                    {/* Level context is DERIVED (quiz → lesson → course). A
+                        free-bank question has no single level — say so. */}
+                    <div className="text-[10px] text-muted-foreground mt-2 flex flex-wrap items-center gap-1">
+                      {q.quiz ? (
+                        <>
+                          <Library className="w-3 h-3" />
+                          {pickAuto(q.quiz.titleAr, q.quiz.title)}
+                          {q.quiz.lesson &&
+                            ` · ${q.quiz.lesson.officialCode ? `${q.quiz.lesson.officialCode} — ` : ""}${pickAuto(q.quiz.lesson.titleAr, q.quiz.lesson.title)}`}
+                          {q.quiz.lesson && <AcademicLevelBadge level={q.quiz.lesson.academicLevel} />}
+                        </>
+                      ) : (
+                        <span className="opacity-70">{tr("admin.650")}</span>
+                      )}
+                    </div>
                   </div>
                 );
               })}

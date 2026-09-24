@@ -554,9 +554,12 @@ const ADMIN_COOKIE = "cm_session=gtg-admin-raw-token";
 // Course skeleton: Part → Unit → lesson 1 (SHARED, published).
 const COURSE_ID = "gtg-course";
 db.prepare(
-  `INSERT INTO "Course" ("id","slug","name","nameAr","description","color","createdAt","updatedAt")
-   VALUES (?,?,?,?,?,?,?,?)`
-).run(COURSE_ID, "gtg-course", "GTG Course", "كورس GTG", "desc", "#10b981", NOW, NOW);
+  // Phase K2 — the fixture course is levelled (SECOND_SECONDARY); every
+  // student below registers at the same level, so the orthogonal level gate
+  // is transparent to this audience matrix.
+  `INSERT INTO "Course" ("id","slug","name","nameAr","description","color","academicLevel","createdAt","updatedAt")
+   VALUES (?,?,?,?,?,?,?,?,?)`
+).run(COURSE_ID, "gtg-course", "GTG Course", "كورس GTG", "desc", "#10b981", "SECOND_SECONDARY", NOW, NOW);
 db.prepare(
   `INSERT INTO "Part" ("id","courseId","title","titleAr","order") VALUES ('gtg-part',?,'P','ج','1')`
 ).run(COURSE_ID);
@@ -564,17 +567,17 @@ db.prepare(
   `INSERT INTO "Unit" ("id","partId","title","titleAr","order") VALUES ('gtg-unit','gtg-part','U','و','1')`
 ).run();
 db.prepare(
-  `INSERT INTO "Lesson" ("id","title","titleAr","order","unitId","status","trackScope","createdAt","updatedAt")
-   VALUES ('gtg-l1','Lesson one','درس واحد','1','gtg-unit','PUBLISHED','SHARED',?,?)`
+  `INSERT INTO "Lesson" ("id","title","titleAr","order","unitId","status","trackScope","createdAt","updatedAt","academicLevel")
+   VALUES ('gtg-l1','Lesson one','درس واحد','1','gtg-unit','PUBLISHED','SHARED',?,?,'SECOND_SECONDARY')`
 ).run(NOW, NOW);
 // Cross-track probes (non-official, last positions — never disturb lesson 1).
 db.prepare(
-  `INSERT INTO "Lesson" ("id","title","titleAr","order","unitId","status","trackScope","createdAt","updatedAt")
-   VALUES ('gtg-lesson-arabic','Arabic-only','درس عربي','98','gtg-unit','PUBLISHED','ARABIC',?,?)`
+  `INSERT INTO "Lesson" ("id","title","titleAr","order","unitId","status","trackScope","createdAt","updatedAt","academicLevel")
+   VALUES ('gtg-lesson-arabic','Arabic-only','درس عربي','98','gtg-unit','PUBLISHED','ARABIC',?,?,'SECOND_SECONDARY')`
 ).run(NOW, NOW);
 db.prepare(
-  `INSERT INTO "Lesson" ("id","title","titleAr","order","unitId","status","trackScope","createdAt","updatedAt")
-   VALUES ('gtg-lesson-language','Language-only','درس لغات','99','gtg-unit','PUBLISHED','LANGUAGE',?,?)`
+  `INSERT INTO "Lesson" ("id","title","titleAr","order","unitId","status","trackScope","createdAt","updatedAt","academicLevel")
+   VALUES ('gtg-lesson-language','Language-only','درس لغات','99','gtg-unit','PUBLISHED','LANGUAGE',?,?,'SECOND_SECONDARY')`
 ).run(NOW, NOW);
 
 // Groups — the audience matrix (ARABIC / LANGUAGE / UNCLASSIFIED / full).
@@ -591,8 +594,8 @@ insertGroup("gtg-group-full", "GTG full ARABIC group", "ARABIC", 1);
 // The FULL group's seat holder (plain fixture, never a driver).
 insertUser("gtg-seat-user", "gtg-seat@local.test", "STUDENT", "GtgSeatLocal1!", "Seat Holder");
 db.prepare(
-  `INSERT INTO "Student" ("id","userId","grade","schoolName","schoolType","nationalId","parentPhone","groupId","enrolledAt","createdAt","updatedAt")
-   VALUES ('gtg-seat-student','gtg-seat-user','2nd Secondary','GTG School','ARABIC','30000000001111','01000000001','gtg-group-full',?,?,?)`
+  `INSERT INTO "Student" ("id","userId","grade","academicLevel","schoolName","schoolType","nationalId","parentPhone","groupId","enrolledAt","createdAt","updatedAt")
+   VALUES ('gtg-seat-student','gtg-seat-user','2nd Secondary','SECOND_SECONDARY','GTG School','ARABIC','30000000001111','01000000001','gtg-group-full',?,?,?)`
 ).run(NOW, NOW, NOW);
 
 // One active plan.
@@ -645,6 +648,7 @@ async function registerStudent(email, name, schoolType, nationalId) {
       role: "STUDENT", email, name, password: "GtgStudent1!",
       studentPhone: "01012345678", parentPhone: "01098765432",
       nationalId, schoolName: "GTG School", schoolType,
+      academicLevel: "SECOND_SECONDARY",
     },
   });
 }

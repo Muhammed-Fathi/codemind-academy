@@ -6,7 +6,12 @@ import { db } from "@/lib/db";
 import { ok, err, requireRole } from "@/lib/api";
 import { normalizeSchoolType, questionBankFilter } from "@/lib/school-type";
 import { getServerT } from "@/lib/i18n-server";
-import { countMockExamEligiblePool } from "@/lib/mock-exam-pool";
+import {
+  countMockExamEligiblePool,
+  lessonLinkedQuestionWhere,
+  loadMockExamLessonIds,
+} from "@/lib/mock-exam-pool";
+import { normalizeAcademicLevel } from "@/lib/academic-level";
 
 export async function PATCH(
   req: NextRequest,
@@ -57,6 +62,44 @@ export async function PATCH(
         where: { id: { in: stale.map((s) => s.id) } },
       });
     }
+  }
+
+  // Phase K2 — the exam's COURSE binding may be set (a legacy course-less
+  // row) or moved; it can never be cleared. A course change drops pins that
+  // are lesson-linked OUTSIDE the new course (a pin must derive to the exam's
+  // course); explicitly attached free-bank rows survive (admin intent).
+  if (body.courseId !== undefined) {
+    const nextCourseId = body.courseId ? String(body.courseId).trim() : "";
+    if (!nextCourseId) return err(tApi("api.376"), 400);
+    if (nextCourseId !== exam.courseId) {
+      const course = await db.course.findUnique({
+        where: { id: nextCourseId },
+        select: { id: true, academicLevel: true },
+      });
+      if (!course) return err(tApi("api.211"), 400);
+      if (!normalizeAcademicLevel(course.academicLevel)) return err(tApi("api.375"), 409);
+      data.courseId = nextCourseId;
+      const keepLessonIds = await loadMockExamLessonIds(nextCourseId);
+      const stalePins = await db.mockExamQuestion.findMany({
+        where: {
+          mockExamId: id,
+          OR: [
+            { question: { quizId: { not: null }, NOT: lessonLinkedQuestionWhere(keepLessonIds) } },
+            { examQuestion: { lessonId: { not: null, notIn: [...keepLessonIds] } } },
+          ],
+        },
+        select: { id: true },
+      });
+      if (stalePins.length) {
+        await db.mockExamQuestion.deleteMany({ where: { id: { in: stalePins.map((p) => p.id) } } });
+      }
+    }
+  }
+  // Publishing REQUIRES a course binding (K2 runtime rule; the automatic
+  // pool of a course-less exam is empty by construction — see
+  // src/lib/mock-exam-pool.ts, MULTI-LEVEL POOL SAFETY).
+  if (data.isPublished === true && !((data.courseId as string | undefined) ?? exam.courseId)) {
+    return err(tApi("api.376"), 409);
   }
 
   // Do not allow publishing an exam its bank cannot satisfy. Both question

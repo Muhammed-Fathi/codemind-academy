@@ -7,6 +7,12 @@ import { ok, err, requireRole } from "@/lib/api";
 import { hashPassword } from "@/lib/auth";
 import { createStudentWithCode } from "@/lib/curriculum-seed";
 import { normalizeSchoolType, requireSchoolType } from "@/lib/school-type";
+import {
+  gradeLabelFor,
+  groupLevelEligible,
+  normalizeAcademicLevel,
+  requireAcademicLevel,
+} from "@/lib/academic-level";
 import { reconcileStudentBatch } from "@/lib/enrollment";
 import { getVideoProgressForStudents } from "@/lib/progress";
 
@@ -25,6 +31,19 @@ export async function GET(req: NextRequest) {
   // filtering it on the client would only ever search the current page, so
   // unspecified students on later pages would silently disappear.
   const unspecifiedOnly = schoolTypeParam === "UNSPECIFIED";
+  // Academic-level view (Phase K manual-QA pass). Filters in SQL against the
+  // TYPED Student.academicLevel column — never the derived `grade` string —
+  // and composes with the track (schoolType) and status filters below.
+  // "" / "all" = every level; anything else must be a real enum value.
+  const academicLevelParam = (url.searchParams.get("academicLevel") || "").trim();
+  const academicLevel =
+    academicLevelParam && academicLevelParam !== "all"
+      ? normalizeAcademicLevel(academicLevelParam)
+      : null;
+  if (academicLevelParam && academicLevelParam !== "all" && !academicLevel) {
+    const tApi = await getServerT();
+    return err(tApi("api.371"), 400);
+  }
   const withProgress = url.searchParams.get("withProgress") === "1";
   const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
   const pageSize = Math.min(100, Math.max(1, parseInt(url.searchParams.get("pageSize") || "20", 10)));
@@ -44,6 +63,7 @@ export async function GET(req: NextRequest) {
   if (status === "suspended") where.user = { status: "SUSPENDED_MULTI_DEVICE" };
   if (schoolType) where.schoolType = schoolType;
   else if (unspecifiedOnly) where.schoolType = null;
+  if (academicLevel) where.academicLevel = academicLevel;
 
   const [total, students] = await Promise.all([
     db.student.count({ where }),
@@ -51,7 +71,9 @@ export async function GET(req: NextRequest) {
       where,
       include: {
         user: true,
-        group: { select: { id: true, name: true, course: { select: { nameAr: true } } } },
+        // Phase K2 — the course level is read so the list can flag an I1
+        // mismatch (diagnostic only; never repaired at read time).
+        group: { select: { id: true, name: true, course: { select: { nameAr: true, academicLevel: true } } } },
         subscription: {
           select: {
             status: true,
@@ -95,6 +117,10 @@ export async function GET(req: NextRequest) {
       phone: s.user.phone,
       isActive: s.user.isActive,
       grade: s.grade,
+      // Phase K2 — typed level + the I1 diagnostic (student vs group course).
+      academicLevel: s.academicLevel || null,
+      levelMismatch:
+        !!s.group && !groupLevelEligible(s.academicLevel, s.group.course?.academicLevel),
       schoolName: s.schoolName,
       schoolType: s.schoolType || null,
       nationalId: s.nationalId || null,
@@ -132,7 +158,10 @@ export async function POST(req: NextRequest) {
   const email = String(body.email || "").toLowerCase().trim();
   const password = String(body.password || "");
   const phone = body.phone ? String(body.phone) : null;
-  const grade = body.grade ? String(body.grade) : "2nd Secondary";
+  // Phase K2 — the typed ACADEMIC LEVEL is the authority; the free-text
+  // `grade` input is retired: `grade` is DERIVED from the level and a
+  // client-supplied `grade` can never override it.
+  const academicLevelCheck = requireAcademicLevel(body.academicLevel);
   const schoolName = body.schoolName ? String(body.schoolName) : null;
   // Phase 12 — an admin creating a student MUST give a valid school type, or
   // explicitly none. `normalizeSchoolType` alone would silently turn a typo
@@ -151,6 +180,26 @@ export async function POST(req: NextRequest) {
   // Security Audit Gate (pre-P21): align with the platform-wide 8-character
   // minimum (password reset, teacher activation, client-side registration).
   if (password.length < 8) return err(tApi("api.204"), 400);
+  if (!academicLevelCheck.ok) return err(tApi("api.371"), 400);
+  const academicLevel = academicLevelCheck.value;
+
+  // Phase K2 — direct group assignment at creation is an assignment-producing
+  // path, so it carries the SAME two orthogonal gates as every other one:
+  // track audience (26B) AND academic level (I1). Fail-closed; nothing is
+  // created on a mismatch.
+  if (groupId) {
+    const group = await db.group.findUnique({
+      where: { id: groupId },
+      select: { isActive: true, trackScope: true, course: { select: { academicLevel: true } } },
+    });
+    if (!group) return err(tApi("api.020"), 404);
+    if (!group.isActive) return err(tApi("api.085"), 409);
+    const audience = normalizeSchoolType(group.trackScope);
+    if (!audience) return err(tApi("api.285"), 409);
+    if (schoolType !== audience) return err(tApi("api.286"), 409);
+    if (!groupLevelEligible(academicLevel, group.course?.academicLevel))
+      return err(tApi("api.373"), 409);
+  }
 
   const exists = await db.user.findUnique({ where: { email } });
   if (exists) return err(tApi("api.050"), 409);
@@ -167,7 +216,8 @@ export async function POST(req: NextRequest) {
   // Unique readable student code (CM-XXXXXX), P2002-safe under concurrency.
   const created = await createStudentWithCode(db, {
     userId: newUser.id,
-    grade,
+    academicLevel,
+    grade: gradeLabelFor(academicLevel),
     schoolName,
     schoolType,
     nationalId: nationalId || null,
@@ -195,6 +245,7 @@ export async function POST(req: NextRequest) {
       email: student.user.email,
       phone: student.user.phone,
       grade: student.grade,
+      academicLevel: normalizeAcademicLevel(student.academicLevel),
       schoolName: student.schoolName,
       studentCode: student.studentCode,
       group: student.group,

@@ -319,11 +319,24 @@ insertUser("u-suspended", "qa26a-suspended@codemind.test", "STUDENT", STUDENT_PW
   isActive: 0,
 });
 
+// Phase K2 — registration advertises/accepts only OFFERED Level × Track
+// pairs (an ACTIVE classified group on a levelled course). One
+// SECOND_SECONDARY / LANGUAGE offering makes the registration scenarios
+// below possible — exactly the population a real deployment has today.
+db.prepare(
+  `INSERT INTO "Course" ("id","slug","name","nameAr","description","academicLevel","createdAt","updatedAt")
+   VALUES ('qa26a-course','qa26a-course','QA Course','كورس','d','SECOND_SECONDARY',?,?)`
+).run(NOW, NOW);
+db.prepare(
+  `INSERT INTO "Group" ("id","name","courseId","capacity","schedule","isActive","trackScope","createdAt","updatedAt")
+   VALUES ('qa26a-group-lang','QA LANG group','qa26a-course',20,'Sat 6PM',1,'LANGUAGE',?,?)`
+).run(NOW, NOW);
+
 // Student profile for the logged-in student (also the parent-registration link
 // target: nationalId + studentCode + parentPhone must match).
 db.prepare(
-  `INSERT INTO "Student" ("id","userId","grade","schoolType","nationalId","studentCode","parentPhone","schoolName","createdAt","updatedAt","enrolledAt")
-   VALUES (?,?,?,?,?,?,?,?,?,?,?)`
+  `INSERT INTO "Student" ("id","userId","grade","schoolType","nationalId","studentCode","parentPhone","schoolName","createdAt","updatedAt","enrolledAt","academicLevel")
+   VALUES (?,?,?,?,?,?,?,?,?,?,?,'SECOND_SECONDARY')`
 ).run(
   "s-student",
   "u-student",
@@ -658,6 +671,7 @@ if (SERVE_PORT) {
         nationalId: "29901019876543",
         schoolName: "QA Registration School",
         schoolType: "LANGUAGE",
+        academicLevel: "SECOND_SECONDARY",
       };
 
       // Field-by-field validation first.
@@ -762,6 +776,7 @@ if (SERVE_PORT) {
           nationalId: "29901019999999",
           schoolName: "QA Dup School",
           schoolType: "LANGUAGE",
+          academicLevel: "SECOND_SECONDARY",
         },
       });
       ok(r.status === 409, "an existing account's email cannot be re-registered (409)", r.status);

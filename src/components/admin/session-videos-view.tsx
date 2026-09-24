@@ -25,6 +25,7 @@ import * as React from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { useT, useLocale, pickAuto } from "@/lib/i18n";
+import { AcademicLevelBadge, academicLevelLabel } from "@/components/admin/academic-level-ui";
 import { useApp } from "@/lib/store";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -74,7 +75,7 @@ type Batch = {
   name: string;
   nameAr: string;
   schoolType: "ARABIC" | "LANGUAGE";
-  course: { id: string; name: string; nameAr: string } | null;
+  course: { id: string; name: string; nameAr: string; academicLevel?: string | null } | null;
   isActive: boolean;
   members: number;
   videos: number;
@@ -85,6 +86,8 @@ type SessionVideoLesson = {
   title: string;
   titleAr: string;
   officialCode: string | null;
+  /** Derived level cache (course chain) — context only. */
+  academicLevel?: string | null;
   unit: { id: string; title: string; titleAr: string; order: number } | null;
 };
 
@@ -124,7 +127,10 @@ type TrFn = (key: string, params?: Record<string, unknown>) => string;
     has no official code. Raw ids are never shown to the admin. */
 function lessonOptionLabel(l: PickerLesson, tr: TrFn): string {
   const title = pickAuto(l.titleAr, l.title);
-  return l.officialCode ? `${tr("admin.594", { p1: l.officialCode })} — ${title}` : title;
+  const base = l.officialCode ? `${tr("admin.594", { p1: l.officialCode })} — ${title}` : title;
+  // Level + officialCode + title: the same code exists across levels, so the
+  // option text always carries the (derived) level.
+  return `${academicLevelLabel(tr, l.academicLevel)} · ${base}`;
 }
 
 /** The lesson line for a listed video: "Lesson 1-1 — Variables · Unit 1".
@@ -135,7 +141,8 @@ function videoLessonLabel(v: SessionVideo, tr: TrFn): string | null {
   const name = v.lesson.officialCode
     ? `${tr("admin.594", { p1: v.lesson.officialCode })} — ${title}`
     : title;
-  return v.lesson.unit ? `${name} · ${tr("admin.593", { p1: v.lesson.unit.order })}` : name;
+  const withUnit = v.lesson.unit ? `${name} · ${tr("admin.593", { p1: v.lesson.unit.order })}` : name;
+  return `${academicLevelLabel(tr, v.lesson.academicLevel)} · ${withUnit}`;
 }
 
 /** Walk the full course tree (both the canonical unit chain and the legacy
@@ -284,10 +291,12 @@ export function SessionVideosView() {
       lessons: g.lessons,
       // A pool batch spans courses — disambiguate each unit with its course
       // name so two «الوحدة 1» groups can never be confused.
+      // Every group carries its course's LEVEL too (Group→Course→Level):
+      // "Course — Level · Unit n" so two «الوحدة 1» in two levels never blur.
       label:
         g.courseName && !activeBatch.course
-          ? `${g.courseName} · ${tr("admin.593", { p1: g.unitOrder })}`
-          : tr("admin.593", { p1: g.unitOrder }),
+          ? `${g.courseName} — ${academicLevelLabel(tr, g.courseAcademicLevel)} · ${tr("admin.593", { p1: g.unitOrder })}`
+          : `${academicLevelLabel(tr, g.courseAcademicLevel)} · ${tr("admin.593", { p1: g.unitOrder })}`,
     }));
   }, [courseTree, activeBatch, tr]);
 
@@ -371,8 +380,16 @@ export function SessionVideosView() {
 
           <Card className="p-4">
             <CardHeader className="p-0 pb-3">
-              <CardTitle className="text-base">
-                {pickAuto(activeBatch.nameAr, activeBatch.name)}
+              <CardTitle className="text-base flex flex-wrap items-center gap-2">
+                <span>{pickAuto(activeBatch.nameAr, activeBatch.name)}</span>
+                {activeBatch.course && (
+                  <>
+                    <span className="text-xs font-normal text-muted-foreground">
+                      {pickAuto(activeBatch.course.nameAr, activeBatch.course.name)}
+                    </span>
+                    <AcademicLevelBadge level={activeBatch.course.academicLevel} />
+                  </>
+                )}
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
@@ -1100,6 +1117,9 @@ type EligibleSession = {
   startAt: string;
   status: string;
   groupName: string | null;
+  /** Group → Course → Level context (read-only, from the server). */
+  courseName?: string | null;
+  academicLevel?: string | null;
   finalized: boolean;
 };
 
@@ -1218,6 +1238,7 @@ function RequirementModeSelector({
                 <SelectItem key={s.id} value={s.id}>
                   {(s.titleAr || s.title) +
                     (s.groupName ? ` — ${s.groupName}` : "") +
+                    (s.courseName ? ` (${s.courseName} — ${academicLevelLabel(tr, s.academicLevel)})` : "") +
                     ` — ${new Date(s.startAt).toLocaleDateString()}`}
                 </SelectItem>
               ))}

@@ -17,6 +17,7 @@ import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { useApp } from "@/lib/store";
 import { useT, pickAuto } from "@/lib/i18n";
+import { AcademicLevelBadge, academicLevelLabel } from "@/components/admin/academic-level-ui";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -67,12 +68,14 @@ import { SessionDetailView } from "@/components/admin/session-detail-view";
 
 type Filters = {
   q: string;
+  /** Phase K — level VIEW filter on the derived Lesson.academicLevel cache. */
+  academicLevel: string;
   status: string;
   trackScope: string;
   curriculumStatus: string;
 };
 
-const EMPTY_FILTERS: Filters = { q: "", status: "", trackScope: "", curriculumStatus: "" };
+const EMPTY_FILTERS: Filters = { q: "", academicLevel: "", status: "", trackScope: "", curriculumStatus: "" };
 
 export function SessionWorkflowView() {
   const navParam = useApp((s) => s.navParam);
@@ -108,13 +111,14 @@ function SessionListView() {
   const query = React.useMemo(() => {
     const params = new URLSearchParams();
     if (debouncedQ) params.set("q", debouncedQ);
+    if (filters.academicLevel) params.set("academicLevel", filters.academicLevel);
     if (filters.status) params.set("status", filters.status);
     if (filters.trackScope) params.set("trackScope", filters.trackScope);
     if (filters.curriculumStatus) params.set("curriculumStatus", filters.curriculumStatus);
     params.set("includeReadiness", "1");
     params.set("page", String(page));
     return `/api/admin/lessons?${params.toString()}`;
-  }, [debouncedQ, filters.status, filters.trackScope, filters.curriculumStatus, page]);
+  }, [debouncedQ, filters.academicLevel, filters.status, filters.trackScope, filters.curriculumStatus, page]);
 
   // Fetch on mount and whenever the query changes. State updates happen
   // only in the promise continuation — never synchronously in the effect —
@@ -196,7 +200,7 @@ function SessionListView() {
       </div>
 
       <Card className="p-4">
-        <div className="grid gap-2 md:grid-cols-[1fr_auto_auto_auto]">
+        <div className="grid gap-2 md:grid-cols-[1fr_auto_auto_auto_auto]">
           <div className="relative">
             <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
             <Input
@@ -207,6 +211,19 @@ function SessionListView() {
               aria-label={tr("admin.325")}
             />
           </div>
+          <FilterSelect
+            label={tr("admin.642")}
+            value={filters.academicLevel}
+            onChange={(v) => {
+              setFilters((f) => ({ ...f, academicLevel: v }));
+              setPage(1);
+            }}
+            options={[
+              { value: "FIRST_SECONDARY", label: academicLevelLabel(tr, "FIRST_SECONDARY") },
+              { value: "SECOND_SECONDARY", label: academicLevelLabel(tr, "SECOND_SECONDARY") },
+            ]}
+            allLabel={tr("admin.648")}
+          />
           <FilterSelect
             label={tr("admin.326")}
             value={filters.status}
@@ -382,6 +399,9 @@ function SessionRow({
       </div>
       <div className="min-w-0 flex-1 basis-48">
         <div className="flex flex-wrap items-center gap-1.5">
+          {/* Identity = Level + officialCode + title: the same code exists in
+              more than one level, so the level badge is never omitted. */}
+          <AcademicLevelBadge level={lesson.academicLevel} />
           {lesson.officialCode && (
             <Badge variant="outline" className="font-mono text-[10px]" dir="ltr">
               {lesson.officialCode}

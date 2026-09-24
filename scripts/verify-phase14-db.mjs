@@ -62,9 +62,29 @@ const PRISMA_TO_SQLITE = {
 
 const BASE_SKIP_COLUMNS = {
   User: ["status"],
-  Student: ["nationalId", "parentPhone", "schoolType", "studentCode", "batchId"],
-  Course: ["trackId"],
-  Lesson: ["unitId", "officialCode", "curriculumStatus", "trackScope", "status"],
+  Student: [
+    "nationalId",
+    "parentPhone",
+    "schoolType",
+    "studentCode",
+    "batchId",
+    // Phase K1 — added by 20260923100000_k1_academic_level_capability.
+    "academicLevel",
+  ],
+  Course: [
+    "trackId",
+    // Phase K1 — added by 20260923100000_k1_academic_level_capability.
+    "academicLevel",
+  ],
+  Lesson: [
+    "unitId",
+    "officialCode",
+    "curriculumStatus",
+    "trackScope",
+    "status",
+    // Phase K1 — added by 20260923100000_k1_academic_level_capability.
+    "academicLevel",
+  ],
   LessonProgress: [
     "videoDurationSec",
     "videoWatchedSec",
@@ -412,6 +432,7 @@ globalThis.__CM_DB_CLIENT__ = client;
 const now = new Date();
 const course = await client.course.create({
   data: {
+    academicLevel: "SECOND_SECONDARY",
     id: "c1",
     slug: "test-course",
     name: "Test",
@@ -495,6 +516,7 @@ await client.user.create({
 });
 await client.student.create({
   data: {
+    academicLevel: "SECOND_SECONDARY",
     id: "s-ar",
     userId: "u-ar",
     grade: "2nd",
@@ -505,6 +527,7 @@ await client.student.create({
 });
 await client.student.create({
   data: {
+    academicLevel: "SECOND_SECONDARY",
     id: "s-lang",
     userId: "u-lang",
     grade: "2nd",
@@ -521,6 +544,7 @@ await client.parentStudentLink.create({
 async function mkLesson(id, order, extra = {}) {
   return client.lesson.create({
     data: {
+      academicLevel: "SECOND_SECONDARY",
       id,
       unitId: unit.id,
       title: `L ${id}`,

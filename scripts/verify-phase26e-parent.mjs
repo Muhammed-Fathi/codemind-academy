@@ -338,8 +338,8 @@ async function main() {
 
   const teacher = await client.teacher.create({ data: { userId: uT.id } });
 
-  const c1 = await client.course.create({ data: { slug: "p26e-c1", name: "Course One", nameAr: "كورس واحد", description: "d" } });
-  const c2 = await client.course.create({ data: { slug: "p26e-c2", name: "Course Two", nameAr: "كورس اثنان", description: "d" } });
+  const c1 = await client.course.create({ data: { academicLevel: "SECOND_SECONDARY", slug: "p26e-c1", name: "Course One", nameAr: "كورس واحد", description: "d" } });
+  const c2 = await client.course.create({ data: { academicLevel: "SECOND_SECONDARY", slug: "p26e-c2", name: "Course Two", nameAr: "كورس اثنان", description: "d" } });
   const p1 = await client.part.create({ data: { courseId: c1.id, title: "Part 1", titleAr: "جزء ١", order: 1 } });
   const p2 = await client.part.create({ data: { courseId: c2.id, title: "Part 2", titleAr: "جزء ٢", order: 1 } });
 
@@ -357,15 +357,15 @@ async function main() {
   const gNull = await client.group.create({ data: { name: "G Unclassified", courseId: c1.id, teacherId: teacher.id, trackScope: null } });
   const gB = await client.group.create({ data: { name: "G Course Two", courseId: c2.id, teacherId: teacher.id, trackScope: "ARABIC" } });
 
-  const sAr = await client.student.create({ data: { userId: uSAr.id, groupId: gAr.id, schoolType: "ARABIC", nationalId: "30001011234567", parentPhone: "01100000001", studentCode: "CM-ARA001", grade: "2nd Secondary" } });
-  const sLang = await client.student.create({ data: { userId: uSLang.id, groupId: gLang.id, schoolType: "LANGUAGE", nationalId: "30001011234568", parentPhone: "01100000002", studentCode: "CM-LNG002" } });
-  const sNull = await client.student.create({ data: { userId: uSNull.id, groupId: gNull.id, schoolType: null, nationalId: "30001011234569", parentPhone: "01100000003", studentCode: "CM-NUL003" } });
-  const sB = await client.student.create({ data: { userId: uSB.id, groupId: gB.id, schoolType: "ARABIC", nationalId: "30001011234570", parentPhone: "01100000004", studentCode: "CM-BBB004" } });
-  const sFree = await client.student.create({ data: { userId: uSFree.id, groupId: null, schoolType: "ARABIC", nationalId: "30001011234571", parentPhone: "01100000005", studentCode: "CM-FRE005" } });
-  const sLink = await client.student.create({ data: { userId: uSLink.id, groupId: gAr.id, schoolType: "ARABIC", nationalId: "39901011234567", parentPhone: "01147422177", studentCode: "CM-LNK001" } });
-  const sRace = await client.student.create({ data: { userId: uSRace.id, groupId: gAr.id, schoolType: "ARABIC", nationalId: "39801011234567", parentPhone: "01100000006", studentCode: "CM-RAC001" } });
+  const sAr = await client.student.create({ data: { academicLevel: "SECOND_SECONDARY", userId: uSAr.id, groupId: gAr.id, schoolType: "ARABIC", nationalId: "30001011234567", parentPhone: "01100000001", studentCode: "CM-ARA001", grade: "2nd Secondary" } });
+  const sLang = await client.student.create({ data: { academicLevel: "SECOND_SECONDARY", userId: uSLang.id, groupId: gLang.id, schoolType: "LANGUAGE", nationalId: "30001011234568", parentPhone: "01100000002", studentCode: "CM-LNG002" } });
+  const sNull = await client.student.create({ data: { academicLevel: "SECOND_SECONDARY", userId: uSNull.id, groupId: gNull.id, schoolType: null, nationalId: "30001011234569", parentPhone: "01100000003", studentCode: "CM-NUL003" } });
+  const sB = await client.student.create({ data: { academicLevel: "SECOND_SECONDARY", userId: uSB.id, groupId: gB.id, schoolType: "ARABIC", nationalId: "30001011234570", parentPhone: "01100000004", studentCode: "CM-BBB004" } });
+  const sFree = await client.student.create({ data: { academicLevel: "SECOND_SECONDARY", userId: uSFree.id, groupId: null, schoolType: "ARABIC", nationalId: "30001011234571", parentPhone: "01100000005", studentCode: "CM-FRE005" } });
+  const sLink = await client.student.create({ data: { academicLevel: "SECOND_SECONDARY", userId: uSLink.id, groupId: gAr.id, schoolType: "ARABIC", nationalId: "39901011234567", parentPhone: "01147422177", studentCode: "CM-LNK001" } });
+  const sRace = await client.student.create({ data: { academicLevel: "SECOND_SECONDARY", userId: uSRace.id, groupId: gAr.id, schoolType: "ARABIC", nationalId: "39801011234567", parentPhone: "01100000006", studentCode: "CM-RAC001" } });
   // No stored parent phone → the three-factor match can never succeed (fail closed).
-  const sGhost = await client.student.create({ data: { userId: uSGhost.id, groupId: gAr.id, schoolType: "ARABIC", nationalId: "39701011234567", parentPhone: null, studentCode: "CM-GHO001" } });
+  const sGhost = await client.student.create({ data: { academicLevel: "SECOND_SECONDARY", userId: uSGhost.id, groupId: gAr.id, schoolType: "ARABIC", nationalId: "39701011234567", parentPhone: null, studentCode: "CM-GHO001" } });
 
   const parentA = await client.parent.create({ data: { userId: uPA.id } });
   const parentB = await client.parent.create({ data: { userId: uPB.id } });
@@ -379,7 +379,8 @@ async function main() {
   await link(parentA.id, sFree.id);
   await link(parentB.id, sB.id);
 
-  const lesson = (data) => client.lesson.create({ data });
+  // Phase K3: Lesson.academicLevel is NOT NULL — every fixture lesson carries its course level.
+  const lesson = (data) => client.lesson.create({ data: { academicLevel: "SECOND_SECONDARY", ...data } });
   const lShared = await lesson({ unitId: uShared.id, title: "Shared Session", titleAr: "حصة مشتركة", order: 1, status: "PUBLISHED", trackScope: "SHARED", officialCode: "26E-1", videoUrl: "https://v/1.mp4" });
   const lAr = await lesson({ unitId: uAr.id, title: "Arabic Session", titleAr: "حصة عربية", order: 2, status: "PUBLISHED", trackScope: "ARABIC", officialCode: "26E-2", videoUrl: "https://v/2.mp4" });
   const lLang = await lesson({ unitId: uLang.id, title: "Language Session", titleAr: "حصة لغة", order: 3, status: "PUBLISHED", trackScope: "LANGUAGE", officialCode: "26E-3", videoUrl: "https://v/3.mp4" });
@@ -500,7 +501,7 @@ async function main() {
   await client.notificationPreference.create({ data: { userId: uPA.id, newLesson: false, quietHoursStart: "22:00", quietHoursEnd: "06:00" } });
   const prefBDefault = await client.notificationPreference.create({ data: { userId: uPB.id } });
 
-  const mock = await client.mockExam.create({ data: { title: "Mock One", titleAr: "محاكي واحد", schoolType: "ARABIC", isPublished: true } });
+  const mock = await client.mockExam.create({ data: { title: "Mock One", titleAr: "محاكي واحد", schoolType: "ARABIC", courseId: c1.id, isPublished: true } });
   await client.examAttempt.create({ data: { studentId: sAr.id, mockExamId: mock.id, examType: "MOCK", questionCount: 10, durationMin: 30, score: 11, totalMarks: 20, percentage: 55, passed: false, answers: "[]", startedAt: at(-4), finishedAt: at(-4) } });
   await client.examAttempt.create({ data: { studentId: sAr.id, mockExamId: mock.id, examType: "MOCK", questionCount: 10, durationMin: 30, score: 0, totalMarks: 0, percentage: 0, passed: false, answers: "[]", startedAt: at(-0.1), finishedAt: null } });
 

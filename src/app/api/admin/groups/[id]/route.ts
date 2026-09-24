@@ -18,6 +18,7 @@ import { db } from "@/lib/db";
 import { ok, err, requireRole } from "@/lib/api";
 import { normalizeSchoolType } from "@/lib/school-type";
 import { parseGroupTrackScope } from "@/lib/track-scope";
+import { groupLevelEligible, normalizeAcademicLevel } from "@/lib/academic-level";
 
 export async function PATCH(
   req: NextRequest,
@@ -40,7 +41,32 @@ export async function PATCH(
   if (typeof body.capacity === "number") data.capacity = body.capacity;
   if (typeof body.isActive === "boolean") data.isActive = body.isActive;
   if (body.teacherId !== undefined) data.teacherId = body.teacherId || null;
-  if (typeof body.courseId === "string") data.courseId = body.courseId;
+  // Phase K2 — RE-TARGETING a group to another course changes the level of
+  // every member's active assignment (Student.groupId → Group.courseId →
+  // Course.academicLevel). Same 26B precedent as an audience change: the
+  // target course must be levelled, and a POPULATED group can only be moved
+  // to a course of the level its students already hold (I1). No silent
+  // unassignment, no student rewrite.
+  let nextCourseLevel: string | null | undefined = undefined;
+  if (typeof body.courseId === "string" && body.courseId !== group.courseId) {
+    const target = await db.course.findUnique({
+      where: { id: body.courseId },
+      select: { id: true, academicLevel: true },
+    });
+    if (!target) return err(tApi("api.022"), 404);
+    const level = normalizeAcademicLevel(target.academicLevel);
+    if (!level) return err(tApi("api.375"), 409);
+    // Phase K3: Student.academicLevel is NOT NULL at the database, so a
+    // NOT-equals is exhaustive (there is no unlevelled member to skip).
+    const incompatible = await db.student.count({
+      where: { groupId: id, NOT: { academicLevel: level } },
+    });
+    if (incompatible > 0) return err(tApi("api.377"), 409);
+    nextCourseLevel = level;
+    data.courseId = body.courseId;
+  } else if (typeof body.courseId === "string") {
+    data.courseId = body.courseId;
+  }
 
   // ---- Phase 26B: explicit audience set/change, with the compatibility gate.
   let nextTrackScope: "ARABIC" | "LANGUAGE" | null = null;
@@ -72,6 +98,19 @@ export async function PATCH(
   // prevents silently seating students into invisible groups.
   const effectiveTrackScope =
     nextTrackScope ?? normalizeSchoolType(group.trackScope);
+  // Phase K2 — the academic level assignments must respect: the course's
+  // level AFTER the (validated) re-target above.
+  const effectiveCourseLevel =
+    nextCourseLevel !== undefined
+      ? nextCourseLevel
+      : normalizeAcademicLevel(
+          (
+            await db.course.findUnique({
+              where: { id: group.courseId },
+              select: { academicLevel: true },
+            })
+          )?.academicLevel
+        );
 
   // Phase 26C — if trying to add students to an unclassified group, reject.
   if (Array.isArray(body.addStudentIds) && body.addStudentIds.length > 0) {
@@ -101,11 +140,15 @@ export async function PATCH(
     for (const sid of body.addStudentIds) {
       const s = await db.student.findUnique({
         where: { id: sid },
-        select: { schoolType: true, groupId: true },
+        select: { schoolType: true, groupId: true, academicLevel: true },
       });
       if (!s || normalizeSchoolType(s.schoolType) !== effectiveTrackScope) {
         // Phase 26B — assignment is only ever compatible (api.286).
         return err(tApi("api.286"), 409);
+      }
+      // Phase K2 — the orthogonal level gate (I1): fail-closed, no rewrite.
+      if (!groupLevelEligible(s.academicLevel, effectiveCourseLevel)) {
+        return err(tApi("api.373"), 409);
       }
       // Capacity re-check per student when student is moving from different group
       if (s.groupId !== id) {

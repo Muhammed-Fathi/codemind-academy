@@ -466,10 +466,15 @@ async function seed() {
     { id: "u-sb", email: "sb@test.local", name: "Student B", role: "STUDENT", isActive: true, status: "ACTIVE", phone: null, avatarUrl: null },
     { id: "u-sc", email: "sc@test.local", name: "Student C", role: "STUDENT", isActive: true, status: "ACTIVE", phone: null, avatarUrl: null },
     { id: "u-sd", email: "sd@test.local", name: "Student D", role: "STUDENT", isActive: true, status: "ACTIVE", phone: null, avatarUrl: null },
+    // Phase K3: a LANGUAGE student on course c1 — needed because every mock
+    // exam is course-bound now, so the post-bank-switch check on m-fixed-ar
+    // (a c1 exam) must be made by a LANGUAGE student OF c1, not by sb (c2).
+    { id: "u-se", email: "se@test.local", name: "Student E", role: "STUDENT", isActive: true, status: "ACTIVE", phone: null, avatarUrl: null },
   );
+  // Phase K2 — courses carry the academic level (K1 backfill state).
   T.course.push(
-    { id: "c1", slug: "course-1", name: "Course One", nameAr: "كورس ١" },
-    { id: "c2", slug: "course-2", name: "Course Two", nameAr: "كورس ٢" },
+    { id: "c1", slug: "course-1", name: "Course One", nameAr: "كورس ١", academicLevel: "SECOND_SECONDARY" },
+    { id: "c2", slug: "course-2", name: "Course Two", nameAr: "كورس ٢", academicLevel: "SECOND_SECONDARY" },
   );
   T.group.push(
     { id: "g1", name: "Group 1", courseId: "c1", isActive: true },
@@ -515,17 +520,21 @@ async function seed() {
     { id: "sb", userId: "u-sb", schoolType: "LANGUAGE", groupId: "g2", batchId: null },
     { id: "sc", userId: "u-sc", schoolType: "ARABIC", groupId: null, batchId: null },
     { id: "sd", userId: "u-sd", schoolType: null, groupId: "g1", batchId: null },
+    { id: "se", userId: "u-se", schoolType: "LANGUAGE", groupId: "g1", batchId: null },
   );
 
+  // Phase K3: MockExam.courseId is NOT NULL at the database — every exam in
+  // the fixture is bound to the course of the students who may see it (sa/sd
+  // → g1 → c1, sb → g2 → c2). A course-less exam is no longer representable.
   T.mockExam.push(
     { id: "m-random-ar", title: "Random AR", titleAr: "عشوائي ع", description: null, schoolType: "ARABIC", courseId: "c1", questionCount: 2, durationMin: 20, passMark: 70, difficulty: "MIXED", selectionMode: "RANDOM", isPublished: true, createdAt: D(5) },
     // questionCount(5) intentionally exceeds the 3 pins + HARD difficulty:
     // FIXED must serve the pins, not the count/difficulty.
-    { id: "m-fixed-ar", title: "Fixed AR", titleAr: "ثابت ع", description: null, schoolType: "ARABIC", courseId: null, questionCount: 5, durationMin: 25, passMark: 50, difficulty: "HARD", selectionMode: "FIXED", isPublished: true, createdAt: D(4) },
-    { id: "m-fixed-lang", title: "Fixed LANG", titleAr: "ثابت لغات", description: null, schoolType: "LANGUAGE", courseId: null, questionCount: 2, durationMin: 30, passMark: 60, difficulty: "MIXED", selectionMode: "FIXED", isPublished: true, createdAt: D(4) },
-    { id: "m-unpub", title: "Draft", titleAr: "مسودة", description: null, schoolType: "ARABIC", courseId: null, questionCount: 2, durationMin: 30, passMark: 60, difficulty: "MIXED", selectionMode: "RANDOM", isPublished: false, createdAt: D(3) },
+    { id: "m-fixed-ar", title: "Fixed AR", titleAr: "ثابت ع", description: null, schoolType: "ARABIC", courseId: "c1", questionCount: 5, durationMin: 25, passMark: 50, difficulty: "HARD", selectionMode: "FIXED", isPublished: true, createdAt: D(4) },
+    { id: "m-fixed-lang", title: "Fixed LANG", titleAr: "ثابت لغات", description: null, schoolType: "LANGUAGE", courseId: "c2", questionCount: 2, durationMin: 30, passMark: 60, difficulty: "MIXED", selectionMode: "FIXED", isPublished: true, createdAt: D(4) },
+    { id: "m-unpub", title: "Draft", titleAr: "مسودة", description: null, schoolType: "ARABIC", courseId: "c1", questionCount: 2, durationMin: 30, passMark: 60, difficulty: "MIXED", selectionMode: "RANDOM", isPublished: false, createdAt: D(3) },
     { id: "m-c2", title: "C2 AR", titleAr: "ع ك٢", description: null, schoolType: "ARABIC", courseId: "c2", questionCount: 2, durationMin: 30, passMark: 60, difficulty: "MIXED", selectionMode: "RANDOM", isPublished: true, createdAt: D(3) },
-    { id: "m-fixed-empty", title: "Empty fixed", titleAr: "ثابت فاضي", description: null, schoolType: "ARABIC", courseId: null, questionCount: 2, durationMin: 30, passMark: 60, difficulty: "MIXED", selectionMode: "FIXED", isPublished: true, createdAt: D(2) },
+    { id: "m-fixed-empty", title: "Empty fixed", titleAr: "ثابت فاضي", description: null, schoolType: "ARABIC", courseId: "c1", questionCount: 2, durationMin: 30, passMark: 60, difficulty: "MIXED", selectionMode: "FIXED", isPublished: true, createdAt: D(2) },
   );
   T.mockExamQuestion.push(
     { id: "pin1", mockExamId: "m-fixed-ar", questionId: "qar1", examQuestionId: null, order: 0 },
@@ -866,27 +875,32 @@ async function main() {
   }
   {
     const sat = await bodyOf(
-      await adminRoute.POST(postReq({ title: "New random", titleAr: "جديد", schoolType: "ARABIC", questionCount: 5, difficulty: "MIXED", selectionMode: "RANDOM" }))
+      await adminRoute.POST(postReq({ title: "New random", titleAr: "جديد", schoolType: "ARABIC", questionCount: 5, difficulty: "MIXED", selectionMode: "RANDOM", courseId: "c1" }))
     );
     ok(sat.status === 200, "create RANDOM satisfiable-by-combined-pool (5 > 3 Q-only, <= 5 total) -> 200");
     const justOver = await bodyOf(
-      await adminRoute.POST(postReq({ title: "Just over", schoolType: "ARABIC", questionCount: 6 }))
+      await adminRoute.POST(postReq({ title: "Just over", schoolType: "ARABIC", questionCount: 6, courseId: "c1" }))
     );
     ok(justOver.status === 400, "create one past the combined pool (6 > 5) -> 400");
     const over = await bodyOf(
-      await adminRoute.POST(postReq({ title: "Too big", schoolType: "ARABIC", questionCount: 99 }))
+      await adminRoute.POST(postReq({ title: "Too big", schoolType: "ARABIC", questionCount: 99, courseId: "c1" }))
     );
     ok(over.status === 400, "create beyond the combined pool -> 400");
-    const noTitle = await bodyOf(await adminRoute.POST(postReq({ schoolType: "ARABIC" })));
+    const noTitle = await bodyOf(await adminRoute.POST(postReq({ schoolType: "ARABIC", courseId: "c1" })));
     ok(noTitle.status === 400, "create without title -> 400");
-    const noType = await bodyOf(await adminRoute.POST(postReq({ title: "x" })));
+    const noType = await bodyOf(await adminRoute.POST(postReq({ title: "x", courseId: "c1" })));
     ok(noType.status === 400, "create without schoolType -> 400");
     const bogusCourse = await bodyOf(
       await adminRoute.POST(postReq({ title: "x", schoolType: "ARABIC", questionCount: 1, courseId: "no-such-course" }))
     );
     ok(bogusCourse.status === 400, "create with an unknown courseId -> 400 (no dangling binding)");
+    // Phase K2 — a mock exam is curriculum-bound: no course, no exam.
+    const noCourse = await bodyOf(
+      await adminRoute.POST(postReq({ title: "Courseless", schoolType: "ARABIC", questionCount: 1 }))
+    );
+    ok(noCourse.status === 400, "create WITHOUT courseId -> 400 (K2: mock exams are course-bound)");
     const fx = await bodyOf(
-      await adminRoute.POST(postReq({ title: "New fixed", schoolType: "ARABIC", questionCount: 3, selectionMode: "FIXED" }))
+      await adminRoute.POST(postReq({ title: "New fixed", schoolType: "ARABIC", questionCount: 3, selectionMode: "FIXED", courseId: "c1" }))
     );
     ok(fx.status === 200, "create FIXED -> 200");
     const pins = T.mockExamQuestion.filter((l) => l.mockExamId === fx.body.exam.id);
@@ -898,7 +912,7 @@ async function main() {
   {
     // Publish guard: inflate the count, then try to publish.
     const mk = await bodyOf(
-      await adminRoute.POST(postReq({ title: "Draft big", schoolType: "ARABIC", questionCount: 2 }))
+      await adminRoute.POST(postReq({ title: "Draft big", schoolType: "ARABIC", questionCount: 2, courseId: "c1" }))
     );
     const id = mk.body.exam.id;
     const inflate = await bodyOf(await adminIdRoute.PATCH(postReq({ questionCount: 50 }), params({ id })));
@@ -919,7 +933,12 @@ async function main() {
     const after = T.mockExamQuestion.filter((l) => l.mockExamId === "m-fixed-ar").map((l) => l.id);
     ok(JSON.stringify(after) === JSON.stringify(["pin3"]), "ARABIC Question + ExamQuestion pins swept, shared pin kept");
     // FIXED exam now serves the surviving shared pin only (no leakage).
+    // K3: the exam stays bound to c1, so sb (c2) is refused outright and the
+    // LANGUAGE student of c1 is the one who can open it.
     await loginAs("u-sb");
+    const crossAfterSwitch = await bodyOf(await examRoute.GET(getReq("mockExamId=m-fixed-ar")));
+    ok(crossAfterSwitch.status === 404, "bank switch never widens course scope: c2 student still -> 404");
+    await loginAs("u-se");
     const r = await bodyOf(await examRoute.GET(getReq("mockExamId=m-fixed-ar")));
     ok(
       r.status === 200 && JSON.stringify(r.body.exam.questions.map((q) => q.id)) === JSON.stringify(["qshared1"]),

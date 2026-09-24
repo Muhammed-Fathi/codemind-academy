@@ -53,6 +53,12 @@ model Student {
   nationalId        String?              @unique
   parentPhone       String?
   studentCode       String?              @unique
+  /// Phase K1/K3 — the student's declared/current academic level: the typed
+  /// authority for the student (admin-managed; `grade` stays a display
+  /// mirror only). K1 added it nullable and backfilled every row to
+  /// SECOND_SECONDARY; K3 made it REQUIRED (NOT NULL) after proving zero
+  /// NULL rows. See the AcademicLevel enum docs.
+  academicLevel     AcademicLevel
   groupId           String?
   batchId           String?
   enrolledAt        DateTime             @default(now())
@@ -200,6 +206,11 @@ model Enrollment {
 model Course {
   id          String   @id @default(cuid())
   slug        String   @unique
+  /// Phase K1/K3 — curriculum authority: which academic level this course
+  /// teaches. K1 added it nullable and backfilled every row to
+  /// SECOND_SECONDARY; K3 made it REQUIRED (NOT NULL) after proving zero
+  /// NULL rows. See the AcademicLevel enum docs.
+  academicLevel AcademicLevel
   name        String
   nameAr      String
   description String
@@ -262,11 +273,27 @@ model Lesson {
   id            String           @id @default(cuid())
   topicId       String?
   unitId        String?
-  officialCode  String?          @unique
+  /// Official Ministry/book lesson code ("1-1", "12-5", …). Phase K3: unique
+  /// PER ACADEMIC LEVEL — see @@unique([academicLevel, officialCode]) below.
+  /// The code is never prefixed or rewritten; FIRST_SECONDARY and
+  /// SECOND_SECONDARY may both hold "1-1", one level may hold it only once.
+  /// Every lookup by code MUST carry the level (or derive it from the owning
+  /// Course first) — there is no global officialCode key any more.
+  officialCode  String?
+  /// Phase K1/K3 — DERIVED denormalized value only: the academic level of
+  /// this lesson's Course, resolved through Unit→Part→Course (canonical) or
+  /// Topic→Unit→Part→Course (legacy). It is NEVER independently editable —
+  /// no write path accepts it; the K1 backfill and every K2+ writer derive
+  /// it from the parent chain, and the K1/K3 audits assert stored value ==
+  /// chain-derived value. K3 made it REQUIRED (NOT NULL) after proving zero
+  /// NULL rows and zero chain mismatches; it carries the level-scoped
+  /// @@unique([academicLevel, officialCode]).
+  academicLevel AcademicLevel
   curriculumStatus CurriculumStatus @default(LEGACY)
   /// Phase 12 — which school type this session belongs to. Track metadata,
-  /// not a second curriculum: officialCode stays UNIQUE, so a track-specific
-  /// lesson can never create a duplicate official row.
+  /// not a second curriculum: officialCode stays UNIQUE within an academic
+  /// level (K3: [academicLevel, officialCode]), so a track-specific lesson
+  /// can never create a duplicate official row.
   trackScope    TrackScope       @default(SHARED)
   /// Phase 13 — THE administrative lifecycle of the session and the ONLY
   /// lifecycle source of truth. `DRAFT → READY → PUBLISHED` is an editorial
@@ -328,6 +355,11 @@ model Lesson {
   /// Phase H — admin progression overrides granting access to this lesson.
   progressionOverrides ProgressionOverride[]
 
+  /// Phase K3 — level-scoped official code uniqueness (replaces the historical
+  /// global `officialCode @unique`). Canonical name:
+  /// Lesson_academicLevel_officialCode_key. NULL officialCode (legacy /
+  /// hand-made sessions) never collides — SQL UNIQUE treats NULLs as distinct.
+  @@unique([academicLevel, officialCode])
   @@index([topicId])
   @@index([unitId, order])
   @@index([status])
@@ -1545,7 +1577,12 @@ model MockExam {
   titleAr       String
   description   String?
   schoolType    SchoolType
-  courseId      String?
+  /// Phase K2 made the owning course a runtime requirement; Phase K3 made it
+  /// REQUIRED at the database level (NOT NULL) — a mock exam is always bound
+  /// to exactly one Course, and its automatic pool never leaves that course.
+  /// Delete semantics: deleting a Course with mock exams is refused by the
+  /// admin route (409) and by the FK (RESTRICT) — history is never detached.
+  courseId      String
   questionCount Int                @default(10)
   durationMin   Int                @default(30)
   passMark      Int                @default(60)
@@ -1555,11 +1592,12 @@ model MockExam {
   isPublished   Boolean            @default(false)
   createdAt     DateTime           @default(now())
   updatedAt     DateTime           @updatedAt
-  course        Course?            @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  course        Course             @relation(fields: [courseId], references: [id], onDelete: Restrict)
   questions     MockExamQuestion[]
   attempts      ExamAttempt[]
 
   @@index([schoolType, isPublished])
+  @@index([courseId])
 }
 
 /// Pinned questions for a FIXED mock exam. Deleting a question detaches the
@@ -1740,6 +1778,37 @@ enum MaterialKind {
 enum SchoolType {
   ARABIC
   LANGUAGE
+}
+
+/// Phase K1 — the academic-level dimension of the multi-level platform
+/// (docs/MULTI_LEVEL_FINAL_CONTRACT.md). Levels and tracks are SEPARATE
+/// dimensions; every one of the four Level × Track combinations is valid.
+///
+/// Ownership (the Phase J source-of-truth contract):
+///   * Course.academicLevel  — curriculum authority: which level's curriculum
+///     this course teaches.
+///   * Student.academicLevel — the student's declared/current level (the typed
+///     authority for the student; `Student.grade` remains a display mirror
+///     only and never an academic authority).
+///   * Lesson.academicLevel  — DERIVED, denormalized value only: the level of
+///     the lesson's Course via the Unit→Part→Course (canonical) or
+///     Topic→Unit→Part→Course (legacy) chain. It is NEVER an independent
+///     authority: no write path accepts it from a client or an admin form,
+///     every writer derives it from the parent chain, and the K1/K3 audits
+///     assert stored value == chain-derived value (fail closed on mismatch).
+///
+/// K1 added every column NULLABLE (additive, behaviour-preserving) and
+/// backfilled every existing row (the whole platform was Second Secondary)
+/// explicitly — Courses/Students to the constant SECOND_SECONDARY, Lessons
+/// from their resolved Course (orphans left NULL as a stop condition, never
+/// guessed). K2 made the level the runtime authority. K3 made all three
+/// columns REQUIRED (NOT NULL), replaced the global Lesson.officialCode
+/// unique with @@unique([academicLevel, officialCode]) and made
+/// MockExam.courseId NOT NULL — each tightening guarded by an in-migration
+/// zero-NULL / zero-mismatch proof that fails loudly instead of rewriting.
+enum AcademicLevel {
+  FIRST_SECONDARY
+  SECOND_SECONDARY
 }
 
 /// Phase 12 — the content-eligibility dimension of the ONE shared course.

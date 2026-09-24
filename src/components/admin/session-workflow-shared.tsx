@@ -41,8 +41,8 @@ import {
 import type {
   AdminSessionDetail,
   AdminSessionHomeworkSummary,
-  AdminSessionListItem,
-  AdminSessionListResponse,
+  AdminSessionListItem as BaseAdminSessionListItem,
+  AdminSessionListResponse as BaseAdminSessionListResponse,
   AdminSessionMaterialSummary,
   AdminSessionQuizSummary,
   AdminSessionVideoSummary,
@@ -52,11 +52,26 @@ import type {
 } from "@/lib/admin-sessions";
 import type { LessonReadinessSnapshot } from "@/lib/session-lifecycle";
 
+/** Phase K — read-only level CONTEXT the list endpoint adds to each row:
+    the derived Lesson.academicLevel and its course's canonical level. Kept
+    out of the input contract in `@/lib/admin-sessions` (level is never an
+    admin lesson input). */
+export type AdminSessionLevelContext = {
+  academicLevel?: string | null;
+  identity: BaseAdminSessionListItem["identity"] & {
+    course: (NonNullable<BaseAdminSessionListItem["identity"]["course"]> & {
+      academicLevel?: string | null;
+    }) | null;
+  };
+};
+export type AdminSessionListItem = Omit<BaseAdminSessionListItem, "identity"> & AdminSessionLevelContext;
+export type AdminSessionListResponse = Omit<BaseAdminSessionListResponse, "lessons"> & {
+  lessons: AdminSessionListItem[];
+};
+
 export type {
   AdminSessionDetail,
   AdminSessionHomeworkSummary,
-  AdminSessionListItem,
-  AdminSessionListResponse,
   AdminSessionMaterialSummary,
   AdminSessionQuizSummary,
   AdminSessionVideoSummary,

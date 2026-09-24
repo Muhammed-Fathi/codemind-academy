@@ -484,9 +484,10 @@ async function seed() {
     { id: "u-sc", email: "sc@test.local", name: "Student C", role: "STUDENT", isActive: true, status: "ACTIVE", phone: null, avatarUrl: null },
     { id: "u-sd", email: "sd@test.local", name: "Student D", role: "STUDENT", isActive: true, status: "ACTIVE", phone: null, avatarUrl: null },
   );
+  // Phase K2 — courses carry the academic level (K1 backfill state).
   T.course.push(
-    { id: "c1", slug: "course-1", name: "Course One", nameAr: "\u0643\u0648\u0631\u0633 \u0661" },
-    { id: "c2", slug: "course-2", name: "Course Two", nameAr: "\u0643\u0648\u0631\u0633 \u0662" },
+    { id: "c1", slug: "course-1", name: "Course One", nameAr: "\u0643\u0648\u0631\u0633 \u0661", academicLevel: "SECOND_SECONDARY" },
+    { id: "c2", slug: "course-2", name: "Course Two", nameAr: "\u0643\u0648\u0631\u0633 \u0662", academicLevel: "SECOND_SECONDARY" },
   );
   T.group.push(
     { id: "g1", name: "Group 1", courseId: "c1", isActive: true },
@@ -563,9 +564,9 @@ async function seed() {
   // Exams. `mx-empty-lang` is inserted directly: it stands for a bank that was
   // emptied AFTER publication, which the create guard cannot prevent.
   T.mockExam.push(
-    { id: "mx-random", title: "Random", titleAr: "\u0639\u0634\u0648\u0627\u0626\u064a", description: null, schoolType: "ARABIC", courseId: null, questionCount: 5, durationMin: 20, passMark: 70, difficulty: "MIXED", selectionMode: "RANDOM", isPublished: true, createdAt: D(5) },
-    { id: "mx-hard", title: "Hard", titleAr: "\u0635\u0639\u0628", description: null, schoolType: "ARABIC", courseId: null, questionCount: 5, durationMin: 20, passMark: 50, difficulty: "HARD", selectionMode: "RANDOM", isPublished: true, createdAt: D(4) },
-    { id: "mx-empty-lang", title: "Empty", titleAr: "\u0641\u0627\u0636\u064a", description: null, schoolType: "LANGUAGE", courseId: null, questionCount: 3, durationMin: 15, passMark: 60, difficulty: "MIXED", selectionMode: "RANDOM", isPublished: true, createdAt: D(3) },
+    { id: "mx-random", title: "Random", titleAr: "\u0639\u0634\u0648\u0627\u0626\u064a", description: null, schoolType: "ARABIC", courseId: "c1", questionCount: 5, durationMin: 20, passMark: 70, difficulty: "MIXED", selectionMode: "RANDOM", isPublished: true, createdAt: D(5) },
+    { id: "mx-hard", title: "Hard", titleAr: "\u0635\u0639\u0628", description: null, schoolType: "ARABIC", courseId: "c1", questionCount: 5, durationMin: 20, passMark: 50, difficulty: "HARD", selectionMode: "RANDOM", isPublished: true, createdAt: D(4) },
+    { id: "mx-empty-lang", title: "Empty", titleAr: "\u0641\u0627\u0636\u064a", description: null, schoolType: "LANGUAGE", courseId: "c2", questionCount: 3, durationMin: 15, passMark: 60, difficulty: "MIXED", selectionMode: "RANDOM", isPublished: true, createdAt: D(3) },
     // Course-bound ARABIC exams: each samples its OWN course's lessons + its
     // OWN attachments, nothing else (the cross-course regression fixtures).
     { id: "mx-c1", title: "Course One", titleAr: "\u0643\u0648\u0631\u0633 \u0661", description: null, schoolType: "ARABIC", courseId: "c1", questionCount: 4, durationMin: 20, passMark: 60, difficulty: "MIXED", selectionMode: "RANDOM", isPublished: true, createdAt: D(4) },
@@ -619,7 +620,10 @@ function expectedPool(T, schoolType, courseId, mockExamId) {
               : null
             : null
           : null;
-      return courseId ? course === courseId : course !== null && course !== undefined;
+      // Phase K2 — a lesson-linked row is eligible ONLY when its chain
+      // derives to THE exam's course; a course-less scope admits NO
+      // lesson-linked row (fail closed — no "every course" fallback).
+      return courseId ? course === courseId : false;
     })
     .map((l) => l.id);
   const inBank = (st) => st === schoolType || st === null;
@@ -659,8 +663,16 @@ async function main() {
   const T = global.__MOCK_DB__.__tables;
   // The exam-less pool (lesson-linked rows only — a manual row has no exam to
   // attach it to), plus the pool of each exam under test.
-  const basePool = expectedPool(T, "ARABIC", null, null);
-  const randomPool = expectedPool(T, "ARABIC", null, "mx-random");
+  // Phase K2 — every pool is COURSE-scoped: mock exams are curriculum-bound
+  // (`courseId` required at creation), and a course-less scope admits no
+  // lesson-linked row. Phase K3 made the binding a DB fact (courseId NOT
+  // NULL): the fixtures mx-random / mx-hard are c1 exams and mx-empty-lang is
+  // a c2 exam, so each serves its course's lesson-linked rows PLUS its own
+  // explicit attachments. The course-less scope itself is still probed
+  // (`courselessBase`) and must stay EMPTY.
+  const basePool = expectedPool(T, "ARABIC", "c1", null);
+  const randomPool = expectedPool(T, "ARABIC", "c1", "mx-random");
+  const courselessBase = expectedPool(T, "ARABIC", null, null);
   const c1Pool = expectedPool(T, "ARABIC", "c1", "mx-c1");
   const c2Pool = expectedPool(T, "ARABIC", "c2", "mx-c2");
 
@@ -687,12 +699,20 @@ async function main() {
     ok(randomPool.includes("mShare"), "a shared (schoolType null) attached manual row is eligible");
     ok(randomPool.includes("eqManual"), "an attached legacy bank-only ExamQuestion row is eligible too");
     ok(
-      randomPool.length === 3 + 13 + 1,
-      `pool = lesson-linked rows + THIS exam's attachments (got ${randomPool.length})`
+      randomPool.length === 13 + 1 + basePool.length,
+      `a course-bound exam's pool = its course's lesson-linked rows + ONLY this exam's attachments (got ${randomPool.length})`
+    );
+    ok(
+      courselessBase.length === 0,
+      `a course-less scope with no exam is EMPTY — no "every course" fallback (got ${courselessBase.length})`
     );
     ok(
       basePool.length === 3 && !basePool.includes("m01"),
-      `without an exam there are no attachments, so only lesson-linked rows are eligible (got ${basePool.length})`
+      `the c1 course pool without an exam is exactly its lesson-linked rows (got ${basePool.length})`
+    );
+    ok(
+      expectedPool(T, "ARABIC", "c1", "mx-c1").length === 3 + 6,
+      "a course-bound exam pool = its course's lesson-linked rows + its own attachments"
     );
   }
 
@@ -703,19 +723,29 @@ async function main() {
       await loginAs(role);
       const r = await bodyOf(await eligibleRoute.GET(getReq("schoolType=ARABIC")));
       ok(r.status === 403, `${role} cannot read the eligible-pool endpoint (403, got ${r.status})`);
-      const c = await bodyOf(await adminRoute.POST(postReq({ title: "x", schoolType: "ARABIC" })));
+      const c = await bodyOf(await adminRoute.POST(postReq({ title: "x", schoolType: "ARABIC", courseId: "c1" })));
       ok(c.status === 403, `${role} cannot create an exam (403, got ${c.status})`);
     }
     await loginAs("u-ad");
     const missing = await bodyOf(await eligibleRoute.GET(getReq("")));
     ok(missing.status === 400, "eligible endpoint without schoolType -> 400");
-    const r = await bodyOf(await eligibleRoute.GET(getReq("schoolType=ARABIC")));
+    // Phase K2 — the eligible-pool preview without a course reports ZERO
+    // (no course-less automatic pool); with the course it reports the
+    // course's lesson-linked rows.
+    const noCourse = await bodyOf(await eligibleRoute.GET(getReq("schoolType=ARABIC")));
+    ok(noCourse.status === 200 && noCourse.body.pool.total === 0, `course-less pool preview is empty (got ${noCourse.body.pool.total})`);
+    const r = await bodyOf(await eligibleRoute.GET(getReq("schoolType=ARABIC&courseId=c1")));
     ok(
       r.status === 200 && r.body.pool.total === basePool.length,
-      `admin reads the exam-less pool size (${basePool.length}, got ${r.body.pool.total})`
+      `admin reads the c1 exam-less pool size (${basePool.length}, got ${r.body.pool.total})`
     );
     ok(r.body.pool.bankOnly === 0, "no exam -> no attached free-bank rows are counted");
-    const scoped = await bodyOf(await eligibleRoute.GET(getReq("schoolType=ARABIC&mockExamId=mx-random")));
+    // K3: mx-random is bound to c1 (every exam is course-bound), so the
+    // exam-scoped preview must name the same course — and its total is the
+    // c1 lesson-linked rows PLUS its own attachments.
+    const scoped = await bodyOf(await eligibleRoute.GET(getReq("schoolType=ARABIC&courseId=c1&mockExamId=mx-random")));
+    const unbound = await bodyOf(await eligibleRoute.GET(getReq("schoolType=ARABIC&mockExamId=mx-random")));
+    ok(unbound.status === 404, "an exam-scoped preview without the exam's own course -> 404 (no crafted cross-scope counts)");
     ok(
       scoped.status === 200 && scoped.body.pool.attached === 13,
       `the exam-scoped pool reports its 13 attachments (got ${scoped.body.pool.attached})`
@@ -724,34 +754,34 @@ async function main() {
       scoped.body.pool.bankOnly === 13 && scoped.body.pool.total === randomPool.length,
       "the exam-scoped total includes the attached rows (and only its own)"
     );
-    const mismatched = await bodyOf(await eligibleRoute.GET(getReq("schoolType=LANGUAGE&mockExamId=mx-random")));
+    const mismatched = await bodyOf(await eligibleRoute.GET(getReq("schoolType=LANGUAGE&courseId=c1&mockExamId=mx-random")));
     ok(mismatched.status === 404, "an exam id from another bank -> 404 (no crafted cross-scope counts)");
   }
 
   section("C. Creation guards (attachment is the only manual route in)");
   {
     const tooBig = await bodyOf(
-      await adminRoute.POST(postReq({ title: "Too big", schoolType: "ARABIC", questionCount: basePool.length + 1, selectionMode: "RANDOM" }))
+      await adminRoute.POST(postReq({ title: "Too big", schoolType: "ARABIC", questionCount: basePool.length + 1, selectionMode: "RANDOM", courseId: "c1" }))
     );
     ok(tooBig.status === 400, "RANDOM beyond exam-less pool -> 400 (clear Arabic api.213)");
     // Attaching manual ids EXTENDS the exam's pool: the guard measures the
     // pool AFTER the links land — exactly what a student will be served from.
     const attachIds = ["m01", "m02", "m03", "m04"];
     const okOne = await bodyOf(
-      await adminRoute.POST(postReq({ title: "Fits", schoolType: "ARABIC", questionCount: basePool.length + attachIds.length, selectionMode: "RANDOM", questionIds: attachIds }))
+      await adminRoute.POST(postReq({ title: "Fits", schoolType: "ARABIC", questionCount: basePool.length + attachIds.length, selectionMode: "RANDOM", questionIds: attachIds, courseId: "c1" }))
     );
     ok(okOne.status === 200, "RANDOM with 4 manual attachments -> 200 (pool + attachments covers the count)");
     const okLinks = T.mockExamQuestion.filter((l) => l.mockExamId === okOne.body.exam.id);
     ok(okLinks.length === attachIds.length, "the RANDOM attachments are stored per exam (pool membership)");
     const attachForeign = await bodyOf(
-      await adminRoute.POST(postReq({ title: "Foreign attach", schoolType: "ARABIC", questionCount: 1, selectionMode: "RANDOM", questionIds: ["m01", "qLang"] }))
+      await adminRoute.POST(postReq({ title: "Foreign attach", schoolType: "ARABIC", questionCount: 1, selectionMode: "RANDOM", questionIds: ["m01", "qLang"], courseId: "c1" }))
     );
     ok(attachForeign.status === 400, "attaching an id outside the bank -> 400 (api.309)");
 
     // Manual ids only: the exact FIXED contract.
     const chosen = ["m01", "m03", "m05", "m07"];
     const fx = await bodyOf(
-      await adminRoute.POST(postReq({ title: "Fixed manual", schoolType: "ARABIC", selectionMode: "FIXED", questionIds: chosen }))
+      await adminRoute.POST(postReq({ title: "Fixed manual", schoolType: "ARABIC", selectionMode: "FIXED", questionIds: chosen, courseId: "c1" }))
     );
     ok(fx.status === 200, "create FIXED with explicit manual question ids -> 200");
     ok(fx.body.exam.questionCount === chosen.length, "FIXED count is derived from the selection");
@@ -762,44 +792,44 @@ async function main() {
     // now means the lesson-linked rows: unattached manual rows cannot be
     // silently filled in any more.
     const autoShort = await bodyOf(
-      await adminRoute.POST(postReq({ title: "Auto short", schoolType: "ARABIC", questionCount: 4, selectionMode: "FIXED" }))
+      await adminRoute.POST(postReq({ title: "Auto short", schoolType: "ARABIC", questionCount: 4, selectionMode: "FIXED", courseId: "c1" }))
     );
     ok(autoShort.status === 400, "FIXED auto-fill cannot reach unattached manual rows -> 400");
     const autoOk = await bodyOf(
-      await adminRoute.POST(postReq({ title: "Auto ok", schoolType: "ARABIC", questionCount: 2, selectionMode: "FIXED" }))
+      await adminRoute.POST(postReq({ title: "Auto ok", schoolType: "ARABIC", questionCount: 2, selectionMode: "FIXED", courseId: "c1" }))
     );
     ok(autoOk.status === 200, "FIXED auto-fill from the lesson-linked pool -> 200");
     const autoPins = T.mockExamQuestion.filter((l) => l.mockExamId === autoOk.body.exam.id).map((l) => l.questionId);
     ok(autoPins.every((id) => basePool.includes(id)), "auto-pins come only from the lesson-linked pool");
 
     const dupe = await bodyOf(
-      await adminRoute.POST(postReq({ title: "Dupe", schoolType: "ARABIC", selectionMode: "FIXED", questionIds: ["m01", "m01"] }))
+      await adminRoute.POST(postReq({ title: "Dupe", schoolType: "ARABIC", selectionMode: "FIXED", questionIds: ["m01", "m01"], courseId: "c1" }))
     );
     ok(dupe.status === 400, "duplicate ids -> 400 (api.307)");
     const mismatch = await bodyOf(
-      await adminRoute.POST(postReq({ title: "Mismatch", schoolType: "ARABIC", selectionMode: "FIXED", questionCount: 3, questionIds: ["m01", "m02"] }))
+      await adminRoute.POST(postReq({ title: "Mismatch", schoolType: "ARABIC", selectionMode: "FIXED", questionCount: 3, questionIds: ["m01", "m02"], courseId: "c1" }))
     );
     ok(mismatch.status === 400, "questionCount contradictory to the selection -> 400 (api.308)");
     const foreign = await bodyOf(
-      await adminRoute.POST(postReq({ title: "Foreign", schoolType: "ARABIC", selectionMode: "FIXED", questionIds: ["m01", "qLang"] }))
+      await adminRoute.POST(postReq({ title: "Foreign", schoolType: "ARABIC", selectionMode: "FIXED", questionIds: ["m01", "qLang"], courseId: "c1" }))
     );
     ok(foreign.status === 400, "an id outside the bank -> 400 (api.309)");
     // A question of a DRAFT lesson must not be pinnable into a FIXED exam.
     const draft = await bodyOf(
-      await adminRoute.POST(postReq({ title: "Draft pin", schoolType: "ARABIC", selectionMode: "FIXED", questionIds: ["m01", "qDraft"] }))
+      await adminRoute.POST(postReq({ title: "Draft pin", schoolType: "ARABIC", selectionMode: "FIXED", questionIds: ["m01", "qDraft"], courseId: "c1" }))
     );
     ok(draft.status === 400, "pinning a draft lesson's question -> 400 (api.309)");
     // A difficulty slice that cannot cover the count is refused up front.
     const hard = await bodyOf(
-      await adminRoute.POST(postReq({ title: "Hard 5", schoolType: "ARABIC", questionCount: 5, difficulty: "HARD", selectionMode: "RANDOM" }))
+      await adminRoute.POST(postReq({ title: "Hard 5", schoolType: "ARABIC", questionCount: 5, difficulty: "HARD", selectionMode: "RANDOM", courseId: "c1" }))
     );
     ok(hard.status === 400, "RANDOM 5 questions at HARD when only 2 HARD exist -> 400");
     const hardOk = await bodyOf(
-      await adminRoute.POST(postReq({ title: "Hard 2", schoolType: "ARABIC", questionCount: 2, difficulty: "HARD", selectionMode: "RANDOM" }))
+      await adminRoute.POST(postReq({ title: "Hard 2", schoolType: "ARABIC", questionCount: 2, difficulty: "HARD", selectionMode: "RANDOM", courseId: "c1" }))
     );
     ok(hardOk.status === 200, "RANDOM 2 questions at HARD -> 200");
     const lang = await bodyOf(
-      await adminRoute.POST(postReq({ title: "Lang", schoolType: "ARABIC", selectionMode: "FIXED", questionIds: ["m01", "qLang"] }))
+      await adminRoute.POST(postReq({ title: "Lang", schoolType: "ARABIC", selectionMode: "FIXED", questionIds: ["m01", "qLang"], courseId: "c1" }))
     );
     ok(lang.status === 400, "pinning a LANGUAGE question into an ARABIC exam -> 400 (api.309)");
   }
@@ -837,7 +867,7 @@ async function main() {
     await loginAs("u-ad");
     // A FIXED exam whose count exceeds its pins must not publish (api.312).
     const made = await bodyOf(
-      await adminRoute.POST(postReq({ title: "Pin short", schoolType: "ARABIC", selectionMode: "FIXED", questionIds: ["m01", "m02"] }))
+      await adminRoute.POST(postReq({ title: "Pin short", schoolType: "ARABIC", selectionMode: "FIXED", questionIds: ["m01", "m02"], courseId: "c1" }))
     );
     ok(made.status === 200, "FIXED exam with 2 pins created");
     const id = made.body.exam.id;

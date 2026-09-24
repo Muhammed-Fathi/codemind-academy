@@ -37,7 +37,7 @@ section("1. Final Architecture State");
   ok(/enum LessonStatus\s*\{[^}]*DRAFT[^}]*READY[^}]*PUBLISHED/s.test(schema), "Lifecycle = DRAFT/READY/PUBLISHED");
   ok(/enum TrackScope\s*\{[^}]*SHARED[^}]*ARABIC[^}]*LANGUAGE/s.test(schema), "Track = SHARED/ARABIC/LANGUAGE");
   ok(/enum CurriculumStatus\s*\{[^}]*OFFICIAL/s.test(schema), "Curriculum OFFICIAL exists");
-  ok(/officialCode\s+String\?\s+@unique/.test(schema), "Lesson.officialCode unique");
+  ok(/@@unique\(\[academicLevel, officialCode\]\)/.test(schema), "Lesson.officialCode unique (per academic level, K3)");
   ok(/curriculumStatus\s+CurriculumStatus/.test(schema), "Lesson.curriculumStatus");
   ok(/trackScope\s+TrackScope/.test(schema), "Lesson.trackScope");
   ok(/status\s+LessonStatus/.test(schema), "Lesson.status lifecycle");

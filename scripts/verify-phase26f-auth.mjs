@@ -246,14 +246,14 @@ async function main() {
   const studentUserD = await client.user.create({ data: { email: "d26f@cm.test", password: "x", name: "Student D", role: "STUDENT" } });
   const teacherUser = await client.user.create({ data: { email: "t26f@cm.test", password: "x", name: "Teacher", role: "TEACHER" } });
   const parentUser = await client.user.create({ data: { email: "p26f@cm.test", password: "x", name: "Parent", role: "PARENT" } });
-  const studentA = await client.student.create({ data: { userId: studentUserA.id, schoolType: "ARABIC" } });
-  const studentB = await client.student.create({ data: { userId: studentUserB.id, schoolType: "ARABIC" } });
+  const studentA = await client.student.create({ data: { academicLevel: "SECOND_SECONDARY", userId: studentUserA.id, schoolType: "ARABIC" } });
+  const studentB = await client.student.create({ data: { academicLevel: "SECOND_SECONDARY", userId: studentUserB.id, schoolType: "ARABIC" } });
   // Collision fixture: TWO students whose ids end in the SAME six characters.
   // Their ids differ only in the leading cUID stamp, so the pair shares the
   // exact suffix that becomes the referral code — the case that must fail
   // closed instead of picking one of them.
-  const studentC = await client.student.create({ data: { userId: studentUserC.id, schoolType: "ARABIC" } });
-  const studentD = await client.student.create({ data: { userId: studentUserD.id, schoolType: "ARABIC" } });
+  const studentC = await client.student.create({ data: { academicLevel: "SECOND_SECONDARY", userId: studentUserC.id, schoolType: "ARABIC" } });
+  const studentD = await client.student.create({ data: { academicLevel: "SECOND_SECONDARY", userId: studentUserD.id, schoolType: "ARABIC" } });
   const twinCId = "cm26fcollide-a-zzz-abc123";
   const twinDId = "cm26fcollide-z-zzz-abc123";
   {

@@ -112,7 +112,7 @@ async function main() {
     // migration, so the frozen history is 12 + 1 + 2 + 1 = 16. Every PREVIOUS
     // migration must still be present — which is what the assertion below
     // actually protects.
-    ok(migs.length === 19, `19 migrations preserved (found ${migs.length})`);
+    ok(migs.length === 21, `21 migrations preserved (found ${migs.length})`);
     ok(
       migs.includes("20260915180000_phase26d_quiz_attempt_architecture") &&
         migs.includes("20260919120000_phase_f_live_session_lifecycle") &&
@@ -134,8 +134,9 @@ async function main() {
     // AbsenceReasonSubmission, AbsenceHold) and 2 enums (AbsenceReviewStatus,
     // AbsenceHoldStatus): 56 + 4 = 60 and 21 + 2 = 23.
     // Phase H added the ProgressionOverride model (no new enum): 60 + 1 = 61.
+    // Phase K1 added the AcademicLevel enum (no new model): 24 + 1 = 25.
     ok(parsed.models.size === 61, `61 models parsed (found ${parsed.models.size})`);
-    ok(parsed.enums.size === 24, `24 enums parsed (found ${parsed.enums.size})`);
+    ok(parsed.enums.size === 25, `25 enums parsed (found ${parsed.enums.size})`);
     // No provider-specific column types or attributes anywhere. (Type check is
     // done on PARSED field types — a substring sweep would false-positive on
     // column names like `sizeBytes`.)
@@ -206,14 +207,17 @@ async function main() {
     // 21 enums + 55 tables + 70 indexes: Phase 26B added Group_trackScope_idx
     // (owner-approved Group.trackScope), so the index count grew 69 → 70.
     // Phase 26D: +1 table (QuizRetryGrant) and +3 indexes on it.
-    // 24 enums + 61 tables + the 91 explicit CREATE INDEX statements (87
+    // 25 enums + 61 tables + the 91 explicit CREATE INDEX statements (87
     // through Phase G + the 3 Phase H ProgressionOverride indexes + the
-    // SessionVideo liveSessionId index) — the exact statement count is
+    // SessionVideo liveSessionId index; K1 added the AcademicLevel CREATE
+    // TYPE, no new tables/indexes; K3 added MockExam_courseId_idx for the
+    // now-required MockExam.courseId FK → 92) — the exact statement count is
     // derived, never hand-tuned.
     ok(
-      stmts.length === 24 + 61 + 91,
-      `baseline has ${24 + 61 + 91} statements (found ${stmts.length})`
+      stmts.length === 25 + 61 + 92,
+      `baseline has ${25 + 61 + 92} statements (found ${stmts.length})`
     );
+    ok(/CREATE INDEX "MockExam_courseId_idx"/.test(ddl), "baseline carries the K3 MockExam.courseId index");
     ok(/CREATE INDEX "Group_trackScope_idx"/.test(ddl), "baseline carries the Phase 26B group-audience index");
     const longIdents = [...ddl.matchAll(/"([A-Za-z0-9_]{64,})"/g)];
     ok(longIdents.length === 0, "no identifier exceeds the 63-byte PostgreSQL limit");

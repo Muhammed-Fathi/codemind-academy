@@ -297,7 +297,8 @@ async function main() {
   const parentB = await client.parent.create({ data: { userId: uParentB.id } });
 
   const course = await client.course.create({
-    data: { slug: "pl-course", name: "Post Launch Course", nameAr: "كورس", description: "d" },
+    // Phase K2 — levelled course + levelled students (I1 gate on /api/enroll).
+    data: { slug: "pl-course", name: "Post Launch Course", nameAr: "كورس", description: "d", academicLevel: "SECOND_SECONDARY" },
   });
   const part = await client.part.create({
     data: { courseId: course.id, title: "Part 1", titleAr: "جزء", order: 1 },
@@ -312,16 +313,16 @@ async function main() {
     data: { name: "Group B", courseId: course.id, teacherId: teacherB.id, trackScope: "ARABIC" },
   });
   const studentA = await client.student.create({
-    data: { userId: uStudentA.id, groupId: groupA.id, schoolType: "ARABIC", nationalId: "30011011234567", parentPhone: "01100000001", studentCode: "PL-STA001" },
+    data: { userId: uStudentA.id, groupId: groupA.id, schoolType: "ARABIC", academicLevel: "SECOND_SECONDARY", nationalId: "30011011234567", parentPhone: "01100000001", studentCode: "PL-STA001" },
   });
   const studentB = await client.student.create({
-    data: { userId: uStudentB.id, groupId: groupB.id, schoolType: "ARABIC", nationalId: "30011011234568", parentPhone: "01100000002", studentCode: "PL-STB001" },
+    data: { userId: uStudentB.id, groupId: groupB.id, schoolType: "ARABIC", academicLevel: "SECOND_SECONDARY", nationalId: "30011011234568", parentPhone: "01100000002", studentCode: "PL-STB001" },
   });
   await client.parentStudentLink.create({ data: { parentId: parentA.id, studentId: studentA.id } });
   await client.parentStudentLink.create({ data: { parentId: parentB.id, studentId: studentB.id } });
 
   const lesson = await client.lesson.create({
-    data: { unitId: unit.id, title: "Post Launch Session", titleAr: "حصة", order: 1, status: "PUBLISHED", trackScope: "ARABIC", videoUrl: "https://v/pl.mp4" },
+    data: { academicLevel: "SECOND_SECONDARY", unitId: unit.id, title: "Post Launch Session", titleAr: "حصة", order: 1, status: "PUBLISHED", trackScope: "ARABIC", videoUrl: "https://v/pl.mp4" },
   });
 
   // ---- D. notification deep-link contract (pure) ---------------------------
@@ -533,7 +534,7 @@ async function main() {
   // gate (not the notification) we use a NON-enrolled student for a lesson in
   // a course they cannot open: create course-2 lesson + student in group A only.
   const course2 = await client.course.create({
-    data: { slug: "pl-course2", name: "Post Launch Course 2", nameAr: "كورس ٢", description: "d" },
+    data: { slug: "pl-course2", name: "Post Launch Course 2", nameAr: "كورس ٢", description: "d", academicLevel: "SECOND_SECONDARY" },
   });
   const part2 = await client.part.create({
     data: { courseId: course2.id, title: "P2", titleAr: "ج٢", order: 1 },
@@ -542,7 +543,7 @@ async function main() {
     data: { partId: part2.id, title: "U2", titleAr: "و٢", order: 1 },
   });
   const lesson2 = await client.lesson.create({
-    data: { unitId: unit2.id, title: "Foreign Session", titleAr: "حصة خارج", order: 1, status: "PUBLISHED", trackScope: "ARABIC" },
+    data: { academicLevel: "SECOND_SECONDARY", unitId: unit2.id, title: "Foreign Session", titleAr: "حصة خارج", order: 1, status: "PUBLISHED", trackScope: "ARABIC" },
   });
   // Even with a VALID notification deep link to lesson2, student A cannot open
   // it: the destination API enforces enrollment, not the link.

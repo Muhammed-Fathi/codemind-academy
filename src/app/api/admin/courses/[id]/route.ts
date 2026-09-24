@@ -18,6 +18,8 @@ import { getServerT } from "@/lib/i18n-server";
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireRole } from "@/lib/api";
+import { requireAcademicLevel } from "@/lib/academic-level";
+import type { AcademicLevel } from "@prisma/client";
 
 export async function PATCH(
   req: NextRequest,
@@ -34,6 +36,9 @@ export async function PATCH(
 
   const body = await req.json().catch(() => ({}));
   const data: { name?: string; nameAr?: string; description?: string; color?: string } = {};
+  // Phase K2 — the curriculum level is handled apart from the metadata
+  // fields (see the gate below); it is never part of the free metadata edit.
+  let nextAcademicLevel: AcademicLevel | undefined = undefined;
 
   if (body.name !== undefined) {
     const name = String(body.name || "").trim();
@@ -53,9 +58,44 @@ export async function PATCH(
     if (!/^#[0-9a-fA-F]{6}$/.test(color)) return err(tApi("api.018"), 400);
     data.color = color;
   }
-  if (Object.keys(data).length === 0) return err(tApi("api.018"), 400);
+  // Phase K2 — the curriculum level may be SET on a legacy unlevelled course
+  // or corrected, but never cleared, and never while it would break I1/I2:
+  // a course with grouped students or attributed lessons carries their
+  // level (students' typed level, lessons' derived level), so re-levelling
+  // it is refused until it is empty. No student/lesson is rewritten.
+  if (body.academicLevel !== undefined) {
+    const check = requireAcademicLevel(body.academicLevel);
+    if (!check.ok) return err(tApi("api.375"), 400);
+    if (check.value !== course.academicLevel) {
+      // Manual-QA pass — the guard also counts ENROLLMENTS (an enrolled
+      // student's typed level is authority too). Empty groups do not block:
+      // they carry no level state of their own (Group has no academicLevel).
+      const [members, lessons, enrollments] = await Promise.all([
+        db.student.count({ where: { group: { courseId: id } } }),
+        db.lesson.count({
+          where: {
+            OR: [
+              { unit: { part: { courseId: id } } },
+              { topic: { unit: { part: { courseId: id } } } },
+            ],
+          },
+        }),
+        db.enrollment.count({ where: { courseId: id } }),
+      ]);
+      // api.378 names the COURSE re-level refusal precisely (api.377 is the
+      // group re-target wording); both are 409 fail-closed, nothing is
+      // rewritten on Student/Lesson.
+      if (members > 0 || lessons > 0 || enrollments > 0) return err(tApi("api.378"), 409);
+      nextAcademicLevel = check.value;
+    }
+  }
+  if (Object.keys(data).length === 0 && nextAcademicLevel === undefined)
+    return err(tApi("api.018"), 400);
 
-  const updated = await db.course.update({ where: { id }, data });
+  const updated = await db.course.update({
+    where: { id },
+    data: nextAcademicLevel ? { ...data, academicLevel: nextAcademicLevel } : data,
+  });
 
   await db.auditLog
     .create({
@@ -64,7 +104,10 @@ export async function PATCH(
         action: "COURSE_UPDATED",
         entity: "Course",
         entityId: id,
-        details: JSON.stringify({ courseId: id, fields: Object.keys(data) }).slice(0, 1000),
+        details: JSON.stringify({
+          courseId: id,
+          fields: [...Object.keys(data), ...(nextAcademicLevel ? ["academicLevel"] : [])],
+        }).slice(0, 1000),
       },
     })
     .catch(() => undefined);

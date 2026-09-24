@@ -13,6 +13,7 @@ import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireRole } from "@/lib/api";
 import { parseGroupTrackScope } from "@/lib/track-scope";
+import { normalizeAcademicLevel } from "@/lib/academic-level";
 
 export async function GET() {
   const { error } = await requireRole("ADMIN");
@@ -20,7 +21,7 @@ export async function GET() {
 
   const groups = await db.group.findMany({
     include: {
-      course: { select: { id: true, nameAr: true, color: true } },
+      course: { select: { id: true, nameAr: true, color: true, academicLevel: true } },
       teacher: { select: { id: true, user: { select: { name: true } } } },
       _count: { select: { students: true } },
     },
@@ -34,6 +35,8 @@ export async function GET() {
       courseId: g.courseId,
       courseName: g.course?.nameAr,
       courseColor: g.course?.color,
+      // Phase K2 — derived from the course (never stored on the group).
+      academicLevel: g.course?.academicLevel ?? null,
       teacherId: g.teacherId,
       teacherName: g.teacher?.user?.name,
       capacity: g.capacity,
@@ -68,6 +71,10 @@ export async function POST(req: NextRequest) {
 
   const course = await db.course.findUnique({ where: { id: courseId } });
   if (!course) return err(tApi("api.022"), 404);
+  // Phase K2 — a group's academic level is DERIVED from its course (no
+  // Group.academicLevel column). An operational group therefore requires a
+  // LEVELLED course; a legacy unlevelled course must be classified first.
+  if (!normalizeAcademicLevel(course.academicLevel)) return err(tApi("api.375"), 409);
 
   const group = await db.group.create({
     data: {

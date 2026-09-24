@@ -24,8 +24,10 @@
 //      — the platform's existing `questionBankFilter`, unchanged.
 //   2. SCOPE: either
 //        a. LESSON-LINKED — the record hangs off a lesson of a course, and
-//           that lesson is a student-visible lesson of the exam's course (or
-//           of every course when the exam is not course-bound). The
+//           that lesson is a student-visible lesson of THE exam's course
+//           (Phase K2: a course-less exam has NO automatic lesson-linked
+//           pool — the former "every course" fallback spanned every academic
+//           level and is removed; see MULTI-LEVEL POOL SAFETY below). The
 //           student-visibility rule is the existing Phase 13/16 one:
 //           `status = PUBLISHED` (LESSON_STUDENT_STATUS_FILTER). Whether
 //           ARCHIVED lessons are excluded is unchanged from before this
@@ -55,6 +57,28 @@
 // rows) and are validated against this same bank + scope rule at creation
 // time, so a pin can never pull in another school's or another course's
 // material.
+//
+// MULTI-LEVEL POOL SAFETY (Phase K2)
+// ---------------------------------
+// Two academic levels share ONE question bank per school type, and free-bank
+// rows (`quizId = NULL` / `lessonId = NULL`) carry no course or level. The
+// AUTOMATIC (RANDOM) path therefore admits exactly two kinds of candidate:
+//
+//   * LESSON-LINKED with a SAFE COURSE DERIVATION — the lesson's chain
+//     (Unit→Part→Course or Topic→Unit→Part→Course) resolves to
+//     `MockExam.courseId`. Level follows the course, so a First Secondary
+//     exam can never sample a Second Secondary lesson's question or vice
+//     versa. `MockExam.courseId` is REQUIRED for every exam created or
+//     edited from K2 on (DB NOT NULL lands in K3);
+//   * EXPLICITLY ATTACHED to THIS exam (`MockExamQuestion`) — an intentional,
+//     per-exam, audited admin act. This is the ONLY way a free-bank row is
+//     ever served, and it is deliberately separate from automatic selection:
+//     the admin chose the row for this exam; nothing is inferred.
+//
+// Any other candidate — a free-bank row nobody attached, a lesson-linked row
+// whose course is not the exam's, or ANY lesson-linked row when the exam has
+// no course — is EXCLUDED from automatic selection (fail closed), never
+// drawn from a global pool. Track (`schoolType`) alone is never the scope.
 //
 // FROZEN PAPER (why the contract above is not enough on its own)
 // -------------------------------------------------------------
@@ -234,8 +258,13 @@ export function mockExamQuestionScopeWhere(
 export function mockExamLessonWhere(
   courseId: string | null
 ): Prisma.LessonWhereInput {
-  // Two literal branches (rather than one shared variable) so each relation
-  // filter is exactly the shape Prisma's LessonWhereInput accepts.
+  // Phase K2 — MULTI-LEVEL SAFETY. A lesson-linked question enters an
+  // AUTOMATIC pool only when its curriculum chain (canonical unit chain or
+  // legacy topic chain) resolves to THE exam's course. Without a course there
+  // is no safe derivation: the pre-K2 "every course" branch would span every
+  // academic level of the bank, so it is gone — a course-less scope matches
+  // NO lesson (fail closed). Explicit per-exam attachments are the separate,
+  // admin-intentional path (see `mockExamAttachedQuestionWhere`).
   if (courseId) {
     return {
       ...LESSON_STUDENT_STATUS_FILTER,
@@ -245,19 +274,12 @@ export function mockExamLessonWhere(
       ],
     };
   }
-  // "Every course" = the lesson is attached to a curriculum chain at all.
-  // Part.courseId and Unit.partId and Topic.unitId are all NON-nullable, so a
-  // lesson with a unit (canonical) or a topic (legacy) necessarily resolves to
-  // a course — the same set the student query's relation chain matches, and
-  // expressible with top-level nullable scalars (nested relation filters do
-  // not accept `null` comparisons).
-  return {
-    ...LESSON_STUDENT_STATUS_FILTER,
-    OR: [{ unitId: { not: null } }, { topicId: { not: null } }],
-  };
+  return { ...LESSON_STUDENT_STATUS_FILTER, id: { in: [] } };
 }
 
 export async function loadMockExamLessonIds(courseId: string | null) {
+  // Fail closed without a course: no query, no lesson-linked candidates.
+  if (!courseId) return [];
   const lessons = await db.lesson.findMany({
     where: mockExamLessonWhere(courseId),
     select: { id: true },

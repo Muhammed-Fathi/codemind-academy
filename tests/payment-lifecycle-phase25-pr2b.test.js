@@ -162,6 +162,13 @@ const at = (iso) => new Date(iso);
 function freshStore() {
   return {
     students: [], // {id, userId, groupId}
+    // Phase K2 — courses carry the academic level; every fixture course is
+    // SECOND_SECONDARY and every student fixture below is SECOND_SECONDARY,
+    // so the I1 level gate behaves exactly as before for them.
+    courses: [
+      { id: "c1", academicLevel: "SECOND_SECONDARY" },
+      { id: "c2", academicLevel: "SECOND_SECONDARY" },
+    ],
     groups: [
       // Phase 26B — groups carry an explicit audience (trackScope). These
       // fixtures are ARABIC groups; every student fixture below is ARABIC, so
@@ -196,8 +203,8 @@ function maybeFault(store, key) {
   if (store.faults[key]) throw store.faults[key];
 }
 
-function addStudent(store, id, userId, groupId, schoolType = "ARABIC") {
-  store.students.push({ id, userId, groupId: groupId ?? null, schoolType });
+function addStudent(store, id, userId, groupId, schoolType = "ARABIC", academicLevel = "SECOND_SECONDARY") {
+  store.students.push({ id, userId, groupId: groupId ?? null, schoolType, academicLevel });
 }
 function addSub(store, studentId, planId, status, startDate, endDate) {
   const row = {
@@ -264,6 +271,8 @@ function studentView(store, student) {
     groupId: student.groupId ?? null,
     // Phase 26B — the audience-eligibility inputs (exact-match rule).
     schoolType: student.schoolType ?? null,
+    // Phase K2 — the academic-level eligibility input (I1).
+    academicLevel: student.academicLevel ?? null,
     group: group
       ? { id: group.id, isActive: group.isActive, courseId: group.courseId }
       : null,
@@ -332,6 +341,13 @@ function makeDb(store) {
     },
     subscriptionPlan: { findUnique: async ({ where }) => Promise.resolve(planView(store, where.id)) },
     group: { findUnique: async ({ where }) => Promise.resolve(groupView(store, where.id)) },
+    // Phase K2 — the decision authority reads the target group's course level.
+    course: {
+      findUnique: async ({ where }) => {
+        const c = store.courses.find((x) => x.id === where.id);
+        return c ? { academicLevel: c.academicLevel ?? null } : null;
+      },
+    },
     subscription: {
       create: async ({ data }) => {
         store.writes.push(`subscription.create:${data.studentId}`);
@@ -443,12 +459,12 @@ async function main() {
   eq(
     [...TR.PAYMENT_TRANSITION_ERROR_CODES].sort(),
     [
-      "GROUP_FULL", "GROUP_NOT_FOUND", "GROUP_REQUIRED", "GROUP_TRACK_MISMATCH",
+      "GROUP_FULL", "GROUP_LEVEL_MISMATCH", "GROUP_NOT_FOUND", "GROUP_REQUIRED", "GROUP_TRACK_MISMATCH",
       "INVALID_GROUP_CONTEXT", "INVALID_REJECTION_REASON", "INVALID_TRANSITION",
       "NO_STUDENT", "PAYMENT_NOT_FOUND", "PLAN_NOT_FOUND", "PLAN_REQUIRED",
       "STALE_PAYMENT",
     ].sort(),
-    "the closed domain-error set is exactly the 12 required codes (Phase 26B adds GROUP_TRACK_MISMATCH)"
+    "the closed domain-error set is exactly the 13 required codes (Phase 26B adds GROUP_TRACK_MISMATCH; Phase K2 adds GROUP_LEVEL_MISMATCH)"
   );
   eq(TR.TRANSITION_ERROR_STATUS.PAYMENT_NOT_FOUND, 404, "PAYMENT_NOT_FOUND maps to 404 (a real not-found)");
   eq(TR.TRANSITION_ERROR_STATUS.INVALID_REJECTION_REASON, 400, "INVALID_REJECTION_REASON maps to 400 (body validation)");

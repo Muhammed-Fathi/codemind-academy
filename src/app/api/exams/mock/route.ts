@@ -110,9 +110,10 @@ export async function GET(req: NextRequest) {
     if (!mockExam || !mockExam.isPublished) return err(tApi("api.211"), 404);
     if (mockExam.schoolType !== studentSchoolType)
       return err(tApi("api.212"), 403);
-    // A course-bound exam is invisible outside that course. 404 (not 403) so
-    // the response never confirms a foreign course's exam exists.
-    if (mockExam.courseId && mockExam.courseId !== courseId)
+    // Every exam is course-bound (Phase K3: MockExam.courseId is NOT NULL)
+    // and invisible outside its course. 404 (not 403) so the response never
+    // confirms a foreign course's exam exists.
+    if (mockExam.courseId !== courseId)
       return err(tApi("api.211"), 404);
     count = mockExam.questionCount;
     difficulty = mockExam.difficulty === "MIXED" ? "mixed" : mockExam.difficulty;
@@ -140,16 +141,29 @@ export async function GET(req: NextRequest) {
   // NOTE: this route does not exclude ARCHIVED lessons and still does not:
   // that is Phase 11's deliberate scope choice for the exam pool, not a
   // lifecycle question, so it is left untouched here.
-  const lessons = await db.lesson.findMany({
-    where: {
-      ...LESSON_STUDENT_STATUS_FILTER,
-      OR: [
-        { unit: { part: { courseId } } },
-        { topic: { unit: { part: { courseId } } } },
-      ],
-    },
-    select: { id: true },
-  });
+  //
+  // Phase K2 — MULTI-LEVEL SCOPE. The lesson universe is the exam's OWN
+  // course when the exam is course-bound (the shared `mockExamLessonWhere`
+  // rule). A legacy course-less admin exam gets NO automatic lesson-linked
+  // pool (fail closed — its automatic scope would otherwise be "every
+  // course", i.e. every academic level); it can still serve the free-bank
+  // rows the admin explicitly attached to it. Free practice (no exam) keeps
+  // sampling the student's own enrolled course.
+  const poolCourseId = mockExam ? mockExam.courseId : courseId;
+  const lessons = poolCourseId
+    ? await db.lesson.findMany({
+        where: {
+          ...LESSON_STUDENT_STATUS_FILTER,
+          OR: [
+            { unit: { part: { courseId: poolCourseId } } },
+            { topic: { unit: { part: { courseId: poolCourseId } } } },
+          ],
+        },
+        select: { id: true },
+      })
+    : [];
+  // The literal above is the SAME rule as `mockExamLessonWhere(poolCourseId)`
+  // (shared with the admin guards); a course-less scope resolves to NO lesson.
   const lessonIds = lessons.map((l) => l.id);
 
   // ---------------------------------------------------------------------
@@ -626,7 +640,7 @@ export async function POST(req: NextRequest) {
       exam &&
       exam.isPublished &&
       exam.schoolType === studentSchoolType &&
-      (!exam.courseId || exam.courseId === enrollment.courseId)
+      exam.courseId === enrollment.courseId
     ) {
       linkedExam = exam;
     }

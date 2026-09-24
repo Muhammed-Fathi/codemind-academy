@@ -14,6 +14,7 @@ import * as React from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { useT, pickAuto } from "@/lib/i18n";
+import { AcademicLevelBadge, courseWithLevelLabel } from "@/components/admin/academic-level-ui";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -45,7 +46,9 @@ type MockExam = {
   titleAr: string;
   description: string | null;
   schoolType: "ARABIC" | "LANGUAGE";
-  course: { id: string; name: string; nameAr: string } | null;
+  /** The bound course — the exam's ONLY level context (derived, read-only;
+      MockExam has no academicLevel of its own). */
+  course: { id: string; name: string; nameAr: string; academicLevel?: string | null } | null;
   courseId: string | null;
   eligiblePool: number;
   questionCount: number;
@@ -178,6 +181,19 @@ export function MockExamsView() {
                     <Badge variant="outline" className="text-[10px]">
                       {tr(e.schoolType === "ARABIC" ? "admin.200" : "admin.201")}
                     </Badge>
+                    {/* Course + level context (level derived from the course). */}
+                    {e.course ? (
+                      <>
+                        <Badge variant="outline" className="text-[10px]">
+                          {pickAuto(e.course.nameAr, e.course.name)}
+                        </Badge>
+                        <AcademicLevelBadge level={e.course.academicLevel} />
+                      </>
+                    ) : (
+                      <Badge variant="destructive" className="text-[10px]">
+                        {tr("admin.647")}
+                      </Badge>
+                    )}
                     <Badge variant="outline" className="text-[10px]">
                       {tr("admin.463")}:{" "}
                       {tr(e.selectionMode === "FIXED" ? "admin.464" : "admin.465")}
@@ -349,8 +365,9 @@ function CreateMockExamDialog({
   // to that course's students, and its RANDOM pool is that course's questions
   // (plus any manual question attached to the exam).
   const [courses, setCourses] = React.useState<
-    { id: string; name: string; nameAr: string }[]
+    { id: string; name: string; nameAr: string; academicLevel?: string | null }[]
   >([]);
+  const selectedCourse = courses.find((c) => c.id === form.courseId) || null;
   React.useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -474,11 +491,18 @@ function CreateMockExamDialog({
   const poolTooSmall =
     pool !== null && availableWithAttachments < (isFixed ? 1 : requestedCount);
   const selectedTooFew = isFixed && selectedIds.length === 0;
-  const blocked = saving || poolTooSmall || selectedTooFew;
+  // Phase K2 — a mock exam is curriculum-bound: the course is REQUIRED (the
+  // server refuses a course-less exam with api.376).
+  const courseMissing = !form.courseId;
+  const blocked = saving || poolTooSmall || selectedTooFew || courseMissing;
 
   const submit = async () => {
     if (!form.title.trim()) {
       toast.error(tr("api.187"));
+      return;
+    }
+    if (!form.courseId) {
+      toast.error(tr("api.376"));
       return;
     }
     if (selectedTooFew) {
@@ -574,31 +598,40 @@ function CreateMockExamDialog({
             </Select>
           </div>
 
-          {/* Course scope — a course-bound exam is visible only to that
-              course's students and samples that course's questions; manual
-              free-bank questions still have to be attached to THIS exam. */}
+          {/* Course scope — REQUIRED (Phase K2): a mock exam is bound to one
+              course, is visible only to that course's students and samples
+              that course's lesson questions; manual free-bank questions still
+              have to be attached to THIS exam. There is no "all courses"
+              option any more — that scope would span every academic level. */}
           <div>
-            <Label>{tr("admin.558")}</Label>
+            <Label>{tr("admin.647")}</Label>
             <Select
-              value={form.courseId || "__all__"}
+              value={form.courseId || ""}
               onValueChange={(v) => {
-                setForm({ ...form, courseId: v === "__all__" ? "" : v });
+                setForm({ ...form, courseId: v });
                 setSelectedIds([]);
                 setListData(null);
               }}
             >
               <SelectTrigger className="mt-1 w-full">
-                <SelectValue />
+                <SelectValue placeholder={tr("admin.647")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="__all__">{tr("admin.559")}</SelectItem>
                 {courses.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
-                    {pickAuto(c.nameAr, c.name)}
+                    {courseWithLevelLabel(tr, c)}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {/* The exam's level context is the COURSE's level (no
+                MockExam.academicLevel) — shown, never chosen separately. */}
+            {selectedCourse && (
+              <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <span>{tr("admin.642")}:</span>
+                <AcademicLevelBadge level={selectedCourse.academicLevel} />
+              </div>
+            )}
           </div>
 
           <div className="grid gap-3 sm:grid-cols-3">

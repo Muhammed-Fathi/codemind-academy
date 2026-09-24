@@ -15,6 +15,7 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireRole } from "@/lib/api";
+import { normalizeAcademicLevel } from "@/lib/academic-level";
 import {
   parseCreateLessonInput,
   parseLessonListQuery,
@@ -39,7 +40,7 @@ const IDENTITY_SELECT = {
           titleAr: true,
           order: true,
           course: {
-            select: { id: true, slug: true, name: true, nameAr: true },
+            select: { id: true, slug: true, name: true, nameAr: true, academicLevel: true },
           },
         },
       },
@@ -64,7 +65,7 @@ const IDENTITY_SELECT = {
               titleAr: true,
               order: true,
               course: {
-                select: { id: true, slug: true, name: true, nameAr: true },
+                select: { id: true, slug: true, name: true, nameAr: true, academicLevel: true },
               },
             },
           },
@@ -85,7 +86,7 @@ type IdentityRow = {
       title: string;
       titleAr: string;
       order: number;
-      course: { id: string; slug: string; name: string; nameAr: string };
+      course: { id: string; slug: string; name: string; nameAr: string; academicLevel: string | null };
     };
   } | null;
   topic: {
@@ -109,6 +110,7 @@ function identityOf(row: IdentityRow) {
           slug: part.course.slug,
           name: part.course.name,
           nameAr: part.course.nameAr,
+          academicLevel: part.course.academicLevel ?? null,
         }
       : null,
     part: part
@@ -140,14 +142,27 @@ export async function GET(req: NextRequest) {
   const { error } = await requireRole("ADMIN");
   if (error) return error;
 
-  const parsed = parseLessonListQuery(new URL(req.url).searchParams);
+  const searchParams = new URL(req.url).searchParams;
+  const parsed = parseLessonListQuery(searchParams);
   if (!parsed.ok) {
     return err(parsed.code + (parsed.field ? `:${parsed.field}` : ""), 400);
   }
   const q = parsed.value;
+  // Phase K manual-QA pass — academic-level VIEW filter. Parsed HERE (not in
+  // the lesson input contract of admin-sessions.ts, which stays level-free:
+  // Lesson.academicLevel is derived, never an input). It narrows the list on
+  // the derived cache (K3 keeps it equal to the course chain); "" / "all" =
+  // every level; anything else must be a real enum value.
+  const levelRaw = (searchParams.get("academicLevel") || "").trim();
+  let levelFilter: ReturnType<typeof normalizeAcademicLevel> = null;
+  if (levelRaw && levelRaw !== "all") {
+    levelFilter = normalizeAcademicLevel(levelRaw);
+    if (!levelFilter) return err("INVALID_ACADEMIC_LEVEL:academicLevel", 400);
+  }
 
   const where: Record<string, unknown> = {};
   if (q.status) where.status = q.status;
+  if (levelFilter) where.academicLevel = levelFilter;
   if (q.trackScope) where.trackScope = q.trackScope;
   if (q.curriculumStatus) where.curriculumStatus = q.curriculumStatus;
   if (q.courseId) {
@@ -186,6 +201,7 @@ export async function GET(req: NextRequest) {
       select: {
         id: true,
         officialCode: true,
+        academicLevel: true,
         title: true,
         titleAr: true,
         order: true,
@@ -260,6 +276,7 @@ export async function GET(req: NextRequest) {
     return {
       id: r.id,
       officialCode: r.officialCode,
+      academicLevel: r.academicLevel ?? null,
       title: r.title,
       titleAr: r.titleAr,
       order: r.order,
@@ -319,9 +336,18 @@ export async function POST(req: NextRequest) {
 
   const unit = await db.unit.findUnique({
     where: { id: input.unitId },
-    select: { id: true, part: { select: { id: true, courseId: true } } },
+    select: {
+      id: true,
+      part: { select: { id: true, courseId: true, course: { select: { academicLevel: true } } } },
+    },
   });
   if (!unit) return err("UNIT_NOT_FOUND", 404);
+  // Phase K2 — `Lesson.academicLevel` is DERIVED from the owning course
+  // through the canonical chain (I2). It is not part of the input contract
+  // (the strict parser drops any client value); an unlevelled course fails
+  // closed rather than creating a lesson with a NULL/guessed level.
+  const academicLevel = normalizeAcademicLevel(unit.part.course?.academicLevel);
+  if (!academicLevel) return err("COURSE_LEVEL_REQUIRED", 409);
 
   let order = input.order;
   if (order === null) {
@@ -343,6 +369,7 @@ export async function POST(req: NextRequest) {
       // LEGACY standing. The reconciler remains the only writer of OFFICIAL.
       officialCode: null,
       curriculumStatus: "LEGACY",
+      academicLevel,
       trackScope: input.trackScope,
       description: input.description,
       summary: input.summary,

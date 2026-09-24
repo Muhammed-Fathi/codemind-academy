@@ -381,10 +381,11 @@ async function main() {
   const teacherB = await client.teacher.create({ data: { userId: teacherUserB.id } });
 
   const courseA = await client.course.create({
-    data: { slug: "phase18-a", name: "Phase 18 A", nameAr: "مرحلة 18 أ", description: "d" },
+    // Phase K2 — levelled courses (mock exams are course-bound; lesson level derives).
+    data: { slug: "phase18-a", name: "Phase 18 A", nameAr: "مرحلة 18 أ", description: "d", academicLevel: "SECOND_SECONDARY" },
   });
   const courseB = await client.course.create({
-    data: { slug: "phase18-b", name: "Phase 18 B", nameAr: "مرحلة 18 ب", description: "d" },
+    data: { slug: "phase18-b", name: "Phase 18 B", nameAr: "مرحلة 18 ب", description: "d", academicLevel: "SECOND_SECONDARY" },
   });
   const partA = await client.part.create({
     data: { courseId: courseA.id, title: "Part A1", titleAr: "جزء أ1", order: 1 },
@@ -410,10 +411,10 @@ async function main() {
   });
 
   const studentAr = await client.student.create({
-    data: { userId: studentUserAr.id, groupId: groupA.id, schoolType: "ARABIC" },
+    data: { academicLevel: "SECOND_SECONDARY", userId: studentUserAr.id, groupId: groupA.id, schoolType: "ARABIC" },
   });
   const studentLang = await client.student.create({
-    data: { userId: studentUserLang.id, groupId: groupA.id, schoolType: "LANGUAGE" },
+    data: { academicLevel: "SECOND_SECONDARY", userId: studentUserLang.id, groupId: groupA.id, schoolType: "LANGUAGE" },
   });
 
   // Canonical lessons (unitId) + one legacy lesson (topicId) so both chains are
@@ -421,42 +422,49 @@ async function main() {
   const L = {};
   L.pub = await client.lesson.create({
     data: {
+      academicLevel: "SECOND_SECONDARY",
       unitId: unitA.id, officialCode: "P18-01", title: "Shared lesson", titleAr: "حصة مشتركة",
       order: 1, trackScope: "SHARED", status: "PUBLISHED", curriculumStatus: "OFFICIAL",
     },
   });
   L.ar = await client.lesson.create({
     data: {
+      academicLevel: "SECOND_SECONDARY",
       unitId: unitA.id, officialCode: "P18-02", title: "Arabic lesson", titleAr: "حصة عربي",
       order: 2, trackScope: "ARABIC", status: "PUBLISHED", curriculumStatus: "OFFICIAL",
     },
   });
   L.lang = await client.lesson.create({
     data: {
+      academicLevel: "SECOND_SECONDARY",
       unitId: unitA.id, officialCode: "P18-03", title: "Language lesson", titleAr: "حصة لغات",
       order: 3, trackScope: "LANGUAGE", status: "PUBLISHED", curriculumStatus: "OFFICIAL",
     },
   });
   L.draft = await client.lesson.create({
     data: {
+      academicLevel: "SECOND_SECONDARY",
       unitId: unitA.id, officialCode: "P18-04", title: "Draft lesson", titleAr: "حصة مسودة",
       order: 4, trackScope: "SHARED", status: "DRAFT", curriculumStatus: "OFFICIAL",
     },
   });
   L.archived = await client.lesson.create({
     data: {
+      academicLevel: "SECOND_SECONDARY",
       unitId: unitA.id, officialCode: "P18-05", title: "Archived lesson", titleAr: "حصة مؤرشفة",
       order: 5, trackScope: "SHARED", status: "ARCHIVED", curriculumStatus: "ARCHIVED",
     },
   });
   L.legacy = await client.lesson.create({
     data: {
+      academicLevel: "SECOND_SECONDARY",
       topicId: topicA.id, title: "Legacy lesson", titleAr: "حصة قديمة",
       order: 6, trackScope: "SHARED", status: "PUBLISHED", curriculumStatus: "LEGACY",
     },
   });
   L.b = await client.lesson.create({
     data: {
+      academicLevel: "SECOND_SECONDARY",
       unitId: unitB.id, officialCode: "P18-B1", title: "Other teacher lesson", titleAr: "حصة معلم آخر",
       order: 1, trackScope: "SHARED", status: "PUBLISHED", curriculumStatus: "OFFICIAL",
     },
@@ -465,6 +473,7 @@ async function main() {
   // (404 NO_CHAIN) rather than silently authorized.
   L.orphan = await client.lesson.create({
     data: {
+      academicLevel: "SECOND_SECONDARY",
       title: "Orphan lesson", titleAr: "حصة يتيمة", order: 9,
       trackScope: "SHARED", status: "DRAFT", curriculumStatus: "LEGACY",
     },
@@ -543,6 +552,7 @@ async function main() {
   const fixedExam = await client.mockExam.create({
     data: {
       title: "Fixed exam", titleAr: "اختبار ثابت", schoolType: "ARABIC",
+      courseId: courseA.id, // K3: MockExam.courseId is NOT NULL
       questionCount: 1, selectionMode: "FIXED", isPublished: true,
     },
   });
@@ -976,6 +986,8 @@ async function main() {
     questionCount: 1,
     selectionMode: "FIXED",
     difficulty: "MIXED",
+    // Phase K2 — mock exams are course-bound at the application layer.
+    courseId: courseA.id,
   });
   eq(examCreate.status, 200, "L: the admin FIXED-exam ceremony still creates exams");
   const newExamId = examCreate.json.exam.id;

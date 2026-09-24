@@ -22,6 +22,7 @@ import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { ok, err, requireRole } from "@/lib/api";
 import { normalizeSchoolType, questionBankFilter } from "@/lib/school-type";
+import { normalizeAcademicLevel } from "@/lib/academic-level";
 import { getServerT } from "@/lib/i18n-server";
 import {
   countMockExamEligiblePool,
@@ -41,7 +42,7 @@ export async function GET(req: NextRequest) {
     where: schoolType ? { schoolType } : {},
     orderBy: { createdAt: "desc" },
     include: {
-      course: { select: { id: true, name: true, nameAr: true } },
+      course: { select: { id: true, name: true, nameAr: true, academicLevel: true } },
       _count: { select: { questions: true, attempts: true } },
     },
     take: 100,
@@ -163,12 +164,19 @@ export async function POST(req: NextRequest) {
     ? body.difficulty
     : "MIXED";
   const selectionMode = body.selectionMode === "FIXED" ? "FIXED" : "RANDOM";
-  const courseId = body.courseId ? String(body.courseId) : null;
-  // A course-bound exam gates students by that course, so the binding must
-  // be real — a typo'd id would otherwise make an exam nobody can open.
-  if (courseId && !(await db.course.findUnique({ where: { id: courseId } }))) {
-    return err(tApi("api.211"), 400);
-  }
+  // Phase K2 — MOCK EXAMS ARE CURRICULUM-BOUND: `courseId` is REQUIRED at
+  // the application layer for every newly created exam (the DB column stays
+  // nullable until K3 tightens it). A course-less exam's automatic pool would
+  // span every course — i.e. every academic level — of the bank, which the
+  // multi-level contract forbids. The course must also exist and be levelled.
+  const courseId = body.courseId ? String(body.courseId).trim() : "";
+  if (!courseId) return err(tApi("api.376"), 400);
+  const boundCourse = await db.course.findUnique({
+    where: { id: courseId },
+    select: { id: true, academicLevel: true },
+  });
+  if (!boundCourse) return err(tApi("api.211"), 400);
+  if (!normalizeAcademicLevel(boundCourse.academicLevel)) return err(tApi("api.375"), 409);
 
   // ---------------------------------------------------------------------
   // An explicit selection means two different things per mode:

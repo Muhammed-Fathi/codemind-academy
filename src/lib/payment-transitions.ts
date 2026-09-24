@@ -86,6 +86,7 @@ import {
   isSubscriptionValidForAccess,
 } from "@/lib/subscription-entitlement";
 import { groupTrackScopeEligible } from "@/lib/track-scope";
+import { groupLevelEligible } from "@/lib/academic-level";
 
 // ---------------------------------------------------------------------------
 // Domain errors
@@ -108,6 +109,8 @@ export const PAYMENT_TRANSITION_ERROR_CODES = [
   "PLAN_REQUIRED",
   "PLAN_NOT_FOUND",
   "GROUP_TRACK_MISMATCH",
+  // Phase K2 — I1: Student.academicLevel !== target Group.course.academicLevel.
+  "GROUP_LEVEL_MISMATCH",
   "INVALID_GROUP_CONTEXT",
   "INVALID_REJECTION_REASON",
 ] as const;
@@ -146,6 +149,7 @@ export const TRANSITION_ERROR_STATUS: Record<
   GROUP_REQUIRED: 409,
   GROUP_NOT_FOUND: 409,
   GROUP_TRACK_MISMATCH: 409,
+  GROUP_LEVEL_MISMATCH: 409,
   GROUP_FULL: 409,
   PLAN_REQUIRED: 409,
   PLAN_NOT_FOUND: 409,
@@ -164,6 +168,7 @@ export const TRANSITION_ERROR_I18N_KEY: Record<
   GROUP_REQUIRED: "api.272",
   GROUP_NOT_FOUND: "api.273",
   GROUP_TRACK_MISMATCH: "api.286",
+  GROUP_LEVEL_MISMATCH: "api.373",
   GROUP_FULL: "api.274",
   PLAN_REQUIRED: "api.275",
   PLAN_NOT_FOUND: "api.276",
@@ -281,6 +286,8 @@ type TxLike = {
   subscription: any;
   subscriptionPlan: any;
   group: any;
+  /** Phase K2 — read for the target group's course level (I1 gate). */
+  course: any;
   auditLog: any;
   coupon: any;
   couponRedemption: any;
@@ -303,6 +310,8 @@ const STUDENT_APPROVAL_SELECT = {
   // Phase 26B — the group-audience eligibility input for
   // `resolveTargetGroupForApproval` (student side of the exact-match rule).
   schoolType: true,
+  // Phase K2 — the academic-level eligibility input (I1), student side.
+  academicLevel: true,
   group: { select: { id: true, isActive: true, courseId: true } },
   subscription: {
     select: { id: true, status: true, planId: true, startDate: true, endDate: true },
@@ -438,7 +447,7 @@ async function resolvePlanForApproval(
 async function resolveTargetGroupForApproval(
   tx: TxLike,
   payment: { requestedGroupId: unknown },
-  student: { groupId: unknown; schoolType: unknown },
+  student: { groupId: unknown; schoolType: unknown; academicLevel?: unknown },
   overrideGroupId: string | null
 ) {
   let candidateId: string | null = null;
@@ -472,6 +481,20 @@ async function resolveTargetGroupForApproval(
   // capacity/locking/renewal/grandfather semantics untouched).
   if (!groupTrackScopeEligible(student.schoolType, target.trackScope))
     fail("GROUP_TRACK_MISMATCH");
+
+  // Phase K2 — ACADEMIC LEVEL COMPATIBILITY (I1), the ORTHOGONAL second gate.
+  // The student's typed `Student.academicLevel` must equal the target group's
+  // `Course.academicLevel` — exact equality, fail-closed on NULL either side
+  // (`groupLevelEligible`, the same predicate `/api/enroll` and the admin
+  // assignment routes use). Refused BEFORE the seat lock and before any
+  // write: the payment stays PENDING and reviewable, the student's level is
+  // NEVER rewritten to make the approval fit.
+  const targetCourse = await tx.course.findUnique({
+    where: { id: String(target.courseId) },
+    select: { academicLevel: true },
+  });
+  if (!groupLevelEligible(student.academicLevel, targetCourse?.academicLevel))
+    fail("GROUP_LEVEL_MISMATCH");
 
   const contextCourseIds: string[] = [];
   if (payment.requestedGroupId && payment.requestedGroupId !== candidateId) {

@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { ok, err, requireUser } from "@/lib/api";
 import { db } from "@/lib/db";
 import { getStudentSchoolType } from "@/lib/enrollment";
+import { normalizeAcademicLevel } from "@/lib/academic-level";
 
 // Student group picker used by the enrolment flow (src/components/auth/enroll-view.tsx).
 //
@@ -36,7 +37,7 @@ export async function GET(req: NextRequest) {
 
   const student = await db.student.findUnique({
     where: { userId: user.id },
-    select: { id: true },
+    select: { id: true, academicLevel: true },
   });
   if (!student) return err("Student profile not found", 404);
 
@@ -44,6 +45,10 @@ export async function GET(req: NextRequest) {
   // fail-closed (null when missing/unrecognised → empty listing).
   const schoolType = await getStudentSchoolType(student.id);
   if (!schoolType) return ok({ groups: [] });
+  // Phase K2 — the ORTHOGONAL level input, also the student's OWN persisted
+  // row (never a query parameter). An unlevelled student sees nothing.
+  const academicLevel = normalizeAcademicLevel(student.academicLevel);
+  if (!academicLevel) return ok({ groups: [] });
 
   const url = new URL(req.url);
   const courseId = url.searchParams.get("courseId");
@@ -56,6 +61,9 @@ export async function GET(req: NextRequest) {
   const where: Prisma.GroupWhereInput = {
     isActive: true,
     trackScope: schoolType,
+    // Phase K2 — I1 at listing time: only groups whose COURSE carries the
+    // student's level are ever offered (level derives from the course).
+    course: { academicLevel },
   };
   if (courseId) where.courseId = courseId;
   const groups = await db.group.findMany({

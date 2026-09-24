@@ -334,7 +334,7 @@ test("SessionVideo requirement modes + attendance-aware gating (T1–T31)", asyn
   //   sLate (LATE) / sExcusedFact (EXCUSED) / sAbsentOpen (ABSENT, unfinalized)
   // ===========================================================================
   const course = await client.course.create({
-    data: { slug: "avreq-a", name: "Course A", nameAr: "كورس أ", description: "avreq" },
+    data: { slug: "avreq-a", name: "Course A", nameAr: "كورس أ", description: "avreq", academicLevel: "SECOND_SECONDARY" },
   });
   const partA = await client.part.create({
     data: { courseId: course.id, title: "P1", titleAr: "P1", order: 1 },
@@ -345,6 +345,7 @@ test("SessionVideo requirement modes + attendance-aware gating (T1–T31)", asyn
   const mkLesson = (over) =>
     client.lesson.create({
       data: {
+        academicLevel: "SECOND_SECONDARY",
         unitId: unitA.id,
         trackScope: "SHARED",
         status: "PUBLISHED",
@@ -379,7 +380,7 @@ test("SessionVideo requirement modes + attendance-aware gating (T1–T31)", asyn
       data: { email: `${tag}@avreq.test`, password: "x", name: tag, role: "STUDENT" },
     });
     const s = await client.student.create({
-      data: { userId: u.id, schoolType: "ARABIC", groupId: groupG1.id, batchId: batchAr.id },
+      data: { userId: u.id, academicLevel: "SECOND_SECONDARY", schoolType: "ARABIC", groupId: groupG1.id, batchId: batchAr.id },
     });
     return { user: u, student: s };
   };
@@ -429,7 +430,7 @@ test("SessionVideo requirement modes + attendance-aware gating (T1–T31)", asyn
     attendanceFinalizedAt: new Date("2026-09-02T12:00:00Z"),
   });
   const course2 = await client.course.create({
-    data: { slug: "avreq-b", name: "Course B", nameAr: "كورس ب", description: "avreq" },
+    data: { slug: "avreq-b", name: "Course B", nameAr: "كورس ب", description: "avreq", academicLevel: "SECOND_SECONDARY" },
   });
   const groupForeign = await client.group.create({
     data: { name: "Foreign", courseId: course2.id, isActive: true },
@@ -939,7 +940,7 @@ test("SessionVideo requirement modes + attendance-aware gating (T1–T31)", asyn
   const partF = await client.part.create({ data: { courseId: course2.id, title: "PF", titleAr: "PF", order: 1 } });
   const unitF = await client.unit.create({ data: { partId: partF.id, title: "UF", titleAr: "UF", order: 1 } });
   const Lforeign = await client.lesson.create({
-    data: { unitId: unitF.id, order: 1, title: "Foreign", titleAr: "أجنبي", trackScope: "SHARED", status: "PUBLISHED", curriculumStatus: "OFFICIAL", isPublished: true },
+    data: { unitId: unitF.id, academicLevel: "SECOND_SECONDARY", order: 1, title: "Foreign", titleAr: "أجنبي", trackScope: "SHARED", status: "PUBLISHED", curriculumStatus: "OFFICIAL", isPublished: true },
   });
   const t23f = await GET(R.readiness, `http://t/api/teacher/lessons/${Lforeign.id}/readiness`, { id: Lforeign.id });
   eq(t23f.status, 404, "T23: a foreign lesson → 404 (scope-closed)");

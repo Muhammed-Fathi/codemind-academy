@@ -556,12 +556,10 @@ export const DICT_2026: Record<string, DictEntry> = {
     en: "{p1} in “{p2}” is now open. Open it from your curriculum to start.",
   },
   "api.232": { ar: "رابط الإخطار غير صالح", en: "Invalid notification link" },
-  "admin.318": { ar: "مطابقة المنهج الرسمي", en: "Reconcile official curriculum" },
-  "admin.319": { ar: "جارٍ المطابقة…", en: "Reconciling…" },
-  "admin.320": {
-    ar: "تمت مطابقة المنهج: {p1} درس نشط ({p2} مؤرشف)",
-    en: "Curriculum reconciled: {p1} active lessons ({p2} archived)",
-  },
+  // Phase 11 reconcile strings live at admin.652–654 (see below): admin.318–320
+  // are the Phase 26B GROUP AUDIENCE keys of the base dictionary, and 2026
+  // entries override the base dictionary on merge — defining them here made
+  // the Create/Manage Group dialogs render the reconcile texts (raw {p1}/{p2}).
   "admin.321": { ar: "مؤرشف", en: "Archived" },
   "admin.322": { ar: "دروس الوحدة", en: "Unit lessons" },
 
@@ -2789,4 +2787,69 @@ export const DICT_2026: Record<string, DictEntry> = {
   "parent.feedback.fromHomework": { ar: "تعليق على الواجب", en: "Homework feedback" },
   "parent.feedback.fromTeacher": { ar: "ملاحظة من المعلم", en: "Note from the teacher" },
   "parent.feedback.empty": { ar: "مفيش ملاحظات", en: "No feedback yet" },
+
+  // ---- Phase K2: academic level (First / Second Secondary) ----
+  "api.371": { ar: "الصف الدراسي مطلوب (أولى ثانوي أو ثانية ثانوي)", en: "Academic level is required (First or Second Secondary)" },
+  "api.372": {
+    ar: "التسجيل غير متاح حاليًا للصف ونوع المدرسة المختارين",
+    en: "Registration is not currently available for the selected level and school type",
+  },
+  "api.373": {
+    ar: "الصف الدراسي للطالب لا يطابق صف الكورس الخاص بالمجموعة",
+    en: "The student's academic level does not match the academic level of the group's course",
+  },
+  "api.374": {
+    ar: "لا يمكن تغيير الصف الدراسي والطالب مسجل في مجموعة من صف آخر — انقله أولًا",
+    en: "Cannot change the academic level while the student is assigned to a group of another level — move them first",
+  },
+  "api.375": { ar: "الصف الدراسي للكورس مطلوب", en: "The course academic level is required" },
+  "api.376": {
+    ar: "الامتحان التجريبي لازم يكون مرتبط بكورس",
+    en: "A mock exam must be bound to a course",
+  },
+  "api.377": {
+    ar: "لا يمكن تغيير كورس مجموعة فيها طلاب من صف دراسي آخر — انقلهم أولًا",
+    en: "Cannot change the course of a group whose students belong to another academic level — move them first",
+  },
+  "admin.642": { ar: "الصف الدراسي", en: "Academic level" },
+  "admin.643": { ar: "أولى ثانوي", en: "First Secondary" },
+  "admin.644": { ar: "ثانية ثانوي", en: "Second Secondary" },
+  "admin.645": { ar: "غير محدد", en: "Unspecified" },
+  "admin.646": {
+    ar: "تعارض في الصف الدراسي: صف الطالب لا يطابق صف كورس المجموعة",
+    en: "Academic level mismatch: the student's level differs from the group's course level",
+  },
+  "admin.647": { ar: "الكورس (مطلوب)", en: "Course (required)" },
+  // Phase K manual-QA pass — level visibility vocabulary (filters/selectors).
+  "admin.648": { ar: "كل الصفوف", en: "All Levels" },
+  "admin.649": { ar: "اختر الصف الدراسي (مطلوب)", en: "Select academic level (required)" },
+  "admin.650": { ar: "بدون صف محدد — سؤال حر", en: "No single level — free-bank question" },
+  "admin.651": {
+    ar: "الصف الدراسي للكورس ثابت طالما له طلاب أو جلسات أو اشتراكات مرتبطة",
+    en: "The course level is locked while students, sessions or enrollments depend on it",
+  },
+  // Phase 11 — official-curriculum reconcile (moved from admin.318–320, which
+  // collided with the base-dictionary group-audience keys).
+  "admin.652": { ar: "مطابقة المنهج الرسمي", en: "Reconcile official curriculum" },
+  "admin.653": { ar: "جارٍ المطابقة…", en: "Reconciling…" },
+  "admin.654": {
+    ar: "تمت مطابقة المنهج: {p1} درس نشط ({p2} مؤرشف)",
+    en: "Curriculum reconciled: {p1} active lessons ({p2} archived)",
+  },
+  "api.378": {
+    ar: "لا يمكن تغيير الصف الدراسي لهذا الكورس: له طلاب مسجّلون في مجموعاته أو جلسات أو اشتراكات مرتبطة — أفرغه أولًا",
+    en: "Cannot change this course's academic level: students in its groups, lessons or enrollments depend on it — empty it first",
+  },
+  "auth.228": { ar: "الصف الدراسي", en: "Academic level" },
+  "auth.229": { ar: "اختر الصف الدراسي", en: "Select academic level" },
+  "auth.230": { ar: "أولى ثانوي", en: "First Secondary" },
+  "auth.231": { ar: "ثانية ثانوي", en: "Second Secondary" },
+  "auth.232": {
+    ar: "مفيش تسجيل متاح حاليًا لهذا الصف — اختر صفًا آخر",
+    en: "No registration is available for this level right now — choose another level",
+  },
+  "auth.233": {
+    ar: "تعذّر تحميل خيارات التسجيل — حاول تاني",
+    en: "Could not load registration options — try again",
+  },
 };

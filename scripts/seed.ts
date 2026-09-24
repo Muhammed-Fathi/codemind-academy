@@ -154,6 +154,8 @@ async function main() {
     student = await (db as any).student.create({
       data: {
         userId: studentUser.id,
+        // Phase K2 — explicit typed level; `grade` is its derived mirror.
+        academicLevel: "SECOND_SECONDARY",
         grade: "2nd Secondary",
         schoolName: "STEM Cairo",
         schoolType: "LANGUAGE",
@@ -169,6 +171,7 @@ async function main() {
     if (!student.nationalId) patch.nationalId = "29901010101010";
     if (!student.parentPhone) patch.parentPhone = "+201000000006";
     if (!student.schoolType) patch.schoolType = "LANGUAGE";
+    if (!student.academicLevel) patch.academicLevel = "SECOND_SECONDARY";
     if (Object.keys(patch).length) {
       student = await (db as any).student.update({ where: { id: student.id }, data: patch });
     }
@@ -192,6 +195,8 @@ async function main() {
     update: {},
     create: {
       slug: "programming-ai-2nd-sec",
+      // Phase K2 — explicit curriculum level (the reconciler below asserts it).
+      academicLevel: "SECOND_SECONDARY",
       name: "Programming & AI",
       nameAr: "البرمجة والذكاء الاصطناعي",
       description: "كورس Programming & AI لطلاب الصف الثاني الثانوي.",
@@ -209,11 +214,16 @@ async function main() {
       `(${reconcileReport.archivedLessonIds.length} archived)`
   );
 
-  // Sample quiz + homework on the FIRST official lesson (code 1-1), so the
-  // demo student has something to open. Guarded: re-running the seed must
-  // not stack duplicate quizzes onto the lesson.
+  // Sample quiz + homework on the FIRST official lesson (code 1-1) of the
+  // SECOND SECONDARY curriculum, so the demo student has something to open.
+  // Phase K3: official codes are unique PER LEVEL (FIRST_SECONDARY may hold
+  // its own "1-1"), so the lookup goes through the level-scoped compound
+  // unique, never a bare code. Guarded: re-running the seed must not stack
+  // duplicate quizzes onto the lesson.
   const firstLesson = await db.lesson.findUnique({
-    where: { officialCode: "1-1" },
+    where: {
+      academicLevel_officialCode: { academicLevel: "SECOND_SECONDARY", officialCode: "1-1" },
+    },
     select: { id: true },
   });
   if (firstLesson) {

@@ -87,6 +87,10 @@ const CHAIN = [
   // catalog. The coverage pre-check below fails loudly on any future
   // omission instead.
   "20260922090000_readiness_reminder_recipients",
+  // Phase K1 — the AcademicLevel enum + nullable academicLevel on
+  // Course/Student/Lesson, plus the in-migration SECOND_SECONDARY backfill.
+  "20260923100000_k1_academic_level_capability",
+  "20260923180000_k3_academic_level_constraints",
 ];
 const read = (p) => fs.readFileSync(p, "utf8");
 const stmts = (p) => splitSqlStatements(read(p));
