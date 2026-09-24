@@ -38,8 +38,16 @@
 //
 // Run: node tests/first-secondary-phaseL.test.js
 // Exit code: 0 = all pass, 1 = failure.
+//
+// PLATFORM: portable. This suite shells out to NOTHING — no grep/find/sed, no
+// `2>/dev/null`, no `|| true`, no npx — so `node tests/first-secondary-phaseL.test.js`
+// behaves identically on Windows PowerShell / cmd-backed Node and on Linux CI.
+// TypeScript is compiled as `node <repo>/node_modules/typescript/bin/tsc`, and
+// every recursive search is a pure Node fs/path traversal (see `searchText`).
+// The L15 section asserts this property against the suite's own source, so the
+// portability cannot silently regress.
 
-const { execSync } = require("child_process");
+const { spawnSync } = require("child_process");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
@@ -47,6 +55,81 @@ const Module = require("module");
 
 const REPO = path.join(__dirname, "..");
 const OUT = fs.mkdtempSync(path.join(os.tmpdir(), "cm-phaseL-"));
+
+// ---------------------------------------------------------------------------
+// Portable filesystem scanning — NO SHELL.
+//
+// Phase L verification must run UNCHANGED on Windows PowerShell / cmd-backed
+// Node and on Linux CI, so every recursive search below is implemented with
+// Node's own fs/path APIs: this suite contains no `grep`/`find`/`sed`, no
+// `2>/dev/null`, no `|| true` and no shell redirection or piping anywhere.
+// ---------------------------------------------------------------------------
+
+/** Build/vendor trees that are not runtime sources (absent from these roots today). */
+const SCAN_SKIP_DIRS = new Set(["node_modules", ".git", ".next", "dist", "build", "out"]);
+
+/** Every regular file under `dir`, recursively, using fs.readdirSync only. */
+function listFilesRecursive(dir) {
+  const found = [];
+  const walk = (current) => {
+    let entries;
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      return; // unreadable directory: skip, never crash the suite
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        if (SCAN_SKIP_DIRS.has(entry.name)) continue;
+        walk(path.join(current, entry.name));
+      } else if (entry.isFile()) {
+        found.push(path.join(current, entry.name));
+      }
+    }
+  };
+  walk(dir);
+  return found.sort();
+}
+
+/** True when a file looks binary (a NUL byte early on) — mirrors grep's heuristic. */
+function looksBinary(buffer) {
+  return buffer.subarray(0, 8000).includes(0);
+}
+
+/**
+ * Recursive text search over repo-relative roots (the portable drop-in for
+ * `grep -rn <pattern> <roots>`).
+ *
+ * Returns `[{ file, line, text }]` with repo-relative POSIX-style paths, so
+ * filters and failure messages read identically on every platform. Lines are
+ * 1-based and split on /\r?\n/, so a CRLF checkout cannot change the result.
+ * Binary files are skipped, exactly as grep reports them without line detail.
+ */
+function searchText(roots, pattern) {
+  const hits = [];
+  for (const root of roots) {
+    for (const file of listFilesRecursive(path.join(REPO, root))) {
+      let raw;
+      try {
+        raw = fs.readFileSync(file);
+      } catch {
+        continue;
+      }
+      if (looksBinary(raw)) continue;
+      const lines = raw.toString("utf8").split(/\r?\n/);
+      for (let i = 0; i < lines.length; i++) {
+        if (pattern.test(lines[i])) {
+          hits.push({
+            file: path.relative(REPO, file).split(path.sep).join("/"),
+            line: i + 1,
+            text: lines[i],
+          });
+        }
+      }
+    }
+  }
+  return hits;
+}
 
 const FS_MODEL = path.join(REPO, "docs/curriculum/first-secondary/knowledge-model.json");
 const FS_MANIFEST = path.join(REPO, "docs/curriculum/first-secondary/first-secondary-curriculum.json");
@@ -92,11 +175,19 @@ fs.writeFileSync(
     files: FILES.map((f) => path.join(REPO, f)),
   })
 );
-try {
-  execSync(`npx tsc -p ${path.join(OUT, "tsconfig.json")}`, { cwd: REPO, stdio: "pipe" });
-} catch {
-  /* transitive type noise is tolerated; emission below is the real check */
+// Compile with the repo's own TypeScript, invoked as `node <tsc bin>` — the
+// same Windows-safe pattern the K1/K2/K3 verifiers use. No `npx`, so no shell,
+// no PATH shim (npx.cmd) and no cmd.exe quoting involved.
+const TSC_BIN = path.join(REPO, "node_modules", "typescript", "bin", "tsc");
+const tsc = spawnSync(process.execPath, [TSC_BIN, "-p", path.join(OUT, "tsconfig.json")], {
+  cwd: REPO,
+  encoding: "utf8",
+});
+if (!fs.existsSync(TSC_BIN)) {
+  console.error(`typescript is not installed at ${path.relative(REPO, TSC_BIN)} — run npm install`);
+  process.exit(1);
 }
+void tsc; // transitively-inherited type noise is tolerated; the emit check below is the gate
 // The JSON model import drags tsc's inferred rootDir to the repo root, so the
 // emit lands under OUT/src/lib.
 const EMIT = path.join(OUT, "src", "lib");
@@ -562,11 +653,12 @@ const modelLessons = () => {
       "L4: no `Lesson.arabicPrintedCode` column exists (no schema migration in Phase L)"
     );
 
-    const srcHits = execSync(
-      `grep -rn "arabicPrintedCode" src scripts 2>/dev/null || true`,
-      { cwd: REPO, encoding: "utf8" }
-    ).trim();
-    eq(srcHits, "", "L4: no runtime/script code reads the printed badge");
+    // Same assertion as before, now shell-free: ZERO occurrences of the badge
+    // field in the intended runtime source trees (src/ and scripts/). The
+    // badge must never become an executable concept — it is provenance data
+    // that lives only in the approved manifest and in tests/.
+    const srcHits = searchText(["src", "scripts"], /arabicPrintedCode/);
+    eq(srcHits, [], "L4: no runtime/script code reads the printed badge");
 
     // Reverse convention proof: the AR edition prints '<lesson>-<unit>'.
     const u1l1 = manifest.units[0].lessons[0];
@@ -994,19 +1086,11 @@ const modelLessons = () => {
     // EXECUTABLE references only: a comment may name the historical path (this
     // suite does, to explain the relocation), code may not. `docs/*.md` are
     // historical phase records, not code, so they are out of scope here.
-    const scan = (dirs) =>
-      execSync(
-        `grep -rn "knowledge-model\\\\.json" ${dirs} 2>/dev/null || true`,
-        { cwd: REPO, encoding: "utf8" }
-      )
-        .split("\n")
-        .filter(Boolean)
-        .map((line) => {
-          const m = /^([^:]+):(\d+):(.*)$/.exec(line);
-          return m ? { file: m[1], line: Number(m[2]), text: m[3] } : { file: line, line: 0, text: line };
-        });
+    // Portable drop-in for the old `grep -rn`: same roots, same matches,
+    // repo-relative POSIX paths on every platform.
+    const scan = (roots) => searchText(roots, /knowledge-model\.json/);
 
-    const executableOffenders = scan("src scripts tests")
+    const executableOffenders = scan(["src", "scripts", "tests"])
       .map((h) => ({ ...h, code: h.text.split("//")[0] }))
       .filter((h) => /curriculum\/knowledge-model\.json/.test(h.code))
       .filter((h) => !/first-secondary\/knowledge-model\.json/.test(h.code))
@@ -1022,7 +1106,7 @@ const modelLessons = () => {
 
     // The adjacent-segment form (`path.join(..., "curriculum", "knowledge-model.json")`)
     // is the same defect spelled differently.
-    const segmentOffenders = scan("src scripts tests")
+    const segmentOffenders = scan(["src", "scripts", "tests"])
       .map((h) => ({ ...h, code: h.text.split("//")[0] }))
       .filter((h) => /"curriculum",\s*"knowledge-model\.json"/.test(h.code))
       .filter((h) => !/!fs\.existsSync\([^)]*knowledge-model/.test(h.code));
@@ -1044,6 +1128,46 @@ const modelLessons = () => {
       ok(
         /first-secondary/.test(text) && /second-secondary/.test(text),
         `L15: ${rel} distinguishes the two per-level models`
+      );
+    }
+
+    // SELF-GUARD — this suite must stay shell-free so it runs unchanged on
+    // Windows PowerShell / cmd-backed Node and on Linux CI. The needles are
+    // assembled from parts, and comments are stripped, so the check can never
+    // match its own source text; `.exec(` on a RegExp is not flagged.
+    {
+      const SHELL_NEEDLES = [
+        new RegExp("exec" + "Sync"), // Node's synchronous shell-out helper
+        new RegExp("grep" + " -rn"), // the old Unix recursive scan
+        new RegExp("/dev" + "/null"), // shell redirection
+        new RegExp("\\|\\|" + " true"), // the old `|| true` shim
+        new RegExp("shell" + ":\\s*true"), // spawn(command, …, { shell: true })
+        new RegExp("\\bc" + "hmod\\b"), // Unix-only file-mode op
+      ];
+      const selfPath = path.join(REPO, "tests", "first-secondary-phaseL.test.js");
+      const selfSource = fs.readFileSync(selfPath, "utf8");
+      const selfHits = [];
+      selfSource.split(/\r?\n/).forEach((rawLine, i) => {
+        const trimmed = rawLine.trim();
+        // Strip comments: `// …` plus block/JSDoc continuation lines.
+        const code =
+          trimmed.startsWith("*") || trimmed.startsWith("/*") || trimmed.startsWith("*/")
+            ? ""
+            : rawLine.split("//")[0];
+        for (const needle of SHELL_NEEDLES) {
+          if (needle.test(code)) selfHits.push(`line ${i + 1}: ${trimmed.slice(0, 70)}`);
+        }
+      });
+      eq(selfHits, [], "L15: this suite invokes NO shell (portable to Windows PowerShell and Linux CI)");
+
+      // The only child_process binding may be spawnSync (driven with process.execPath).
+      const bindings = [...selfSource.matchAll(
+        /const\s*\{([^}]*)\}\s*=\s*require\("child_process"\)/g
+      )].map((m) => m[1].replace(/\s+/g, " ").trim());
+      eq(bindings, ["spawnSync"], "L15: child_process exposes spawnSync alone (no shell-out binding)");
+      ok(
+        /spawnSync\(process\.execPath/.test(selfSource),
+        "L15: the TypeScript compile step runs `node <tsc bin>` — no npx, no PATH shim"
       );
     }
 
