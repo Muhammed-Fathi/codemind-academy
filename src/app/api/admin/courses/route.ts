@@ -123,38 +123,80 @@ export async function GET(req: NextRequest) {
     return ok({ course });
   }
 
-  const courses = await db.course.findMany({
-    include: withTree
-      ? {
-          parts: {
-            orderBy: { order: "asc" },
-            include: {
-              units: {
-                orderBy: { order: "asc" },
-                include: {
-                  // Canonical chain plus the legacy topic chain (full
-                  // catalogue incl. archived rows — admin management scope).
-                  lessons: { orderBy: { order: "asc" } },
-                  topics: {
-                    orderBy: { order: "asc" },
-                    include: { lessons: { orderBy: { order: "asc" } } },
-                  },
-                },
-              },
+  // Phase L manual-QA fix — the card counters must be TRUE in BOTH modes.
+  //
+  // The DTO below derives its counters from the canonical relations
+  // (Course → Part → Unit → Lesson, plus the legacy Topic chain). The list
+  // request does NOT ask for the tree, so `parts` used to be hydrating as
+  // `[]` and every card rendered `Parts = 0 / Lessons = 0` while the database
+  // actually held 1/13/62 and 2/7/23 — a silent lie, not a missing feature.
+  //
+  // The list response therefore hydrates the chain's IDENTITY + LIFECYCLE
+  // columns (ids + `curriculumStatus`) through a count-only projection, while
+  // `tree=1` keeps hydrating the full rows the admin tree renders. Both
+  // branches feed the SAME counting loop, so there is exactly ONE definition
+  // of what "Parts"/"Lessons" mean. Counts remain RELATION-derived and
+  // per-course: never by `officialCode` prefix, never by an aggregate over
+  // `academicLevel`, never hard-coded, so one course can never receive
+  // another course's numbers. The heavy tree payload is still `tree=1`-only.
+  const COUNT_ONLY_PARTS = {
+    select: {
+      id: true,
+      units: {
+        select: {
+          id: true,
+          lessons: { select: { id: true, curriculumStatus: true } },
+          // Legacy chain — preserved: legacy Topic-linked lessons count too.
+          topics: {
+            select: {
+              id: true,
+              lessons: { select: { id: true, curriculumStatus: true } },
             },
           },
-          _count: { select: { groups: true } },
-        }
-      : { _count: { select: { groups: true } } },
+        },
+      },
+    },
+  };
+  const FULL_PARTS = {
+    orderBy: { order: "asc" },
+    include: {
+      units: {
+        orderBy: { order: "asc" },
+        include: {
+          // Canonical chain plus the legacy topic chain (full catalogue incl.
+          // archived rows — admin management scope).
+          lessons: { orderBy: { order: "asc" } },
+          topics: {
+            orderBy: { order: "asc" },
+            include: { lessons: { orderBy: { order: "asc" } } },
+          },
+        },
+      },
+    },
+  };
+
+  const courses = await db.course.findMany({
+    include: {
+      parts: (withTree ? FULL_PARTS : COUNT_ONLY_PARTS) as any,
+      _count: { select: { groups: true } },
+    },
     orderBy: { createdAt: "asc" },
   });
 
   return ok({
     courses: courses.map((c) => {
       const parts = (c as any).parts || [];
-      // Distinct lessons across BOTH chains (a dual-linked lesson is one
-      // lesson). `lessonsCount` is the full catalogue; `activeLessonsCount`
-      // is what students actually see (archived history excluded).
+      // The ONE counting rule for every mode (list and tree), unchanged from
+      // Phase 11 and still relation-derived:
+      //   Parts   = this course's Part rows.
+      //   Lessons = DISTINCT lessons reachable from this course through BOTH
+      //             chains (canonical Unit lessons + legacy Topic lessons); a
+      //             dual-linked lesson is one lesson.
+      //   `lessonsCount` is the full catalogue; `activeLessonsCount` is what
+      //   students actually see (ARCHIVED history excluded). Both are scoped
+      //   to THIS course's chain, so one course can never inherit another's.
+      // A course with zero Parts — or a Part with no Units, or a Unit with no
+      // Lessons — therefore reports 0 without special-casing.
       const seenLessonIds = new Set<string>();
       let activeLessonsCount = 0;
       for (const p of parts as any[]) {

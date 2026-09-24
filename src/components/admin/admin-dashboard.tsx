@@ -2343,12 +2343,25 @@ function CoursesView() {
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || tr("admin.121"));
       const report = j.report || {};
-      toast.success(
-        tr("admin.654", {
-          p1: report.officialLessonCodes?.length ?? 0,
-          p2: report.archivedLessonIds?.length ?? 0,
-        })
-      );
+      // Phase L manual-QA fix — the reconcile report now covers EVERY
+      // registered curriculum, so a bare aggregate ("85 active lessons") no
+      // longer tells the admin which level received how many sessions. The
+      // aggregate is kept (its numbers are real: official codes and archived
+      // legacy rows over the whole run) and the per-level breakdown from the
+      // report's own `levels[]` is appended, labelled with the shared level
+      // vocabulary. Nothing is hard-coded, and a level-targeted run simply
+      // shows its one level.
+      const summary = tr("admin.654", {
+        p1: report.officialLessonCodes?.length ?? 0,
+        p2: report.archivedLessonIds?.length ?? 0,
+      });
+      const perLevel = (Array.isArray(report.levels) ? report.levels : [])
+        .map(
+          (r: any) =>
+            `${academicLevelLabel(tr, r?.academicLevel)}: ${r?.officialLessonCodes?.length ?? 0}`
+        )
+        .join(" · ");
+      toast.success(perLevel ? `${summary} — ${perLevel}` : summary);
       reload();
     } catch (e: any) {
       toast.error(e.message || tr("admin.001"));
