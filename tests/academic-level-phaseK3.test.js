@@ -157,7 +157,9 @@ section("K3-A5. K2 runtime gates untouched");
   const reg = read("src/app/api/auth/[action]/route.ts");
   ok(/api\.371/.test(reg) && /api\.372/.test(reg), "registration still requires level + offered pair (api.371/372)");
   ok(/api\.375/.test(read("src/app/api/admin/courses/route.ts")), "admin course create still requires a level (api.375)");
-  ok(/api\.377/.test(read("src/app/api/admin/courses/[id]/route.ts")) && /api\.377/.test(read("src/app/api/admin/groups/[id]/route.ts")), "re-level / re-target gates (api.377)");
+  // Manual-QA pass: the COURSE re-level refusal carries its own precise
+  // wording (api.378); the GROUP re-target gate keeps api.377. Both 409.
+  ok(/err\(tApi\("api\.378"\), 409\)/.test(read("src/app/api/admin/courses/[id]/route.ts")) && /api\.377/.test(read("src/app/api/admin/groups/[id]/route.ts")), "re-level (api.378) / re-target (api.377) gates");
   ok(/GROUP_LEVEL_MISMATCH/.test(read("src/lib/payment-transitions.ts")) || /GROUP_LEVEL_MISMATCH/.test(read("src/app/api/admin/payments/[id]/approve/route.ts")), "payment approval level gate");
   ok(/api\.376/.test(read("src/app/api/admin/mock-exams/route.ts")), "mock exam create still requires courseId (api.376)");
   const pool = read("src/lib/mock-exam-pool.ts");

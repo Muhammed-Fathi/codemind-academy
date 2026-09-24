@@ -31,6 +31,19 @@ export async function GET(req: NextRequest) {
   // filtering it on the client would only ever search the current page, so
   // unspecified students on later pages would silently disappear.
   const unspecifiedOnly = schoolTypeParam === "UNSPECIFIED";
+  // Academic-level view (Phase K manual-QA pass). Filters in SQL against the
+  // TYPED Student.academicLevel column — never the derived `grade` string —
+  // and composes with the track (schoolType) and status filters below.
+  // "" / "all" = every level; anything else must be a real enum value.
+  const academicLevelParam = (url.searchParams.get("academicLevel") || "").trim();
+  const academicLevel =
+    academicLevelParam && academicLevelParam !== "all"
+      ? normalizeAcademicLevel(academicLevelParam)
+      : null;
+  if (academicLevelParam && academicLevelParam !== "all" && !academicLevel) {
+    const tApi = await getServerT();
+    return err(tApi("api.371"), 400);
+  }
   const withProgress = url.searchParams.get("withProgress") === "1";
   const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
   const pageSize = Math.min(100, Math.max(1, parseInt(url.searchParams.get("pageSize") || "20", 10)));
@@ -50,6 +63,7 @@ export async function GET(req: NextRequest) {
   if (status === "suspended") where.user = { status: "SUSPENDED_MULTI_DEVICE" };
   if (schoolType) where.schoolType = schoolType;
   else if (unspecifiedOnly) where.schoolType = null;
+  if (academicLevel) where.academicLevel = academicLevel;
 
   const [total, students] = await Promise.all([
     db.student.count({ where }),

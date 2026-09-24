@@ -111,6 +111,8 @@ export async function GET(req: NextRequest) {
             title: true,
             titleAr: true,
             officialCode: true,
+            // Derived level cache — list context only (no SessionVideo level).
+            academicLevel: true,
             unit: { select: { id: true, title: true, titleAr: true, order: true } },
           },
         },

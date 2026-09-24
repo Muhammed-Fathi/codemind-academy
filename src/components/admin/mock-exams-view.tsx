@@ -14,6 +14,7 @@ import * as React from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { useT, pickAuto } from "@/lib/i18n";
+import { AcademicLevelBadge, courseWithLevelLabel } from "@/components/admin/academic-level-ui";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -45,7 +46,9 @@ type MockExam = {
   titleAr: string;
   description: string | null;
   schoolType: "ARABIC" | "LANGUAGE";
-  course: { id: string; name: string; nameAr: string } | null;
+  /** The bound course — the exam's ONLY level context (derived, read-only;
+      MockExam has no academicLevel of its own). */
+  course: { id: string; name: string; nameAr: string; academicLevel?: string | null } | null;
   courseId: string | null;
   eligiblePool: number;
   questionCount: number;
@@ -178,6 +181,19 @@ export function MockExamsView() {
                     <Badge variant="outline" className="text-[10px]">
                       {tr(e.schoolType === "ARABIC" ? "admin.200" : "admin.201")}
                     </Badge>
+                    {/* Course + level context (level derived from the course). */}
+                    {e.course ? (
+                      <>
+                        <Badge variant="outline" className="text-[10px]">
+                          {pickAuto(e.course.nameAr, e.course.name)}
+                        </Badge>
+                        <AcademicLevelBadge level={e.course.academicLevel} />
+                      </>
+                    ) : (
+                      <Badge variant="destructive" className="text-[10px]">
+                        {tr("admin.647")}
+                      </Badge>
+                    )}
                     <Badge variant="outline" className="text-[10px]">
                       {tr("admin.463")}:{" "}
                       {tr(e.selectionMode === "FIXED" ? "admin.464" : "admin.465")}
@@ -349,8 +365,9 @@ function CreateMockExamDialog({
   // to that course's students, and its RANDOM pool is that course's questions
   // (plus any manual question attached to the exam).
   const [courses, setCourses] = React.useState<
-    { id: string; name: string; nameAr: string }[]
+    { id: string; name: string; nameAr: string; academicLevel?: string | null }[]
   >([]);
+  const selectedCourse = courses.find((c) => c.id === form.courseId) || null;
   React.useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -602,11 +619,19 @@ function CreateMockExamDialog({
               <SelectContent>
                 {courses.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
-                    {pickAuto(c.nameAr, c.name)}
+                    {courseWithLevelLabel(tr, c)}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {/* The exam's level context is the COURSE's level (no
+                MockExam.academicLevel) — shown, never chosen separately. */}
+            {selectedCourse && (
+              <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <span>{tr("admin.642")}:</span>
+                <AcademicLevelBadge level={selectedCourse.academicLevel} />
+              </div>
+            )}
           </div>
 
           <div className="grid gap-3 sm:grid-cols-3">

@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
     where: schoolType ? { schoolType } : {},
     orderBy: { createdAt: "desc" },
     include: {
-      course: { select: { id: true, name: true, nameAr: true } },
+      course: { select: { id: true, name: true, nameAr: true, academicLevel: true } },
       _count: { select: { questions: true, attempts: true } },
     },
     take: 100,

@@ -30,6 +30,8 @@ export type PickerLesson = {
   titleAr: string;
   officialCode: string | null;
   trackScope: string;
+  /** Derived Lesson.academicLevel (course chain) — display context only. */
+  academicLevel: string | null;
 };
 
 export type LessonGroup = {
@@ -38,6 +40,9 @@ export type LessonGroup = {
   courseId: string;
   /** Display name of the owning course (Arabic-first), for pool batches. */
   courseName: string | null;
+  /** Course.academicLevel of the owning course (read-only context — the
+      picker never derives authority from it; null = legacy unlevelled). */
+  courseAcademicLevel: string | null;
   unitOrder: number;
   lessons: PickerLesson[];
 };
@@ -97,6 +102,7 @@ export function buildLessonGroups(
             titleAr: l.titleAr,
             officialCode: l.officialCode ?? null,
             trackScope: l.trackScope,
+            academicLevel: typeof l.academicLevel === "string" ? l.academicLevel : null,
           });
         };
         for (const l of unit?.lessons || []) push(l);
@@ -106,6 +112,7 @@ export function buildLessonGroups(
             key: `${c.id}-${unit.id}`,
             courseId: c.id,
             courseName: courseDisplayName(c),
+            courseAcademicLevel: typeof c.academicLevel === "string" ? c.academicLevel : null,
             unitOrder: unit.order,
             lessons,
           });

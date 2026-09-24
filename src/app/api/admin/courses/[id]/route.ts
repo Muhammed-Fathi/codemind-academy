@@ -67,7 +67,10 @@ export async function PATCH(
     const check = requireAcademicLevel(body.academicLevel);
     if (!check.ok) return err(tApi("api.375"), 400);
     if (check.value !== course.academicLevel) {
-      const [members, lessons] = await Promise.all([
+      // Manual-QA pass — the guard also counts ENROLLMENTS (an enrolled
+      // student's typed level is authority too). Empty groups do not block:
+      // they carry no level state of their own (Group has no academicLevel).
+      const [members, lessons, enrollments] = await Promise.all([
         db.student.count({ where: { group: { courseId: id } } }),
         db.lesson.count({
           where: {
@@ -77,8 +80,12 @@ export async function PATCH(
             ],
           },
         }),
+        db.enrollment.count({ where: { courseId: id } }),
       ]);
-      if (members > 0 || lessons > 0) return err(tApi("api.377"), 409);
+      // api.378 names the COURSE re-level refusal precisely (api.377 is the
+      // group re-target wording); both are 409 fail-closed, nothing is
+      // rewritten on Student/Lesson.
+      if (members > 0 || lessons > 0 || enrollments > 0) return err(tApi("api.378"), 409);
       nextAcademicLevel = check.value;
     }
   }

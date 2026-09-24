@@ -98,6 +98,8 @@ const MODULES = [
   "src/app/api/admin/mock-exams/[id]/route.ts",
   "src/app/api/admin/mock-exams/eligible/route.ts",
   "src/app/api/admin/payments/[id]/approve/route.ts",
+  // Phase K manual-QA pass (section I): level-visible admin list endpoints.
+  "src/app/api/admin/question-bank/route.ts",
 ];
 const files = MODULES.filter((f) => fs.existsSync(path.join(REPO, f)));
 fs.writeFileSync(
@@ -237,6 +239,12 @@ const ROUTES = [
   ["PATCH", /^\/api\/admin\/mock-exams\/([^/]+)$/, () => route("admin/mock-exams/[id]/route.js").PATCH, (m) => ({ id: m[1] })],
   ["GET", /^\/api\/admin\/mock-exams\/eligible$/, () => route("admin/mock-exams/eligible/route.js").GET],
   ["POST", /^\/api\/admin\/payments\/([^/]+)\/approve$/, () => route("admin/payments/[id]/approve/route.js").POST, (m) => ({ id: m[1] })],
+  // Phase K manual-QA pass (section I) — read endpoints the admin views use.
+  ["GET", /^\/api\/admin\/courses$/, () => route("admin/courses/route.js").GET],
+  ["GET", /^\/api\/admin\/groups$/, () => route("admin/groups/route.js").GET],
+  ["GET", /^\/api\/admin\/lessons$/, () => route("admin/lessons/route.js").GET],
+  ["GET", /^\/api\/admin\/mock-exams$/, () => route("admin/mock-exams/route.js").GET],
+  ["GET", /^\/api\/admin\/question-bank$/, () => route("admin/question-bank/route.js").GET],
 ];
 async function call(method, url, { body, cookie } = {}) {
   const u = new URL(url, "http://127.0.0.1");
@@ -671,6 +679,104 @@ const secondExam = await call("POST", "/api/admin/mock-exams", { body: { title: 
 eq(secondExam.status, 200, "H: course-bound SECOND SECONDARY (official course) exam still creates from its own lesson pool", JSON.stringify(secondExam.json));
 const secondPool = await Pool.countMockExamEligiblePool({ schoolType: "ARABIC", courseId: OFFICIAL_COURSE_ID });
 eq(secondPool.lessonLinked, 2, "H: the Second Secondary pool holds only its own lesson-linked rows (FIRST rows excluded)");
+
+
+// ===========================================================================
+section("I — Phase K manual-QA pass: level VISIBLE in admin lists, filters compose, no new authority");
+// ===========================================================================
+// I-1. Courses: every row carries the canonical Course.academicLevel; the
+// existing Second Secondary official course renders as SECOND_SECONDARY.
+const coursesList = await call("GET", "/api/admin/courses", { cookie: ADMIN });
+eq(coursesList.status, 200, "I: GET /api/admin/courses responds");
+ok((coursesList.json?.courses || []).length > 0 && coursesList.json.courses.every((c) => "academicLevel" in c), "I: every course row exposes academicLevel (badge source)");
+eq((coursesList.json?.courses || []).find((c) => c.slug === "programming-ai-2nd-sec")?.academicLevel, "SECOND_SECONDARY", "I: the official Second Secondary course renders as SECOND_SECONDARY");
+// I-2. Course re-level fails CLOSED with the precise bilingual reason while
+// grouped students / lessons / enrollments depend on it (nothing rewritten).
+const c1Before = db.prepare(`SELECT "academicLevel" FROM "Course" WHERE "id"='k2-c1'`).get().academicLevel;
+const studentsBefore = db.prepare(`SELECT "id","academicLevel" FROM "Student" ORDER BY "id"`).all();
+const lessonsBefore = db.prepare(`SELECT "id","academicLevel" FROM "Lesson" ORDER BY "id"`).all();
+const relevel = await call("PATCH", "/api/admin/courses/k2-c1", { body: { academicLevel: "SECOND_SECONDARY" }, cookie: ADMIN });
+eq(relevel.status, 409, "I: re-levelling a course with dependants → 409 (fail closed)");
+const dict2026 = require(path.join(EMIT, "lib", "i18n-dict-2026.js"));
+const dictObj = dict2026.DICT_2026;
+ok(dictObj && dictObj["api.378"] && dictObj["api.378"].ar && dictObj["api.378"].en, "I: api.378 exists in both languages");
+ok(dictObj && (relevel.json?.error === dictObj["api.378"].ar || relevel.json?.error === dictObj["api.378"].en), "I: the refusal names the COURSE re-level reason (api.378), not the group wording", JSON.stringify(relevel.json));
+eq(db.prepare(`SELECT "academicLevel" FROM "Course" WHERE "id"='k2-c1'`).get().academicLevel, c1Before, "I: course level unchanged after refusal");
+eq(db.prepare(`SELECT "id","academicLevel" FROM "Student" ORDER BY "id"`).all(), studentsBefore, "I: no Student.academicLevel was rewritten (no cascade)");
+eq(db.prepare(`SELECT "id","academicLevel" FROM "Lesson" ORDER BY "id"`).all(), lessonsBefore, "I: no Lesson.academicLevel was rewritten (no cascade)");
+// An EMPTY course with an empty group is still re-levellable (E: c4/c5 above) —
+// an empty Group carries no level state (Group has no academicLevel column).
+eq(db.prepare(`PRAGMA table_info("Group")`).all().some((c) => c.name === "academicLevel"), false, "I: Group has NO academicLevel column");
+eq(db.prepare(`PRAGMA table_info("MockExam")`).all().some((c) => c.name === "academicLevel"), false, "I: MockExam has NO academicLevel column");
+eq(db.prepare(`PRAGMA table_info("Question")`).all().some((c) => c.name === "academicLevel"), false, "I: Question has NO academicLevel column");
+eq(db.prepare(`PRAGMA table_info("SessionVideo")`).all().some((c) => c.name === "academicLevel"), false, "I: SessionVideo has NO academicLevel column");
+// I-3. Groups: the list's level is the COURSE's (derived), for every group.
+const groupsList = await call("GET", "/api/admin/groups", { cookie: ADMIN });
+eq(groupsList.status, 200, "I: GET /api/admin/groups responds");
+ok((groupsList.json?.groups || []).length > 0 && groupsList.json.groups.every((g) => {
+  const lvl = db.prepare(`SELECT "academicLevel" FROM "Course" WHERE "id"=?`).get(g.courseId)?.academicLevel ?? null;
+  return g.academicLevel === lvl;
+}), "I: every group row's academicLevel equals its course's level (derived, never stored)");
+// I-4. Mock exams: list carries course + course.academicLevel (no own level).
+const examsList = await call("GET", "/api/admin/mock-exams", { cookie: ADMIN });
+eq(examsList.status, 200, "I: GET /api/admin/mock-exams responds");
+ok((examsList.json?.exams || []).length > 0 && examsList.json.exams.every((e) => e.course && "academicLevel" in e.course && !("academicLevel" in e)), "I: every exam row exposes course.academicLevel and NO exam-level field");
+// I-5. Students: the level filter uses the TYPED column and composes with
+// track + status; an invalid value is refused, never ignored.
+const firstArList = await call("GET", "/api/admin/students?schoolType=ARABIC&academicLevel=FIRST_SECONDARY&pageSize=100", { cookie: ADMIN });
+eq(firstArList.status, 200, "I: students level filter responds");
+const firstArRows = firstArList.json?.students || [];
+ok(firstArRows.length > 0 && firstArRows.every((s) => s.academicLevel === "FIRST_SECONDARY" && s.schoolType === "ARABIC"), "I: level filter composes with the track filter (all FIRST + ARABIC)");
+eq(firstArRows.length, count(`SELECT COUNT(*) AS c FROM "Student" WHERE "academicLevel"='FIRST_SECONDARY' AND "schoolType"='ARABIC'`), "I: filtered count equals the SQL count on Student.academicLevel");
+const firstArActive = await call("GET", "/api/admin/students?schoolType=ARABIC&academicLevel=FIRST_SECONDARY&status=active&pageSize=100", { cookie: ADMIN });
+ok(firstArActive.status === 200 && (firstArActive.json?.students || []).every((s) => s.academicLevel === "FIRST_SECONDARY" && s.isActive === true), "I: level filter composes with the status filter too");
+// The level filter is NOT the grade string: a student whose typed level is
+// SECOND but whose grade mirror says otherwise must follow the typed level.
+const probeId = db.prepare(`SELECT "id" FROM "Student" WHERE "academicLevel"='SECOND_SECONDARY' AND "schoolType"='ARABIC' LIMIT 1`).get()?.id;
+const probeGrade = probeId ? db.prepare(`SELECT "grade" FROM "Student" WHERE "id"=?`).get(probeId).grade : null;
+if (probeId) db.prepare(`UPDATE "Student" SET "grade"='1st Secondary' WHERE "id"=?`).run(probeId);
+const secondArList = await call("GET", "/api/admin/students?schoolType=ARABIC&academicLevel=SECOND_SECONDARY&pageSize=100", { cookie: ADMIN });
+ok(!!probeId && (secondArList.json?.students || []).some((s) => s.id === probeId), "I: filter follows Student.academicLevel, NOT the grade string");
+if (probeId) db.prepare(`UPDATE "Student" SET "grade"=? WHERE "id"=?`).run(probeGrade, probeId);
+eq((await call("GET", "/api/admin/students?academicLevel=bogus", { cookie: ADMIN })).status, 400, "I: invalid academicLevel filter → 400 (never silently ignored)");
+const allLevels = await call("GET", "/api/admin/students?schoolType=ARABIC&academicLevel=all&pageSize=100", { cookie: ADMIN });
+eq((allLevels.json?.students || []).length, count(`SELECT COUNT(*) AS c FROM "Student" WHERE "schoolType"='ARABIC'`), "I: 'all' = no level narrowing");
+// I-6. Session management: the SAME officialCode in two levels is listed
+// unambiguously (Level + code + title) and the level filter separates them.
+db.prepare(`UPDATE "Lesson" SET "officialCode"='1-1' WHERE "id"=?`).run(l1row.id); // FIRST course lesson, same code as the official SECOND 1-1
+eq(count(`SELECT COUNT(*) AS c FROM "Lesson" WHERE "officialCode"='1-1'`), 2, "I: two lessons share officialCode 1-1 across two levels (composite uniqueness allows it)");
+const both = await call("GET", "/api/admin/lessons?q=1-1&pageSize=50", { cookie: ADMIN });
+eq(both.status, 200, "I: GET /api/admin/lessons responds");
+const bothRows = (both.json?.lessons || []).filter((l) => l.officialCode === "1-1");
+eq(new Set(bothRows.map((l) => l.academicLevel)).size, 2, "I: the two 1-1 rows carry DIFFERENT academicLevel values (identity = level + code + title)");
+ok(bothRows.every((l) => l.identity?.course && "academicLevel" in l.identity.course && l.identity.course.academicLevel === l.academicLevel), "I: identity.course.academicLevel is exposed and agrees with the derived lesson level");
+const onlyFirst = await call("GET", "/api/admin/lessons?q=1-1&academicLevel=FIRST_SECONDARY&pageSize=50", { cookie: ADMIN });
+const onlyFirstRows = (onlyFirst.json?.lessons || []).filter((l) => l.officialCode === "1-1");
+eq(onlyFirstRows.map((l) => l.academicLevel), ["FIRST_SECONDARY"], "I: academicLevel=FIRST_SECONDARY lists exactly the FIRST 1-1");
+const onlySecond = await call("GET", "/api/admin/lessons?q=1-1&academicLevel=SECOND_SECONDARY&pageSize=50", { cookie: ADMIN });
+eq((onlySecond.json?.lessons || []).filter((l) => l.officialCode === "1-1").map((l) => l.academicLevel), ["SECOND_SECONDARY"], "I: academicLevel=SECOND_SECONDARY lists exactly the SECOND 1-1");
+const bothLevelsAndTrack = await call("GET", "/api/admin/lessons?academicLevel=FIRST_SECONDARY&trackScope=SHARED&pageSize=50", { cookie: ADMIN });
+ok(bothLevelsAndTrack.status === 200 && (bothLevelsAndTrack.json?.lessons || []).every((l) => l.academicLevel === "FIRST_SECONDARY" && l.trackScope === "SHARED"), "I: lesson level filter composes with trackScope");
+eq((await call("GET", "/api/admin/lessons?academicLevel=bogus", { cookie: ADMIN })).status, 400, "I: invalid lesson level filter → 400");
+db.prepare(`UPDATE "Lesson" SET "officialCode"=NULL WHERE "id"=?`).run(l1row.id);
+// I-7. Question bank: level is DERIVED via quiz → lesson only; the free-bank
+// row has no single level and is excluded by any level filter (the truth).
+const qbAll = await call("GET", "/api/admin/question-bank?schoolType=all&pageSize=200", { cookie: ADMIN });
+eq(qbAll.status, 200, "I: GET /api/admin/question-bank responds");
+const qbRows = qbAll.json?.questions || [];
+const qFree = qbRows.find((q) => q.id === "k2-q-free");
+ok(qFree && qFree.quiz === null && !("academicLevel" in qFree), "I: the free-bank question is listed with NO quiz and NO level field (no false authority)");
+const qFirst = qbRows.find((q) => q.id === "k2-q-first-1");
+eq(qFirst?.quiz?.lesson?.academicLevel, "FIRST_SECONDARY", "I: a lesson-linked question exposes its lesson's DERIVED level");
+const qbFirst = await call("GET", "/api/admin/question-bank?schoolType=all&academicLevel=FIRST_SECONDARY&pageSize=200", { cookie: ADMIN });
+const qbFirstIds = (qbFirst.json?.questions || []).map((q) => q.id).sort();
+eq(qbFirstIds, ["k2-q-first-1", "k2-q-first-2"], "I: level filter = ONLY questions derivable to FIRST lessons (free-bank + SECOND excluded)");
+const qbSecondLang = await call("GET", "/api/admin/question-bank?schoolType=LANGUAGE&academicLevel=SECOND_SECONDARY&pageSize=200", { cookie: ADMIN });
+ok(qbSecondLang.status === 200 && (qbSecondLang.json?.questions || []).every((q) => q.schoolType === "LANGUAGE" || q.schoolType === null), "I: level filter composes with the track bank without widening it (track isolation intact)");
+eq((await call("GET", "/api/admin/question-bank?academicLevel=bogus", { cookie: ADMIN })).status, 400, "I: invalid question-bank level filter → 400");
+// I-8. Registration offerings are still data-driven (unchanged by this pass).
+const offeringsAgain = await call("GET", "/api/registration/options", {});
+ok(offeringsAgain.status === 200 && Array.isArray(offeringsAgain.json?.offerings) && !("levels" in (offeringsAgain.json || {})), "I: registration options remain offerings-shaped (data-driven)");
 
 // ---------------------------------------------------------------------------
 section("SUMMARY");

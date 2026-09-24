@@ -58,7 +58,7 @@ export async function GET(
               titleAr: true,
               order: true,
               course: {
-                select: { id: true, slug: true, name: true, nameAr: true },
+                select: { id: true, slug: true, name: true, nameAr: true, academicLevel: true },
               },
             },
           },
@@ -83,7 +83,7 @@ export async function GET(
                   titleAr: true,
                   order: true,
                   course: {
-                    select: { id: true, slug: true, name: true, nameAr: true },
+                    select: { id: true, slug: true, name: true, nameAr: true, academicLevel: true },
                   },
                 },
               },
@@ -199,6 +199,7 @@ export async function GET(
             slug: part.course.slug,
             name: part.course.name,
             nameAr: part.course.nameAr,
+            academicLevel: part.course.academicLevel ?? null,
           }
         : null,
       part: part

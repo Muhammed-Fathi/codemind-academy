@@ -20,7 +20,7 @@ export async function GET() {
   const batches = await db.batch.findMany({
     orderBy: [{ schoolType: "asc" }, { createdAt: "asc" }],
     include: {
-      course: { select: { id: true, name: true, nameAr: true } },
+      course: { select: { id: true, name: true, nameAr: true, academicLevel: true } },
       _count: { select: { students: true, videos: true } },
     },
   });

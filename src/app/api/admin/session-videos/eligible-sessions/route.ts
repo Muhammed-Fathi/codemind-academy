@@ -50,7 +50,14 @@ export async function GET(req: NextRequest) {
       startAt: true,
       status: true,
       attendanceFinalizedAt: true,
-      group: { select: { name: true } },
+      group: {
+        select: {
+          name: true,
+          // Group → Course → Level context for the picker (read-only; the
+          // level lives on the Course, never on the group or the video).
+          course: { select: { name: true, nameAr: true, academicLevel: true } },
+        },
+      },
     },
     orderBy: { startAt: "desc" },
     take: 100,
@@ -64,6 +71,8 @@ export async function GET(req: NextRequest) {
       startAt: s.startAt,
       status: s.status,
       groupName: (s.group as { name: string } | null)?.name ?? null,
+      courseName: s.group?.course?.nameAr || s.group?.course?.name || null,
+      academicLevel: s.group?.course?.academicLevel ?? null,
       finalized: s.attendanceFinalizedAt != null,
     })),
   });

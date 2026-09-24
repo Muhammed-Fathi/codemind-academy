@@ -2791,7 +2791,7 @@ export const DICT_2026: Record<string, DictEntry> = {
   "parent.feedback.empty": { ar: "مفيش ملاحظات", en: "No feedback yet" },
 
   // ---- Phase K2: academic level (First / Second Secondary) ----
-  "api.371": { ar: "الصف الدراسي مطلوب (أولى ثانوي أو تانية ثانوي)", en: "Academic level is required (First or Second Secondary)" },
+  "api.371": { ar: "الصف الدراسي مطلوب (أولى ثانوي أو ثانية ثانوي)", en: "Academic level is required (First or Second Secondary)" },
   "api.372": {
     ar: "التسجيل غير متاح حاليًا للصف ونوع المدرسة المختارين",
     en: "Registration is not currently available for the selected level and school type",
@@ -2815,17 +2815,29 @@ export const DICT_2026: Record<string, DictEntry> = {
   },
   "admin.642": { ar: "الصف الدراسي", en: "Academic level" },
   "admin.643": { ar: "أولى ثانوي", en: "First Secondary" },
-  "admin.644": { ar: "تانية ثانوي", en: "Second Secondary" },
+  "admin.644": { ar: "ثانية ثانوي", en: "Second Secondary" },
   "admin.645": { ar: "غير محدد", en: "Unspecified" },
   "admin.646": {
     ar: "تعارض في الصف الدراسي: صف الطالب لا يطابق صف كورس المجموعة",
     en: "Academic level mismatch: the student's level differs from the group's course level",
   },
   "admin.647": { ar: "الكورس (مطلوب)", en: "Course (required)" },
+  // Phase K manual-QA pass — level visibility vocabulary (filters/selectors).
+  "admin.648": { ar: "كل الصفوف", en: "All Levels" },
+  "admin.649": { ar: "اختر الصف الدراسي (مطلوب)", en: "Select academic level (required)" },
+  "admin.650": { ar: "بدون صف محدد — سؤال حر", en: "No single level — free-bank question" },
+  "admin.651": {
+    ar: "الصف الدراسي للكورس ثابت طالما له طلاب أو جلسات أو اشتراكات مرتبطة",
+    en: "The course level is locked while students, sessions or enrollments depend on it",
+  },
+  "api.378": {
+    ar: "لا يمكن تغيير الصف الدراسي لهذا الكورس: له طلاب مسجّلون في مجموعاته أو جلسات أو اشتراكات مرتبطة — أفرغه أولًا",
+    en: "Cannot change this course's academic level: students in its groups, lessons or enrollments depend on it — empty it first",
+  },
   "auth.228": { ar: "الصف الدراسي", en: "Academic level" },
   "auth.229": { ar: "اختر الصف الدراسي", en: "Select academic level" },
   "auth.230": { ar: "أولى ثانوي", en: "First Secondary" },
-  "auth.231": { ar: "تانية ثانوي", en: "Second Secondary" },
+  "auth.231": { ar: "ثانية ثانوي", en: "Second Secondary" },
   "auth.232": {
     ar: "مفيش تسجيل متاح حاليًا لهذا الصف — اختر صفًا آخر",
     en: "No registration is available for this level right now — choose another level",
