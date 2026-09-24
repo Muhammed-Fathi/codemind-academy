@@ -163,14 +163,26 @@ export async function POST(req: NextRequest) {
   // client-supplied `grade` can never override it.
   const academicLevelCheck = requireAcademicLevel(body.academicLevel);
   const schoolName = body.schoolName ? String(body.schoolName) : null;
-  // Phase 12 — an admin creating a student MUST give a valid school type, or
-  // explicitly none. `normalizeSchoolType` alone would silently turn a typo
-  // into "unspecified" and quietly restrict the student to SHARED content.
+  // Phase 12 — an admin creating a student MUST give a valid school type.
+  // `normalizeSchoolType` alone would silently turn a typo into "unspecified"
+  // and quietly restrict the student to SHARED content.
+  //
+  // Phase L manual-QA fix — a MISSING track is now refused exactly like an
+  // unrecognised one. The Add Student form carries an explicit Track selector,
+  // so an absent value no longer means "the admin deliberately chose nothing"
+  // — it means the request is incomplete. Letting it through persisted
+  // `schoolType = null`, which dropped the new student into the "غير محدد"
+  // tab and made every track-scoped group assignment fail with a mismatch the
+  // admin could not have anticipated. The rejection reuses the SAME canonical
+  // contract message and status as the sibling write path (registration →
+  // api.068/400; here api.210/400), so both create paths agree.
+  //
+  // `Student.schoolType` itself stays NULLABLE: legacy rows genuinely have no
+  // track, and an admin can still classify them later in Edit Student. Only
+  // this creation path is strict.
   const schoolTypeCheck = requireSchoolType(body.schoolType);
-  if (!schoolTypeCheck.ok && schoolTypeCheck.reason === "INVALID") {
-    return err(tApi("api.210"), 400);
-  }
-  const schoolType = schoolTypeCheck.ok ? schoolTypeCheck.value : null;
+  if (!schoolTypeCheck.ok) return err(tApi("api.210"), 400);
+  const schoolType = schoolTypeCheck.value;
   const nationalId = body.nationalId ? String(body.nationalId).trim() : null;
   const parentPhone = body.parentPhone ? String(body.parentPhone).trim() : null;
   const groupId = body.groupId ? String(body.groupId) : null;

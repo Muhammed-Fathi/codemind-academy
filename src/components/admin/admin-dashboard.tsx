@@ -890,6 +890,16 @@ function AddStudentDialog({
     // Phase K2 — typed academic level replaces the free-text grade input;
     // the server derives `grade` from it.
     academicLevel: "SECOND_SECONDARY" as "FIRST_SECONDARY" | "SECOND_SECONDARY",
+    // Phase L manual-QA fix — the student's canonical Track / school type.
+    // Deliberately starts EMPTY: the admin must choose مدارس عربي or مدارس
+    // لغات explicitly. There is no default, because a default would silently
+    // classify the student and end them up in the "غير محدد" tab while the
+    // group-assignment gate later rejected them for a track they never picked.
+    // The value is the SAME `SchoolType` enum the rest of the platform uses
+    // (`Student.schoolType`, Group audience, registration) — no second
+    // authority, and the free-text `schoolName` field below is only the
+    // school's name.
+    schoolType: "",
     schoolName: "",
   });
   const [saving, setSaving] = React.useState(false);
@@ -897,6 +907,12 @@ function AddStudentDialog({
   const submit = async () => {
     if (!form.name || !form.email || !form.password || !form.academicLevel) {
       toast.error(tr("admin.026"));
+      return;
+    }
+    // Same contract text the server returns for a missing track (api.210), so
+    // the client guard and the server gate can never drift apart.
+    if (!form.schoolType) {
+      toast.error(tr("api.210"));
       return;
     }
     setSaving(true);
@@ -911,7 +927,7 @@ function AddStudentDialog({
       toast.success(tr("admin.028"));
       onCreated();
       onOpenChange(false);
-      setForm({ name: "", email: "", password: "", phone: "", academicLevel: "SECOND_SECONDARY", schoolName: "" });
+      setForm({ name: "", email: "", password: "", phone: "", academicLevel: "SECOND_SECONDARY", schoolType: "", schoolName: "" });
     } catch (e: any) {
       toast.error(e.message || tr("admin.001"));
     } finally {
@@ -959,6 +975,24 @@ function AddStudentDialog({
                 </SelectContent>
               </Select>
             </div>
+          </div>
+          <div>
+            <Label>{tr("admin.055")}</Label>
+            {/* Phase L manual-QA fix — REQUIRED explicit Track / school type.
+                The options are the canonical SchoolType enum values with the
+                canonical labels already used by the students tabs and the
+                group audience selector (admin.200 / admin.201), so the admin
+                sees exactly the same two choices everywhere in the platform.
+                No "unspecified" option: that state is for legacy rows only. */}
+            <Select value={form.schoolType} onValueChange={(v) => setForm({ ...form, schoolType: v })}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder={tr("admin.645")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ARABIC">{tr("admin.200")}</SelectItem>
+                <SelectItem value="LANGUAGE">{tr("admin.201")}</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div>
             <Label>{tr("admin.037")}</Label>
@@ -1063,6 +1097,45 @@ function StudentProfileDrawer({
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ academicLevel: level }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j?.error || "err");
+      }
+      toast.success(tr("admin.044"));
+      onUpdated();
+      onClose();
+    } catch (e: any) {
+      toast.error(e?.message && e.message !== "err" ? e.message : tr("admin.001"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Phase L manual-QA fix — the student's canonical Track / school type, Editable.
+  //
+  // Same derived-default + explicit-choice pattern as the level control above
+  // (no effect-driven state sync), and the SAME canonical `Student.schoolType`
+  // values and labels as the Add Student form. A legacy student whose track is
+  // still NULL shows the empty placeholder and can be classified here.
+  //
+  // Safety is NOT re-implemented in the UI: the PATCH route already refuses a
+  // track change that would leave the student in a group of another audience
+  // (409 api.286), and its error text is surfaced verbatim below. The drawer
+  // never unassigns the student, never rewrites the group and never forces the
+  // change through — the admin must move the student out of the group first.
+  const [trackChoice, setTrackChoice] = React.useState<{ id: string; value: string } | null>(null);
+  const track =
+    trackChoice && student && trackChoice.id === student.id ? trackChoice.value : student?.schoolType || "";
+  const setTrack = (v: string) => student && setTrackChoice({ id: student.id, value: v });
+  const saveTrack = async () => {
+    if (!student || !track) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/admin/students/${student.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ schoolType: track }),
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
@@ -1183,6 +1256,26 @@ function StudentProfileDrawer({
                   </SelectContent>
                 </Select>
                 <Button size="sm" variant="outline" onClick={saveLevel} disabled={saving || !level} className="w-full">
+                  {tr("admin.040")}
+                </Button>
+              </div>
+
+              {/* Phase L manual-QA fix — typed Track / school type (the ONLY
+                  track authority; the server refuses a change that would leave
+                  the student in a group of another audience, and the free-text
+                  school name above stays a profile field). */}
+              <div className="rounded-lg border p-3 space-y-2">
+                <div className="text-xs text-muted-foreground">{tr("admin.055")}</div>
+                <Select value={track} onValueChange={setTrack}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder={tr("admin.645")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ARABIC">{tr("admin.200")}</SelectItem>
+                    <SelectItem value="LANGUAGE">{tr("admin.201")}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button size="sm" variant="outline" onClick={saveTrack} disabled={saving || !track} className="w-full">
                   {tr("admin.040")}
                 </Button>
               </div>
