@@ -53,7 +53,7 @@ const PHASE13_MIGRATION = "20260909180000_phase13_session_lifecycle";
 /** The one table Phase 13 creates, so it is absent from the base schema. */
 const PHASE13_MIGRATION_TABLE = "SessionPublication";
 const DEFAULT_LOCAL_DB = path.join(REPO, "prisma", "db", "custom.db");
-const KNOWLEDGE_MODEL = path.join(REPO, "docs", "curriculum", "knowledge-model.json");
+const KNOWLEDGE_MODEL = path.join(REPO, "docs", "curriculum", "second-secondary", "knowledge-model.json");
 
 const args = process.argv.slice(2);
 const MODE = args[0] && !args[0].startsWith("--") ? args[0] : "all";
@@ -1670,7 +1670,8 @@ function loadRealCode(outDir) {
     }
     const json = /knowledge-model\.json$/.exec(request);
     if (json) {
-      const copied = path.join(outDir, "docs/curriculum/knowledge-model.json");
+      const levelDir = /first-secondary/.test(request) ? "first-secondary" : "second-secondary";
+      const copied = path.join(outDir, `docs/curriculum/${levelDir}/knowledge-model.json`);
       if (fs.existsSync(copied)) return copied;
     }
     return originalResolve.call(this, request, ...rest);

@@ -3,7 +3,12 @@ import { getServerT } from "@/lib/i18n-server";
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireRole } from "@/lib/api";
-import { reconcileOfficialCurriculum } from "@/lib/official-curriculum";
+import {
+  LEVEL_CURRICULUM_SPECS,
+  reconcileAllOfficialCurricula,
+  specForLevel,
+  type LevelCurriculumSpec,
+} from "@/lib/official-curriculum";
 import { requireAcademicLevel } from "@/lib/academic-level";
 
 export async function POST(req: NextRequest) {
@@ -21,11 +26,27 @@ export async function POST(req: NextRequest) {
   }
 
   // Reconcile action: idempotently align the DB curriculum with the official
-  // knowledge model (docs/curriculum/knowledge-model.json), archiving legacy
-  // rows instead of deleting them so user history is preserved.
+  // knowledge models (docs/curriculum/<level>/knowledge-model.json), archiving
+  // legacy rows instead of deleting them so user history is preserved.
+  //
+  // Phase L — LEVEL AWARENESS. Two official curricula now exist (First and
+  // Second Secondary) and they legitimately share 18 lesson codes, so the
+  // level is resolved from authoritative caller context, never guessed from a
+  // code. A caller may target ONE level (needed for scoped re-runs and QA);
+  // with no level supplied, every registered level is reconciled in registry
+  // order. Each run is independently scoped, so reconciling one level can
+  // never touch the other.
   if (body.action === "reconcile-official") {
     try {
-      const report = await reconcileOfficialCurriculum(db);
+      let specs: readonly LevelCurriculumSpec[] = LEVEL_CURRICULUM_SPECS;
+      if (body.academicLevel !== undefined && body.academicLevel !== null && body.academicLevel !== "") {
+        const levelCheck = requireAcademicLevel(body.academicLevel);
+        if (!levelCheck.ok) return err(tApi("api.375"), 400);
+        const spec = specForLevel(levelCheck.value);
+        if (!spec) return err(tApi("api.375"), 400);
+        specs = [spec];
+      }
+      const report = await reconcileAllOfficialCurricula(db, specs);
       return ok({ ok: true, report });
     } catch (e: any) {
       return err(e?.message || tApi("api.017"), 500);

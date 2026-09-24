@@ -270,7 +270,9 @@ Module._resolveFilename = function (request, ...rest) {
   }
   const json = /knowledge-model\\.json$/.exec(request);
   if (json) {
-    const copied = path.join(outDir, "docs", "curriculum", "knowledge-model.json");
+    // Phase L: one model per academic level.
+    const levelDir = /first-secondary/.test(request) ? "first-secondary" : "second-secondary";
+    const copied = path.join(outDir, "docs", "curriculum", levelDir, "knowledge-model.json");
     if (fs.existsSync(copied)) return copied;
   }
   const resolved = originalResolve.call(this, request, ...rest);
@@ -303,6 +305,14 @@ process.exit(0);
       NODE_PATH: path.join(REPO, "node_modules"),
       SEED_ADMIN_PASSWORD: "k1-verify-disposable-admin-password",
       SEED_DEMO_PASSWORD: "k1-verify-disposable-demo-password",
+      // Phase L — this harness reproduces a PRE-K1/PRE-K3 database, and a
+      // pre-K3 database still enforces the GLOBAL `Lesson_officialCode_key`
+      // unique (K3 is what replaces it with the per-level composite). The two
+      // official curricula share 18 codes ("1-1" … "7-3"), so seeding both
+      // here is a constraint violation, not a scoping preference: K1's
+      // migration backfills SECOND_SECONDARY for EVERY existing row, which is
+      // only correct for the single-curriculum world that existed then.
+      SEED_CURRICULUM_LEVELS: "SECOND_SECONDARY",
     },
   });
   ok(seedRes.status === 0, `real scripts/seed.ts populates the K1-state database${seedRes.status === 0 ? "" : ` (exit ${seedRes.status})`}`,

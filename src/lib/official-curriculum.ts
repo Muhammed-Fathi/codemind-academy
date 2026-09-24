@@ -1,7 +1,8 @@
 // CodeMind Academy — Official curriculum reconciliation (Phase 11).
 //
-// SERVER-ONLY. This module imports docs/curriculum/knowledge-model.json
-// (~142KB) — never import it from a client component.
+// SERVER-ONLY. This module imports the per-level curriculum models
+// (docs/curriculum/<level>/knowledge-model.json) — never import it from a
+// client component.
 //
 // The knowledge model is the authoritative academic contract (validated
 // against the committed Ministry source PDFs). This module reconciles it
@@ -29,7 +30,11 @@
 import { db } from "@/lib/db";
 import { LESSON_NEW_LIFECYCLE } from "@/lib/session-lifecycle";
 import { normalizeAcademicLevel, type AcademicLevel } from "@/lib/academic-level";
-import knowledgeModelFile from "../../docs/curriculum/knowledge-model.json";
+import knowledgeModelFile from "../../docs/curriculum/second-secondary/knowledge-model.json";
+// Phase L — the First Secondary curriculum model, generated from the approved
+// bilingual extraction manifest that sits next to it. Same shape as its Second
+// Secondary sibling, so the SAME loader and the SAME reconciler serve both.
+import firstSecondaryModelFile from "../../docs/curriculum/first-secondary/knowledge-model.json";
 
 /** Minimal surface of the Prisma client used here (allows mock injection in tests). */
 export type ReconcileClient = any;
@@ -156,6 +161,85 @@ export const SECOND_SECONDARY_SPEC: LevelCurriculumSpec = {
   expectedCodes: OFFICIAL_LESSON_CODES,
   knowledgeModel: knowledgeModelFile,
 };
+
+// ---------------------------------------------------------------------------
+// Phase L — FIRST SECONDARY.
+//
+// APPROVED extraction checkpoint: 13 official chapters → 13 Units, 62 official
+// lessons → 62 Lessons, ONE synthetic structural Part, ZERO Topics. Source of
+// truth: docs/curriculum/first-secondary/first-secondary-curriculum.json (the
+// bilingual manifest, extracted from the paired EN + AR Ministry PDFs and
+// approved); `…/knowledge-model.json` is its compact runtime representation and
+// a regression test re-derives it from the manifest, so the two cannot drift.
+//
+// The canonical lesson code is the ENGLISH CHAPTER-FIRST structure ("1-1" …
+// "13-12"). The Arabic edition prints the REVERSE badge ("1-13"), and prints
+// "1-2" twice (unit 1 lesson 2 and unit 2 lesson 1) — a source printing defect
+// that makes the Arabic badge unusable as a platform identity. It is therefore
+// provenance only, kept in the manifest and deliberately ABSENT from the
+// runtime model: no lookup, uniqueness, progression, session, quiz or
+// reconciliation path may ever see it.
+// ---------------------------------------------------------------------------
+
+/** The exact First Secondary official lesson code set. Any drift fails closed. */
+export const FIRST_SECONDARY_LESSON_CODES: readonly string[] = [
+  "1-1", "1-2",
+  "2-1", "2-2", "2-3",
+  "3-1", "3-2", "3-3", "3-4", "3-5",
+  "4-1",
+  "5-1", "5-2", "5-3",
+  "6-1", "6-2", "6-3", "6-4", "6-5", "6-6", "6-7", "6-8", "6-9", "6-10",
+  "7-1", "7-2", "7-3",
+  "8-1", "8-2", "8-3", "8-4", "8-5",
+  "9-1", "9-2", "9-3",
+  "10-1", "10-2", "10-3", "10-4", "10-5", "10-6",
+  "11-1", "11-2", "11-3", "11-4",
+  "12-1", "12-2", "12-3", "12-4", "12-5",
+  "13-1", "13-2", "13-3", "13-4", "13-5", "13-6", "13-7", "13-8", "13-9",
+  "13-10", "13-11", "13-12",
+] as const;
+
+export const FIRST_SECONDARY_EXPECTED_COUNTS = {
+  parts: 1,
+  units: 13,
+  lessons: 62,
+} as const;
+
+/** First Secondary — the synthetic-Part official curriculum (Phase L). */
+export const FIRST_SECONDARY_SPEC: LevelCurriculumSpec = {
+  academicLevel: "FIRST_SECONDARY",
+  courseSlug: "programming-ai-1st-sec",
+  course: {
+    name: "Programming & AI",
+    nameAr: "البرمجة والذكاء الاصطناعي",
+    description: "كورس Programming & AI لطلاب الصف الأول الثانوي.",
+    color: "#10b981",
+  },
+  expectedCounts: FIRST_SECONDARY_EXPECTED_COUNTS,
+  expectedCodes: FIRST_SECONDARY_LESSON_CODES,
+  knowledgeModel: firstSecondaryModelFile,
+};
+
+/**
+ * Phase L — every registered official curriculum, one per academic level.
+ *
+ * The reconciler stays SINGLE-ENGINE and spec-parameterised: this registry is
+ * the only place that knows both levels exist, and `reconcileAllOfficialCurricula`
+ * simply calls the one engine once per entry. Because each run is scoped to its
+ * own `courseSlug` + level, reconciling one level can never touch the other.
+ */
+export const LEVEL_CURRICULUM_SPECS: readonly LevelCurriculumSpec[] = [
+  SECOND_SECONDARY_SPEC,
+  FIRST_SECONDARY_SPEC,
+];
+
+/** The spec for a level, or null when the level has no official curriculum. */
+export function specForLevel(level: unknown): LevelCurriculumSpec | null {
+  const normalized = normalizeAcademicLevel(level);
+  if (!normalized) return null;
+  return LEVEL_CURRICULUM_SPECS.find((s) => s.academicLevel === normalized) ?? null;
+}
+
 
 function isNonEmptyString(v: unknown): v is string {
   return typeof v === "string" && v.trim().length > 0;
@@ -655,4 +739,52 @@ export async function reconcileOfficialCurriculum(
     archivedLessonIds,
     warnings,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Phase L — multi-level entry point + summary.
+//
+// There is still exactly ONE reconciler (above). This helper only fans it out
+// over the registry, one fully-scoped run per level, so that "reconcile the
+// official curriculum" stays a single, deterministic, reproducible operation
+// now that two official curricula exist. No cross-level write is possible:
+// every run is pinned to its own spec's slug AND its own level, and the engine
+// refuses to write when a course's stored level disagrees with the spec.
+//
+// The summary keeps the flat fields the existing callers already read
+// (`officialLessonCodes`, `archivedLessonIds`) so no caller silently degrades,
+// while `levels` carries the per-level detail.
+// ---------------------------------------------------------------------------
+export interface ReconcileSummary {
+  /** Per-level reports, in registry (spec) order. */
+  levels: ReconcileReport[];
+  courseSlugs: string[];
+  /** Every official code reconciled across the levels, level by level. */
+  officialLessonCodes: string[];
+  /** Every archived legacy lesson id, across the levels. */
+  archivedLessonIds: string[];
+  warnings: string[];
+}
+
+export function summarizeReconcileReports(reports: ReconcileReport[]): ReconcileSummary {
+  return {
+    levels: reports,
+    courseSlugs: reports.map((r) => r.courseSlug),
+    officialLessonCodes: reports.flatMap((r) => r.officialLessonCodes),
+    archivedLessonIds: reports.flatMap((r) => r.archivedLessonIds),
+    warnings: reports.flatMap((r) =>
+      r.warnings.map((w) => `${r.academicLevel}/${r.courseSlug}: ${w}`)
+    ),
+  };
+}
+
+export async function reconcileAllOfficialCurricula(
+  client: ReconcileClient = db,
+  specs: readonly LevelCurriculumSpec[] = LEVEL_CURRICULUM_SPECS
+): Promise<ReconcileSummary> {
+  const reports: ReconcileReport[] = [];
+  for (const spec of specs) {
+    reports.push(await reconcileOfficialCurriculum(client, spec));
+  }
+  return summarizeReconcileReports(reports);
 }

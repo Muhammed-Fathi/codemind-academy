@@ -249,7 +249,7 @@ Module._resolveFilename = function (request, ...rest) {
   if (request === "next/headers") return nextStub;
   const m = /^@\\/lib\\/([\\w-]+)$/.exec(request);
   if (m) { const compiled = path.join(outDir, "src", "lib", m[1] + ".js"); if (fs.existsSync(compiled)) return compiled; }
-  if (/knowledge-model\\.json$/.test(request)) { const copied = path.join(outDir, "docs", "curriculum", "knowledge-model.json"); if (fs.existsSync(copied)) return copied; }
+  if (/knowledge-model\\.json$/.test(request)) { const levelDir = /first-secondary/.test(request) ? "first-secondary" : "second-secondary"; const copied = path.join(outDir, "docs", "curriculum", levelDir, "knowledge-model.json"); if (fs.existsSync(copied)) return copied; }
   const resolved = originalResolve.call(this, request, ...rest);
   if (/[/\\\\]src[/\\\\]lib[/\\\\]db\\.(ts|js)$/.test(resolved)) return shim;
   return resolved;
@@ -270,6 +270,11 @@ process.exit(0);
       NODE_PATH: path.join(REPO, "node_modules"),
       SEED_ADMIN_PASSWORD: "k3-verify-disposable-admin-password",
       SEED_DEMO_PASSWORD: "k3-verify-disposable-demo-password",
+      // Phase L — this harness seeds a PRE-K3 database, which still enforces
+      // the GLOBAL `Lesson_officialCode_key` unique (K3 is what replaces it
+      // with the per-level composite). Two curricula cannot coexist there:
+      // they share 18 codes. Seed the historical single curriculum.
+      SEED_CURRICULUM_LEVELS: "SECOND_SECONDARY",
     },
   });
   ok(seedRes.status === 0, `real scripts/seed.ts populates the pre-K3 database${seedRes.status === 0 ? "" : ` (exit ${seedRes.status})`}`,

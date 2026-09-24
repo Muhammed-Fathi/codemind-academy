@@ -184,7 +184,8 @@ fs.writeFileSync(
     "module.exports = { cookies: async () => store(), headers: async () => new Headers((globalThis.__CM_REQ_CTX__ || {}).headers || {}) };",
   ].join("\n")
 );
-const REAL_MODEL_PATH = path.join(REPO, "docs", "curriculum", "knowledge-model.json");
+const REAL_MODEL_PATH = path.join(REPO, "docs", "curriculum", "second-secondary", "knowledge-model.json");
+const FIRST_MODEL_PATH = path.join(REPO, "docs", "curriculum", "first-secondary", "knowledge-model.json");
 const originalResolve = Module._resolveFilename;
 Module._resolveFilename = function (request, ...rest) {
   if (request === "@/lib/db") return dbShim;
@@ -196,7 +197,9 @@ Module._resolveFilename = function (request, ...rest) {
     const compiled = path.join(EMIT, "lib", `${m[1]}.js`);
     if (fs.existsSync(compiled)) return compiled;
   }
-  if (/knowledge-model\.json$/.test(request)) return REAL_MODEL_PATH;
+  if (/knowledge-model\.json$/.test(request)) {
+    return /first-secondary/.test(request) ? FIRST_MODEL_PATH : REAL_MODEL_PATH;
+  }
   return originalResolve.call(this, request, ...rest);
 };
 

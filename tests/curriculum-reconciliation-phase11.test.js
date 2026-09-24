@@ -79,7 +79,7 @@ for (const f of ["official-curriculum.js", "session-progress.js", "progress.js"]
 // ---- Redirect @/lib/* imports + the knowledge-model JSON ----
 const MOCK_DB_PATH = path.join(OUT, "__mock-db__.js");
 fs.writeFileSync(MOCK_DB_PATH, "module.exports = { db: global.__MOCK_DB__ };");
-const REAL_MODEL_PATH = path.join(REPO, "docs/curriculum/knowledge-model.json");
+const REAL_MODEL_PATH = path.join(REPO, "docs/curriculum/second-secondary/knowledge-model.json");
 const origResolve = Module._resolveFilename;
 Module._resolveFilename = function (request, ...rest) {
   if (request === "@/lib/db") return MOCK_DB_PATH;
@@ -91,7 +91,14 @@ Module._resolveFilename = function (request, ...rest) {
     const compiled = path.join(EMIT, `${alias[1]}.js`);
     if (fs.existsSync(compiled)) return compiled;
   }
-  if (request.endsWith("knowledge-model.json")) return REAL_MODEL_PATH;
+  // Phase L: a second official model now exists — resolve each by its level
+  // folder so the two never shadow each other.
+  if (request.endsWith("knowledge-model.json")) {
+    if (request.includes("first-secondary")) {
+      return path.join(REPO, "docs/curriculum/first-secondary/knowledge-model.json");
+    }
+    return REAL_MODEL_PATH;
+  }
   return origResolve.call(this, request, ...rest);
 };
 

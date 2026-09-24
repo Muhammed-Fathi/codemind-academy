@@ -145,8 +145,10 @@ Module._resolveFilename = function (request, ...args) {
     if (fs.existsSync(compiled)) return compiled;
   }
   const json = /knowledge-model\.json$/.exec(request);
+  // Phase L: resolve by level folder (two per-level models now exist).
+  const levelDir = /first-secondary/.test(request) ? "first-secondary" : "second-secondary";
   if (json) {
-    const copied = path.join(OUT, "docs", "curriculum", "knowledge-model.json");
+    const copied = path.join(OUT, "docs", "curriculum", levelDir, "knowledge-model.json");
     if (fs.existsSync(copied)) return copied;
   }
   return originalResolve.call(this, request, ...args);

@@ -1,7 +1,7 @@
 // CodeMind Academy — Official curriculum reconciliation script.
 //
 // Phase 11: reconciles the database with the OFFICIAL curriculum
-// (docs/curriculum/knowledge-model.json). The legacy synthetic seed
+// (docs/curriculum/<level>/knowledge-model.json). The legacy synthetic seed
 // (src/lib/curriculum.ts + seedCurriculumFromFile) is RETIRED and must never
 // run against live data again — this script replaces it.
 //
@@ -15,19 +15,23 @@
 // the same reconciler; prefer scripts/reconcile-curriculum.ts for new use.)
 import { db } from "../src/lib/db";
 import { backfillStudentCodes } from "../src/lib/curriculum-seed";
-import { reconcileOfficialCurriculum } from "../src/lib/official-curriculum";
+import { reconcileAllOfficialCurricula } from "../src/lib/official-curriculum";
 
 async function main() {
-  console.log("🌱 Reconciling official curriculum from docs/curriculum/knowledge-model.json ...");
-  const report = await reconcileOfficialCurriculum(db);
-  console.log(`  ✓ Parts: ${report.partsReconciled} (${report.partsCreated} created)`);
-  console.log(`  ✓ Units: ${report.unitsReconciled} (${report.unitsCreated} created)`);
-  console.log(
-    `  ✓ Lessons: ${report.officialLessonCodes.length} official ` +
-      `(${report.lessonsCreated} created, ${report.lessonsUpdated} updated)`
-  );
-  console.log(`  ✓ Archived legacy lessons: ${report.archivedLessonIds.length}`);
-  for (const w of report.warnings) console.log(`  ⚠ ${w}`);
+  console.log("🌱 Reconciling every registered official curriculum ...");
+  // Phase L: one fully-scoped reconcile run per academic level.
+  const summary = await reconcileAllOfficialCurricula(db);
+  for (const report of summary.levels) {
+    console.log(`  ── ${report.academicLevel} (${report.courseSlug}) ──`);
+    console.log(`  ✓ Parts: ${report.partsReconciled} (${report.partsCreated} created)`);
+    console.log(`  ✓ Units: ${report.unitsReconciled} (${report.unitsCreated} created)`);
+    console.log(
+      `  ✓ Lessons: ${report.officialLessonCodes.length} official ` +
+        `(${report.lessonsCreated} created, ${report.lessonsUpdated} updated)`
+    );
+    console.log(`  ✓ Archived legacy lessons: ${report.archivedLessonIds.length}`);
+  }
+  for (const w of summary.warnings) console.log(`  ⚠ ${w}`);
 
   // Backfill missing student codes for pre-migration students.
   const filled = await backfillStudentCodes();
