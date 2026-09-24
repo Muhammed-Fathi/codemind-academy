@@ -2344,7 +2344,7 @@ function CoursesView() {
       if (!res.ok) throw new Error(j.error || tr("admin.121"));
       const report = j.report || {};
       toast.success(
-        tr("admin.320", {
+        tr("admin.654", {
           p1: report.officialLessonCodes?.length ?? 0,
           p2: report.archivedLessonIds?.length ?? 0,
         })
@@ -2385,7 +2385,7 @@ function CoursesView() {
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={reconcileNow} disabled={reconciling}>
             {reconciling ? <Loader2 className="w-4 h-4 ms-2 animate-spin" /> : <Download className="w-4 h-4 ms-2" />}
-            {reconciling ? tr("admin.319") : tr("admin.318")}
+            {reconciling ? tr("admin.653") : tr("admin.652")}
           </Button>
           <Button size="sm" onClick={() => setOpenAdd(true)}>
             <Plus className="w-4 h-4 ms-2" />
@@ -2404,7 +2404,7 @@ function CoursesView() {
           <EmptyBlock message={tr("admin.129")} />
           <Button className="mt-4" onClick={reconcileNow} disabled={reconciling}>
             {reconciling ? <Loader2 className="w-4 h-4 ms-2 animate-spin" /> : <Download className="w-4 h-4 ms-2" />}
-            {reconciling ? tr("admin.319") : tr("admin.318")}
+            {reconciling ? tr("admin.653") : tr("admin.652")}
           </Button>
         </Card>
       ) : (

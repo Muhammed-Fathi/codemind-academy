@@ -556,12 +556,10 @@ export const DICT_2026: Record<string, DictEntry> = {
     en: "{p1} in “{p2}” is now open. Open it from your curriculum to start.",
   },
   "api.232": { ar: "رابط الإخطار غير صالح", en: "Invalid notification link" },
-  "admin.318": { ar: "مطابقة المنهج الرسمي", en: "Reconcile official curriculum" },
-  "admin.319": { ar: "جارٍ المطابقة…", en: "Reconciling…" },
-  "admin.320": {
-    ar: "تمت مطابقة المنهج: {p1} درس نشط ({p2} مؤرشف)",
-    en: "Curriculum reconciled: {p1} active lessons ({p2} archived)",
-  },
+  // Phase 11 reconcile strings live at admin.652–654 (see below): admin.318–320
+  // are the Phase 26B GROUP AUDIENCE keys of the base dictionary, and 2026
+  // entries override the base dictionary on merge — defining them here made
+  // the Create/Manage Group dialogs render the reconcile texts (raw {p1}/{p2}).
   "admin.321": { ar: "مؤرشف", en: "Archived" },
   "admin.322": { ar: "دروس الوحدة", en: "Unit lessons" },
 
@@ -2829,6 +2827,14 @@ export const DICT_2026: Record<string, DictEntry> = {
   "admin.651": {
     ar: "الصف الدراسي للكورس ثابت طالما له طلاب أو جلسات أو اشتراكات مرتبطة",
     en: "The course level is locked while students, sessions or enrollments depend on it",
+  },
+  // Phase 11 — official-curriculum reconcile (moved from admin.318–320, which
+  // collided with the base-dictionary group-audience keys).
+  "admin.652": { ar: "مطابقة المنهج الرسمي", en: "Reconcile official curriculum" },
+  "admin.653": { ar: "جارٍ المطابقة…", en: "Reconciling…" },
+  "admin.654": {
+    ar: "تمت مطابقة المنهج: {p1} درس نشط ({p2} مؤرشف)",
+    en: "Curriculum reconciled: {p1} active lessons ({p2} archived)",
   },
   "api.378": {
     ar: "لا يمكن تغيير الصف الدراسي لهذا الكورس: له طلاب مسجّلون في مجموعاته أو جلسات أو اشتراكات مرتبطة — أفرغه أولًا",
