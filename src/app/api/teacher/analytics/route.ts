@@ -242,6 +242,10 @@ export async function GET() {
       groupId: g.id,
       groupName: g.name,
       courseName: g.course.nameAr || g.course.name,
+      // Phase L manual-QA fix — the level is derived through Group → Course;
+      // both official courses share one display name, so a teacher analytics
+      // row would otherwise be ambiguous across levels.
+      academicLevel: g.course.academicLevel ?? null,
       trackSplit,
       totalStudents,
       avgAttendance: totalAttendance > 0 ? Math.round((presentAttendance / totalAttendance) * 100) : 0,

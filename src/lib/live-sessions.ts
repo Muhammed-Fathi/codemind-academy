@@ -125,8 +125,12 @@ export type TeacherScope = {
   userId: string;
   groupIds: string[];
   courseIds: string[];
-  /** The same groups with the labels the UI needs (never client-supplied). */
-  groups: Array<{ id: string; name: string; courseId: string }>;
+  /** The same groups with the labels the UI needs (never client-supplied).
+      Phase L manual-QA fix — `academicLevel` is DERIVED from the group's own
+      Course relation (Group carries no level of its own), so a teacher with
+      groups in BOTH levels can tell two identically-named groups apart in the
+      scheduling form. Display context only: nothing is ever written from it. */
+  groups: Array<{ id: string; name: string; courseId: string; academicLevel: string | null }>;
 };
 
 /**
@@ -140,9 +144,23 @@ export async function loadTeacherScope(
 ): Promise<TeacherScope | null> {
   const teacher = (await (client as any).teacher.findUnique({
     where: { userId },
-    include: { groups: { select: { id: true, name: true, courseId: true } } },
+    // Phase L manual-QA fix — the group's course is read for its canonical
+    // level (display context in the group selector), never for authority.
+    include: {
+      groups: {
+        select: { id: true, name: true, courseId: true, course: { select: { academicLevel: true } } },
+      },
+    },
   })) as
-    | { id: string; groups: Array<{ id: string; name: string; courseId: string }> }
+    | {
+        id: string;
+        groups: Array<{
+          id: string;
+          name: string;
+          courseId: string;
+          course?: { academicLevel?: string | null } | null;
+        }>;
+      }
     | null;
   if (!teacher) return null;
   return {
@@ -150,7 +168,12 @@ export async function loadTeacherScope(
     userId,
     groupIds: teacher.groups.map((g) => g.id),
     courseIds: Array.from(new Set(teacher.groups.map((g) => g.courseId))),
-    groups: teacher.groups.map((g) => ({ id: g.id, name: g.name, courseId: g.courseId })),
+    groups: teacher.groups.map((g) => ({
+      id: g.id,
+      name: g.name,
+      courseId: g.courseId,
+      academicLevel: g.course?.academicLevel ?? null,
+    })),
   };
 }
 

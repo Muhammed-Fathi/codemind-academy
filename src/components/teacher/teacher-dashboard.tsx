@@ -1,5 +1,9 @@
 "use client";
 import { useT, translate , pickAuto } from "@/lib/i18n";
+import {
+  AcademicLevelBadge,
+  academicLevelLabel,
+} from "@/components/admin/academic-level-ui";
 
 // ============================================================
 // CodeMind Academy — Teacher Dashboard (Task 4)
@@ -191,6 +195,8 @@ type GroupInfo = {
     name: string;
     nameAr: string;
     color: string;
+    /** Phase L manual-QA fix — derived via Group → Course (never Teacher). */
+    academicLevel?: string | null;
   } | null;
   studentsCount: number;
   students: Array<{
@@ -296,7 +302,7 @@ type QuizListItem = {
     chain?: string | null;
     part?: { id: string; title: string } | null;
     unit?: { id: string; title: string } | null;
-    course: { id: string; name: string } | null;
+    course: { id: string; name: string; academicLevel?: string | null } | null;
   } | null;
   questionCount: number;
   totalMarks: number;
@@ -390,7 +396,7 @@ type HomeworkListItem = {
     curriculumStatus?: string;
     part?: { id: string; title: string } | null;
     unit?: { id: string; title: string } | null;
-    course: { id: string; name: string } | null;
+    course: { id: string; name: string; academicLevel?: string | null } | null;
   } | null;
   stats: {
     submitted: number;
@@ -877,8 +883,13 @@ function GroupCard({ group }: { group: GroupInfo }) {
             />
             <h3 className="font-bold text-base truncate">{group.name}</h3>
           </div>
-          <p className="text-xs text-muted-foreground mt-1">
-            {pickAuto(group.course?.nameAr, group.course?.name) || tr("teacher.026")}
+          {/* Phase L manual-QA fix — the group's LEVEL (derived, Group →
+              Course) sits with its course line: both official courses share
+              one display name, so this is what tells a teacher's First and
+              Second Secondary groups apart. */}
+          <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1.5 flex-wrap">
+            <AcademicLevelBadge level={group.course?.academicLevel} />
+            <span>{pickAuto(group.course?.nameAr, group.course?.name) || tr("teacher.026")}</span>
           </p>
         </div>
         <Badge
@@ -1195,7 +1206,9 @@ function AttendanceView() {
               <SelectContent>
                 {groups.map((g) => (
                   <SelectItem key={g.id} value={g.id}>
-                    {g.name}
+                    {/* Level first: a teacher may own groups in both levels,
+                        and both official courses share one display name. */}
+                    {academicLevelLabel(tr, g.course?.academicLevel)} · {g.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -1754,7 +1767,7 @@ function QuizzesView() {
             <SelectItem value="__all__">{tr("teacher.061")}</SelectItem>
             {groups.map((g) => (
               <SelectItem key={g.id} value={g.id}>
-                {g.name}
+                {academicLevelLabel(tr, g.course?.academicLevel)} · {g.name}
               </SelectItem>
             ))}
           </SelectContent>
@@ -2649,7 +2662,7 @@ function HomeworkView() {
             <SelectItem value="__all__">{tr("teacher.061")}</SelectItem>
             {groups.map((g) => (
               <SelectItem key={g.id} value={g.id}>
-                {g.name}
+                {academicLevelLabel(tr, g.course?.academicLevel)} · {g.name}
               </SelectItem>
             ))}
           </SelectContent>
@@ -3457,9 +3470,12 @@ function AnalyticsView() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle className="text-base">{g.groupName}</CardTitle>
+                  <CardTitle className="text-base flex items-center gap-2 flex-wrap">
+                    {g.groupName}
+                    <AcademicLevelBadge level={g.academicLevel} />
+                  </CardTitle>
                   <CardDescription className="text-xs">
-                    {g.courseName} · {g.totalStudents} {tr("teacher.171")}</CardDescription>
+                    {academicLevelLabel(tr, g.academicLevel)} · {g.courseName} · {g.totalStudents} {tr("teacher.171")}</CardDescription>
                 </div>
                 <Badge variant="outline" className="bg-primary/5">
                   {g.totalStudents} students

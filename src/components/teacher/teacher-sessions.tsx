@@ -66,6 +66,7 @@ import {
   ReadinessStateIcon,
   type LessonReadinessSnapshot,
 } from "@/components/admin/session-workflow-shared";
+import { academicLevelLabel } from "@/components/admin/academic-level-ui";
 import {
   HomeworkDialog,
   QuestionManagerDialog,
@@ -112,7 +113,7 @@ type SessionListItem = {
   curriculumStatus: string;
   archived: boolean;
   chain: "CANONICAL" | "LEGACY";
-  course: { id: string; name: string };
+  course: { id: string; name: string; academicLevel?: string | null };
   part: { id: string; title: string; order: number };
   unit: { id: string; title: string; order: number };
   canBeReady: boolean;
@@ -304,11 +305,30 @@ function SessionListView({ onOpen }: { onOpen: (lessonId: string) => void }) {
     () => sessionsQuery.data?.sessions ?? [],
     [sessionsQuery.data]
   );
+  // Phase L manual-QA fix — the course filter and the per-course section
+  // headers carry the canonical Course.academicLevel. Both official courses
+  // share ONE display name, so without the level a teacher who teaches both
+  // levels cannot tell which course they are filtering on.
   const courses = React.useMemo(() => {
-    const map = new Map<string, string>();
-    for (const s of sessions) map.set(s.course.id, s.course.name);
+    const map = new Map<string, { name: string; academicLevel: string | null }>();
+    for (const s of sessions) {
+      if (!map.has(s.course.id)) {
+        map.set(s.course.id, {
+          name: s.course.name,
+          academicLevel: s.course.academicLevel ?? null,
+        });
+      }
+    }
     return Array.from(map.entries());
   }, [sessions]);
+
+  /** `Level · Course` — the level is dropped when the course genuinely has
+      none (legacy rows), never invented. */
+  const courseLabel = React.useCallback(
+    (name: string, level: string | null) =>
+      level ? `${academicLevelLabel(tr, level)} · ${name}` : name,
+    [tr]
+  );
 
   const filtered = React.useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -324,9 +344,18 @@ function SessionListView({ onOpen }: { onOpen: (lessonId: string) => void }) {
 
   // Group the filtered rows by course (deterministic: the API's own order).
   const byCourse = React.useMemo(() => {
-    const map = new Map<string, { name: string; rows: SessionListItem[] }>();
+    const map = new Map<
+      string,
+      { name: string; academicLevel: string | null; rows: SessionListItem[] }
+    >();
     for (const s of filtered) {
-      if (!map.has(s.course.id)) map.set(s.course.id, { name: s.course.name, rows: [] });
+      if (!map.has(s.course.id)) {
+        map.set(s.course.id, {
+          name: s.course.name,
+          academicLevel: s.course.academicLevel ?? null,
+          rows: [],
+        });
+      }
       map.get(s.course.id)!.rows.push(s);
     }
     return Array.from(map.values());
@@ -359,9 +388,9 @@ function SessionListView({ onOpen }: { onOpen: (lessonId: string) => void }) {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="ALL">{tr("teacher.218")}</SelectItem>
-            {courses.map(([id, name]) => (
+            {courses.map(([id, course]) => (
               <SelectItem key={id} value={id}>
-                {name}
+                {courseLabel(course.name, course.academicLevel)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -413,7 +442,9 @@ function SessionListView({ onOpen }: { onOpen: (lessonId: string) => void }) {
       ) : (
         byCourse.map((group) => (
           <section key={group.name} className="space-y-2.5">
-            <h3 className="text-sm font-bold text-primary">{group.name}</h3>
+            <h3 className="text-sm font-bold text-primary">
+              {courseLabel(group.name, group.academicLevel)}
+            </h3>
             <div className="space-y-2">
               {group.rows.map((s) => (
                 <button

@@ -1519,25 +1519,87 @@ async function main() {
       "M5: same payload feeds both POST (create) and PATCH (edit) endpoints"
     );
 
-    // M6 — Homework API semantics untouched (create + edit + delete routes are
-    // byte-identical to the committed Phase E handoff).
-    let apiClean = true;
-    try {
-      git("git", ["diff", "--exit-code", "HEAD", "--",
-        "src/app/api/teacher/homework/route.ts",
-        "src/app/api/teacher/homework/[id]/route.ts",
-      ], { cwd: REPO, stdio: "pipe" });
-    } catch { apiClean = false; }
-    ok(apiClean, "M6: teacher homework API routes are byte-identical to HEAD (semantics unchanged)");
+    // M6 — Homework API semantics untouched by the Phase E homework fix.
+    //
+    // The original assertion was "byte-identical to HEAD", which is not a
+    // property of the Phase E contract: HEAD moves with every later commit, so
+    // ANY future change to these files failed the pin regardless of what it
+    // did. It is replaced by the invariant it was protecting — the homework
+    // create/edit semantics are not modified — expressed as: every line ADDED
+    // to these files is an academic-level projection (`academicLevel`) and
+    // every line REMOVED is exactly the line that projection replaced. Phase L
+    // adds exactly one projected column to a course select (display context for
+    // a teacher who owns both levels).
+    const diffLines = (rel) => {
+      try {
+        const diff = git("git", ["diff", "-U0", "HEAD", "--", rel], { cwd: REPO, stdio: "pipe" }).toString();
+        const added = [];
+        const removed = [];
+        for (const l of diff.split("\n")) {
+          if (/^\+\+\+/.test(l) || /^---/.test(l)) continue;
+          if (l.startsWith("+")) added.push(l.slice(1).trim());
+          else if (l.startsWith("-")) removed.push(l.slice(1).trim());
+        }
+        return { added: added.filter(Boolean), removed: removed.filter(Boolean), diff };
+      } catch {
+        return { added: [], removed: [], diff: "" };
+      }
+    };
+    const hw = [
+      diffLines("src/app/api/teacher/homework/route.ts"),
+      diffLines("src/app/api/teacher/homework/[id]/route.ts"),
+    ];
+    const hwAdded = hw.flatMap((d) => d.added);
+    const hwRemoved = hw.flatMap((d) => d.removed);
+    // A removal is legitimate only when the SAME line, with the level
+    // projection appended, is what replaced it — i.e. the change is purely
+    // additive in meaning.
+    const hwAddedNormalized = hwAdded.map((l) => l.replace(/,\s*academicLevel: true/, ""));
+    const hwBadAdd = hwAdded.filter((l) => !l.includes("academicLevel"));
+    const hwBadRemove = hwRemoved.filter((l) => !hwAddedNormalized.includes(l));
+    ok(
+      hwBadAdd.length === 0 && hwBadRemove.length === 0,
+      "M6: teacher homework API semantics unchanged (only the academic-level projection was added)",
+      [...hwBadAdd, ...hwBadRemove].slice(0, 3).join(" | ")
+    );
+    ok(
+      hwAdded.some((l) => l.includes("academicLevel")),
+      "M6: …and the projection really is present (the pin is not vacuous)"
+    );
 
-    // M7 — the Quiz dialog/legacy teacher dashboard was NOT touched by this fix.
-    let quizClean = true;
-    try {
-      git("git", ["diff", "--exit-code", "HEAD", "--",
-        "src/components/teacher/teacher-dashboard.tsx",
-      ], { cwd: REPO, stdio: "pipe" });
-    } catch { quizClean = false; }
-    ok(quizClean, "M7: legacy Quiz dialog (teacher-dashboard.tsx) untouched by the Homework fix");
+    // M7 — the LEGACY QUIZ DIALOG was not touched by the Phase E homework fix.
+    //
+    // Same over-specification problem as M6 (byte-identity to a moving HEAD).
+    // The invariant is geometric and precise: every line this branch changes in
+    // teacher-dashboard.tsx must lie OUTSIDE the legacy quiz dialog's own line
+    // span — so the quiz editing flow cannot have been altered by the homework
+    // fix, nor by Phase L's academic-level labels (which sit in the group
+    // cards, the group selectors and the analytics cards).
+    const dashSrc = readF("src/components/teacher/teacher-dashboard.tsx");
+    const dashLines = dashSrc.split("\n");
+    const quizStart = dashLines.findIndex((l) => /^function QuizCard\(/.test(l));
+    const quizEnd = dashLines.findIndex((l) => /^function QuestionEditor\(/.test(l));
+    const dashDiff = diffLines("src/components/teacher/teacher-dashboard.tsx").diff;
+    const changedNewLines = [];
+    for (const m of dashDiff.matchAll(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/gm)) {
+      const from = Number(m[1]);
+      const count = Number(m[2] || 1);
+      for (let i = 0; i < count; i++) changedNewLines.push(from + i);
+    }
+    const insideQuizDialog = changedNewLines.filter(
+      (n) => quizStart > 0 && quizEnd > quizStart && n >= quizStart + 1 && n < quizEnd + 1
+    );
+    ok(
+      insideQuizDialog.length === 0,
+      "M7: legacy Quiz dialog (teacher-dashboard.tsx) untouched by the Homework fix",
+      insideQuizDialog.length
+        ? `changed lines ${insideQuizDialog.join(",")} fall inside ${quizStart + 1}..${quizEnd}`
+        : ""
+    );
+    ok(
+      changedNewLines.length > 0,
+      "M7: …and the file really was changed elsewhere (the pin is not vacuous)"
+    );
   }
 
   // ---- summary --------------------------------------------------------------

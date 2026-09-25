@@ -2852,4 +2852,35 @@ export const DICT_2026: Record<string, DictEntry> = {
     ar: "تعذّر تحميل خيارات التسجيل — حاول تاني",
     en: "Could not load registration options — try again",
   },
+
+  // -------------------------------------------------------------------------
+  // Phase L manual-QA fix — multi-level UX completeness + safe admin delete.
+  // Keys are chosen ABOVE every existing number in their family, and each is
+  // defined exactly once (the runtime merge is {...DICT, ...DICT_2026}, so a
+  // re-used key here would silently shadow the earlier one).
+  // -------------------------------------------------------------------------
+  "admin.655": { ar: "حذف الطالب", en: "Delete student" },
+  "admin.656": {
+    ar: "لا يمكن التراجع عن حذف حساب الطالب نهائيًا. سيتم حذف: بيانات الدخول، وسجل الحضور، والدرجات، والواجبات، والتقدّم، والملاحظات، وروابط ولي الأمر، والاشتراك.",
+    en: "Deleting a student account cannot be undone. Removed: login, attendance, quiz results, homework, progress, notes, parent links and the subscription.",
+  },
+  "admin.657": { ar: "اتحذف الطالب نهائيًا", en: "Student deleted permanently" },
+  "api.379": {
+    ar: "لا يمكن حذف الطالب: له سجل مالي ({p1} دفعة، {p2} كوبون). السجل المالي بيتحفظ دايمًا — أوقف الحساب بدل الحذف.",
+    en: "Cannot delete this student: they have financial records ({p1} payments, {p2} coupon redemptions). Financial history is always preserved — deactivate the account instead.",
+  },
+  "api.380": {
+    ar: "فشل حذف الطالب — ما تمش حذف أي حاجة. حاول تاني.",
+    en: "Student deletion failed — nothing was removed. Please try again.",
+  },
+  "api.381": {
+    ar: "لا يمكن حذف المجموعة: عليها {p1} حالة غياب مسجّلة. أوقف المجموعة بدل الحذف للحفاظ على السجل.",
+    en: "Cannot delete this group: it has {p1} recorded absence case(s). Deactivate it instead to preserve the history.",
+  },
+  // The control's own heading reuses `admin.642` («الصف الدراسي»); this is the
+  // teacher-side explanation of WHY the levels must be told apart.
+  "teacher.312": {
+    ar: "مدرّس واحد ممكن يكون له مجموعات في الصفين، والمنهجين الرسميين ليهم نفس الاسم — فلازم تعرف كل درس بانتمائه لصفه.",
+    en: "One teacher can own groups in both levels, and both official courses share one name — so every lesson is labelled with its level.",
+  },
 };

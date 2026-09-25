@@ -128,6 +128,12 @@ export async function GET(_req: NextRequest) {
               name: g.course.name,
               nameAr: g.course.nameAr,
               color: g.course.color,
+              // Phase L manual-QA fix — the level comes from the group's
+              // COURSE (Group → Course → AcademicLevel). A teacher may own
+              // groups in both levels and both official courses share one
+              // display name, so this is what keeps their cards distinct.
+              // Teacher itself has no academic level, by design.
+              academicLevel: g.course.academicLevel ?? null,
             }
           : null,
         studentsCount: g.students.length,

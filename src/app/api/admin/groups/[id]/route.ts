@@ -216,6 +216,21 @@ export async function DELETE(
       409
     );
   }
+  // Phase L manual-QA fix — a third dependent class the original guard could
+  // not see: `AbsenceReview.groupId` is `onDelete: Cascade`, so deleting the
+  // group would silently destroy formal absence cases (and their holds) even
+  // when every affected student has since left the group. Academic history is
+  // never deleted as a side effect — refuse and send the admin to
+  // deactivation, exactly like the other two guards.
+  //
+  // `Payment.requestedGroupId` is deliberately NOT a guard: it is a plain
+  // String (not a foreign key) recording what a student once REQUESTED, and
+  // the payment reader already degrades a missing group to `null`. Payments
+  // themselves are never touched by this route.
+  const absenceReviews = await db.absenceReview.count({ where: { groupId: id } });
+  if (absenceReviews > 0) {
+    return err(tApi("api.381", { p1: absenceReviews }), 409);
+  }
 
   await db.group.delete({ where: { id } });
 

@@ -88,3 +88,69 @@ export function courseWithLevelLabel(
 ): string {
   return `${pickAuto(c.nameAr || "", c.name || "")} — ${academicLevelLabel(tr, c.academicLevel)}`;
 }
+
+/**
+ * Phase L manual-QA fix — the COMPACT segmented level switch:
+ *
+ *   [ الكل ] [ أولى ثانوي ] [ ثانية ثانوي ]
+ *
+ * Used where a list or a selector can legitimately hold BOTH levels at once
+ * (Session Videos, the teacher lesson picker and other shared teacher lists).
+ * Ordering a long dropdown by course is not a substitute: the two official
+ * courses share the SAME display name, so their lessons are indistinguishable
+ * inside one list without an explicit level switch.
+ *
+ * Same authority and the same two enum values as `AcademicLevelFilterSelect`
+ * (which stays the compact-dropdown variant for filter bars). `""` means ALL —
+ * it is the absence of a filter, never a third level.
+ *
+ * The visual language is the platform's existing segmented control
+ * (rounded-lg chip group with an aria-pressed toggle), so this introduces no
+ * new component vocabulary.
+ */
+export function AcademicLevelSegmentedFilter({
+  value,
+  onChange,
+  allLabelKey = "admin.648",
+  className,
+  ariaLabelKey = "admin.642",
+}: {
+  /** "" = All, or a canonical AcademicLevel value. */
+  value: string;
+  onChange: (v: string) => void;
+  /** Label for the "no filter" chip (admin.648 = "All Levels" by default). */
+  allLabelKey?: string;
+  className?: string;
+  ariaLabelKey?: string;
+}) {
+  const tr = useT();
+  const options: Array<{ value: string; label: string }> = [
+    { value: "", label: tr(allLabelKey) },
+    ...ACADEMIC_LEVEL_OPTIONS.map((l) => ({ value: l as string, label: academicLevelLabel(tr, l) })),
+  ];
+  return (
+    <div
+      role="group"
+      aria-label={tr(ariaLabelKey)}
+      className={`inline-flex flex-wrap items-center gap-1 rounded-lg border bg-muted/30 p-0.5 ${className || ""}`}
+      data-academic-level-filter={value || "ALL"}
+    >
+      {options.map((o) => {
+        const active = value === o.value;
+        return (
+          <button
+            key={o.value || "ALL"}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onChange(o.value)}
+            className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
+              active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
+            }`}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}

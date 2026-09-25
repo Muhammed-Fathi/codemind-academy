@@ -119,7 +119,10 @@ export type TeacherSessionListItem = {
   curriculumStatus: string;
   archived: boolean;
   chain: "CANONICAL" | "LEGACY";
-  course: { id: string; name: string };
+  /** Phase L manual-QA fix — the canonical level of the lesson's own course
+      (Group → Course → AcademicLevel, or the lesson's chain). Both official
+      courses share one display name, so the level is what separates them. */
+  course: { id: string; name: string; academicLevel?: string | null };
   part: { id: string; title: string; order: number };
   unit: { id: string; title: string; order: number };
   /** READY here means "satisfies every Phase D requirement" (canBeReady). */

@@ -1112,6 +1112,37 @@ function StudentProfileDrawer({
     }
   };
 
+  // Phase L manual-QA fix — DELETE STUDENT. The action is irreversible, so it
+  // sits behind the shared AlertDialog (never window.confirm) and names the
+  // student by name + email + code, so the admin can see WHO is about to go.
+  // The SERVER owns every safety rule: it refuses (409) a student with
+  // financial history and reports exactly what it removed otherwise.
+  const [confirmDelete, setConfirmDelete] = React.useState(false);
+  const [deleting, setDeleting] = React.useState(false);
+  const deleteStudent = async () => {
+    if (!student) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/admin/students/${student.id}`, { method: "DELETE" });
+      const j = await res.json().catch(() => ({} as any));
+      if (!res.ok) {
+        // The refusal text (financial history, etc.) is shown verbatim.
+        toast.error(j?.error || tr("admin.001"));
+        return;
+      }
+      toast.success(tr("admin.657"));
+      setConfirmDelete(false);
+      // Same refresh contract as every other mutation here: the list AND the
+      // per-tab counters come from the same response, so both update.
+      onUpdated();
+      onClose();
+    } catch {
+      toast.error(tr("admin.001"));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   // Phase L manual-QA fix — the student's canonical Track / school type, Editable.
   //
   // Same derived-default + explicit-choice pattern as the level control above
@@ -1314,6 +1345,40 @@ function StudentProfileDrawer({
                     {tr("admin.066")}</>
                 )}
               </Button>
+
+              {/* Phase L manual-QA fix — permanent delete, separate from the
+                  reversible deactivate above so the two can never be confused. */}
+              <Button
+                onClick={() => setConfirmDelete(true)}
+                disabled={saving}
+                variant="outline"
+                className="w-full border-destructive/40 text-destructive hover:bg-destructive/10"
+              >
+                <Trash2 className="w-4 h-4 ms-2" />
+                {tr("admin.655")}
+              </Button>
+
+              <ConfirmDialog
+                open={confirmDelete}
+                onOpenChange={setConfirmDelete}
+                busy={deleting}
+                title={tr("admin.655")}
+                description={
+                  <span>
+                    <span className="block font-semibold text-foreground mb-1">
+                      {student.name}
+                    </span>
+                    <span className="block text-xs" dir="ltr">
+                      {student.email}
+                      {student.studentCode ? ` · ${student.studentCode}` : ""}
+                    </span>
+                    <span className="mt-2 block">{tr("admin.656")}</span>
+                  </span>
+                }
+                confirmLabel={tr("admin.655")}
+                cancelLabel={tr("admin.038")}
+                onConfirm={deleteStudent}
+              />
 
               {/* Phase H — progression overrides: grant / list / revoke. */}
               <ProgressionOverrideSection studentId={student.id} />

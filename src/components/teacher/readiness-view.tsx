@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useT } from "@/lib/i18n";
+import { academicLevelLabel } from "@/components/admin/academic-level-ui";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -77,6 +78,10 @@ type LessonOption = {
   title: string;
   titleAr: string;
   officialCode: string | null;
+  /** Phase L manual-QA fix — the lesson's canonical course level. Two official
+      courses share one display name and their lessons share printed codes, so
+      the level is what makes the picker unambiguous. */
+  course?: { id: string; name: string; academicLevel?: string | null } | null;
 };
 
 /**
@@ -279,7 +284,11 @@ export function TeacherReadinessView() {
                   <SelectItem value={READINESS_NO_LESSON}>{tr("teacher.readiness.pickLesson")}</SelectItem>
                   {lessons.map((l) => (
                     <SelectItem key={l.id} value={l.id}>
-                      {(l.officialCode ? `${l.officialCode} — ` : "") + (l.titleAr || l.title)}
+                      {(l.course?.academicLevel
+                        ? `${academicLevelLabel(tr, l.course.academicLevel)} · `
+                        : "") +
+                        (l.officialCode ? `${l.officialCode} — ` : "") +
+                        (l.titleAr || l.title)}
                     </SelectItem>
                   ))}
                 </SelectContent>

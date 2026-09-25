@@ -29,6 +29,7 @@ import { useT } from "@/lib/i18n";
 import { useApp } from "@/lib/store";
 import { fmtDateTime as formatDateTime, type Locale } from "@/lib/i18n-core";
 import { EntitySelect, type EntityOption } from "@/components/shared/entity-select";
+import { academicLevelLabel } from "@/components/admin/academic-level-ui";
 import {
   sessionDisplayOverride,
   sessionLessonIdentity,
@@ -86,7 +87,7 @@ type SessionRow = {
   attendanceLocked: boolean;
   attendanceFinalizedAt: string | null;
   rescheduleCount: number;
-  group: { id: string; name: string; courseId: string } | null;
+  group: { id: string; name: string; courseId: string; academicLevel?: string | null } | null;
   lesson: { id: string; title: string; titleAr: string; officialCode?: string | null } | null;
   teacher: { id: string; name: string } | null;
   substituteTeacher: { id: string; name: string } | null;
@@ -172,7 +173,7 @@ export function TeacherLiveSessionsWorkspace() {
   const locale = useApp((s) => (s.locale === "en" ? "en" : "ar")) as Locale;
   const fmt = (value: string | null) => (value ? formatDateTime(value, locale) : "");
 
-  const list = useJson<{ sessions: SessionRow[]; groups: Array<{ id: string; name: string; courseId: string }> }>(
+  const list = useJson<{ sessions: SessionRow[]; groups: Array<{ id: string; name: string; courseId: string; academicLevel?: string | null }> }>(
     "/api/live-sessions"
   );
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
@@ -292,7 +293,7 @@ function SessionDetail({
   onChanged,
 }: {
   sessionId: string;
-  groups: Array<{ id: string; name: string; courseId: string }>;
+  groups: Array<{ id: string; name: string; courseId: string; academicLevel?: string | null }>;
   onChanged: () => void;
 }) {
   const t = useT();
@@ -896,7 +897,7 @@ function ScheduleDialog({
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  groups: Array<{ id: string; name: string; courseId: string }>;
+  groups: Array<{ id: string; name: string; courseId: string; academicLevel?: string | null }>;
   onCreated: () => void;
 }) {
   const t = useT();
@@ -909,22 +910,35 @@ function ScheduleDialog({
   const [busy, setBusy] = React.useState(false);
 
   const locale = useApp((s) => (s.locale === "en" ? "en" : "ar")) as Locale;
-  const lessons = useJson<{ lessons: Array<{ id: string; title: string; titleAr: string; officialCode?: string | null; courseId?: string }> }>(
+  const lessons = useJson<{
+    lessons: Array<{
+      id: string;
+      title: string;
+      titleAr: string;
+      officialCode?: string | null;
+      courseId?: string;
+      course?: { id: string; name: string; academicLevel?: string | null } | null;
+    }>;
+  }>(
     open && groupId ? `/api/teacher/lessons?groupId=${groupId}` : null
   );
   // Finding 2 — only a Lesson belonging to the SELECTED GROUP's course may be
   // scheduled (the teacher API scopes them; the server re-validates anyway).
   const lessonOptions: EntityOption[] = React.useMemo(
     () =>
-      (lessons.data?.lessons ?? []).map((l) => ({
-        value: l.id,
-        label:
+      (lessons.data?.lessons ?? []).map((l) => {
+        // Phase L manual-QA fix — the lesson's canonical level leads the label
+        // (the level is the ONLY thing distinguishing two official courses that
+        // share one display name, and their lessons share printed codes).
+        const level = l.course?.academicLevel ? academicLevelLabel(t, l.course.academicLevel) : "";
+        const identity =
           sessionLessonIdentity(
             { officialCode: l.officialCode ?? null, title: l.title, titleAr: l.titleAr },
             locale
-          ) ?? l.id,
-      })),
-    [lessons.data, locale]
+          ) ?? l.id;
+        return { value: l.id, label: level ? `${level} · ${identity}` : identity };
+      }),
+    [lessons.data, locale, t]
   );
   const selectedLessonLabel = lessonOptions.find((o) => o.value === lessonId)?.label ?? "";
 
@@ -990,7 +1004,12 @@ function ScheduleDialog({
               <SelectContent>
                 {groups.map((g) => (
                   <SelectItem key={g.id} value={g.id}>
-                    {g.name}
+                    {/* Phase L manual-QA fix — canonical group level first, so
+                        two identically-named groups in different levels can
+                        never be confused when scheduling a session. */}
+                    {g.academicLevel
+                      ? `${academicLevelLabel(t, g.academicLevel)} · ${g.name}`
+                      : g.name}
                   </SelectItem>
                 ))}
               </SelectContent>

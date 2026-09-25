@@ -62,6 +62,11 @@ import {
   TrackScopeBadge,
 } from "@/components/admin/session-workflow-shared";
 import { useT, useLocale } from "@/lib/i18n";
+import {
+  AcademicLevelBadge,
+  AcademicLevelSegmentedFilter,
+  academicLevelLabel,
+} from "@/components/admin/academic-level-ui";
 import { cn } from "@/lib/utils";
 import { Plus, Save, Trash2, RefreshCw, CalendarDays, Clock, X } from "lucide-react";
 
@@ -81,7 +86,10 @@ export type TeacherLesson = {
   curriculumStatus: string;
   archived: boolean;
   chain: "CANONICAL" | "LEGACY";
-  course: { id: string; name: string };
+  /** Phase L manual-QA fix — canonical Course.academicLevel of the lesson's
+      own course chain. Both official courses share ONE display name, so the
+      level is what separates two lessons that also share an officialCode. */
+  course: { id: string; name: string; academicLevel?: string | null };
   part: { id: string; title: string; order: number };
   unit: { id: string; title: string; order: number };
   topic: { id: string; title: string } | null;
@@ -161,23 +169,60 @@ export type HomeworkRecord = {
 // Data hook
 // ---------------------------------------------------------------------------
 
-export function useTeacherLessons() {
+/**
+ * The teacher's OWN lesson catalogue (authorization stays server-side: the
+ * route reads the teacher's groups, never a client-supplied course id).
+ *
+ * Phase L manual-QA fix — an optional canonical AcademicLevel narrows the
+ * QUERY (`?academicLevel=`), so a level switch genuinely reduces the rows the
+ * server returns instead of hiding them in the browser. Passing nothing keeps
+ * the original unfiltered query and cache key.
+ */
+export function useTeacherLessons(academicLevel?: string) {
+  const level = academicLevel && academicLevel !== "all" ? academicLevel : "";
   return useQuery<{ lessons: TeacherLesson[]; grouped: LessonGroupNode[] }>({
-    queryKey: ["teacher-lessons"],
+    queryKey: ["teacher-lessons", level || "ALL"],
     queryFn: async () => {
-      const r = await fetch("/api/teacher/lessons");
+      const r = await fetch(
+        level ? `/api/teacher/lessons?academicLevel=${encodeURIComponent(level)}` : "/api/teacher/lessons"
+      );
       if (!r.ok) throw new Error("fail");
       return (await r.json()) as { lessons: TeacherLesson[]; grouped: LessonGroupNode[] };
     },
   });
 }
 
-/** Localized label for a session: officialCode · title. */
-export function lessonLabel(lesson: TeacherLesson | null | undefined): string {
+/** The level of the course a lesson belongs to (canonical Course.academicLevel). */
+function lessonLevel(l: TeacherLesson | null | undefined): string | null {
+  return l?.course?.academicLevel ?? null;
+}
+
+/**
+ * Phase L manual-QA fix — filter a lesson list by canonical academic level.
+ * "" / undefined keeps everything (including legacy unlevelled lessons, which
+ * belong to no specific level and must stay reachable under "All").
+ */
+function filterLessonsByLevel(
+  lessons: TeacherLesson[],
+  level: string | null | undefined
+): TeacherLesson[] {
+  if (!level) return lessons;
+  return lessons.filter((l) => lessonLevel(l) === level);
+}
+
+/** Localized label for a session: level · officialCode · title.
+    Phase L manual-QA fix — the level leads the label because the same
+    officialCode (18 of them) and the same course name exist at both levels. */
+export function lessonLabel(
+  lesson: TeacherLesson | null | undefined,
+  tr?: (k: string) => string
+): string {
   if (!lesson) return "";
-  return lesson.officialCode
+  const base = lesson.officialCode
     ? `${lesson.officialCode} · ${lesson.title}`
     : lesson.title;
+  if (!tr) return base;
+  return `${academicLevelLabel(tr, lesson.course?.academicLevel)} · ${base}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -195,21 +240,46 @@ export function lessonLabel(lesson: TeacherLesson | null | undefined): string {
  * its lifecycle state.
  */
 export function LessonPicker({
-  lessons,
+  lessons: lessonsAll,
   loading,
   value,
   onChange,
+  levelFilter,
+  onLevelFilterChange,
 }: {
+  /** The lessons this teacher may author under (already authorization-scoped). */
   lessons: TeacherLesson[];
   loading: boolean;
   value: string;
   onChange: (id: string) => void;
+  /** "" = all levels. When provided, the parent owns the filter (and can
+      narrow the QUERY); when omitted the picker keeps its own. */
+  levelFilter?: string;
+  onLevelFilterChange?: (v: string) => void;
 }) {
   const tr = useT();
+  // Uncontrolled fallback so every existing call site gains the control
+  // without a prop-plumbing change at each one.
+  const [ownLevel, setOwnLevel] = React.useState("");
+  const level = levelFilter !== undefined ? levelFilter : ownLevel;
+  const setLevel = onLevelFilterChange || setOwnLevel;
+  // Phase L manual-QA fix — the level narrows the list this picker renders.
+  // Call sites that drive `useTeacherLessons(level)` get the narrowing from
+  // the server as well; this local pass keeps the control honest when a
+  // caller passes its whole catalogue.
+  const lessons = React.useMemo(
+    () => filterLessonsByLevel(lessonsAll, level || null),
+    [lessonsAll, level]
+  );
   const byId = React.useMemo(
     () => new Map(lessons.map((l) => [l.id, l])),
     [lessons]
   );
+  // A lesson that the level switch just hid must not stay selected.
+  React.useEffect(() => {
+    if (value && !byId.has(value)) onChange("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [level]);
   const groups = React.useMemo(() => {
     const byCourse = new Map<
       string,
@@ -239,17 +309,31 @@ export function LessonPicker({
 
   return (
     <div className="space-y-1.5">
+      {/* Phase L manual-QA fix — the academic-level switch for this selector.
+          Both official curricula are live and their courses share ONE display
+          name, so without this the two levels' lessons (18 shared
+          officialCodes) are indistinguishable in the list below. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs font-medium text-muted-foreground">{tr("admin.642")}</span>
+        <AcademicLevelSegmentedFilter value={level} onChange={setLevel} />
+        <span className="text-[11px] text-muted-foreground basis-full">{tr("teacher.312")}</span>
+      </div>
       <Select value={value} onValueChange={onChange}>
         <SelectTrigger className="w-full">
           <SelectValue placeholder={tr("teacher.081")} />
         </SelectTrigger>
         <SelectContent>
           {Array.from(groups.entries()).map(([courseId, parts]) => {
-            const courseName = lessons.find((l) => l.course.id === courseId)?.course.name;
+            const head = lessons.find((l) => l.course.id === courseId);
+            const courseName = head?.course.name;
             return (
               <SelectGroup key={courseId}>
+                {/* Phase L manual-QA fix — the LEVEL leads the course header.
+                    Both official courses carry the same display name, so
+                    without it two groups are indistinguishable and their
+                    lessons collide on officialCode. */}
                 <SelectLabel className="font-bold text-primary">
-                  {courseName}
+                  {academicLevelLabel(tr, head?.course.academicLevel)} · {courseName}
                 </SelectLabel>
                 {Array.from(parts.entries()).map(([partId, units]) => {
                   const part = lessons.find((l) => l.part.id === partId)?.part;
@@ -268,7 +352,7 @@ export function LessonPicker({
                             {Array.from(buckets.entries()).map(([key, items]) =>
                               items.map((l) => (
                                 <SelectItem key={l.id} value={l.id} className="text-xs">
-                                  {lessonLabel(l)}
+                                  {lessonLabel(l, tr)}
                                   {" · "}
                                   {l.archived
                                     ? tr("admin.321")
@@ -307,6 +391,7 @@ export function LessonMeta({ lesson }: { lesson: TeacherLesson }) {
           {lesson.officialCode}
         </Badge>
       )}
+      <AcademicLevelBadge level={lesson.course?.academicLevel} />
       <TrackScopeBadge scope={lesson.trackScope} />
       {lesson.archived ? (
         <CurriculumBadge value="ARCHIVED" />

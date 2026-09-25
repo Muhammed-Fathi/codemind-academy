@@ -25,7 +25,11 @@ import * as React from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { useT, useLocale, pickAuto } from "@/lib/i18n";
-import { AcademicLevelBadge, academicLevelLabel } from "@/components/admin/academic-level-ui";
+import {
+  AcademicLevelBadge,
+  AcademicLevelSegmentedFilter,
+  academicLevelLabel,
+} from "@/components/admin/academic-level-ui";
 import { useApp } from "@/lib/store";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -55,6 +59,7 @@ import {
   BookOpen,
   AlertTriangle,
   Pencil,
+  GraduationCap,
 } from "lucide-react";
 import { uploadFailureMessage } from "@/lib/upload-error-text";
 import {
@@ -249,6 +254,12 @@ export function SessionVideosView() {
   const navParam = useApp((s) => s.navParam);
   const setNavParam = useApp((s) => s.setNavParam);
   const [preselectLessonId, setPreselectLessonId] = React.useState<string | null>(null);
+  // Phase L manual-QA fix — the ACADEMIC LEVEL switch for the lesson/session
+  // picker: [ الكل ] [ أولى ثانوي ] [ ثانية ثانوي ]. "" = all levels. The
+  // value is a canonical AcademicLevel compared against each course's own
+  // `Course.academicLevel`; it is a DIFFERENT axis from the Arabic/Language
+  // batches above, which stay untouched.
+  const [levelFilter, setLevelFilter] = React.useState<string>("");
   React.useEffect(() => {
     if (!navParam || !courseTree || batches.length === 0) return;
     const found = findLessonInTree(courseTree, navParam);
@@ -286,7 +297,11 @@ export function SessionVideosView() {
   // server re-validates the final pair on every creation path.
   const lessonGroups = React.useMemo<LessonGroupView[]>(() => {
     if (!courseTree || !activeBatch) return [];
-    return buildLessonGroups(courseTree, activeBatch).map((g) => ({
+    // Phase L manual-QA fix — the level filter narrows the picker BEFORE any
+    // lesson is collected, per course (canonical Course.academicLevel). With
+    // both official curricula live (62 First + 23 Second), the unfiltered
+    // picker mixed them into one long list whose lessons share codes.
+    return buildLessonGroups(courseTree, activeBatch, levelFilter).map((g) => ({
       key: g.key,
       lessons: g.lessons,
       // A pool batch spans courses — disambiguate each unit with its course
@@ -298,7 +313,7 @@ export function SessionVideosView() {
           ? `${g.courseName} — ${academicLevelLabel(tr, g.courseAcademicLevel)} · ${tr("admin.593", { p1: g.unitOrder })}`
           : `${academicLevelLabel(tr, g.courseAcademicLevel)} · ${tr("admin.593", { p1: g.unitOrder })}`,
     }));
-  }, [courseTree, activeBatch, tr]);
+  }, [courseTree, activeBatch, levelFilter, tr]);
 
   return (
     <motion.div
@@ -369,6 +384,8 @@ export function SessionVideosView() {
             batch={activeBatch}
             initialLessonId={preselectLessonId}
             lessonGroups={lessonGroups}
+            levelFilter={levelFilter}
+            onLevelFilterChange={setLevelFilter}
             lessonsLoading={courseTree === null}
             lessonsError={treeError}
             onRetryLessons={loadCourseTree}
@@ -538,6 +555,8 @@ function PublishVideoCard({
   batch,
   initialLessonId,
   lessonGroups,
+  levelFilter,
+  onLevelFilterChange,
   lessonsLoading,
   lessonsError,
   onRetryLessons,
@@ -546,7 +565,11 @@ function PublishVideoCard({
   batch: Batch;
   /** Set when the admin arrived from a lesson page — preselected once. */
   initialLessonId: string | null;
+  /** Already narrowed by the level filter (built in the parent). */
   lessonGroups: LessonGroupView[];
+  /** "" = all levels, or a canonical AcademicLevel value. */
+  levelFilter: string;
+  onLevelFilterChange: (v: string) => void;
   lessonsLoading: boolean;
   lessonsError: boolean;
   onRetryLessons: () => void;
@@ -593,17 +616,22 @@ function PublishVideoCard({
     () => flattenEligibleLessonIds(lessonGroups),
     [lessonGroups]
   );
-  // Switching the batch clears the selection ONLY when it can no longer fit
-  // the new batch — an incompatible lesson/batch pair never lingers, while a
-  // lesson that stays eligible (a SHARED lesson across the Arabic and
-  // Language batches) keeps its selection. Runs before the preselect effect
-  // below so a deep link can still land after the batch switch.
+  // Switching the batch — or the academic level — clears the selection ONLY
+  // when the picker can no longer offer it. An incompatible lesson/batch pair
+  // never lingers, while a lesson that stays eligible (a SHARED lesson across
+  // the Arabic and Language batches) keeps its selection. Runs before the
+  // preselect effect below so a deep link can still land after the switch.
+  //
+  // Phase L manual-QA fix: `levelFilter` joined these deps for the same
+  // reason as the batch — narrowing to «أولى ثانوي» while a Second Secondary
+  // lesson was selected must not leave that hidden lesson (or its already
+  // fetched sessions) staged for publishing.
   React.useEffect(() => {
     setLessonId((prev) => (prev && eligibleLessonIds.has(prev) ? prev : ""));
-    // The eligibility check is evaluated at the moment the batch changes;
-    // the memo already reflects the new batch at that point.
+    // The eligibility check is evaluated at the moment the batch/level
+    // changes; the memo already reflects the new scope at that point.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [batch.id]);
+  }, [batch.id, levelFilter]);
   // Preselect — applied exactly once, and only where the lesson is actually
   // offered (the picker never shows, and the server would reject, an
   // ineligible pair). If the lesson is not eligible for the current batch,
@@ -869,6 +897,20 @@ function PublishVideoCard({
             the batch's course when it declares one (or any course for a
             school-type pool), never archived, track compatible. */}
         <div>
+          {/* Phase L manual-QA fix — ACADEMIC LEVEL switch for the picker
+              below. Both official curricula are live (First Secondary: 62
+              lessons, Second Secondary: 23), so the one lesson list would
+              otherwise mix two levels whose lessons share officialCodes.
+              One click, always visible, filtering on the canonical
+              Course.academicLevel — a different axis from the Arabic /
+              Language batches above, which are untouched. */}
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <GraduationCap className="w-3.5 h-3.5" />
+              {tr("admin.642")}
+            </span>
+            <AcademicLevelSegmentedFilter value={levelFilter} onChange={onLevelFilterChange} />
+          </div>
           <Label htmlFor="sv-lesson" className="inline-flex items-center gap-1.5">
             <BookOpen className="w-3.5 h-3.5" />
             {tr("admin.586")}

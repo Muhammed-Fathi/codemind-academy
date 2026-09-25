@@ -41,7 +41,7 @@ import { lessonCoursesChainOr } from "@/lib/session-progress";
 import { normalizeTrackScope } from "@/lib/track-scope";
 import { teacherCourseIds } from "@/lib/teacher-content";
 
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
   if (user.role !== "TEACHER") return err("Forbidden", 403);
@@ -49,7 +49,31 @@ export async function GET(_req: NextRequest) {
   const teacher = await getTeacherProfile(user.id);
   if (!teacher) return err("Teacher profile not found", 404);
 
-  const courseIds = teacherCourseIds(teacher);
+  // Phase L manual-QA fix — OPTIONAL academic-level narrowing, applied in the
+  // QUERY (not hidden client-side), so a level filter genuinely reduces the
+  // rows a teacher can pick from. It composes with the teacher's own course
+  // scope (`AND`): a teacher can never widen their authorization by asking
+  // for another level — the scope is still `teacherCourseIds(teacher)`, and
+  // the level is only an extra restriction on top of it. An unrecognised
+  // value is ignored rather than guessed (the picker's own control only ever
+  // sends the canonical values or "all").
+  const rawLevel = (req.nextUrl?.searchParams.get("academicLevel") || "").trim();
+  const levelFilter = rawLevel && rawLevel !== "all" ? rawLevel.toUpperCase() : null;
+  if (levelFilter && levelFilter !== "FIRST_SECONDARY" && levelFilter !== "SECOND_SECONDARY") {
+    return err("Unknown academic level", 400);
+  }
+
+  const allCourseIds = teacherCourseIds(teacher);
+  if (allCourseIds.length === 0) return ok({ lessons: [], grouped: [] });
+
+  // The level lives on the Course, so narrowing by level is a restriction of
+  // the teacher's OWN course set — never a client-supplied course id.
+  const courseIds = levelFilter
+    ? allCourseIds.filter((id) => {
+        const g = teacher.groups.find((gr) => gr.course?.id === id);
+        return String(g?.course?.academicLevel ?? "") === levelFilter;
+      })
+    : allCourseIds;
   if (courseIds.length === 0) return ok({ lessons: [], grouped: [] });
 
   // Both curriculum chains: official lessons are unit-linked (topic null) and
@@ -81,7 +105,7 @@ export async function GET(_req: NextRequest) {
               title: true,
               titleAr: true,
               order: true,
-              course: { select: { id: true, name: true, nameAr: true } },
+              course: { select: { id: true, name: true, nameAr: true, academicLevel: true } },
             },
           },
         },
@@ -104,7 +128,7 @@ export async function GET(_req: NextRequest) {
                   title: true,
                   titleAr: true,
                   order: true,
-                  course: { select: { id: true, name: true, nameAr: true } },
+                  course: { select: { id: true, name: true, nameAr: true, academicLevel: true } },
                 },
               },
             },
@@ -138,7 +162,15 @@ export async function GET(_req: NextRequest) {
         archived: String(l.curriculumStatus).toUpperCase() === "ARCHIVED",
         /** Which chain attaches the lesson to its course (canonical first). */
         chain: canonical ? ("CANONICAL" as const) : ("LEGACY" as const),
-        course: { id: course.id, name: course.nameAr || course.name },
+        // Phase L manual-QA fix — the canonical level of the lesson's own
+        // course chain. Both official courses share ONE display name, so the
+        // level (plus the colliding officialCodes) is what makes two lessons
+        // distinguishable in a teacher selector.
+        course: {
+          id: course.id,
+          name: course.nameAr || course.name,
+          academicLevel: (course as { academicLevel?: string | null }).academicLevel ?? null,
+        },
         part: { id: part.id, title: part.titleAr || part.title, order: part.order },
         unit: { id: unit.id, title: unit.titleAr || unit.title, order: unit.order },
         topic: canonical || !l.topic ? null : { id: l.topic.id, title: l.topic.titleAr || l.topic.title },
@@ -163,6 +195,9 @@ export async function GET(_req: NextRequest) {
     {
       id: string;
       name: string;
+      /** Phase L manual-QA fix — canonical Course.academicLevel (display +
+          grouping context; never an authority the teacher writes). */
+      academicLevel: string | null;
       parts: Map<
         string,
         {
@@ -194,7 +229,12 @@ export async function GET(_req: NextRequest) {
   for (const entry of flat) {
     const courseId = entry.course.id;
     if (!byCourse.has(courseId)) {
-      byCourse.set(courseId, { id: courseId, name: entry.course.name, parts: new Map() });
+      byCourse.set(courseId, {
+        id: courseId,
+        name: entry.course.name,
+        academicLevel: entry.course.academicLevel ?? null,
+        parts: new Map(),
+      });
     }
     const c = byCourse.get(courseId)!;
     if (!c.parts.has(entry.part.id)) {
@@ -242,6 +282,7 @@ export async function GET(_req: NextRequest) {
     .map((c) => ({
       id: c.id,
       name: c.name,
+      academicLevel: c.academicLevel,
       parts: Array.from(c.parts.values())
         .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
         .map((p) => ({
