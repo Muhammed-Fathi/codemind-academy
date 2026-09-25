@@ -2865,6 +2865,25 @@ export const DICT_2026: Record<string, DictEntry> = {
     en: "Deleting a student account cannot be undone. Removed: login, attendance, quiz results, homework, progress, notes, parent links and the subscription.",
   },
   "admin.657": { ar: "اتحذف الطالب نهائيًا", en: "Student deleted permanently" },
+  "admin.660": { ar: "سجل مالي (مدفوعات/كوبونات)", en: "Financial records (payments / coupons)" },
+  "admin.661": { ar: "اشتراك أو تسجيل", en: "Subscription or enrollment" },
+  "admin.662": { ar: "حضور وغياب", en: "Attendance and absence" },
+  "admin.663": { ar: "اختبارات وواجبات وامتحانات", en: "Quizzes, homework and mock exams" },
+  "admin.664": { ar: "تقدّم دراسي ومشاهدة فيديو", en: "Lesson progress and video views" },
+  "admin.665": { ar: "ملاحظات ومهام دراسية", en: "Notes and study tasks" },
+  "admin.666": { ar: "شارات وإحالات", en: "Badges and referrals" },
+  "admin.667": { ar: "إشعارات وسجل تدقيق", en: "Notifications and audit history" },
+  // The one admin-facing rule for a refused hard delete. It is intentionally
+  // generic ("academic OR financial") because the breakdown underneath names
+  // exactly which classes exist.
+  "api.382": {
+    ar: "لا يمكن حذف الطالب لوجود سجل أكاديمي أو مالي مرتبط به ({p1} سجل). الحذف النهائي مسموح فقط لحساب نظيف تمامًا — استخدم إيقاف الحساب بدل الحذف.",
+    en: "This student cannot be deleted because academic or financial history is linked to the account ({p1} records). Permanent deletion is allowed only for a completely clean account — deactivate the account instead.",
+  },
+  "api.383": {
+    ar: "السجلات المرتبطة:",
+    en: "Linked records:",
+  },
   "api.379": {
     ar: "لا يمكن حذف الطالب: له سجل مالي ({p1} دفعة، {p2} كوبون). السجل المالي بيتحفظ دايمًا — أوقف الحساب بدل الحذف.",
     en: "Cannot delete this student: they have financial records ({p1} payments, {p2} coupon redemptions). Financial history is always preserved — deactivate the account instead.",

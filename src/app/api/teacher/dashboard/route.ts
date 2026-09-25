@@ -8,8 +8,13 @@ import { db } from "@/lib/db";
 import { getVideoProgressForStudents } from "@/lib/progress";
 import { ok, err, requireUser, getTeacherProfile } from "@/lib/api";
 import { lessonCourseChainOr, lessonCoursesChainOr } from "@/lib/session-progress";
+import {
+  academicLevelParamOf,
+  academicLevelScope,
+  scopedTeacherGroups,
+} from "@/lib/teacher-academic-level";
 
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
   const tApi = await getServerT();
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
@@ -17,6 +22,16 @@ export async function GET(_req: NextRequest) {
 
   const teacher = await getTeacherProfile(user.id);
   if (!teacher) return err("Teacher profile not found", 404);
+
+  // Phase L manual-QA fix #4 — OPTIONAL academic-level separator, enforced as
+  // an extra `where` on the teacher's OWN groups (Teacher → Group → Course.
+  // academicLevel), so EVERY number on this page — group cards, students,
+  // per-group stats, upcoming sessions and recent activity — follows the
+  // chosen level. It can only narrow the teacher's scope, never widen it, and
+  // an unrecognised value is refused rather than treated as "all".
+  const levelParam = academicLevelParamOf(req);
+  if (!levelParam.ok) return err("Unknown academic level", 400);
+  const scopedGroups = await scopedTeacherGroups(teacher, levelParam.level);
 
   // ---- Concurrent read plan --------------------------------------------
   // Every read below depends only on `teacher` (already loaded), so all
@@ -26,7 +41,7 @@ export async function GET(_req: NextRequest) {
 
   // ---- Per-group enrichment -------------------------------------------
   const groupsPromise = Promise.all(
-    teacher.groups.map(async (g) => {
+    scopedGroups.map(async (g) => {
       const studentIds = g.students.map((s) => s.id);
 
       // Wave 1: independent per-group reads. Video progress is one batched
@@ -166,7 +181,7 @@ export async function GET(_req: NextRequest) {
   );
 
   // ---- Upcoming sessions (next 7 days across all teacher groups) ----
-  const teacherGroupIds = teacher.groups.map((g) => g.id);
+  const teacherGroupIds = scopedGroups.map((g) => g.id);
   const weekAhead = new Date();
   weekAhead.setDate(weekAhead.getDate() + 7);
   const upcomingPromise = teacherGroupIds.length
@@ -186,7 +201,7 @@ export async function GET(_req: NextRequest) {
     : Promise.resolve([]);
 
   // ---- Recent activity: last 5 graded homework + last 5 quiz attempts ----
-  const allStudentIds = teacher.groups.flatMap((g) =>
+  const allStudentIds = scopedGroups.flatMap((g) =>
     g.students.map((s) => s.id)
   );
   const recentSubsPromise = allStudentIds.length
@@ -217,7 +232,7 @@ export async function GET(_req: NextRequest) {
     : Promise.resolve([]);
 
   // ---- Pending homework count across all groups ----
-  const allCourseIds = teacher.groups.map((g) => g.courseId);
+  const allCourseIds = scopedGroups.map((g) => g.courseId);
   const totalPendingPromise = (async () => {
     const allLessonsForTeacher = allCourseIds.length
       ? await db.lesson.findMany({
@@ -304,7 +319,10 @@ export async function GET(_req: NextRequest) {
     time: a.time,
   }));
 
+  // Presentation metadata: the teacher's FULL level scope (never filtered),
+  // so the client knows whether a level separator is even meaningful here.
   return ok({
+    scope: academicLevelScope(teacher.groups),
     teacher: {
       id: teacher.id,
       name: teacher.user.name,

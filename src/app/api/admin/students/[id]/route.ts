@@ -1,6 +1,6 @@
 import { getServerT } from "@/lib/i18n-server";
 // PATCH /api/admin/students/[id] — update student (deactivate, change group)
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireRole } from "@/lib/api";
 import { requireSchoolType, normalizeSchoolType } from "@/lib/school-type";
@@ -216,84 +216,137 @@ export async function PATCH(
 // ---------------------------------------------------------------------------
 // DELETE /api/admin/students/[id] — hard-delete a student account.
 //
-// THE CONTRACT (Phase L manual-QA fix, derived from the schema itself)
-// ===================================================================
-// A student is a USER plus one Student row, and the schema declares almost
-// every dependent row `onDelete: Cascade` from one of those two. Two facts
-// make a blind `delete()` unsafe here, so this handler never uses one:
+// THE CONTRACT (Phase L manual-QA fix #4, REVISED — conservative by design)
+// ========================================================================
+// Hard delete is allowed ONLY for a genuinely clean identity. Having no
+// Payment row does NOT make a student disposable: academic history is just as
+// durable as financial history, and the platform never erases it as a side
+// effect of removing a login.
 //
-//   1. FINANCIAL HISTORY IS RESTRICTED, BY DESIGN.
-//      `Payment.user` is a REQUIRED relation with no `onDelete`, i.e. the
-//      schema's RESTRICT default: a user who has payments CANNOT be removed
-//      without destroying the payment ledger. Financial history is the one
-//      thing this platform deliberately keeps, so a student with payments is
-//      REFUSED with a clear 409 — never force-deleted, never detached.
+//   1. EVERY protected class is counted BEFORE anything is touched. If ANY
+//      protected row exists the request FAILS CLOSED with 409 and NOTHING —
+//      not the Student, not the User, not one dependent row — is removed. The
+//      response names the rule and returns a per-category breakdown so the
+//      admin can see exactly what would have been destroyed, and points at the
+//      existing deactivate flow as the supported alternative.
 //
-//   2. THE DEVELOPMENT SQLITE DATABASE DOES NOT ENFORCE EVERY FK.
-//      `LessonProgress`, `Payment`, `Subscription`, `Attendance`,
-//      `ParentStudentLink`, `Notification`, `AuditLog` and others are
-//      declared with cascades but are created WITHOUT foreign keys in the
-//      SQLite migration history (verified with PRAGMA foreign_key_list). A
-//      delete relying on database cascades would therefore leave SILENT
-//      ORPHANS in development while behaving differently on PostgreSQL.
-//      Every dependent row is consequently removed EXPLICITLY, in dependency
-//      order, inside ONE transaction — identical semantics on both engines.
+//   2. WHEN the identity is clean, only SAFE scaffolding is removed (current
+//      parent linkage, session tokens, reset tokens, notification settings)
+//      plus the Student and User rows themselves — in ONE transaction, so a
+//      failure anywhere rolls everything back. Nothing here is classified
+//      "safe" merely because the FK cascades; each entry is justified by what
+//      the row IS.
 //
-//   3. TWO TABLES HAVE NO RELATION AT ALL.
-//      `AttendanceCorrection.studentId` and `TeacherNote.studentId` are plain
-//      String columns (no `@relation`), so Prisma cannot cascade them and
-//      nothing else would ever clean them. They are removed explicitly too.
+//   3. TWO TABLES ARE PRESERVED AND DETACHED (`userId: null`), because that is
+//      what the schema itself declares (`onDelete: SetNull`): SecurityEvent
+//      and TeacherApplication. Detaching loses no history, so neither is a
+//      blocker.
 //
-// WHAT SURVIVES (and why):
-//   * Payment + CouponRedemption — financial ledger. Their presence is the
-//     REFUSAL case above; when a student has none, there is nothing to keep.
-//   * SecurityEvent — `onDelete: SetNull`: the row is KEPT and detached
-//     (security history must outlive the account).
-//   * TeacherApplication — optional `SetNull`: kept and detached.
-//   * AuditLog rows of OTHER users (an admin's record of acting on this
-//     student) are untouched; only the student's own rows go with the
-//     account, exactly as the schema declares.
-//   * Group, Group membership rows of other students, Batch, Course,
-//     curriculum, sessions, videos, payments of other users: NEVER touched.
+//   4. WHY NOT RELY ON DATABASE CASCADES AT ALL: the SQLite migration history
+//      declares several tables without the foreign keys the Prisma schema
+//      describes (verified with PRAGMA foreign_key_list), so a cascade-driven
+//      delete would leave SILENT ORPHANS in development while behaving
+//      differently on PostgreSQL. Every row this handler removes is named
+//      explicitly, so both engines behave identically.
+//
+// NO archive table, NO soft-delete column, NO schema change, NO migration.
 //
 // The audit entry is written AFTER the delete by the ADMIN's own account, so
 // the record of the deletion itself survives the student.
 // ---------------------------------------------------------------------------
-const STUDENT_DELETE_DEPENDENTS: ReadonlyArray<{ model: string; field: string }> = [
-  // --- children of Student (schema: Cascade) -------------------------------
-  { model: "studentBadge", field: "studentId" },
-  { model: "parentStudentLink", field: "studentId" },
-  { model: "enrollment", field: "studentId" },
-  { model: "attendance", field: "studentId" },
-  { model: "absenceHold", field: "studentId" }, // before absenceReview (hold → review)
-  { model: "absenceReview", field: "studentId" },
-  { model: "progressionOverride", field: "studentId" },
-  { model: "quizAttempt", field: "studentId" },
-  { model: "quizRetryGrant", field: "studentId" },
-  { model: "homeworkSubmission", field: "studentId" },
-  { model: "lessonProgress", field: "studentId" },
-  { model: "lessonBookmark", field: "studentId" },
-  { model: "lessonNote", field: "studentId" },
-  { model: "examAttempt", field: "studentId" },
-  { model: "studyTask", field: "studentId" },
-  { model: "sessionVideoView", field: "studentId" },
-  { model: "referral", field: "referrerId" },
-  { model: "referral", field: "referredId" },
-  // --- plain columns with NO relation (nothing else would ever clean them) --
-  { model: "attendanceCorrection", field: "studentId" },
-  { model: "teacherNote", field: "studentId" },
-  // --- children of Subscription (schema: Cascade from Student) --------------
-  // NOTE: payments are deliberately NOT in this list — see the detach step in
-  // the transaction below. A payment can belong to ANOTHER user (a parent
-  // paying for this student) and is financial history that must survive.
-  { model: "subscription", field: "studentId" },
-  // --- children of User (schema: Cascade) ----------------------------------
-  { model: "notificationPreference", field: "userId" },
-  { model: "notification", field: "userId" },
-  { model: "userSession", field: "userId" },
-  { model: "passwordResetToken", field: "userId" },
-  { model: "quizRetryGrant", field: "grantedByUserId" }, // the GRANTOR's column (schema: grantedByUserId)
-  { model: "auditLog", field: "userId" },
+
+/** The report categories the refusal message is grouped into. */
+type ProtectedCategory =
+  | "financial"
+  | "subscription"
+  | "attendance"
+  | "assessments"
+  | "progress"
+  | "notes"
+  | "achievements"
+  | "account";
+
+/** Which identity a column points at — never inferred from the field name. */
+type IdentityScopeKey = "STUDENT" | "USER";
+
+/**
+ * The `where` clause a step is counted/deleted with. The scope is EXPLICIT on
+ * every entry (`by`), because a name-based guess is exactly how a
+ * `grantedByUserId` row can look like a `studentId` row and slip past the
+ * guard: `QuizRetryGrant.grantedByUserId` points at a USER (the student's
+ * account), while the row's `studentId` points at the profile.
+ */
+function scopeWhere(step: { field: string; by: IdentityScopeKey }, id: string, userId: string) {
+  return { [step.field]: step.by === "USER" ? userId : id };
+}
+
+/** Rows that must NEVER be erased as a side effect of deleting an identity. */
+const PROTECTED_HISTORY: ReadonlyArray<{
+  model: string;
+  field: string;
+  by: IdentityScopeKey;
+  category: ProtectedCategory;
+}> = [
+  // --- money ---------------------------------------------------------------
+  { model: "payment", field: "userId", by: "USER", category: "financial" },
+  { model: "couponRedemption", field: "userId", by: "USER", category: "financial" },
+  // --- enrolment / plan history -------------------------------------------
+  { model: "subscription", field: "studentId", by: "STUDENT", category: "subscription" },
+  { model: "enrollment", field: "studentId", by: "STUDENT", category: "subscription" },
+  // --- attendance + absence ------------------------------------------------
+  { model: "attendance", field: "studentId", by: "STUDENT", category: "attendance" },
+  { model: "attendanceCorrection", field: "studentId", by: "STUDENT", category: "attendance" },
+  { model: "absenceReview", field: "studentId", by: "STUDENT", category: "attendance" },
+  { model: "absenceHold", field: "studentId", by: "STUDENT", category: "attendance" },
+  // --- graded work ---------------------------------------------------------
+  { model: "quizAttempt", field: "studentId", by: "STUDENT", category: "assessments" },
+  { model: "quizRetryGrant", field: "studentId", by: "STUDENT", category: "assessments" },
+  // A grant this student ISSUED to another student is academic history too.
+  { model: "quizRetryGrant", field: "grantedByUserId", by: "USER", category: "assessments" },
+  { model: "homeworkSubmission", field: "studentId", by: "STUDENT", category: "assessments" },
+  { model: "examAttempt", field: "studentId", by: "STUDENT", category: "assessments" },
+  // --- progression ---------------------------------------------------------
+  { model: "lessonProgress", field: "studentId", by: "STUDENT", category: "progress" },
+  { model: "progressionOverride", field: "studentId", by: "STUDENT", category: "progress" },
+  { model: "sessionVideoView", field: "studentId", by: "STUDENT", category: "progress" },
+  // --- notes / study artefacts --------------------------------------------
+  { model: "teacherNote", field: "studentId", by: "STUDENT", category: "notes" },
+  { model: "lessonNote", field: "studentId", by: "STUDENT", category: "notes" },
+  { model: "lessonBookmark", field: "studentId", by: "STUDENT", category: "notes" },
+  { model: "studyTask", field: "studentId", by: "STUDENT", category: "notes" },
+  // --- achievements / referral programme -----------------------------------
+  { model: "studentBadge", field: "studentId", by: "STUDENT", category: "achievements" },
+  { model: "referral", field: "referrerId", by: "STUDENT", category: "achievements" },
+  { model: "referral", field: "referredId", by: "STUDENT", category: "achievements" },
+  // --- account history -----------------------------------------------------
+  { model: "notification", field: "userId", by: "USER", category: "account" },
+  { model: "auditLog", field: "userId", by: "USER", category: "account" },
+] as const;
+
+/**
+ * Account scaffolding removed WITH a clean identity: current linkage, session
+ * tokens, notification preferences. Each entry is justified by WHAT IT IS
+ * (a pointer or a credential), never by "the FK happens to cascade".
+ */
+const SAFE_IDENTITY_DELETE: ReadonlyArray<{
+  model: string;
+  field: string;
+  by: IdentityScopeKey;
+}> = [
+  { model: "parentStudentLink", field: "studentId", by: "STUDENT" }, // current parent↔student pointer
+  { model: "notificationPreference", field: "userId", by: "USER" }, // settings, not history
+  { model: "userSession", field: "userId", by: "USER" }, // live session tokens (credentials)
+  { model: "passwordResetToken", field: "userId", by: "USER" }, // one-shot credentials
+] as const;
+
+/** Rows that are DETACHED (never deleted) because the schema says SetNull. */
+const PRESERVED_DETACH: ReadonlyArray<{
+  model: string;
+  field: string;
+  by: IdentityScopeKey;
+}> = [
+  { model: "securityEvent", field: "userId", by: "USER" },
+  { model: "teacherApplication", field: "userId", by: "USER" },
 ] as const;
 
 export async function DELETE(
@@ -315,64 +368,95 @@ export async function DELETE(
   });
   if (!student) return err(tApi("api.047"), 404);
 
-  // BLOCKER — the financial ledger. Refuse, and say what can be done instead.
-  // Both models are part of the generated client (Prisma schema is the
-  // authority), so they are called with their real typed delegates — no `any`
-  // escape hatch is needed or allowed on this route.
-  const [payments, couponRedemptions] = await Promise.all([
-    db.payment.count({ where: { userId: student.userId } }),
-    db.couponRedemption.count({ where: { userId: student.userId } }),
+  // -------------------------------------------------------------------------
+  // 1. CLASSIFY — count every PROTECTED class, in parallel, before touching
+  //    anything. A single non-empty class is enough to refuse the delete.
+  // -------------------------------------------------------------------------
+  const counts = await Promise.all(
+    PROTECTED_HISTORY.map((step) =>
+      (db as never as Record<string, { count: (a: unknown) => Promise<number> }>)[step.model]
+        .count({ where: scopeWhere(step, id, student.userId) })
+        .then((n: number) => ({ ...step, count: n }))
+    )
+  );
+
+  // The two "account shape" conflicts: this identity also exists as a PARENT
+  // profile (its links would cascade to OTHER students' rows) or as a TEACHER
+  // profile (a staff account is never a deletable student). Both fail closed.
+  const [parentProfiles, teacherProfiles] = await Promise.all([
+    db.parent.count({ where: { userId: student.userId } }),
+    db.teacher.count({ where: { userId: student.userId } }),
   ]);
-  if (payments > 0 || couponRedemptions > 0) {
-    return err(
-      tApi("api.379", { p1: payments, p2: couponRedemptions }),
-      409
+
+  const blockedByCategory = new Map<ProtectedCategory, number>();
+  for (const row of counts) {
+    if (row.count > 0) {
+      blockedByCategory.set(row.category, (blockedByCategory.get(row.category) ?? 0) + row.count);
+    }
+  }
+  if (parentProfiles > 0 || teacherProfiles > 0) {
+    blockedByCategory.set(
+      "account",
+      (blockedByCategory.get("account") ?? 0) + parentProfiles + teacherProfiles
     );
   }
 
+  if (blockedByCategory.size > 0) {
+    const blocked = Object.fromEntries(
+      Array.from(blockedByCategory.entries()).sort(([a], [b]) => a.localeCompare(b))
+    ) as Record<ProtectedCategory, number>;
+    const total = Object.values(blocked).reduce((a, b) => a + b, 0);
+    // The refusal names the RULE first, then the specific guidance when money
+    // is involved (the financial ledger always wins over a deletion), and the
+    // body carries the per-category breakdown so the admin can see exactly
+    // what would have been destroyed.
+    const message =
+      blocked.financial > 0
+        ? `${tApi("api.382", { p1: total })} ${tApi("api.379", {
+            p1: counts.find((c) => c.model === "payment")?.count ?? 0,
+            p2: counts.find((c) => c.model === "couponRedemption")?.count ?? 0,
+          })}`
+        : tApi("api.382", { p1: total });
+    return NextResponse.json(
+      { ok: false, error: message, code: "STUDENT_HAS_PROTECTED_HISTORY", blocked, blockedTotal: total },
+      { status: 409 }
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // 2. CLEAN IDENTITY — no protected history exists. Remove only the account
+  //    scaffolding, detach the preserved records, then the Student and the
+  //    User, ALL inside ONE transaction: a failure anywhere rolls back every
+  //    step, so a half-deleted person can never be committed.
+  // -------------------------------------------------------------------------
   try {
-    await db.$transaction(async (tx: any) => {
-      // The student's subscription ids are needed twice: to DETACH other
-      // people's payments from them, and to delete the subscriptions.
-      const subscriptionIds: string[] = (
-        await tx.subscription.findMany({ where: { studentId: id }, select: { id: true } })
-      ).map((s: { id: string }) => s.id);
-
-      for (const step of STUDENT_DELETE_DEPENDENTS) {
-        await tx[step.model].deleteMany({
-          where: step.field === "userId" ? { userId: student.userId } : { [step.field]: id },
-        });
+    await db.$transaction(async (tx) => {
+      for (const step of SAFE_IDENTITY_DELETE) {
+        await (tx as never as Record<string, { deleteMany: (a: unknown) => Promise<unknown> }>)[
+          step.model
+        ].deleteMany({ where: scopeWhere(step, id, student.userId) });
       }
 
-      // PRESERVE — a payment recorded against this student's subscription but
-      // owned by ANOTHER user (a parent) keeps its row; only the dangling
-      // reference is cleared. Payments owned by the student themselves cannot
-      // exist here: they are the refusal case handled before the transaction.
-      if (subscriptionIds.length > 0) {
-        await tx.payment.updateMany({
-          where: { subscriptionId: { in: subscriptionIds } },
-          data: { subscriptionId: null },
-        });
+      // PRESERVED — detached, never deleted (the schema's own SetNull contract).
+      for (const step of PRESERVED_DETACH) {
+        await (tx as never as Record<string, { updateMany: (a: unknown) => Promise<unknown> }>)[
+          step.model
+        ]
+          .updateMany({
+            where: scopeWhere(step, id, student.userId),
+            data: { userId: null },
+          })
+          .catch(() => undefined);
       }
-      // The security/application record outlives the account: detached, kept.
-      await tx.securityEvent.updateMany({
-        where: { userId: student.userId },
-        data: { userId: null },
-      }).catch(() => undefined);
-      await tx.teacherApplication
-        .updateMany({
-          where: { userId: student.userId },
-          data: { userId: null },
-        })
-        .catch(() => undefined);
 
-      // Finally the identity itself. Deleting the Student row cascades the
-      // remaining relation-declared children; deleting the User row removes
-      // the login. Both inside the SAME transaction as everything above.
+      // Finally the identity itself. Relation-declared children were counted
+      // above, so nothing here can cascade a protected row away: if any
+      // protected row appeared between the count and this line (a concurrent
+      // write), the transaction fails and rolls back — it never deletes it.
       await tx.student.delete({ where: { id } });
       await tx.user.delete({ where: { id: student.userId } });
     });
-  } catch (e: any) {
+  } catch {
     // A partial delete can never be committed: the transaction rolls back and
     // the student keeps their complete, consistent record.
     return err(tApi("api.380"), 409);
@@ -391,6 +475,8 @@ export async function DELETE(
           name: student.user?.name ?? null,
           email: student.user?.email ?? null,
           studentCode: student.studentCode ?? null,
+          contract: "CLEAN_IDENTITY_ONLY",
+          protectedHistory: "NONE",
         }).slice(0, 1000),
       },
     })

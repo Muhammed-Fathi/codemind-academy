@@ -1,8 +1,13 @@
 import { getServerT } from "@/lib/i18n-server";
 // CodeMind Academy — Teacher Analytics API
 // Returns performance metrics for the teacher's groups and students.
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { requireUser, ok, err } from "@/lib/api";
+import {
+  academicLevelParamOf,
+  academicLevelScope,
+  scopedTeacherGroups,
+} from "@/lib/teacher-academic-level";
 import { db } from "@/lib/db";
 import {
   TRACK_BUCKETS,
@@ -16,7 +21,7 @@ import {
 } from "@/lib/session-progress";
 import { canAccessTrackScope } from "@/lib/track-scope";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const tApi = await getServerT();
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
@@ -68,6 +73,14 @@ export async function GET() {
   });
   if (!teacher) return err(tApi("api.155"), 404);
 
+  // Phase L manual-QA fix #4 — OPTIONAL academic-level separator: an extra
+  // `where` on the teacher's OWN groups (Teacher → Group → Course.academicLevel)
+  // so the per-group rows AND every headline number below describe ONE level.
+  // It narrows only; it can never widen the teacher's authorization.
+  const levelParam = academicLevelParamOf(req);
+  if (!levelParam.ok) return err("Unknown academic level", 400);
+  const scopedGroups = await scopedTeacherGroups(teacher, levelParam.level);
+
   // Phase 6 authorization scope: a teacher may only ever see quiz attempts
   // that belong to quizzes on courses they actually teach. A student in the
   // teacher's group may carry historical attempts from a course taught by a
@@ -75,7 +88,7 @@ export async function GET() {
   // into this teacher's analytics. Resolve the quizzes of the teacher's
   // courses through BOTH curriculum chains (canonical unitId + legacy
   // topicId), the same universe rule the rest of the app uses.
-  const courseIds = teacher.groups.map((g) => g.courseId);
+  const courseIds = scopedGroups.map((g) => g.courseId);
   const authorizedQuizRows = await db.quiz.findMany({
     where: {
       lesson: {
@@ -147,7 +160,7 @@ export async function GET() {
   }
 
   // Compute per-group stats
-  const groups = teacher.groups.map((g) => {
+  const groups = scopedGroups.map((g) => {
     const totalStudents = g.students.length;
     let totalAttendance = 0;
     let presentAttendance = 0;
@@ -282,7 +295,10 @@ export async function GET() {
     ? Math.round(groups.reduce((sum, g) => sum + g.quizPassRate, 0) / groups.length)
     : 0;
 
+  // Presentation metadata: the teacher's FULL level scope (never filtered),
+  // so the client knows whether a level separator is even meaningful here.
   return ok({
+    scope: academicLevelScope(teacher.groups),
     overview: {
       totalGroups: groups.length,
       totalStudents: allStudents,

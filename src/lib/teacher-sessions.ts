@@ -91,6 +91,8 @@ import {
   type ChainLesson,
 } from "@/lib/teacher-content";
 import { lessonCoursesChainOr } from "@/lib/session-progress";
+import type { AcademicLevel } from "@/lib/academic-level";
+import { scopedTeacherCourseIds } from "@/lib/teacher-academic-level";
 
 export { TEACHER_LIMITS } from "@/lib/teacher-content";
 
@@ -230,10 +232,23 @@ const TEACHER_SESSION_LIST_SELECT = {
  * never an authorization leak.
  */
 export async function listTeacherSessions(input: {
-  teacher: { groups: Array<{ courseId: string }> };
+  teacher: {
+    id: string;
+    groups: Array<{
+      id: string;
+      courseId: string;
+      course?: { academicLevel?: string | null } | null;
+    }>;
+  };
   filterCourseId?: string | null;
+  /** Phase L manual-QA fix #4 — optional canonical AcademicLevel narrowing,
+      resolved against the teacher's OWN groups (never a client course id). */
+  filterAcademicLevel?: AcademicLevel | null;
 }): Promise<TeacherSessionListItem[]> {
-  const owned = teacherCourseIds(input.teacher);
+  const owned = await scopedTeacherCourseIds(
+    { id: input.teacher.id, groups: input.teacher.groups },
+    input.filterAcademicLevel ?? null
+  );
   const requested = (input.filterCourseId ?? "").trim();
   const courseIds = requested
     ? owned.filter((id) => id === requested)

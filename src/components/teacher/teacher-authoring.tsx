@@ -64,7 +64,7 @@ import {
 import { useT, useLocale } from "@/lib/i18n";
 import {
   AcademicLevelBadge,
-  AcademicLevelSegmentedFilter,
+  OptionalAcademicLevelFilter,
   academicLevelLabel,
 } from "@/components/admin/academic-level-ui";
 import { cn } from "@/lib/utils";
@@ -246,6 +246,7 @@ export function LessonPicker({
   onChange,
   levelFilter,
   onLevelFilterChange,
+  levelScope = null,
 }: {
   /** The lessons this teacher may author under (already authorization-scoped). */
   lessons: TeacherLesson[];
@@ -256,6 +257,10 @@ export function LessonPicker({
       narrow the QUERY); when omitted the picker keeps its own. */
   levelFilter?: string;
   onLevelFilterChange?: (v: string) => void;
+  /** Phase L fix #4 — the teacher's FULL level scope (from the shared payload).
+      The control is rendered ONLY when the teacher really owns both levels, so
+      a single-level teacher never sees a meaningless separator. */
+  levelScope?: { spansBothLevels?: boolean } | null;
 }) {
   const tr = useT();
   // Uncontrolled fallback so every existing call site gains the control
@@ -263,13 +268,16 @@ export function LessonPicker({
   const [ownLevel, setOwnLevel] = React.useState("");
   const level = levelFilter !== undefined ? levelFilter : ownLevel;
   const setLevel = onLevelFilterChange || setOwnLevel;
-  // Phase L manual-QA fix — the level narrows the list this picker renders.
-  // Call sites that drive `useTeacherLessons(level)` get the narrowing from
-  // the server as well; this local pass keeps the control honest when a
-  // caller passes its whole catalogue.
+  // Phase L fix #4 (correction) — the level narrows the list IN THE QUERY. The
+  // prop the parent passes is the teacher's whole catalogue; the moment a level
+  // is chosen the picker fetches that level from the server (the same hook, a
+  // different cache key) instead of hiding rows in the browser. The local pass
+  // below is then a no-op safety net.
+  const scopedQuery = useTeacherLessons(level || undefined);
+  const lessonsSource = level ? scopedQuery.data?.lessons ?? [] : lessonsAll;
   const lessons = React.useMemo(
-    () => filterLessonsByLevel(lessonsAll, level || null),
-    [lessonsAll, level]
+    () => filterLessonsByLevel(lessonsSource, level || null),
+    [lessonsSource, level]
   );
   const byId = React.useMemo(
     () => new Map(lessons.map((l) => [l.id, l])),
@@ -309,14 +317,17 @@ export function LessonPicker({
 
   return (
     <div className="space-y-1.5">
-      {/* Phase L manual-QA fix — the academic-level switch for this selector.
-          Both official curricula are live and their courses share ONE display
-          name, so without this the two levels' lessons (18 shared
-          officialCodes) are indistinguishable in the list below. */}
+      {/* Phase L fix #4 (correction) — the ONE shared level separator, rendered
+          only when this teacher's own scope really spans both levels. Both
+          official curricula are live and their courses share ONE display name,
+          so without this the two levels' lessons (18 shared officialCodes) are
+          indistinguishable in the list below — but a single-level teacher has
+          nothing to separate and gets no control at all. */}
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs font-medium text-muted-foreground">{tr("admin.642")}</span>
-        <AcademicLevelSegmentedFilter value={level} onChange={setLevel} />
-        <span className="text-[11px] text-muted-foreground basis-full">{tr("teacher.312")}</span>
+        <OptionalAcademicLevelFilter scope={levelScope} value={level} onChange={setLevel} />
+        {levelScope?.spansBothLevels ? (
+          <span className="text-[11px] text-muted-foreground basis-full">{tr("teacher.312")}</span>
+        ) : null}
       </div>
       <Select value={value} onValueChange={onChange}>
         <SelectTrigger className="w-full">
@@ -650,11 +661,15 @@ export function HomeworkDialog({
   homework = null,
   onChanged,
   fixedLessonId,
+  levelScope = null,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   lessons: TeacherLesson[];
   lessonsLoading: boolean;
+  /** Phase L fix #4 — the caller's level scope, so the lesson picker offers the
+      separator only when both levels are actually in play. */
+  levelScope?: { spansBothLevels?: boolean } | null;
   homework?: HomeworkRecord | null;
   /** Phase E — an embedder (the session workspace) that must refresh its own
       aggregate query after a successful create/edit. Optional and additive:
@@ -781,6 +796,7 @@ export function HomeworkDialog({
                 loading={lessonsLoading}
                 value={lessonId}
                 onChange={setLessonId}
+                levelScope={levelScope}
               />
             </div>
           )}

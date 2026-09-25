@@ -66,7 +66,10 @@ import {
   ReadinessStateIcon,
   type LessonReadinessSnapshot,
 } from "@/components/admin/session-workflow-shared";
-import { academicLevelLabel } from "@/components/admin/academic-level-ui";
+import {
+  OptionalAcademicLevelFilter,
+  academicLevelLabel,
+} from "@/components/admin/academic-level-ui";
 import {
   HomeworkDialog,
   QuestionManagerDialog,
@@ -287,12 +290,23 @@ function SessionListView({ onOpen }: { onOpen: (lessonId: string) => void }) {
   const labels = useIndicatorLabels();
   const [query, setQuery] = React.useState("");
   const [courseFilter, setCourseFilter] = React.useState<string>("ALL");
+  // Phase L manual-QA fix #4 — level separator for the session roster. The
+  // narrowing is a server-side restriction of the teacher's OWN course set, so
+  // a mixed-level teacher can work one level at a time.
+  const [level, setLevel] = React.useState<string>("");
   const [readinessFilter, setReadinessFilter] = React.useState<string>("ALL");
 
-  const sessionsQuery = useQuery<{ sessions: SessionListItem[] }>({
-    queryKey: ["teacher-sessions"],
+  const sessionsQuery = useQuery<{
+    sessions: SessionListItem[];
+    scope?: { spansBothLevels?: boolean };
+  }>({
+    queryKey: ["teacher-sessions", level || "ALL"],
     queryFn: async () => {
-      const r = await fetch("/api/teacher/sessions");
+      const r = await fetch(
+        level
+          ? `/api/teacher/sessions?academicLevel=${encodeURIComponent(level)}`
+          : "/api/teacher/sessions"
+      );
       if (!r.ok) {
         const e = await r.json().catch(() => ({}));
         throw new Error(e.error || "fail");
@@ -382,6 +396,14 @@ function SessionListView({ onOpen }: { onOpen: (lessonId: string) => void }) {
             aria-label={tr("teacher.217")}
           />
         </div>
+        <OptionalAcademicLevelFilter
+          scope={sessionsQuery.data?.scope}
+          value={level}
+          onChange={(v) => {
+            setLevel(v);
+            setCourseFilter("ALL");
+          }}
+        />
         <Select value={courseFilter} onValueChange={setCourseFilter}>
           <SelectTrigger className="w-52" aria-label={tr("teacher.218")}>
             <SelectValue />

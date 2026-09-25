@@ -20,6 +20,11 @@ import { getServerT } from "@/lib/i18n-server";
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireUser, getTeacherProfile } from "@/lib/api";
+import {
+  academicLevelParamOf,
+  academicLevelScope,
+  teacherGroupIdsOfLevel,
+} from "@/lib/teacher-academic-level";
 import { lessonCoursesChainOr } from "@/lib/session-progress";
 import { resolveContentTrackScope } from "@/lib/track-scope";
 import {
@@ -43,11 +48,21 @@ export async function GET(req: NextRequest) {
 
   const url = new URL(req.url);
   const groupId = url.searchParams.get("groupId") || "";
+  // Phase L manual-QA fix #4 — OPTIONAL academic-level separator. Resolved as
+  // an extra `where` on the teacher's OWN groups (Teacher → Group → Course.
+  // academicLevel) and intersected with the optional group/course narrowing
+  // below, so the list is filtered IN THE QUERY and the teacher's
+  // authorization can only shrink — never grow. An unrecognised value is a
+  // 400, never a silent "all".
+  const levelParam = academicLevelParamOf(req);
+  if (!levelParam.ok) return err("Unknown academic level", 400);
+  const levelGroupIds = await teacherGroupIdsOfLevel(teacher, levelParam.level);
   const courseIds = teacher.groups
     .filter((g) => !groupId || g.id === groupId)
+    .filter((g) => !levelGroupIds || levelGroupIds.has(g.id))
     .map((g) => g.courseId);
 
-  if (courseIds.length === 0) return ok({ homework: [] });
+  if (courseIds.length === 0) return ok({ homework: [], scope: academicLevelScope(teacher.groups) });
 
   // Both curriculum chains: homework on unit-linked (official) lessons must
   // be listed too. No archived exclusion — a pending legacy submission still
@@ -226,7 +241,9 @@ export async function GET(req: NextRequest) {
     };
   });
 
-  return ok({ homework: homeworkPayload });
+  // Presentation metadata: the teacher's FULL level scope (never filtered),
+  // so the client knows whether a level separator is even meaningful here.
+  return ok({ homework: homeworkPayload, scope: academicLevelScope(teacher.groups) });
 }
 
 // POST /api/teacher/homework

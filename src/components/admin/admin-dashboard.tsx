@@ -1119,6 +1119,9 @@ function StudentProfileDrawer({
   // financial history and reports exactly what it removed otherwise.
   const [confirmDelete, setConfirmDelete] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
+  // The server's per-category breakdown of a REFUSED delete, so the admin sees
+  // exactly which protected classes exist instead of a vague failure.
+  const [blocked, setBlocked] = React.useState<Record<string, number> | null>(null);
   const deleteStudent = async () => {
     if (!student) return;
     setDeleting(true);
@@ -1126,11 +1129,14 @@ function StudentProfileDrawer({
       const res = await fetch(`/api/admin/students/${student.id}`, { method: "DELETE" });
       const j = await res.json().catch(() => ({} as any));
       if (!res.ok) {
-        // The refusal text (financial history, etc.) is shown verbatim.
+        // The refusal text is shown verbatim and the breakdown stays visible in
+        // the dialog (the toast may be missed).
         toast.error(j?.error || tr("admin.001"));
+        setBlocked(j?.blocked && typeof j.blocked === "object" ? j.blocked : null);
         return;
       }
       toast.success(tr("admin.657"));
+      setBlocked(null);
       setConfirmDelete(false);
       // Same refresh contract as every other mutation here: the list AND the
       // per-tab counters come from the same response, so both update.
@@ -1141,6 +1147,21 @@ function StudentProfileDrawer({
     } finally {
       setDeleting(false);
     }
+  };
+
+  /** Localized label for one protected-history category. */
+  const blockedLabel = (key: string) => {
+    const map: Record<string, string> = {
+      financial: "admin.660",
+      subscription: "admin.661",
+      attendance: "admin.662",
+      assessments: "admin.663",
+      progress: "admin.664",
+      notes: "admin.665",
+      achievements: "admin.666",
+      account: "admin.667",
+    };
+    return tr(map[key] || "admin.667");
   };
 
   // Phase L manual-QA fix — the student's canonical Track / school type, Editable.
@@ -1373,6 +1394,20 @@ function StudentProfileDrawer({
                       {student.studentCode ? ` · ${student.studentCode}` : ""}
                     </span>
                     <span className="mt-2 block">{tr("admin.656")}</span>
+                    {blocked && Object.keys(blocked).length > 0 ? (
+                      <span className="mt-2 block rounded-md border border-destructive/30 bg-destructive/5 p-2">
+                        <span className="block text-[11px] font-bold text-destructive">
+                          {tr("api.383")}
+                        </span>
+                        <span className="mt-1 block space-y-0.5">
+                          {Object.entries(blocked).map(([key, n]) => (
+                            <span key={key} className="block text-[11px] text-muted-foreground">
+                              {blockedLabel(key)} — {n}
+                            </span>
+                          ))}
+                        </span>
+                      </span>
+                    ) : null}
                   </span>
                 }
                 confirmLabel={tr("admin.655")}

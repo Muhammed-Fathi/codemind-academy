@@ -154,3 +154,43 @@ export function AcademicLevelSegmentedFilter({
     </div>
   );
 }
+
+/**
+ * Phase L manual-QA fix #4 — the OPTIONAL teacher-side level separator.
+ *
+ * THE PRODUCT RULE THIS ENCODES
+ *   A level filter is only meaningful where a teacher's scope can actually
+ *   contain BOTH levels on one shared list. A teacher who owns a single level
+ *   must NOT get an extra control that can never change anything, so this
+ *   component renders NOTHING unless `scope` says the two levels are both
+ *   present (the server derives `spansBothLevels` from the teacher's OWN
+ *   groups — Teacher → Group → Course → AcademicLevel — and ships it with the
+ *   list payload).
+ *
+ * It reuses the ONE shared segmented vocabulary (`AcademicLevelSegmentedFilter`),
+ * so the teacher sees exactly the same `[ الكل ][ أولى ثانوي ][ ثانية ثانوي ]`
+ * pattern as the admin.
+ *
+ * Presentation only: the caller passes the chosen value to its API so the
+ * narrowing happens in the QUERY; this component hides nothing by itself.
+ */
+export function OptionalAcademicLevelFilter({
+  scope,
+  value,
+  onChange,
+  className,
+}: {
+  /** `{ spansBothLevels }` from the payload, or a boolean. */
+  scope: { spansBothLevels?: boolean } | boolean | null | undefined;
+  value: string;
+  onChange: (v: string) => void;
+  className?: string;
+}) {
+  const spans = typeof scope === "boolean" ? scope : !!scope?.spansBothLevels;
+  if (!spans) return null;
+  return (
+    <div className={`flex flex-wrap items-center gap-2 ${className || ""}`} data-academic-level-scope="BOTH">
+      <AcademicLevelSegmentedFilter value={value} onChange={onChange} />
+    </div>
+  );
+}

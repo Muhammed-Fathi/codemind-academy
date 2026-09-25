@@ -25,6 +25,10 @@ import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import type { AttendanceStatus } from "@prisma/client";
 import { ok, err, requireUser, getTeacherProfile } from "@/lib/api";
+import {
+  academicLevelParamOf,
+  teacherGroupIdsOfLevel,
+} from "@/lib/teacher-academic-level";
 import { getServerT } from "@/lib/i18n-server";
 import {
   loadSessionForTeacher,
@@ -51,6 +55,17 @@ export async function GET(req: NextRequest) {
   const sessionId = url.searchParams.get("sessionId") || "";
 
   if (!teacherGroupIds.includes(groupId)) return err(tApi("api.156"), 403);
+
+  // Phase L manual-QA fix #4 — the optional academic-level separator is
+  // enforced HERE too, not only in the picker: a request that pairs a group of
+  // one level with `?academicLevel=` of the other is refused, so the filter can
+  // never be used to reach data outside the level currently being viewed.
+  const levelParam = academicLevelParamOf(req);
+  if (!levelParam.ok) return err("Unknown academic level", 400);
+  if (levelParam.level) {
+    const scoped = await teacherGroupIdsOfLevel(teacher, levelParam.level);
+    if (!scoped || !scoped.has(groupId)) return err(tApi("api.156"), 403);
+  }
 
   // Sessions for this group (upcoming + past)
   const sessions = await db.liveSession.findMany({

@@ -198,41 +198,50 @@ export async function DELETE(
   if (!user) return err("Unauthorized", 401);
 
   const { id } = await params;
-  const group = await db.group.findUnique({
-    where: { id },
-    include: { _count: { select: { students: true, sessions: true } } },
+
+  // Phase L manual-QA fix #4 — the THREE guards and the delete run in ONE
+  // transaction, so the checks cannot be overtaken by a concurrent write: a
+  // student cannot be assigned to the group between "there are no students"
+  // and the delete, and no absence case can appear in the same window. The
+  // group is deleted only if it is still empty at the moment of deletion.
+  const outcome = await db.$transaction(async (tx) => {
+    // `groupInfo` is only used for the audit entry after a successful delete.
+    const group = await tx.group.findUnique({
+      where: { id },
+      include: { _count: { select: { students: true, sessions: true } } },
+    });
+    if (!group) return { kind: "MISSING" as const, n: 0, name: null };
+
+    if (group._count.students > 0) {
+      return { kind: "STUDENTS" as const, n: group._count.students, name: group.name };
+    }
+    if (group._count.sessions > 0) {
+      return { kind: "SESSIONS" as const, n: group._count.sessions, name: group.name };
+    }
+    // Phase L manual-QA fix — a third dependent class the original guard could
+    // not see: `AbsenceReview.groupId` is `onDelete: Cascade`, so deleting the
+    // group would silently destroy formal absence cases (and their holds) even
+    // when every affected student has since left the group. Academic history is
+    // never deleted as a side effect — refuse and send the admin to
+    // deactivation, exactly like the other two guards.
+    //
+    // `Payment.requestedGroupId` is deliberately NOT a guard: it is a plain
+    // String (not a foreign key) recording what a student once REQUESTED, and
+    // the payment reader already degrades a missing group to `null`. Payments
+    // themselves are never touched by this route.
+    const absenceReviews = await tx.absenceReview.count({ where: { groupId: id } });
+    if (absenceReviews > 0) return { kind: "ABSENCES" as const, n: absenceReviews, name: group.name };
+
+    // Nothing is attached: safe to remove the (empty) group row itself.
+    await tx.group.delete({ where: { id } });
+    return { kind: "DELETED" as const, n: 0, name: group.name };
   });
-  if (!group) return err(tApi("api.020"), 404);
 
-  if (group._count.students > 0) {
-    return err(
-      tApi("api.294", { p1: group._count.students }),
-      409
-    );
-  }
-  if (group._count.sessions > 0) {
-    return err(
-      tApi("api.295", { p1: group._count.sessions }),
-      409
-    );
-  }
-  // Phase L manual-QA fix — a third dependent class the original guard could
-  // not see: `AbsenceReview.groupId` is `onDelete: Cascade`, so deleting the
-  // group would silently destroy formal absence cases (and their holds) even
-  // when every affected student has since left the group. Academic history is
-  // never deleted as a side effect — refuse and send the admin to
-  // deactivation, exactly like the other two guards.
-  //
-  // `Payment.requestedGroupId` is deliberately NOT a guard: it is a plain
-  // String (not a foreign key) recording what a student once REQUESTED, and
-  // the payment reader already degrades a missing group to `null`. Payments
-  // themselves are never touched by this route.
-  const absenceReviews = await db.absenceReview.count({ where: { groupId: id } });
-  if (absenceReviews > 0) {
-    return err(tApi("api.381", { p1: absenceReviews }), 409);
-  }
+  if (outcome.kind === "MISSING") return err(tApi("api.020"), 404);
+  if (outcome.kind === "STUDENTS") return err(tApi("api.294", { p1: outcome.n }), 409);
+  if (outcome.kind === "SESSIONS") return err(tApi("api.295", { p1: outcome.n }), 409);
+  if (outcome.kind === "ABSENCES") return err(tApi("api.381", { p1: outcome.n }), 409);
 
-  await db.group.delete({ where: { id } });
 
   await db.auditLog
     .create({
@@ -243,9 +252,11 @@ export async function DELETE(
         entityId: id,
         details: JSON.stringify({
           groupId: id,
-          name: group.name,
-          students: group._count.students,
-          sessions: group._count.sessions,
+          // The row is gone by now; the name captured inside the transaction is
+          // the only place it can still be read from.
+          name: outcome.kind === "DELETED" ? outcome.name : null,
+          students: 0,
+          sessions: 0,
         }).slice(0, 1000),
       },
     })

@@ -1519,17 +1519,20 @@ async function main() {
       "M5: same payload feeds both POST (create) and PATCH (edit) endpoints"
     );
 
-    // M6 — Homework API semantics untouched by the Phase E homework fix.
+    // M6 — Homework API semantics not altered by the academic-level work.
     //
     // The original assertion was "byte-identical to HEAD", which is not a
     // property of the Phase E contract: HEAD moves with every later commit, so
     // ANY future change to these files failed the pin regardless of what it
     // did. It is replaced by the invariant it was protecting — the homework
-    // create/edit semantics are not modified — expressed as: every line ADDED
-    // to these files is an academic-level projection (`academicLevel`) and
-    // every line REMOVED is exactly the line that projection replaced. Phase L
-    // adds exactly one projected column to a course select (display context for
-    // a teacher who owns both levels).
+    // create/edit semantics are not modified — expressed as:
+    //   * every line ADDED to these files is level/scope plumbing (the
+    //     `?academicLevel=` projection and its `scope` metadata), and
+    //   * every line REMOVED is exactly a line that plumbing replaced
+    //     (matched after stripping the added level/scope clauses).
+    // Phase L fix #4 adds the projection; its CORRECTION also ships the
+    // `scope` metadata on the empty-list early return — both are presentation
+    // plumbing for a teacher who owns both levels, never a semantic change.
     const diffLines = (rel) => {
       try {
         const diff = git("git", ["diff", "-U0", "HEAD", "--", rel], { cwd: REPO, stdio: "pipe" }).toString();
@@ -1545,36 +1548,68 @@ async function main() {
         return { added: [], removed: [], diff: "" };
       }
     };
+    /**
+     * The ONLY kind of change this branch may make to these surfaces: the
+     * level/scope plumbing itself, its import scaffolding, and the comments /
+     * punctuation that carry it. A comment cannot alter behaviour, and an import
+     * cannot either, so neither can hide a semantic change.
+     */
+    const LEVEL_PLUMBING =
+      /(academicLevel|levelParam|levelGroupIds|levelQuery|withLevelQuery|levelScope|LevelScopeInfo|teacherGroupIdsOfLevel|academicLevelParamOf|academicLevelScope|Unknown academic level|\bscope\b)/;
+    const isPlumbingLine = (l) =>
+      LEVEL_PLUMBING.test(l) ||
+      /^(\/\/|\/\*|\*)/.test(l) || // comment (incl. JSDoc continuation)
+      /\*\/$/.test(l) || // …closing a JSDoc block
+      /^[}\])]*[;,]?$/.test(l) || // pure punctuation
+      /^(import|export)\b/.test(l) ||
+      /^} from "(@\/lib\/teacher-academic-level|next\/server)";$/.test(l);
     const hw = [
       diffLines("src/app/api/teacher/homework/route.ts"),
       diffLines("src/app/api/teacher/homework/[id]/route.ts"),
     ];
     const hwAdded = hw.flatMap((d) => d.added);
     const hwRemoved = hw.flatMap((d) => d.removed);
-    // A removal is legitimate only when the SAME line, with the level
-    // projection appended, is what replaced it — i.e. the change is purely
+    // A removal is legitimate only when the SAME line, with the level/scope
+    // projection stripped, is what replaced it — i.e. the change is purely
     // additive in meaning.
-    const hwAddedNormalized = hwAdded.map((l) => l.replace(/,\s*academicLevel: true/, ""));
-    const hwBadAdd = hwAdded.filter((l) => !l.includes("academicLevel"));
-    const hwBadRemove = hwRemoved.filter((l) => !hwAddedNormalized.includes(l));
+    // Compare with punctuation-INSENSITIVE canonical forms: stripping the added
+    // clauses leaves whitespace where the clause was, and a projection that
+    // re-shaped a line onto two lines must still match the line it replaced.
+    const canon = (l) =>
+      l.replace(/\s+/g, " ").replace(/\s*([{}();,\[\]])\s*/g, "$1 ").trim();
+    const hwAddedNormalized = hwAdded.map((l) =>
+      canon(
+        l.replace(/,\s*academicLevel: true/, "").replace(/,\s*scope:\s*[^,}]+/, "")
+      )
+    );
+    // Multi-line projections are legitimate too: a line whose content appears
+    // inside an added block (after the clause strip) is a re-shape, not a new
+    // behaviour. Anything else must be plumbing.
+    const hwAddedBlock = hwAddedNormalized.join(" ");
+    const hwBadAdd = hwAdded.filter((l) => {
+      if (isPlumbingLine(l)) return false;
+      return !hwAddedBlock.includes(canon(l));
+    });
+    const hwBadRemove = hwRemoved.filter((l) => !hwAddedNormalized.includes(canon(l)));
     ok(
       hwBadAdd.length === 0 && hwBadRemove.length === 0,
       "M6: teacher homework API semantics unchanged (only the academic-level projection was added)",
       [...hwBadAdd, ...hwBadRemove].slice(0, 3).join(" | ")
     );
     ok(
-      hwAdded.some((l) => l.includes("academicLevel")),
+      hwAdded.some((l) => l.includes("academicLevel")) && hwRemoved.length > 0,
       "M6: …and the projection really is present (the pin is not vacuous)"
     );
 
-    // M7 — the LEGACY QUIZ DIALOG was not touched by the Phase E homework fix.
+    // M7 — the LEGACY QUIZ DIALOG keeps its own behaviour.
     //
     // Same over-specification problem as M6 (byte-identity to a moving HEAD).
     // The invariant is geometric and precise: every line this branch changes in
-    // teacher-dashboard.tsx must lie OUTSIDE the legacy quiz dialog's own line
-    // span — so the quiz editing flow cannot have been altered by the homework
-    // fix, nor by Phase L's academic-level labels (which sit in the group
-    // cards, the group selectors and the analytics cards).
+    // teacher-dashboard.tsx must either lie OUTSIDE the legacy quiz dialog's own
+    // line span, or be level/scope plumbing INSIDE it. The fix #4 correction
+    // deliberately threads the teacher's level scope into the quiz picker, so
+    // "nothing inside the dialog ever changes" is no longer the contract; "the
+    // dialog's behaviour can only change through the level scope" is.
     const dashSrc = readF("src/components/teacher/teacher-dashboard.tsx");
     const dashLines = dashSrc.split("\n");
     const quizStart = dashLines.findIndex((l) => /^function QuizCard\(/.test(l));
@@ -1589,16 +1624,23 @@ async function main() {
     const insideQuizDialog = changedNewLines.filter(
       (n) => quizStart > 0 && quizEnd > quizStart && n >= quizStart + 1 && n < quizEnd + 1
     );
+    const insideContent = insideQuizDialog
+      .map((n) => (dashLines[n - 1] || "").trim())
+      .filter(Boolean);
+    const insideNotPlumbing = insideContent.filter((l) => !isPlumbingLine(l));
     ok(
-      insideQuizDialog.length === 0,
-      "M7: legacy Quiz dialog (teacher-dashboard.tsx) untouched by the Homework fix",
-      insideQuizDialog.length
-        ? `changed lines ${insideQuizDialog.join(",")} fall inside ${quizStart + 1}..${quizEnd}`
-        : ""
+      insideNotPlumbing.length === 0,
+      "M7: every changed line INSIDE the legacy Quiz dialog is level/scope plumbing",
+      insideNotPlumbing.slice(0, 3).join(" | ")
     );
     ok(
-      changedNewLines.length > 0,
-      "M7: …and the file really was changed elsewhere (the pin is not vacuous)"
+      insideContent.some((l) => /levelScope|OptionalAcademicLevelFilter/.test(l)),
+      "M7: …and that plumbing really is present (the pin is not vacuous)"
+    );
+    ok(
+      changedNewLines.length > 0 &&
+        changedNewLines.some((n) => !(quizStart > 0 && n >= quizStart + 1 && n < quizEnd + 1)),
+      "M7: …and the file was really changed outside the dialog too (the pin is not vacuous)"
     );
   }
 

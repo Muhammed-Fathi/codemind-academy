@@ -40,6 +40,11 @@ import { ok, err, requireUser, getTeacherProfile } from "@/lib/api";
 import { lessonCoursesChainOr } from "@/lib/session-progress";
 import { normalizeTrackScope } from "@/lib/track-scope";
 import { teacherCourseIds } from "@/lib/teacher-content";
+import {
+  academicLevelParamOf,
+  academicLevelScope,
+  scopedTeacherCourseIds,
+} from "@/lib/teacher-academic-level";
 
 export async function GET(req: NextRequest) {
   const user = await requireUser();
@@ -57,24 +62,20 @@ export async function GET(req: NextRequest) {
   // the level is only an extra restriction on top of it. An unrecognised
   // value is ignored rather than guessed (the picker's own control only ever
   // sends the canonical values or "all").
-  const rawLevel = (req.nextUrl?.searchParams.get("academicLevel") || "").trim();
-  const levelFilter = rawLevel && rawLevel !== "all" ? rawLevel.toUpperCase() : null;
-  if (levelFilter && levelFilter !== "FIRST_SECONDARY" && levelFilter !== "SECOND_SECONDARY") {
-    return err("Unknown academic level", 400);
-  }
+  const levelParam = academicLevelParamOf(req);
+  if (!levelParam.ok) return err("Unknown academic level", 400);
 
   const allCourseIds = teacherCourseIds(teacher);
-  if (allCourseIds.length === 0) return ok({ lessons: [], grouped: [] });
+  if (allCourseIds.length === 0)
+    return ok({ lessons: [], grouped: [], scope: academicLevelScope(teacher.groups) });
 
   // The level lives on the Course, so narrowing by level is a restriction of
-  // the teacher's OWN course set — never a client-supplied course id.
-  const courseIds = levelFilter
-    ? allCourseIds.filter((id) => {
-        const g = teacher.groups.find((gr) => gr.course?.id === id);
-        return String(g?.course?.academicLevel ?? "") === levelFilter;
-      })
-    : allCourseIds;
-  if (courseIds.length === 0) return ok({ lessons: [], grouped: [] });
+  // the teacher's OWN course set — never a client-supplied course id. ONE
+  // implementation (`scopedTeacherCourseIds`) is shared with every other
+  // teacher surface, so the filter cannot drift between routes.
+  const courseIds = await scopedTeacherCourseIds(teacher, levelParam.level);
+  if (courseIds.length === 0)
+    return ok({ lessons: [], grouped: [], scope: academicLevelScope(teacher.groups) });
 
   // Both curriculum chains: official lessons are unit-linked (topic null) and
   // must appear in the selector. No archived exclusion here — teachers manage
@@ -308,5 +309,7 @@ export async function GET(req: NextRequest) {
         })),
     }));
 
-  return ok({ lessons: flat, grouped });
+  // Presentation metadata: the teacher's FULL level scope (never filtered),
+  // so the client knows whether a level separator is even meaningful here.
+  return ok({ lessons: flat, grouped, scope: academicLevelScope(teacher.groups) });
 }
