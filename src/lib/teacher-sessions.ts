@@ -173,7 +173,7 @@ const TEACHER_SESSION_LIST_SELECT = {
           titleAr: true,
           order: true,
           courseId: true,
-          course: { select: { id: true, name: true, nameAr: true } },
+          course: { select: { id: true, name: true, nameAr: true, academicLevel: true } },
         },
       },
     },
@@ -196,7 +196,7 @@ const TEACHER_SESSION_LIST_SELECT = {
               titleAr: true,
               order: true,
               courseId: true,
-              course: { select: { id: true, name: true, nameAr: true } },
+              course: { select: { id: true, name: true, nameAr: true, academicLevel: true } },
             },
           },
         },
@@ -282,7 +282,14 @@ export async function listTeacherSessions(input: {
       curriculumStatus: String(lesson.curriculumStatus),
       archived: String(lesson.curriculumStatus).toUpperCase() === "ARCHIVED",
       chain: canonical ? "CANONICAL" : "LEGACY",
-      course: { id: placement.courseId, name: placement.courseNameAr || placement.courseName },
+      course: {
+        id: placement.courseId,
+        name: placement.courseNameAr || placement.courseName,
+        // Phase L final polish — the level travels with the roster row so a
+        // teacher who owns BOTH official courses sees «أولى ثانوي · …» and
+        // «ثانية ثانوي · …» instead of two identical headers.
+        academicLevel: placement.courseAcademicLevel,
+      },
       part: {
         id: placement.partId,
         title: placement.partTitleAr || placement.partTitle,
@@ -625,7 +632,13 @@ async function listTeacherSessionsLight(
     curriculumStatus: String(lesson.curriculumStatus),
     archived: String(lesson.curriculumStatus).toUpperCase() === "ARCHIVED",
     chain: placement.chain,
-    course: { id: placement.courseId, name: placement.courseNameAr || placement.courseName },
+    course: {
+      id: placement.courseId,
+      name: placement.courseNameAr || placement.courseName,
+      // Phase L final polish — same DTO rule as the list: the level is display
+      // context that lets one same-named course be told from the other.
+      academicLevel: placement.courseAcademicLevel,
+    },
     part: {
       id: placement.partId,
       title: placement.partTitleAr || placement.partTitle,

@@ -71,6 +71,10 @@ import {
   academicLevelLabel,
 } from "@/components/admin/academic-level-ui";
 import {
+  courseGroupKey,
+  groupSessionsByCourse,
+} from "@/lib/teacher-session-groups";
+import {
   HomeworkDialog,
   QuestionManagerDialog,
   TrackScopeSelect,
@@ -357,23 +361,13 @@ function SessionListView({ onOpen }: { onOpen: (lessonId: string) => void }) {
   }, [sessions, query, courseFilter, readinessFilter]);
 
   // Group the filtered rows by course (deterministic: the API's own order).
-  const byCourse = React.useMemo(() => {
-    const map = new Map<
-      string,
-      { name: string; academicLevel: string | null; rows: SessionListItem[] }
-    >();
-    for (const s of filtered) {
-      if (!map.has(s.course.id)) {
-        map.set(s.course.id, {
-          name: s.course.name,
-          academicLevel: s.course.academicLevel ?? null,
-          rows: [],
-        });
-      }
-      map.get(s.course.id)!.rows.push(s);
-    }
-    return Array.from(map.values());
-  }, [filtered]);
+  //
+  // Phase L final polish — the group objects CARRY their `courseId`, and the
+  // render keys off it (`courseGroupKey`). The two official courses share the
+  // display name «البرمجة والذكاء الاصطناعي», so keying a section by `name`
+  // produced two identical React keys ("Encountered two children with the same
+  // key"). A course name is presentation text; `Course.id` is the identity.
+  const byCourse = React.useMemo(() => groupSessionsByCourse(filtered), [filtered]);
 
   return (
     <motion.div
@@ -463,7 +457,7 @@ function SessionListView({ onOpen }: { onOpen: (lessonId: string) => void }) {
         </div>
       ) : (
         byCourse.map((group) => (
-          <section key={group.name} className="space-y-2.5">
+          <section key={courseGroupKey(group)} className="space-y-2.5">
             <h3 className="text-sm font-bold text-primary">
               {courseLabel(group.name, group.academicLevel)}
             </h3>

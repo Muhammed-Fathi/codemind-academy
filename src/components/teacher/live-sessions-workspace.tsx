@@ -29,7 +29,10 @@ import { useT } from "@/lib/i18n";
 import { useApp } from "@/lib/store";
 import { fmtDateTime as formatDateTime, type Locale } from "@/lib/i18n-core";
 import { EntitySelect, type EntityOption } from "@/components/shared/entity-select";
-import { academicLevelLabel } from "@/components/admin/academic-level-ui";
+import {
+  AcademicLevelBadge,
+  academicLevelLabel,
+} from "@/components/admin/academic-level-ui";
 import {
   sessionDisplayOverride,
   sessionLessonIdentity,
@@ -62,7 +65,20 @@ import {
 } from "@/components/ui/select";
 import { SessionLinkActions } from "@/components/shared/session-link-actions";
 import { toast } from "sonner";
-import { AlertTriangle, CalendarPlus, Check, Lock, Play, Search, X, Zap } from "lucide-react";
+import {
+  AlertTriangle,
+  BookOpen,
+  CalendarDays,
+  CalendarPlus,
+  Check,
+  Clock,
+  Lock,
+  Play,
+  Search,
+  Users,
+  X,
+  Zap,
+} from "lucide-react";
 
 type SessionRow = {
   id: string;
@@ -161,6 +177,30 @@ function attendanceKey(status: string): string {
   }
 }
 
+/**
+ * The summary chips' palette — the SAME status colours the register rows and
+ * the rest of the platform use (emerald = present, amber = late, rose =
+ * absent, muted = not marked yet). Presentation only.
+ */
+const ATTENDANCE_SUMMARY_CLASS: Record<"PRESENT" | "LATE" | "ABSENT" | "UNMARKED", string> = {
+  PRESENT: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+  LATE: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+  ABSENT: "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300",
+  UNMARKED: "border-border bg-muted/40 text-muted-foreground",
+};
+
+/** Date only (localized) — the shared formatter with an explicit set of options. */
+function fmtDateOnly(value: string | null, locale: Locale): string {
+  if (!value) return "";
+  return formatDateTime(value, locale, { day: "numeric", month: "long", year: "numeric" });
+}
+
+/** Time only (localized), e.g. "٥:٣٠ م" / "17:30". */
+function fmtTimeOnly(value: string | null, locale: Locale): string {
+  if (!value) return "";
+  return formatDateTime(value, locale, { hour: "2-digit", minute: "2-digit" });
+}
+
 /** `datetime-local` value for a Date (local, no timezone surprises). */
 function toLocalInput(value: Date | string): string {
   const d = value instanceof Date ? value : new Date(value);
@@ -227,46 +267,36 @@ export function TeacherLiveSessionsWorkspace() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4 items-start">
-          <Card className="glass">
-            <CardContent className="p-2">
-              <ScrollArea className="min-h-0" viewportClassName="max-h-[min(60dvh,calc(100dvh-18rem))] overscroll-contain">
-                <ul className="pb-1 space-y-1">
-                  {sessions.map((s) => (
-                    <li key={s.id}>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedId(s.id)}
-                        className={`w-full text-start rounded-lg p-3 border transition-colors ${
-                          selectedId === s.id ? "border-primary bg-primary/5" : "border-transparent hover:bg-muted/60"
-                        }`}
-                        aria-current={selectedId === s.id}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-sm font-semibold truncate">{s.titleAr || s.title}</span>
-                          <Badge variant={s.status === "LIVE" ? "default" : s.status === "CANCELLED" ? "destructive" : "outline"}>
-                            {t(statusKey(s.status))}
-                          </Badge>
-                        </div>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">
-                          {fmt(s.startAt)} • {s.group?.name ?? ""}
-                        </p>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </ScrollArea>
-            </CardContent>
-          </Card>
-
-          {selectedId && (
-            <SessionDetail
-              key={selectedId}
-              sessionId={selectedId}
-              groups={groups}
-              onChanged={list.reload}
-            />
+        // Phase L final polish — a clear two-column desktop structure:
+        //   PRIMARY   (first column = the RIGHT side in RTL): the selected
+        //             session's details, context, actions and attendance;
+        //   SECONDARY (second column = the LEFT side in RTL): the session list.
+        // The detail panel leads the DOM order so the hierarchy is unmistakable
+        // in Arabic RTL, and the list column sticks while the detail scrolls.
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-4 items-start">
+          {selectedId ? (
+            <div className="order-2 min-w-0 lg:order-1" aria-label={t("teacher.live.details")}>
+              <SessionDetail
+                key={selectedId}
+                sessionId={selectedId}
+                groups={groups}
+                onChanged={list.reload}
+              />
+            </div>
+          ) : (
+            <Card className="glass order-2 lg:order-1">
+              <CardContent className="py-10 text-center">
+                <p className="text-sm text-muted-foreground">{t("teacher.live.selectSession")}</p>
+              </CardContent>
+            </Card>
           )}
+
+          <SessionListCard
+            sessions={sessions}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            className="order-1 lg:order-2"
+          />
         </div>
       )}
 
@@ -280,6 +310,108 @@ export function TeacherLiveSessionsWorkspace() {
         }}
       />
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// The session LIST (the secondary column)
+// ---------------------------------------------------------------------------
+//
+// IDENTITY RULE (Phase L final polish): every row is keyed and selected by the
+// session's canonical `id` — never by a title, a group name or a date. The
+// course/level and the group name are DISPLAY text: two official courses share
+// one display name, so a display value can never be an identity here.
+//
+// Nothing in this component decides lifecycle: it renders `status` exactly as
+// the server computed it, and a click only changes which session is shown.
+
+function SessionListCard({
+  sessions,
+  selectedId,
+  onSelect,
+  className,
+}: {
+  sessions: SessionRow[];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  /** Grid placement/order — the card itself is a direct child of the layout. */
+  className?: string;
+}) {
+  const t = useT();
+  const locale = useApp((s) => (s.locale === "en" ? "en" : "ar")) as Locale;
+  const fmt = (value: string | null) => (value ? formatDateTime(value, locale) : "");
+
+  return (
+    <Card className={`glass lg:sticky lg:top-4 ${className ?? ""}`}>
+      <CardContent className="p-3 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-sm font-bold">{t("teacher.live.list")}</h2>
+          <Badge variant="outline" className="tabular-nums">{sessions.length}</Badge>
+        </div>
+        <ScrollArea
+          className="min-h-0"
+          viewportClassName="max-h-[min(60dvh,calc(100dvh-18rem))] overscroll-contain"
+        >
+          <ul className="pb-1 space-y-1">
+            {sessions.map((s) => {
+              const selected = selectedId === s.id;
+              return (
+                <li key={s.id}>
+                  <button
+                    type="button"
+                    onClick={() => onSelect(s.id)}
+                    className={`relative w-full text-start rounded-lg border p-2.5 ps-3 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
+                      selected
+                        ? "border-primary/60 bg-primary/10 ring-1 ring-primary/30 shadow-sm"
+                        : "border-transparent hover:bg-muted/60"
+                    }`}
+                    aria-current={selected ? "true" : undefined}
+                    data-session-id={s.id}
+                  >
+                    {/* A start accent bar makes the selection obvious without
+                        relying on border colour alone (colour-blind friendly). */}
+                    {selected ? (
+                      <span
+                        aria-hidden="true"
+                        className="absolute inset-y-1.5 start-0 w-0.5 rounded-full bg-primary"
+                      />
+                    ) : null}
+                    <span className="flex items-start justify-between gap-2">
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-semibold">
+                          {s.titleAr || s.title}
+                        </span>
+                        <span className="mt-1 flex flex-wrap items-center gap-1.5">
+                          <AcademicLevelBadge level={s.group?.academicLevel} />
+                          <span className="truncate text-[11px] text-muted-foreground">
+                            {s.group?.name ?? ""}
+                          </span>
+                        </span>
+                        <span className="mt-1 block text-[11px] text-muted-foreground">
+                          {fmt(s.startAt)} • {t("live.duration", { p1: s.duration })}
+                        </span>
+                      </span>
+                      <Badge
+                        variant={
+                          s.status === "LIVE"
+                            ? "default"
+                            : s.status === "CANCELLED"
+                              ? "destructive"
+                              : "outline"
+                        }
+                        className="shrink-0"
+                      >
+                        {t(statusKey(s.status))}
+                      </Badge>
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </ScrollArea>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -454,28 +586,83 @@ function SessionDetail({
 
   const pct = draftCounts.total > 0 ? Math.round((draftCounts.marked / draftCounts.total) * 100) : 0;
 
+  // -------------------------------------------------------------------------
+  // Phase L final polish — ACTION PRIORITY (presentation only).
+  //
+  // The lifecycle authority is the SERVER: `status`, `startAllowed`,
+  // `joinAllowed` and `attendanceLocked` all arrive decided. This block only
+  // decides WHICH of the already-allowed actions is allowed to dominate the
+  // page, so the screen reads clearly during a live class:
+  //
+  //   SCHEDULED → "بدء الحصة" is primary; when the server says starting is too
+  //               early the primary becomes the join control if the join window
+  //               is already open, otherwise the start button is shown MUTED
+  //               with its reason instead of shouting a dead solid button.
+  //   LIVE      → the join control is primary; "إنهاء الحصة" is secondary.
+  //   ENDED /
+  //   CANCELLED → NOTHING is primary; no disabled start button is emphasised.
+  //
+  // Nothing below changes an endpoint, a payload or a transition.
+  const phase: "LIVE" | "SCHEDULED" | "ENDED" | "CANCELLED" | "OTHER" =
+    session.status === "LIVE"
+      ? "LIVE"
+      : session.status === "SCHEDULED"
+        ? "SCHEDULED"
+        : session.status === "COMPLETED"
+          ? "ENDED"
+          : session.status === "CANCELLED"
+            ? "CANCELLED"
+            : "OTHER";
+  /** Starting is only "blocked" when the SERVER said so for this session. */
+  const startBlocked = phase === "SCHEDULED" && session.startAllowed === false;
+  /** The join window is open right now (server-decided, never inferred). */
+  const joinReady = session.joinAllowed === true && phase !== "ENDED" && phase !== "CANCELLED";
+  /** Exactly one slot may be emphasised. */
+  const primaryAction: "JOIN" | "START" | "NONE" =
+    phase === "LIVE"
+      ? "JOIN"
+      : phase === "SCHEDULED"
+        ? startBlocked
+          ? joinReady
+            ? "JOIN"
+            : "START"
+          : "START"
+        : "NONE";
+  /** Reschedule/cancel keep the EXACT conditions they had before the polish. */
+  const manageable = session.status !== "CANCELLED" && session.status !== "COMPLETED";
+  const startBlockReason =
+    session.startDenialCode === "TOO_EARLY"
+      ? t("teacher.live.startTooEarly", { p1: fmt(session.startAt) })
+      : t("teacher.live.startWindowClosed");
+
   return (
     <div className="space-y-4">
+      {/* ================= A. HEADER — identity of the selected session ===== */}
       <Card className="glass">
         <CardContent className="p-4 space-y-3">
-          <div className="flex items-start justify-between gap-2 flex-wrap">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
             <div className="min-w-0">
-              <h2 className="font-bold break-words">{session.titleAr || session.title}</h2>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {fmt(session.startAt)} — {fmt(session.endsAt)} • {t("live.duration", { p1: session.duration })}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {t("live.group")}: {session.group?.name ?? "—"}
-                {session.lesson ? ` • ${t("live.lesson")}: ${session.lesson.titleAr || session.lesson.title}` : ""}
-              </p>
-            </div>
-            <div className="flex flex-col items-end gap-1">
-              <Badge variant={session.status === "LIVE" ? "default" : session.status === "CANCELLED" ? "destructive" : "outline"}>
-                {t(statusKey(session.status))}
-              </Badge>
-              <Badge variant="outline" className="text-[10px]">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-base font-bold break-words">{session.titleAr || session.title}</h2>
+                <AcademicLevelBadge level={session.group?.academicLevel} />
+                <Badge
+                  variant={
+                    session.status === "LIVE"
+                      ? "default"
+                      : session.status === "CANCELLED"
+                        ? "destructive"
+                        : "outline"
+                  }
+                >
+                  {t(statusKey(session.status))}
+                </Badge>
+              </div>
+              <p className="mt-1 text-[11px] text-muted-foreground">
                 {t(reviewKey(session.reviewState))}
-              </Badge>
+                {session.rescheduleCount > 0
+                  ? ` • ${t("teacher.live.reschedule")}: ${session.rescheduleCount}× • ${t("live.status.scheduled")}: ${fmt(session.joinOpensAt)}`
+                  : ""}
+              </p>
             </div>
           </div>
 
@@ -485,67 +672,121 @@ function SessionDetail({
             </p>
           )}
 
-          {session.rescheduleCount > 0 && (
-            <p className="text-xs text-muted-foreground">
-              {t("teacher.live.reschedule")}: {session.rescheduleCount}× • {t("live.status.scheduled")}: {fmt(session.joinOpensAt)}
-            </p>
-          )}
-
-          <div className="flex items-center gap-2 flex-wrap">
-            <SessionLinkActions
-              sessionId={session.id}
-              status={session.status}
-              state={{
-                allowed: session.joinAllowed,
-                denialCode: session.joinDenialCode,
-                opensAt: session.joinOpensAt,
-                closesAt: session.joinClosesAt,
-                joinEarlyMinutes: session.joinEarlyMinutes ?? null,
-              }}
+          {/* ================= B. CONTEXT — scannable at a glance ============ */}
+          <dl className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-x-4 gap-y-3 border-t pt-3">
+            <ContextItem
+              icon={<CalendarDays className="w-3.5 h-3.5" />}
+              label={t("teacher.live.date")}
+              value={fmtDateOnly(session.startAt, locale)}
             />
-            {session.status === "SCHEDULED" && (
-              // Finding 3 — starting early is refused by the SERVER (the
-              // lifecycle authority). The UI mirrors that rule so the teacher
-              // sees why the button is not available instead of a failure
-              // toast after the fact.
-              <div className="flex items-center gap-2">
+            <ContextItem
+              icon={<Clock className="w-3.5 h-3.5" />}
+              label={t("teacher.live.time")}
+              value={`${fmtTimeOnly(session.startAt, locale)} — ${fmtTimeOnly(session.endsAt, locale)}`}
+              hint={t("live.duration", { p1: session.duration })}
+            />
+            <ContextItem
+              icon={<Users className="w-3.5 h-3.5" />}
+              label={t("live.group")}
+              value={session.group?.name ?? "—"}
+              badge={<AcademicLevelBadge level={session.group?.academicLevel} />}
+            />
+            <ContextItem
+              icon={<BookOpen className="w-3.5 h-3.5" />}
+              label={t("live.lesson")}
+              value={
+                session.lesson
+                  ? session.lesson.titleAr || session.lesson.title
+                  : t("live.lesson.unlinked")
+              }
+              code={session.lesson?.officialCode ?? null}
+            />
+          </dl>
+
+          {/* ================= C. PRIMARY ACTION — at most ONE =============== */}
+          <div className="flex flex-wrap items-center gap-2 border-t pt-3" data-live-primary={primaryAction}>
+            <span className="text-[11px] font-medium text-muted-foreground">
+              {t("teacher.live.actions")}
+            </span>
+            {primaryAction === "JOIN" && (
+              <SessionLinkActions
+                sessionId={session.id}
+                status={session.status}
+                testId="live-primary-join"
+                state={{
+                  allowed: session.joinAllowed,
+                  denialCode: session.joinDenialCode,
+                  opensAt: session.joinOpensAt,
+                  closesAt: session.joinClosesAt,
+                  joinEarlyMinutes: session.joinEarlyMinutes ?? null,
+                }}
+              />
+            )}
+            {primaryAction === "START" && (
+              <>
                 <Button
                   size="sm"
-                  variant="outline"
+                  variant={startBlocked ? "outline" : "default"}
                   onClick={() => lifecycle("start")}
-                  disabled={busy || session.startAllowed === false}
-                  title={
-                    session.startAllowed === false && session.startDenialCode === "TOO_EARLY"
-                      ? t("teacher.live.startTooEarly", { p1: fmt(session.startAt) })
-                      : undefined
-                  }
+                  disabled={busy || startBlocked}
+                  title={startBlocked ? startBlockReason : undefined}
                 >
                   <Play className="w-4 h-4 ms-1.5" />
                   {t("teacher.live.start")}
                 </Button>
-                {session.startAllowed === false ? (
-                  <span className="text-[11px] text-muted-foreground max-w-56">
-                    {session.startDenialCode === "TOO_EARLY"
-                      ? t("teacher.live.startTooEarly", { p1: fmt(session.startAt) })
-                      : t("teacher.live.startWindowClosed")}
-                  </span>
+                {startBlocked ? (
+                  <span className="text-[11px] text-muted-foreground">{startBlockReason}</span>
                 ) : null}
-              </div>
+              </>
             )}
-            {session.status === "LIVE" && (
+            {phase === "LIVE" && (
               <Button size="sm" variant="outline" onClick={() => lifecycle("end")} disabled={busy}>
                 {t("teacher.live.end")}
               </Button>
             )}
-            {session.status !== "CANCELLED" && session.status !== "COMPLETED" && (
+            {primaryAction === "NONE" && (
+              <span
+                className="rounded-lg border bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground"
+                data-live-ended={phase}
+              >
+                {phase === "CANCELLED" ? t("live.join.cancelled") : t("live.join.ended")}
+              </span>
+            )}
+          </div>
+
+          {/* ================= D. SECONDARY UTILITIES ======================== */}
+          <div
+            className="flex flex-wrap items-center gap-2 border-t pt-3"
+            data-live-utilities="true"
+          >
+            <span className="text-[11px] font-medium text-muted-foreground">
+              {t("teacher.live.moreActions")}
+            </span>
+            {primaryAction !== "JOIN" && (
+              <SessionLinkActions
+                sessionId={session.id}
+                status={session.status}
+                size="sm"
+                joinVariant="outline"
+                state={{
+                  allowed: session.joinAllowed,
+                  denialCode: session.joinDenialCode,
+                  opensAt: session.joinOpensAt,
+                  closesAt: session.joinClosesAt,
+                  joinEarlyMinutes: session.joinEarlyMinutes ?? null,
+                }}
+              />
+            )}
+            {manageable && (
               <>
                 <Button size="sm" variant="ghost" onClick={() => setRescheduleOpen(true)} disabled={busy}>
+                  <CalendarDays className="w-4 h-4 ms-1.5" />
                   {t("teacher.live.reschedule")}
                 </Button>
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="text-destructive"
+                  className="text-destructive hover:text-destructive"
                   onClick={() => setCancelOpen(true)}
                   disabled={busy}
                 >
@@ -557,17 +798,27 @@ function SessionDetail({
         </CardContent>
       </Card>
 
-      <Card className="glass">
+      {/* ================= E. ATTENDANCE — belongs to THIS session =========
+          The register is rendered inside the selected session's panel (never
+          detached from it), and its heading repeats the session's own time so
+          it is unambiguous which occurrence is being marked. Registration logic
+          is untouched: the same draft, the same endpoints, the same lock. */}
+      <Card className="glass" data-live-attendance-for={session.id}>
         <CardContent className="p-4 space-y-3">
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div className="flex items-center gap-2">
-              <h3 className="font-bold text-sm">{t("teacher.live.attendance")}</h3>
-              {locked && (
-                <Badge variant="secondary" className="gap-1 text-[10px]">
-                  <Lock className="w-3 h-3" />
-                  {t("teacher.live.locked")}
-                </Badge>
-              )}
+          <div className="flex items-start justify-between gap-2 flex-wrap">
+            <div className="min-w-0">
+              <h3 className="flex flex-wrap items-center gap-2 text-sm font-bold">
+                {t("teacher.live.attendance")}
+                {locked && (
+                  <Badge variant="secondary" className="gap-1 text-[10px]">
+                    <Lock className="w-3 h-3" />
+                    {t("teacher.live.locked")}
+                  </Badge>
+                )}
+              </h3>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                {t("teacher.live.summary")} • {fmt(session.startAt)}
+              </p>
             </div>
             <div className="flex items-center gap-2">
               {dirty && !locked && (
@@ -577,6 +828,28 @@ function SessionDetail({
                 {t("teacher.live.completion", { p1: draftCounts.marked, p2: draftCounts.total })}
               </span>
             </div>
+          </div>
+
+          {/* Compact registered/present summary — the same counts the register
+              computes locally, shown before the rows so a teacher mid-class can
+              read the state at a glance without scrolling. */}
+          <div className="flex flex-wrap items-center gap-1.5" data-live-attendance-summary="true">
+            {(
+              [
+                ["PRESENT", draftCounts.present],
+                ["LATE", draftCounts.late],
+                ["ABSENT", draftCounts.absent],
+                ["UNMARKED", draftCounts.unmarked],
+              ] as const
+            ).map(([summaryStatus, count]) => (
+              <span
+                key={summaryStatus}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium ${ATTENDANCE_SUMMARY_CLASS[summaryStatus]}`}
+              >
+                {t(attendanceKey(summaryStatus))}
+                <span className="font-bold tabular-nums">{count}</span>
+              </span>
+            ))}
           </div>
 
           <Progress value={pct} className="h-2" />
@@ -768,6 +1041,52 @@ function SessionDetail({
   );
 }
 
+/**
+ * One labelled fact about the selected session (B — context).
+ *
+ * Presentation only: the value is whatever the server sent (a group name, a
+ * lesson title, a formatted time). The optional `badge` carries the canonical
+ * academic level so a group of either level stays identifiable even when two
+ * groups/courses share a display name.
+ */
+function ContextItem({
+  icon,
+  label,
+  value,
+  hint,
+  badge,
+  code,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  hint?: string;
+  badge?: React.ReactNode;
+  /** Canonical curriculum code (officialCode) — rendered LTR, monospaced. */
+  code?: string | null;
+}) {
+  return (
+    <div className="min-w-0 space-y-0.5">
+      <dt className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+        {icon}
+        {label}
+      </dt>
+      <dd className="min-w-0 text-sm font-semibold break-words">
+        <span className="flex flex-wrap items-center gap-1.5">
+          {code ? (
+            <Badge variant="outline" className="font-mono text-[10px]" dir="ltr">
+              {code}
+            </Badge>
+          ) : null}
+          <span className="min-w-0 break-words">{value}</span>
+          {badge}
+        </span>
+        {hint ? <span className="mt-0.5 block text-[11px] font-normal text-muted-foreground">{hint}</span> : null}
+      </dd>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Dialogs
 // ---------------------------------------------------------------------------
@@ -924,6 +1243,12 @@ function ScheduleDialog({
   );
   // Finding 2 — only a Lesson belonging to the SELECTED GROUP's course may be
   // scheduled (the teacher API scopes them; the server re-validates anyway).
+  /** The group currently chosen in the dialog (display context only). */
+  const selectedGroup = React.useMemo(
+    () => groups.find((g) => g.id === groupId) ?? null,
+    [groups, groupId]
+  );
+
   const lessonOptions: EntityOption[] = React.useMemo(
     () =>
       (lessons.data?.lessons ?? []).map((l) => {
@@ -1015,6 +1340,13 @@ function ScheduleDialog({
               </SelectContent>
             </Select>
           </div>
+          {selectedGroup?.academicLevel ? (
+            <p className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+              {t("teacher.live.level")}
+              <AcademicLevelBadge level={selectedGroup.academicLevel} />
+              <span className="truncate">{selectedGroup.name}</span>
+            </p>
+          ) : null}
           <div>
             <Label>{t("live.lesson")}</Label>
             <EntitySelect

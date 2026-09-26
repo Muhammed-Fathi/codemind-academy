@@ -2398,6 +2398,17 @@ export const DICT_2026: Record<string, DictEntry> = {
   "live.unifiedNotice": { ar: "نفس مصدر الحصص لكل الأدوار: جدولة واحدة وتذكيرات واحدة.", en: "One schedule source for every role." },
   // ---- teacher workspace ----
   "teacher.live.title": { ar: "الحصص المباشرة والحضور", en: "Live sessions & attendance" },
+  // ---- Phase L final polish: the two-column live workspace ----------------
+  // The detail column is the PRIMARY one; the session list is the SECONDARY
+  // one. Every label below is presentation only — no lifecycle meaning.
+  "teacher.live.list": { ar: "الحصص", en: "Sessions" },
+  "teacher.live.details": { ar: "تفاصيل الحصة", en: "Session details" },
+  "teacher.live.level": { ar: "الصف الدراسي", en: "Academic level" },
+  "teacher.live.date": { ar: "التاريخ", en: "Date" },
+  "teacher.live.time": { ar: "الوقت", en: "Time" },
+  "teacher.live.summary": { ar: "ملخص الحضور", en: "Attendance summary" },
+  "teacher.live.actions": { ar: "إجراءات الحصة", en: "Session actions" },
+  "teacher.live.moreActions": { ar: "خيارات أخرى", en: "More options" },
   "teacher.live.subtitle": { ar: "جدولة الحصص، تسجيل الحضور، وتأكيده.", en: "Schedule sessions, take attendance, finalize it." },
   "teacher.live.new": { ar: "حصة جديدة", en: "New session" },
   "teacher.live.schedule": { ar: "جدولة حصة", en: "Schedule a session" },
