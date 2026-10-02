@@ -182,7 +182,10 @@ export function PaymentReviewDrawer({
   React.useEffect(() => {
     if (!paymentId) return;
     let alive = true;
-    fetch("/api/admin/groups")
+    // Explicit selector contract: this drawer needs every group to offer a
+    // complete, server-authorized override list; the API does not silently
+    // truncate it at the catalogue page size.
+    fetch("/api/admin/groups?all=1")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (alive && d?.groups) setGroups(d.groups);

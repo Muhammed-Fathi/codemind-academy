@@ -40,7 +40,11 @@ export async function GET(_req: NextRequest) {
     }),
     db.group.findMany({
       where: { isActive: true },
-      select: { name: true, courseId: true, course: { select: { nameAr: true } } },
+      select: {
+        name: true,
+        courseId: true,
+        course: { select: { name: true, nameAr: true, academicLevel: true } },
+      },
     }),
     db.attendance.groupBy({
       by: ["status"],
@@ -50,7 +54,12 @@ export async function GET(_req: NextRequest) {
     db.liveSession.findMany({
       where: { startAt: { gte: now, lte: inSevenDays }, status: "SCHEDULED" },
       include: {
-        group: { select: { name: true } },
+        group: {
+          select: {
+            name: true,
+            course: { select: { name: true, nameAr: true, academicLevel: true } },
+          },
+        },
         teacher: { select: { user: { select: { name: true } } } },
         lesson: { select: { titleAr: true } },
       },
@@ -78,13 +87,25 @@ export async function GET(_req: NextRequest) {
     });
   }
 
-  // Group distribution (groups per course)
-  const groupDist: Record<string, number> = {};
+  // Group distribution is keyed by the canonical course id + level, not by
+  // the Arabic display name. The official First/Second courses intentionally
+  // share that name, so name-only grouping silently merged two curricula.
+  const groupDist = new Map<string, { name: string; nameAr: string; academicLevel: string | null; value: number }>();
   for (const g of groups) {
-    const key = g.course?.nameAr || "—";
-    groupDist[key] = (groupDist[key] || 0) + 1;
+    const course = g.course;
+    const key = `${g.courseId}:${course?.academicLevel ?? "UNSPECIFIED"}`;
+    const current = groupDist.get(key);
+    if (current) current.value += 1;
+    else {
+      groupDist.set(key, {
+        name: course?.name || course?.nameAr || "—",
+        nameAr: course?.nameAr || course?.name || "—",
+        academicLevel: course?.academicLevel ?? null,
+        value: 1,
+      });
+    }
   }
-  const groupDistribution = Object.entries(groupDist).map(([name, value]) => ({ name, value }));
+  const groupDistribution = Array.from(groupDist.values());
 
   // Attendance rate across all groups
   const totalAtt = attendanceRows.reduce((s, r) => s + r._count._all, 0);
@@ -114,6 +135,8 @@ export async function GET(_req: NextRequest) {
       title: s.titleAr || s.title,
       startAt: s.startAt,
       groupName: s.group?.name,
+      groupCourseName: s.group?.course?.nameAr || s.group?.course?.name || null,
+      groupAcademicLevel: s.group?.course?.academicLevel ?? null,
       teacherName: s.teacher?.user?.name,
     })),
   });

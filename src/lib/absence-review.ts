@@ -268,7 +268,13 @@ export type AbsenceCasePayload = {
     status: string;
   };
   lesson: { id: string; title: string; titleAr: string } | null;
-  group: { id: string; name: string } | null;
+  group: {
+    id: string;
+    name: string;
+    courseName: string | null;
+    courseNameEn: string | null;
+    academicLevel: string | null;
+  } | null;
   teacherName: string | null;
   hold: { status: string; createdAt: string; resolvedAt: string | null } | null;
   submissions: Array<{ id: string; reason: string; role: string; at: string; byName: string | null }>;
@@ -314,7 +320,15 @@ function toCasePayload(
       : review.lessonId
         ? { id: String(review.lessonId), title: "", titleAr: "" }
         : null,
-    group: review.group ? { id: review.group.id, name: review.group.name } : null,
+    group: review.group
+      ? {
+          id: review.group.id,
+          name: review.group.name,
+          courseName: review.group.course?.nameAr ?? review.group.course?.name ?? null,
+          courseNameEn: review.group.course?.name ?? review.group.course?.nameAr ?? null,
+          academicLevel: review.group.course?.academicLevel ?? null,
+        }
+      : null,
     teacherName:
       review.session?.substituteTeacher?.user?.name ??
       review.session?.teacher?.user?.name ??
@@ -344,7 +358,13 @@ function toCasePayload(
 const ABSENCE_WITH_CONTEXT = {
   ...ABSENCE_REVIEW_SELECT,
   student: { select: { id: true, studentCode: true, grade: true, user: { select: { name: true } } } },
-  group: { select: { id: true, name: true } },
+  group: {
+    select: {
+      id: true,
+      name: true,
+      course: { select: { name: true, nameAr: true, academicLevel: true } },
+    },
+  },
   hold: { select: { status: true, createdAt: true, resolvedAt: true } },
   submissions: {
     orderBy: { createdAt: "asc" },
@@ -454,6 +474,7 @@ export type AbsenceQueueQuery = {
   from?: Date | null;
   to?: Date | null;
   limit?: number;
+  academicLevel?: string | null;
 };
 
 export async function listAbsenceQueue(
@@ -479,6 +500,9 @@ export async function listAbsenceQueue(
       },
     };
   }
+  if (query.academicLevel) {
+    where.group = { course: { academicLevel: query.academicLevel } };
+  }
 
   const rows = (await (client as any).absenceReview.findMany({
     where,
@@ -489,10 +513,15 @@ export async function listAbsenceQueue(
   return hydrateCases(rows, { now, client });
 }
 
-export async function countPendingAbsences(options: { client?: Client } = {}): Promise<number> {
+export async function countPendingAbsences(options: { academicLevel?: string | null; client?: Client } = {}): Promise<number> {
   const client = options.client ?? db;
   const rows = (await (client as any).absenceReview.findMany({
-    where: { status: { in: ["PENDING_REASON", "PENDING_REVIEW"] } },
+    where: {
+      status: { in: ["PENDING_REASON", "PENDING_REVIEW"] },
+      ...(options.academicLevel
+        ? { group: { course: { academicLevel: options.academicLevel } } }
+        : {}),
+    },
     select: { id: true },
   })) as Array<{ id: string }>;
   return rows.length;
@@ -972,6 +1001,7 @@ export async function resolveHoldForCatchup(params: {
  */
 export async function repeatedAbsenceFlags(options: {
   now?: Date;
+  academicLevel?: string | null;
   client?: Client;
 } = {}): Promise<Array<{ studentId: string; studentName: string; count: number; threshold: number }>> {
   const client = options.client ?? db;
@@ -981,7 +1011,12 @@ export async function repeatedAbsenceFlags(options: {
   const since = new Date(now.getTime() - windowDays * 24 * 60 * 60 * 1000);
 
   const rows = (await (client as any).absenceReview.findMany({
-    where: { status: { in: ["PENDING_REASON", "PENDING_REVIEW", "UNEXCUSED"] } },
+    where: {
+      status: { in: ["PENDING_REASON", "PENDING_REVIEW", "UNEXCUSED"] },
+      ...(options.academicLevel
+        ? { group: { course: { academicLevel: options.academicLevel } } }
+        : {}),
+    },
     select: {
       studentId: true,
       student: { select: { user: { select: { name: true } } } },

@@ -163,6 +163,39 @@ export async function GET(req: NextRequest) {
   const where: Record<string, unknown> = {};
   if (q.status) where.status = q.status;
   if (levelFilter) where.academicLevel = levelFilter;
+
+  // A progression override picker is a student-scoped operation. When the
+  // caller supplies studentId, derive the student's active Group → Course
+  // relationship on the server and narrow the lesson query to that course.
+  // The client never downloads both curricula and hides one after the fact.
+  const studentId = searchParams.get("studentId")?.trim() || "";
+  let studentScope: { studentId: string; courseId: string; academicLevel: string | null } | null = null;
+  if (studentId) {
+    const student = await db.student.findUnique({
+      where: { id: studentId },
+      select: { id: true, group: { select: { courseId: true, course: { select: { academicLevel: true } } } } },
+    });
+    if (!student) return err("STUDENT_NOT_FOUND", 404);
+    if (student.group?.courseId) {
+      studentScope = {
+        studentId: student.id,
+        courseId: student.group.courseId,
+        academicLevel: student.group.course.academicLevel ?? null,
+      };
+      where.AND = [
+        ...(Array.isArray(where.AND) ? where.AND : []),
+        {
+          OR: [
+            { unit: { part: { courseId: student.group.courseId } } },
+            { topic: { unit: { part: { courseId: student.group.courseId } } } },
+          ],
+        },
+      ];
+    } else {
+      // A student without an active course has no valid override target.
+      where.id = "__NO_ACTIVE_COURSE__";
+    }
+  }
   if (q.trackScope) where.trackScope = q.trackScope;
   if (q.curriculumStatus) where.curriculumStatus = q.curriculumStatus;
   if (q.courseId) {
@@ -173,6 +206,7 @@ export async function GET(req: NextRequest) {
   }
   if (q.q) {
     where.AND = [
+      ...(Array.isArray(where.AND) ? where.AND : []),
       {
         OR: [
           { title: { contains: q.q } },
@@ -310,6 +344,9 @@ export async function GET(req: NextRequest) {
 
   return ok({
     lessons,
+    // Explicit scope metadata lets the picker explain why only one course
+    // appears, without making the client responsible for authorization.
+    studentScope,
     pagination: {
       page: q.page,
       pageSize: q.pageSize,

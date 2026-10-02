@@ -94,6 +94,7 @@
 // every reader, every time. Repeated evaluation is idempotent (read-only).
 
 import { db } from "@/lib/db";
+import { normalizeAcademicLevel } from "@/lib/academic-level";
 import {
   LESSON_STUDENT_STATUS_FILTER,
   isStudentVisibleStatus,
@@ -1503,6 +1504,7 @@ export type OverrideListItem = {
     title: string;
     titleAr: string;
     officialCode: string | null;
+    academicLevel: string | null;
   } | null;
   /** Granting Admin (audit identity; id always present, name best-effort). */
   grantedBy: { id: string; name: string | null } | null;
@@ -1549,11 +1551,37 @@ export async function listProgressionOverrides(input: {
   ];
   // Sequential + explicitly typed: the generated client is `any` in this
   // repo's toolchain, so tuple inference through Promise.all collapses.
-  const lessons: { id: string; title: string; titleAr: string; officialCode: string | null }[] =
+  type LessonOverrideIdentity = {
+    id: string;
+    title: string;
+    titleAr: string;
+    officialCode: string | null;
+    academicLevel: string | null;
+    unit?: { part?: { course?: { academicLevel: string | null } | null } | null } | null;
+    topic?: {
+      unit?: { part?: { course?: { academicLevel: string | null } | null } | null } | null;
+    } | null;
+  };
+  const lessons: LessonOverrideIdentity[] =
     lessonIds.length > 0
       ? await db.lesson.findMany({
           where: { id: { in: lessonIds } },
-          select: { id: true, title: true, titleAr: true, officialCode: true },
+          select: {
+            id: true,
+            title: true,
+            titleAr: true,
+            officialCode: true,
+            // Lesson.academicLevel is a synchronized display cache. The
+            // canonical value is selected through the same Unit/Topic → Part
+            // → Course chain used by the lesson list and integrity audit.
+            academicLevel: true,
+            unit: { select: { part: { select: { course: { select: { academicLevel: true } } } } } },
+            topic: {
+              select: {
+                unit: { select: { part: { select: { course: { select: { academicLevel: true } } } } } },
+              },
+            },
+          },
         })
       : [];
   const users: { id: string; name: string | null }[] =
@@ -1563,9 +1591,7 @@ export async function listProgressionOverrides(input: {
           select: { id: true, name: true },
         })
       : [];
-  const lessonById = new Map<string, { id: string; title: string; titleAr: string; officialCode: string | null }>(
-    lessons.map((l) => [l.id, l])
-  );
+  const lessonById = new Map<string, LessonOverrideIdentity>(lessons.map((l) => [l.id, l]));
   const userById = new Map<string, { id: string; name: string | null }>(users.map((u) => [u.id, u]));
   return rows.map((r) => {
     const lesson = lessonById.get(String(r.lessonId)) ?? null;
@@ -1590,6 +1616,14 @@ export async function listProgressionOverrides(input: {
             title: lesson.title,
             titleAr: lesson.titleAr,
             officialCode: lesson.officialCode ?? null,
+            // Prefer the canonical Course relation. The denormalized Lesson
+            // cache is only a synchronized fallback for legacy/orphan display
+            // rows; auditLevelIntegrity enforces that it matches the chain.
+            academicLevel:
+              normalizeAcademicLevel(
+                lesson.unit?.part?.course?.academicLevel ??
+                  lesson.topic?.unit?.part?.course?.academicLevel
+              ) ?? normalizeAcademicLevel(lesson.academicLevel),
           }
         : null,
       grantedBy: granter
