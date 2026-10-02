@@ -2847,7 +2847,7 @@ export const DICT_2026: Record<string, DictEntry> = {
   "admin.673": { ar: "هذه قراءة تشخيصية فقط. راجع السجلات قبل أي إصلاح صريح؛ لم يتم تعديل أي بيانات.", en: "This is a read-only diagnostic. Review the records before an explicit fix; no data was changed." },
   "admin.674": { ar: "تعارضات الطالب/المجموعة", en: "Student/group mismatches" },
   "admin.675": { ar: "تعارضات الدروس", en: "Lesson mismatches" },
-  "admin.676": { ar: "بيانات غير مكتملة", en: "Incomplete level data" },
+  "admin.676": { ar: "دروس بلا مسار منهجي", en: "Orphan lessons" },
   "admin.677": { ar: "إجمالي التنبيهات", en: "Total findings" },
   "admin.678": { ar: "تظهر هنا فقط الطلاب المطابقون للصف والمسار ويمكن البحث في كامل النتائج.", en: "Only students compatible with this level and track are shown; search covers the full result set." },
   "admin.679": { ar: "إضافة", en: "Add" },

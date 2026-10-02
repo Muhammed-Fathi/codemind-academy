@@ -590,6 +590,24 @@ ok(!/EXPECTED_OFFICIAL_COUNTS|OFFICIAL_LESSON_CODES/.test(loaderBody), "F: the l
 // ===========================================================================
 section("G — Lesson.academicLevel is DERIVED (canonical + legacy chains), drift detected");
 // ===========================================================================
+// Runtime regression: the current K3 schema makes Course/Student/Lesson
+// academicLevel required. The audit must execute against the real SQLite
+// Prisma-shaped client without asking Prisma for impossible NULL values.
+let cleanIntegrity;
+let cleanIntegrityError = null;
+try {
+  cleanIntegrity = await Level.auditLevelIntegrity(client);
+} catch (error) {
+  cleanIntegrityError = error;
+}
+ok(!cleanIntegrityError, "G0: direct audit executes against the real SQLite client without a Prisma validation error", cleanIntegrityError?.message);
+eq(cleanIntegrity?.studentGroupMismatches?.length, 0, "G0: clean DB has no Student ↔ Group/Course mismatches");
+eq(cleanIntegrity?.lessonMismatches?.length, 0, "G0: clean DB has no Lesson cache ↔ Course mismatches");
+eq(cleanIntegrity?.structuralIssues?.orphanLessons, 0, "G0: clean DB has no orphan lessons");
+const cleanAudit = await call("GET", "/api/admin/level-mismatches", { cookie: ADMIN });
+eq(cleanAudit.status, 200, "G0: clean ADMIN diagnostics endpoint responds");
+eq(cleanAudit.json?.summary, { studentGroupMismatches: 0, lessonMismatches: 0, orphanLessons: 0 }, "G0: clean endpoint response is healthy and contains only valid diagnostics");
+
 const l1 = await call("POST", "/api/admin/lessons", { body: { title: "K2 first lesson", titleAr: "درس", unitId: "k2-c1-unit", trackScope: "SHARED", academicLevel: "SECOND_SECONDARY" }, cookie: ADMIN });
 ok(l1.status === 201 || l1.status === 200, "G: admin lesson create under a FIRST course unit", JSON.stringify(l1.json));
 const l1row = db.prepare(`SELECT * FROM "Lesson" WHERE "id"=?`).get(l1.json?.lesson?.id);
@@ -604,9 +622,12 @@ const audit = await call("GET", "/api/admin/level-mismatches", { cookie: ADMIN }
 eq(audit.status, 200, "G: admin diagnostics endpoint responds");
 ok((audit.json?.lessonMismatches || []).some((m) => m.lessonId === l1row.id && m.derivedLevel === "FIRST_SECONDARY"), "G: stale lesson level DETECTED (stored ≠ chain-derived)");
 ok((audit.json?.studentGroupMismatches || []).some((m) => m.studentId === secondArId), "G: I1 violator (student level ≠ group course level) DETECTED");
-eq(db.prepare(`SELECT "academicLevel" FROM "Lesson" WHERE "id"=?`).get(l1row.id).academicLevel, "SECOND_SECONDARY", "G: diagnostics NEVER repair at read time");
+eq(db.prepare(`SELECT "academicLevel" FROM "Lesson" WHERE "id"=?`).get(l1row.id).academicLevel, "SECOND_SECONDARY", "G: diagnostics NEVER repair the lesson at read time");
+eq(db.prepare(`SELECT "academicLevel" FROM "Student" WHERE "id"=?`).get(secondArId).academicLevel, "FIRST_SECONDARY", "G: diagnostics NEVER repair the student at read time");
 const anon = await call("GET", "/api/admin/level-mismatches", { cookie: FIRST_AR });
 ok(anon.status === 401 || anon.status === 403, "G: diagnostics are ADMIN-only");
+const writeAttempt = await call("POST", "/api/admin/level-mismatches", { cookie: ADMIN });
+eq(writeAttempt.status, 404, "G: diagnostics remain read-only (no POST handler)");
 db.prepare(`UPDATE "Student" SET "academicLevel"='SECOND_SECONDARY' WHERE "id"=?`).run(secondArId);
 db.prepare(`UPDATE "Lesson" SET "academicLevel"='FIRST_SECONDARY' WHERE "id"=?`).run(l1row.id);
 

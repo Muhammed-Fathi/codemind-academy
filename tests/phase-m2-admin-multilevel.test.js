@@ -180,6 +180,9 @@ check(overviewRoute.includes("${g.courseId}:${course?.academicLevel"), "Overview
 check(overviewRoute.includes("groupAcademicLevel"), "Overview upcoming group context carries academic level");
 check(overviewUi.includes("AdminIntegrityCard"), "Overview visibly mounts the integrity diagnostic");
 check(integrityUi.includes("data-integrity-card={healthy ? \"healthy\" : \"warning\"}"), "integrity card has healthy and actionable warning states");
+const academicLevelLib = read("src/lib/academic-level.ts");
+check(!academicLevelLib.includes("client.course.count({ where: { academicLevel: null } })") && !academicLevelLib.includes("client.student.count({ where: { academicLevel: null } })"), "integrity audit does not query impossible NULL levels through Prisma");
+check(academicLevelLib.includes("structuralIssues") && integrityUi.includes("summary.orphanLessons"), "integrity diagnostics retain valid orphan-chain findings and the UI consumes the current response contract");
 check(!integrityUi.includes("db.") && !integrityUi.includes("update("), "integrity card is read-only and cannot auto-fix data");
 check(diagnosticsRoute.includes("requireRole(\"ADMIN\")"), "integrity diagnostics retain Admin authorization");
 check(overviewUi.includes("view === \"admin-overview\"") && overviewUi.includes("view === \"admin-groups\""), "dashboard view keys remain unchanged");

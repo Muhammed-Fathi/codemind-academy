@@ -11,9 +11,6 @@ type IntegrityReport = {
   summary: {
     studentGroupMismatches: number;
     lessonMismatches: number;
-    courses: number;
-    students: number;
-    lessons: number;
     orphanLessons: number;
   };
 };
@@ -76,8 +73,11 @@ export function AdminIntegrityCard() {
   const summary = report.summary;
   const mismatchCount =
     summary.studentGroupMismatches + summary.lessonMismatches;
-  const legacyCount = summary.courses + summary.students + summary.lessons + summary.orphanLessons;
-  const healthy = mismatchCount === 0 && legacyCount === 0;
+  // The current K3 schema makes Course/Student/Lesson academicLevel NULL
+  // structurally impossible. Only orphan curriculum chains remain a valid
+  // structural diagnostic alongside the two cross-level mismatch checks.
+  const structuralCount = summary.orphanLessons;
+  const healthy = mismatchCount === 0 && structuralCount === 0;
 
   return (
     <Card
@@ -112,11 +112,11 @@ export function AdminIntegrityCard() {
           </div>
           <div className="rounded-lg border p-2">
             <div className="text-[11px] text-muted-foreground">{tr("admin.676")}</div>
-            <div className="text-lg font-bold tabular-nums">{legacyCount}</div>
+            <div className="text-lg font-bold tabular-nums">{structuralCount}</div>
           </div>
           <div className="rounded-lg border p-2">
             <div className="text-[11px] text-muted-foreground">{tr("admin.677")}</div>
-            <div className="text-lg font-bold tabular-nums">{mismatchCount + legacyCount}</div>
+            <div className="text-lg font-bold tabular-nums">{mismatchCount + structuralCount}</div>
           </div>
         </div>
         <div className="flex justify-end">

@@ -5,7 +5,9 @@
 // reports:
 //   * students assigned to a group whose course level differs (I1),
 //   * lessons whose stored derived level differs from their chain (I2),
-//   * NULL-level counts (legacy state; K3 tightens the columns).
+//   * orphan lessons that have no Unit/Topic curriculum chain.
+// Course, Student, and Lesson academicLevel are required by the current K3
+// schema, so impossible NULL-level counts are not queried or reported.
 // Nothing is repaired at read time: every fix is an explicit admin write
 // that is re-validated by the corresponding gate.
 import { ok, requireRole } from "@/lib/api";
@@ -22,7 +24,7 @@ export async function GET() {
     summary: {
       studentGroupMismatches: report.studentGroupMismatches.length,
       lessonMismatches: report.lessonMismatches.length,
-      ...report.nullCounts,
+      ...report.structuralIssues,
     },
   });
 }

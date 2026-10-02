@@ -216,7 +216,8 @@ export type LevelIntegrityReport = {
   studentGroupMismatches: { studentId: string; studentLevel: string | null; groupId: string; courseLevel: string | null }[];
   /** Lessons whose stored level differs from the chain-derived level (I2 violators). */
   lessonMismatches: { lessonId: string; storedLevel: string | null; derivedLevel: string | null }[];
-  nullCounts: { courses: number; students: number; lessons: number; orphanLessons: number };
+  /** Lessons with no Unit/Topic curriculum chain; unlike level NULLs, this remains possible. */
+  structuralIssues: { orphanLessons: number };
 };
 
 export async function auditLevelIntegrity(client: any = db): Promise<LevelIntegrityReport> {
@@ -256,27 +257,25 @@ export async function auditLevelIntegrity(client: any = db): Promise<LevelIntegr
   });
   const lessonMismatches: LevelIntegrityReport["lessonMismatches"] = [];
   let orphanLessons = 0;
-  let nullLessons = 0;
   for (const l of lessons as any[]) {
     const derived = normalizeAcademicLevel(
       l.unit?.part?.course?.academicLevel ?? l.topic?.unit?.part?.course?.academicLevel ?? null
     );
     if (!l.unit && !l.topic) orphanLessons++;
-    if (!l.academicLevel) nullLessons++;
+    // Course.academicLevel, Student.academicLevel, and Lesson.academicLevel
+    // are all required by the current K3 schema. Do not issue Prisma filters
+    // for impossible NULL values (the generated client rejects them); the
+    // Lesson cache-vs-canonical comparison above remains meaningful for drift
+    // introduced by a legacy write or direct database repair.
     if ((l.academicLevel ?? null) !== derived) {
       lessonMismatches.push({ lessonId: l.id, storedLevel: l.academicLevel ?? null, derivedLevel: derived });
     }
   }
 
-  const [courses, students] = await Promise.all([
-    client.course.count({ where: { academicLevel: null } }),
-    client.student.count({ where: { academicLevel: null } }),
-  ]);
-
   return {
     studentGroupMismatches,
     lessonMismatches,
-    nullCounts: { courses, students, lessons: nullLessons, orphanLessons },
+    structuralIssues: { orphanLessons },
   };
 }
 
