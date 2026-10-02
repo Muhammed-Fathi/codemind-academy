@@ -48,6 +48,10 @@ import {
   isAcademicLevel,
   type AcademicLevel,
 } from "@/lib/academic-level";
+import {
+  parseAcademicLevelParam,
+  parseAcademicLevelValue,
+} from "@/lib/academic-level-query";
 
 /** `""` / `all` (any case) = every level; anything else must be canonical. */
 export type LevelScope = AcademicLevel | null;
@@ -58,16 +62,27 @@ export type LevelScope = AcademicLevel | null;
  *   null / "" / "all"            → { ok: true, level: null }   (no narrowing)
  *   "FIRST_SECONDARY" | "SECOND_SECONDARY" → { ok: true, level }
  *   anything else                → { ok: false }               (caller → 400)
+ *
+ * Phase M1: the RULES now live in ONE place — `parseAcademicLevelValue` in
+ * `@/lib/academic-level-query` — and this function is the teacher-side adapter
+ * over it. The behaviour is unchanged for every input a route can produce
+ * (a query value is always `string | null`): the exact `string` semantics
+ * (trim, case-insensitive `all`, `normalizeAcademicLevel`, unknown → refusal)
+ * are asserted input-by-input against the shared implementation in
+ * `tests/phase-m-primitives.test.js`.
+ *
+ * The one deliberate difference is the NON-string guard below: it preserves the
+ * historical tolerance this helper had for a direct call with a minimal
+ * request, where "not a level" meant "nothing was requested" rather than a
+ * 400. Moving that guard into the shared parser would make it accept junk as
+ * "all"; removing it would make a verifier's minimal request fail. Keeping it
+ * HERE is the behaviour-preserving choice, and the shared parser stays strict.
  */
 export function parseAcademicLevelQuery(
   raw: unknown
 ): { ok: true; level: LevelScope } | { ok: false; raw: string } {
-  const value = typeof raw === "string" ? raw.trim() : "";
-  if (!value) return { ok: true, level: null };
-  if (value.toLowerCase() === "all") return { ok: true, level: null };
-  const upper = value.toUpperCase();
-  if (isAcademicLevel(upper)) return { ok: true, level: upper };
-  return { ok: false, raw: value };
+  if (typeof raw !== "string") return { ok: true, level: null };
+  return parseAcademicLevelValue(raw);
 }
 
 /**
@@ -80,13 +95,9 @@ export function parseAcademicLevelQuery(
 export function academicLevelParamOf(
   req: unknown
 ): { ok: true; level: LevelScope } | { ok: false; raw: string } {
-  const url = (req as { url?: string } | null | undefined)?.url;
-  if (!url) return { ok: true, level: null };
-  try {
-    return parseAcademicLevelQuery(new URL(url).searchParams.get("academicLevel"));
-  } catch {
-    return { ok: true, level: null };
-  }
+  return parseAcademicLevelParam(
+    (req as { url?: string } | null | undefined) ?? null
+  );
 }
 
 /** The teacher shape these helpers read (a subset of the Teacher profile). */

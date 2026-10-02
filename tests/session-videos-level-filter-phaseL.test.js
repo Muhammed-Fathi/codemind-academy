@@ -38,6 +38,7 @@ const os = require("os");
 const path = require("path");
 const Module = require("module");
 const { pathToFileURL } = require("url");
+const { cleanupTempDir } = require("./helpers/temp-dir-cleanup.cjs");
 
 const REPO = path.join(__dirname, "..");
 const OUT = fs.mkdtempSync(path.join(os.tmpdir(), "cm-videolevel-"));
@@ -322,7 +323,12 @@ const read = (rel) => fs.readFileSync(path.join(REPO, rel), "utf8");
   }
 
   // -------------------------------------------------------------------------
-  fs.rmSync(OUT, { recursive: true, force: true });
+  // Harness teardown — Windows-safe ordering: the SQLite handle opened on
+  // `OUT/videos.db` is closed (and the Prisma-shaped shim disconnected) BEFORE
+  // the temp dir is removed. On Windows that open file is a mandatory lock and
+  // a bare `fs.rmSync(OUT)` failed with EPERM after every assertion had passed.
+  Module._resolveFilename = origResolve;
+  await cleanupTempDir(OUT, { databases: [d], clients: [global.__CM_DB__] });
   console.log(`\nsession-videos academic level filter (phase L): ${passed} passed, ${failed} failed`);
   if (failed) {
     console.log("\nFailures:");
