@@ -1,0 +1,615 @@
+{
+  "modelType": "level-curriculum-model",
+  "schemaVersion": "1.0.0",
+  "academicLevel": "FIRST_SECONDARY",
+  "status": "runtime-representation-of-the-approved-extraction-manifest",
+  "purpose": "The compact runtime representation consumed by the SHARED K2 curriculum reconciler (src/lib/official-curriculum.ts, FIRST_SECONDARY_SPEC). The bilingual extraction manifest next to this file is the review/provenance authority; this file carries only what the reconciler needs, in the same shape as the Second Secondary knowledge model.",
+  "generatedFrom": {
+    "manifest": "docs/curriculum/first-secondary/first-secondary-curriculum.json",
+    "manifestVersion": "0.2.0",
+    "rule": "generated, never hand-edited — tests/first-secondary-phaseL.test.js re-derives this file from the manifest and fails on any drift"
+  },
+  "identity": {
+    "courseSlug": "programming-ai-1st-sec",
+    "courseName": "Programming & AI",
+    "courseNameAr": "البرمجة والذكاء الاصطناعي",
+    "academicLevel": "FIRST_SECONDARY",
+    "canonicalHierarchy": "Part → Unit → Lesson",
+    "canonicalOfficialCodeForm": "<chapter>-<lesson> (the English chapter-first structure; the Arabic edition prints the reverse '<lesson>-<unit>' badge, which is source provenance only and never a platform identity)",
+    "topics": 0
+  },
+  "sources": [
+    {
+      "locale": "en",
+      "role": "authoritative for the English wording",
+      "path": "docs/curriculum/first-secondary/official-first-secondary-programming-ai-en.pdf",
+      "sha256": "626605e0719ad894b7f26b99c6200d872e0dc854584a4a76e0af2100d6328713",
+      "pdfPages": 202
+    },
+    {
+      "locale": "ar",
+      "role": "authoritative for the Arabic wording",
+      "path": "docs/curriculum/first-secondary/official-first-secondary-programming-ai-ar.pdf",
+      "sha256": "3d044172375c8d4ac77cf228eb46f8e5e323f0e43ba0aa1993906e8f404b92d0",
+      "pdfPages": 218
+    }
+  ],
+  "unitsAreOfficialChapters": true,
+  "parts": [
+    {
+      "id": "first-secondary-part-1",
+      "code": "P1",
+      "order": 1,
+      "title": "First Secondary Curriculum",
+      "titleAr": "منهج الصف الأول الثانوي",
+      "description": null,
+      "synthetic": true,
+      "units": [
+        {
+          "id": "first-secondary-unit-1",
+          "code": "1",
+          "order": 1,
+          "title": "What is Information?",
+          "titleAr": "ما هي المعلومات ؟",
+          "icon": null,
+          "lessons": [
+            {
+              "id": "first-secondary-lesson-1-1",
+              "code": "1-1",
+              "order": 1,
+              "title": "Information and Media",
+              "titleAr": "المعلومات والوسائط"
+            },
+            {
+              "id": "first-secondary-lesson-1-2",
+              "code": "1-2",
+              "order": 2,
+              "title": "Information Ethics",
+              "titleAr": "أخلاقيات المعلومات"
+            }
+          ]
+        },
+        {
+          "id": "first-secondary-unit-2",
+          "code": "2",
+          "order": 2,
+          "title": "Regulations and Rights in the Information Society",
+          "titleAr": "القوانين والحقوق في مجتمع المعلومات",
+          "icon": null,
+          "lessons": [
+            {
+              "id": "first-secondary-lesson-2-1",
+              "code": "2-1",
+              "order": 1,
+              "title": "Personal Information",
+              "titleAr": "البيانات الشخصية"
+            },
+            {
+              "id": "first-secondary-lesson-2-2",
+              "code": "2-2",
+              "order": 2,
+              "title": "Intellectual Property Rights",
+              "titleAr": "حقوق الملكية الفكرية"
+            },
+            {
+              "id": "first-secondary-lesson-2-3",
+              "code": "2-3",
+              "order": 3,
+              "title": "Utilization and Disclosure of Information",
+              "titleAr": "استخدام المعلومات والكشف عنها"
+            }
+          ]
+        },
+        {
+          "id": "first-secondary-unit-3",
+          "code": "3",
+          "order": 3,
+          "title": "Information Security",
+          "titleAr": "أمن المعلومات",
+          "icon": null,
+          "lessons": [
+            {
+              "id": "first-secondary-lesson-3-1",
+              "code": "3-1",
+              "order": 1,
+              "title": "Threats and Countermeasures in Information Security [1]",
+              "titleAr": "1 تهديدات وإجراءات مواجهة أمن المعلومات"
+            },
+            {
+              "id": "first-secondary-lesson-3-2",
+              "code": "3-2",
+              "order": 2,
+              "title": "Threats and Countermeasures in Information Security [2]",
+              "titleAr": "2 التهديدات والتدابير المضادة في أمن المعلومات"
+            },
+            {
+              "id": "first-secondary-lesson-3-3",
+              "code": "3-3",
+              "order": 3,
+              "title": "Threats and Countermeasures in Information Security [3]",
+              "titleAr": "3 التهديدات والتدابير المضادة فى أمن المعلومات"
+            },
+            {
+              "id": "first-secondary-lesson-3-4",
+              "code": "3-4",
+              "order": 4,
+              "title": "Information Technology for Safety [1]",
+              "titleAr": "4 تقنيات المعلومات للسلامة"
+            },
+            {
+              "id": "first-secondary-lesson-3-5",
+              "code": "3-5",
+              "order": 5,
+              "title": "Information Technology for Safety [2]",
+              "titleAr": "2 تكنولوجيا المعلومات للسلامة"
+            }
+          ]
+        },
+        {
+          "id": "first-secondary-unit-4",
+          "code": "4",
+          "order": 4,
+          "title": "Information Technology and Society",
+          "titleAr": "تكنولوجيا المعلومات والمجتمع",
+          "icon": null,
+          "lessons": [
+            {
+              "id": "first-secondary-lesson-4-1",
+              "code": "4-1",
+              "order": 1,
+              "title": "Development of Information Technology",
+              "titleAr": "تطور تكنولوجيا المعلومات"
+            }
+          ]
+        },
+        {
+          "id": "first-secondary-unit-5",
+          "code": "5",
+          "order": 5,
+          "title": "Communication",
+          "titleAr": "الاتصالات",
+          "icon": null,
+          "lessons": [
+            {
+              "id": "first-secondary-lesson-5-1",
+              "code": "5-1",
+              "order": 1,
+              "title": "Development of Communication Methods",
+              "titleAr": "تطوير وسائل الاتصال"
+            },
+            {
+              "id": "first-secondary-lesson-5-2",
+              "code": "5-2",
+              "order": 2,
+              "title": "Communication and Its Forms",
+              "titleAr": "الاتصال وأشكاله"
+            },
+            {
+              "id": "first-secondary-lesson-5-3",
+              "code": "5-3",
+              "order": 3,
+              "title": "Internet and Communication",
+              "titleAr": "الإنترنت والاتصالات"
+            }
+          ]
+        },
+        {
+          "id": "first-secondary-unit-6",
+          "code": "6",
+          "order": 6,
+          "title": "Information Design",
+          "titleAr": "تصميم المعلومات",
+          "icon": null,
+          "lessons": [
+            {
+              "id": "first-secondary-lesson-6-1",
+              "code": "6-1",
+              "order": 1,
+              "title": "Analog and Digital",
+              "titleAr": "التناظري والرقمي"
+            },
+            {
+              "id": "first-secondary-lesson-6-2",
+              "code": "6-2",
+              "order": 2,
+              "title": "Binary and Amount of Information",
+              "titleAr": "النظام الثنائي وكمية البيانات"
+            },
+            {
+              "id": "first-secondary-lesson-6-3",
+              "code": "6-3",
+              "order": 3,
+              "title": "Hexadecimal",
+              "titleAr": ") Hexadecimal ( النظام السادس عشر"
+            },
+            {
+              "id": "first-secondary-lesson-6-4",
+              "code": "6-4",
+              "order": 4,
+              "title": "Digital Representation of Characters",
+              "titleAr": "التمثيل الرقمي للأحرف"
+            },
+            {
+              "id": "first-secondary-lesson-6-5",
+              "code": "6-5",
+              "order": 5,
+              "title": "Numerical Calculations [1]",
+              "titleAr": "] 1 [ العمليات الحسابات العددية"
+            },
+            {
+              "id": "first-secondary-lesson-6-6",
+              "code": "6-6",
+              "order": 6,
+              "title": "Numerical Calculations [2]",
+              "titleAr": "] 2 [ العمليات الحسابات العددية"
+            },
+            {
+              "id": "first-secondary-lesson-6-7",
+              "code": "6-7",
+              "order": 7,
+              "title": "Digitalization of Sound",
+              "titleAr": "رقمنة الصوت"
+            },
+            {
+              "id": "first-secondary-lesson-6-8",
+              "code": "6-8",
+              "order": 8,
+              "title": "Digitization of Images",
+              "titleAr": "رقمنة الصور"
+            },
+            {
+              "id": "first-secondary-lesson-6-9",
+              "code": "6-9",
+              "order": 9,
+              "title": "Digital Representation and Compression Technology for Videos",
+              "titleAr": "التمثيل الرقمي وضغط الفيديو"
+            },
+            {
+              "id": "first-secondary-lesson-6-10",
+              "code": "6-10",
+              "order": 10,
+              "title": "Information Design",
+              "titleAr": "تصميم البيانات"
+            }
+          ]
+        },
+        {
+          "id": "first-secondary-unit-7",
+          "code": "7",
+          "order": 7,
+          "title": "Computers",
+          "titleAr": "الكمبيوترات",
+          "icon": null,
+          "lessons": [
+            {
+              "id": "first-secondary-lesson-7-1",
+              "code": "7-1",
+              "order": 1,
+              "title": "Computer Configuration",
+              "titleAr": "بنية الكمبيوتر"
+            },
+            {
+              "id": "first-secondary-lesson-7-2",
+              "code": "7-2",
+              "order": 2,
+              "title": "Computer Software",
+              "titleAr": "برامج الكمبيوتر"
+            },
+            {
+              "id": "first-secondary-lesson-7-3",
+              "code": "7-3",
+              "order": 3,
+              "title": "Logic Circuits",
+              "titleAr": "الدوائر المنطقية"
+            }
+          ]
+        },
+        {
+          "id": "first-secondary-unit-8",
+          "code": "8",
+          "order": 8,
+          "title": "Networks",
+          "titleAr": "الشبكات",
+          "icon": null,
+          "lessons": [
+            {
+              "id": "first-secondary-lesson-8-1",
+              "code": "8-1",
+              "order": 1,
+              "title": "Computer Networks",
+              "titleAr": "شبكات الكمبيوتر"
+            },
+            {
+              "id": "first-secondary-lesson-8-2",
+              "code": "8-2",
+              "order": 2,
+              "title": "IP Addresses and Domain Names",
+              "titleAr": "وأسماء النطاقات IP عناوين"
+            },
+            {
+              "id": "first-secondary-lesson-8-3",
+              "code": "8-3",
+              "order": 3,
+              "title": "Communication Protocol",
+              "titleAr": "بروتوكول الاتصال"
+            },
+            {
+              "id": "first-secondary-lesson-8-4",
+              "code": "8-4",
+              "order": 4,
+              "title": "Mechanism of Web Pages and Emails",
+              "titleAr": "آلية عمل صفحات الويب والبريد الإلكتروني"
+            },
+            {
+              "id": "first-secondary-lesson-8-5",
+              "code": "8-5",
+              "order": 5,
+              "title": "Network Transfer Speed",
+              "titleAr": "سرعة نقل البيانات على الشبكات"
+            }
+          ]
+        },
+        {
+          "id": "first-secondary-unit-9",
+          "code": "9",
+          "order": 9,
+          "title": "Databases",
+          "titleAr": "قواعد البيانات",
+          "icon": null,
+          "lessons": [
+            {
+              "id": "first-secondary-lesson-9-1",
+              "code": "9-1",
+              "order": 1,
+              "title": "Database [1]",
+              "titleAr": "] 1 [ قواعد البيانات"
+            },
+            {
+              "id": "first-secondary-lesson-9-2",
+              "code": "9-2",
+              "order": 2,
+              "title": "Database [2]",
+              "titleAr": "] 2 [ قواعد بيانات"
+            },
+            {
+              "id": "first-secondary-lesson-9-3",
+              "code": "9-3",
+              "order": 3,
+              "title": "Various Information Systems",
+              "titleAr": "نظم المعلومات المختلفة"
+            }
+          ]
+        },
+        {
+          "id": "first-secondary-unit-10",
+          "code": "10",
+          "order": 10,
+          "title": "Data Analysis",
+          "titleAr": "تحليل البيانات",
+          "icon": null,
+          "lessons": [
+            {
+              "id": "first-secondary-lesson-10-1",
+              "code": "10-1",
+              "order": 1,
+              "title": "Types of Data and Analysis",
+              "titleAr": "أنواع البيانات والتحليل"
+            },
+            {
+              "id": "first-secondary-lesson-10-2",
+              "code": "10-2",
+              "order": 2,
+              "title": "Data Analysis [1]",
+              "titleAr": "] 1 [ تحليل البيانات"
+            },
+            {
+              "id": "first-secondary-lesson-10-3",
+              "code": "10-3",
+              "order": 3,
+              "title": "Data Analysis [2]",
+              "titleAr": "] 2 [ تحليل البيانات"
+            },
+            {
+              "id": "first-secondary-lesson-10-4",
+              "code": "10-4",
+              "order": 4,
+              "title": "Data Analysis [3]",
+              "titleAr": "] 3 [ تحليل البيانات"
+            },
+            {
+              "id": "first-secondary-lesson-10-5",
+              "code": "10-5",
+              "order": 5,
+              "title": "Data Analysis [4]",
+              "titleAr": "] 4 [ تحليل البيانات"
+            },
+            {
+              "id": "first-secondary-lesson-10-6",
+              "code": "10-6",
+              "order": 6,
+              "title": "Data Analysis [5]",
+              "titleAr": "] 5 [ تحليل البيانات"
+            }
+          ]
+        },
+        {
+          "id": "first-secondary-unit-11",
+          "code": "11",
+          "order": 11,
+          "title": "Simulations",
+          "titleAr": "المحاكاة",
+          "icon": null,
+          "lessons": [
+            {
+              "id": "first-secondary-lesson-11-1",
+              "code": "11-1",
+              "order": 1,
+              "title": "Modeling",
+              "titleAr": "النمذجة"
+            },
+            {
+              "id": "first-secondary-lesson-11-2",
+              "code": "11-2",
+              "order": 2,
+              "title": "Simulations [1]",
+              "titleAr": "] 1 [ المحاكاة"
+            },
+            {
+              "id": "first-secondary-lesson-11-3",
+              "code": "11-3",
+              "order": 3,
+              "title": "Simulations [2]",
+              "titleAr": "] 2 [ المحاكاة"
+            },
+            {
+              "id": "first-secondary-lesson-11-4",
+              "code": "11-4",
+              "order": 4,
+              "title": "Queues",
+              "titleAr": "Queues"
+            }
+          ]
+        },
+        {
+          "id": "first-secondary-unit-12",
+          "code": "12",
+          "order": 12,
+          "title": "Programming (Python)",
+          "titleAr": "البرمجة",
+          "icon": null,
+          "lessons": [
+            {
+              "id": "first-secondary-lesson-12-1",
+              "code": "12-1",
+              "order": 1,
+              "title": "Algorithm",
+              "titleAr": "الخوارزميات"
+            },
+            {
+              "id": "first-secondary-lesson-12-2",
+              "code": "12-2",
+              "order": 2,
+              "title": "Programming Basics [1] (Python)",
+              "titleAr": "] 1 [ أساسيات البرمجة"
+            },
+            {
+              "id": "first-secondary-lesson-12-3",
+              "code": "12-3",
+              "order": 3,
+              "title": "Programming Basics [2] (Python)",
+              "titleAr": "] 2 [ أساسيات البرمجة"
+            },
+            {
+              "id": "first-secondary-lesson-12-4",
+              "code": "12-4",
+              "order": 4,
+              "title": "Application of Programming [1] (Python)",
+              "titleAr": "] 1 [ البرمجة التطبيقية"
+            },
+            {
+              "id": "first-secondary-lesson-12-5",
+              "code": "12-5",
+              "order": 5,
+              "title": "Application of Programming [2] (Python)",
+              "titleAr": "] 2 [ البرمجة التطبيقية"
+            }
+          ]
+        },
+        {
+          "id": "first-secondary-unit-13",
+          "code": "13",
+          "order": 13,
+          "title": "AI Programming",
+          "titleAr": "الذكاء الاصطناعي التوليدي",
+          "icon": null,
+          "lessons": [
+            {
+              "id": "first-secondary-lesson-13-1",
+              "code": "13-1",
+              "order": 1,
+              "title": "About Generative AI",
+              "titleAr": "الذكاء الاصطناعي التوليدي"
+            },
+            {
+              "id": "first-secondary-lesson-13-2",
+              "code": "13-2",
+              "order": 2,
+              "title": "HTML, CSS",
+              "titleAr": "HTML, CSS"
+            },
+            {
+              "id": "first-secondary-lesson-13-3",
+              "code": "13-3",
+              "order": 3,
+              "title": "HTML, JS",
+              "titleAr": "HTML, JS"
+            },
+            {
+              "id": "first-secondary-lesson-13-4",
+              "code": "13-4",
+              "order": 4,
+              "title": "Creating Static Web Pages",
+              "titleAr": "إنشاء صفحة ويب ثابتة"
+            },
+            {
+              "id": "first-secondary-lesson-13-5",
+              "code": "13-5",
+              "order": 5,
+              "title": "Creating Dynamic Web Pages",
+              "titleAr": "إنشاء صفحات ويب تفاعلية"
+            },
+            {
+              "id": "first-secondary-lesson-13-6",
+              "code": "13-6",
+              "order": 6,
+              "title": "Presenting Your Website",
+              "titleAr": "عرض تقديمي لموقع الويب"
+            },
+            {
+              "id": "first-secondary-lesson-13-7",
+              "code": "13-7",
+              "order": 7,
+              "title": "Developing a Quiz App",
+              "titleAr": "تطوير تطبيق اختبارات"
+            },
+            {
+              "id": "first-secondary-lesson-13-8",
+              "code": "13-8",
+              "order": 8,
+              "title": "Quiz App Review",
+              "titleAr": "مراجعة تطبيق الاختبارات"
+            },
+            {
+              "id": "first-secondary-lesson-13-9",
+              "code": "13-9",
+              "order": 9,
+              "title": "Developing a Block Breaker Game 1",
+              "titleAr": "تطوير لعبة تكسير القوالب"
+            },
+            {
+              "id": "first-secondary-lesson-13-10",
+              "code": "13-10",
+              "order": 10,
+              "title": "Developing a Block Breaker Game 2",
+              "titleAr": "2 تطوير لعبة تكسير القوالب"
+            },
+            {
+              "id": "first-secondary-lesson-13-11",
+              "code": "13-11",
+              "order": 11,
+              "title": "Block Breaker Summary",
+              "titleAr": "ملخص لعبة تكسير القوالب"
+            },
+            {
+              "id": "first-secondary-lesson-13-12",
+              "code": "13-12",
+              "order": 12,
+              "title": "Block Breaker Development Presentation",
+              "titleAr": "عرض تقديمي للعبة تكسير القوالب المطورة"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

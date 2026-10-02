@@ -33,23 +33,50 @@ const ROLE_LABEL_KEY = {
   teacher: "shell.040",
 } as const;
 
-export function SupportCard({ className }: { className?: string }) {
+export function SupportCard({
+  className,
+  /**
+   * Phase L final polish 2 — the OPERATIONAL surfaces (today's Teacher Live
+   * Sessions workspace) read better when the support block is present but not
+   * competing with the work: `variant="quiet"` keeps every contact, name, tel:
+   * link and WhatsApp action intact and only tones the surface down (flat
+   * `bg-card` + hairline instead of the gradient panel). It is never hidden.
+   */
+  variant = "default",
+}: {
+  className?: string;
+  variant?: "default" | "quiet";
+}) {
   const tr = useT();
+  const quiet = variant === "quiet";
 
   return (
     <div
       data-testid="support-card"
-      className={`rounded-xl bg-gradient-to-br from-primary/10 to-amber-400/10 p-3.5 border border-primary/10 overflow-hidden ${className || ""}`}
+      data-variant={variant}
+      className={`overflow-hidden rounded-xl border ${
+        quiet
+          ? "border-border/60 bg-card/60 p-3"
+          : "border-primary/10 bg-gradient-to-br from-primary/10 to-amber-400/10 p-3.5"
+      } ${className || ""}`}
     >
-      <div className="flex items-center gap-2 mb-1.5 min-w-0">
-        <HeartHandshake className="w-4 h-4 text-primary shrink-0" />
-        <div className="text-xs font-bold truncate">{tr("shell.016")}</div>
+      <div className={`flex min-w-0 items-center gap-2 ${quiet ? "mb-1" : "mb-1.5"}`}>
+        <HeartHandshake
+          className={`shrink-0 ${quiet ? "h-3.5 w-3.5 text-muted-foreground" : "w-4 h-4 text-primary"}`}
+        />
+        <div className={`min-w-0 truncate font-bold ${quiet ? "text-[11px]" : "text-xs"}`}>
+          {tr("shell.016")}
+        </div>
       </div>
-      <p className="text-[11px] text-muted-foreground mb-3 leading-relaxed break-words">
+      <p
+        className={`break-words text-muted-foreground leading-relaxed ${
+          quiet ? "mb-2 text-[10px]" : "mb-3 text-[11px]"
+        }`}
+      >
         {tr("shell.017")}
       </p>
 
-      <div className="space-y-2.5">
+      <div className={quiet ? "space-y-1.5" : "space-y-2.5"}>
         {SUPPORT_PEOPLE.map((person) => {
           const Icon = ROLE_ICON[person.id as keyof typeof ROLE_ICON] ?? Headset;
           const labelKey =
@@ -58,9 +85,13 @@ export function SupportCard({ className }: { className?: string }) {
           return (
             <div
               key={person.id}
-              className="rounded-lg bg-card/90 border border-border/60 p-2.5"
+              className={`rounded-lg border border-border/60 bg-card/90 ${quiet ? "p-2" : "p-2.5"}`}
             >
-              <div className="flex items-center gap-1.5 text-[10px] font-bold text-primary mb-1">
+              <div
+                className={`mb-1 flex items-center gap-1.5 text-[10px] font-bold ${
+                  quiet ? "text-muted-foreground" : "text-primary"
+                }`}
+              >
                 <Icon className="w-3 h-3 shrink-0" />
                 <span className="truncate">{tr(labelKey)}</span>
               </div>
@@ -85,7 +116,11 @@ export function SupportCard({ className }: { className?: string }) {
                   href={whatsappLink(person.phoneIntl, tr("shell.018"))}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-primary text-primary-foreground text-[10px] font-bold hover:opacity-90 transition-opacity shrink-0"
+                  className={`inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[10px] font-bold transition-opacity hover:opacity-90 ${
+                    quiet
+                      ? "border border-border/60 bg-muted/40 text-foreground"
+                      : "bg-primary text-primary-foreground"
+                  }`}
                 >
                   <MessageCircle className="w-3 h-3 shrink-0" />
                   {tr("shell.042")}

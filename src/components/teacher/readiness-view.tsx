@@ -2,6 +2,10 @@
 
 import * as React from "react";
 import { useT } from "@/lib/i18n";
+import {
+  OptionalAcademicLevelFilter,
+  academicLevelLabel,
+} from "@/components/admin/academic-level-ui";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -77,6 +81,10 @@ type LessonOption = {
   title: string;
   titleAr: string;
   officialCode: string | null;
+  /** Phase L manual-QA fix — the lesson's canonical course level. Two official
+      courses share one display name and their lessons share printed codes, so
+      the level is what makes the picker unambiguous. */
+  course?: { id: string; name: string; academicLevel?: string | null } | null;
 };
 
 /**
@@ -111,6 +119,10 @@ export function TeacherReadinessView() {
   const [loading, setLoading] = React.useState(false);
   const [filter, setFilter] = React.useState<"ALL" | "READY" | "NOT_READY">("ALL");
   const [groupFilter, setGroupFilter] = React.useState("ALL");
+  // Phase L manual-QA fix #4 — level separator for the readiness lesson picker.
+  // The lesson list is narrowed by the SERVER (`?academicLevel=`), and the
+  // control is rendered only when this teacher's own scope spans both levels.
+  const [level, setLevel] = React.useState("");
   const [reminding, setReminding] = React.useState<string | null>(null);
   // The recipient dialog: which student the reminder is for + the controlled
   // audience mode (default BOTH — the request sends only this mode, never an
@@ -118,13 +130,22 @@ export function TeacherReadinessView() {
   const [remindTarget, setRemindTarget] = React.useState<{ studentId: string; studentName: string } | null>(null);
   const [remindAudience, setRemindAudience] = React.useState<"STUDENT" | "PARENT" | "BOTH">("BOTH");
 
+  const [scope, setScope] = React.useState<{ spansBothLevels?: boolean } | null>(null);
+
   React.useEffect(() => {
     let cancelled = false;
-    fetch("/api/teacher/lessons")
+    fetch(
+      level
+        ? `/api/teacher/lessons?academicLevel=${encodeURIComponent(level)}`
+        : "/api/teacher/lessons"
+    )
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (cancelled) return;
         setLessons(Array.isArray(d?.lessons) ? d.lessons : []);
+        // The scope describes the teacher's FULL group set (never the filtered
+        // list), so the separator does not disappear once a level is chosen.
+        if (d?.scope) setScope(d.scope);
         setLessonsLoading(false);
       })
       .catch(() => {
@@ -135,7 +156,7 @@ export function TeacherReadinessView() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [level]);
 
   // Lesson switch, adjusted during render (never as a sync effect write):
   // clearing the lesson clears the payload; picking one reloads with the
@@ -257,6 +278,19 @@ export function TeacherReadinessView() {
           <p className="text-xs text-muted-foreground">{tr("teacher.readiness.subtitle")}</p>
         </CardHeader>
         <CardContent className="space-y-3">
+          {/* Phase L manual-QA fix #4 — level separator above the lesson
+              picker. Both official curricula are live, their courses share one
+              display name and their lessons reuse printed codes, so this is
+              what makes "the 1-1 I mean" unambiguous. Rendered only when this
+              teacher's own scope actually contains both levels. */}
+          <OptionalAcademicLevelFilter
+            scope={scope}
+            value={level}
+            onChange={(v) => {
+              setLevel(v);
+              setLessonId("");
+            }}
+          />
           <div>
             <Label htmlFor="readiness-lesson">{tr("teacher.readiness.pickLesson")}</Label>
             {/* Themed Select (never native): a native option popup ignores
@@ -279,7 +313,11 @@ export function TeacherReadinessView() {
                   <SelectItem value={READINESS_NO_LESSON}>{tr("teacher.readiness.pickLesson")}</SelectItem>
                   {lessons.map((l) => (
                     <SelectItem key={l.id} value={l.id}>
-                      {(l.officialCode ? `${l.officialCode} — ` : "") + (l.titleAr || l.title)}
+                      {(l.course?.academicLevel
+                        ? `${academicLevelLabel(tr, l.course.academicLevel)} · `
+                        : "") +
+                        (l.officialCode ? `${l.officialCode} — ` : "") +
+                        (l.titleAr || l.title)}
                     </SelectItem>
                   ))}
                 </SelectContent>

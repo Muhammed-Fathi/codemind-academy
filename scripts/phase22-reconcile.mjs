@@ -52,7 +52,11 @@ Module._resolveFilename = function(req, ...rest) {
     const compiled = path.join(EMIT, `${alias[1]}.js`);
     if (fs.existsSync(compiled)) return compiled;
   }
-  if (req.endsWith("knowledge-model.json")) return path.join(REPO, "docs/curriculum/knowledge-model.json");
+  if (req.endsWith("knowledge-model.json")) {
+    // Phase L: one model per academic level — resolve by the folder in the request.
+    const level = req.includes("first-secondary") ? "first-secondary" : "second-secondary";
+    return path.join(REPO, "docs", "curriculum", level, "knowledge-model.json");
+  }
   return origResolve.call(this, req, ...rest);
 };
 globalThis.__CM_CLIENT__ = client;

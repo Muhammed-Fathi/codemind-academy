@@ -91,6 +91,8 @@ import {
   type ChainLesson,
 } from "@/lib/teacher-content";
 import { lessonCoursesChainOr } from "@/lib/session-progress";
+import type { AcademicLevel } from "@/lib/academic-level";
+import { scopedTeacherCourseIds } from "@/lib/teacher-academic-level";
 
 export { TEACHER_LIMITS } from "@/lib/teacher-content";
 
@@ -119,7 +121,10 @@ export type TeacherSessionListItem = {
   curriculumStatus: string;
   archived: boolean;
   chain: "CANONICAL" | "LEGACY";
-  course: { id: string; name: string };
+  /** Phase L manual-QA fix — the canonical level of the lesson's own course
+      (Group → Course → AcademicLevel, or the lesson's chain). Both official
+      courses share one display name, so the level is what separates them. */
+  course: { id: string; name: string; academicLevel?: string | null };
   part: { id: string; title: string; order: number };
   unit: { id: string; title: string; order: number };
   /** READY here means "satisfies every Phase D requirement" (canBeReady). */
@@ -168,7 +173,7 @@ const TEACHER_SESSION_LIST_SELECT = {
           titleAr: true,
           order: true,
           courseId: true,
-          course: { select: { id: true, name: true, nameAr: true } },
+          course: { select: { id: true, name: true, nameAr: true, academicLevel: true } },
         },
       },
     },
@@ -191,7 +196,7 @@ const TEACHER_SESSION_LIST_SELECT = {
               titleAr: true,
               order: true,
               courseId: true,
-              course: { select: { id: true, name: true, nameAr: true } },
+              course: { select: { id: true, name: true, nameAr: true, academicLevel: true } },
             },
           },
         },
@@ -227,10 +232,23 @@ const TEACHER_SESSION_LIST_SELECT = {
  * never an authorization leak.
  */
 export async function listTeacherSessions(input: {
-  teacher: { groups: Array<{ courseId: string }> };
+  teacher: {
+    id: string;
+    groups: Array<{
+      id: string;
+      courseId: string;
+      course?: { academicLevel?: string | null } | null;
+    }>;
+  };
   filterCourseId?: string | null;
+  /** Phase L manual-QA fix #4 — optional canonical AcademicLevel narrowing,
+      resolved against the teacher's OWN groups (never a client course id). */
+  filterAcademicLevel?: AcademicLevel | null;
 }): Promise<TeacherSessionListItem[]> {
-  const owned = teacherCourseIds(input.teacher);
+  const owned = await scopedTeacherCourseIds(
+    { id: input.teacher.id, groups: input.teacher.groups },
+    input.filterAcademicLevel ?? null
+  );
   const requested = (input.filterCourseId ?? "").trim();
   const courseIds = requested
     ? owned.filter((id) => id === requested)
@@ -264,7 +282,14 @@ export async function listTeacherSessions(input: {
       curriculumStatus: String(lesson.curriculumStatus),
       archived: String(lesson.curriculumStatus).toUpperCase() === "ARCHIVED",
       chain: canonical ? "CANONICAL" : "LEGACY",
-      course: { id: placement.courseId, name: placement.courseNameAr || placement.courseName },
+      course: {
+        id: placement.courseId,
+        name: placement.courseNameAr || placement.courseName,
+        // Phase L final polish — the level travels with the roster row so a
+        // teacher who owns BOTH official courses sees «أولى ثانوي · …» and
+        // «ثانية ثانوي · …» instead of two identical headers.
+        academicLevel: placement.courseAcademicLevel,
+      },
       part: {
         id: placement.partId,
         title: placement.partTitleAr || placement.partTitle,
@@ -607,7 +632,13 @@ async function listTeacherSessionsLight(
     curriculumStatus: String(lesson.curriculumStatus),
     archived: String(lesson.curriculumStatus).toUpperCase() === "ARCHIVED",
     chain: placement.chain,
-    course: { id: placement.courseId, name: placement.courseNameAr || placement.courseName },
+    course: {
+      id: placement.courseId,
+      name: placement.courseNameAr || placement.courseName,
+      // Phase L final polish — same DTO rule as the list: the level is display
+      // context that lets one same-named course be told from the other.
+      academicLevel: placement.courseAcademicLevel,
+    },
     part: {
       id: placement.partId,
       title: placement.partTitleAr || placement.partTitle,

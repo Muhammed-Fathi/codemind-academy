@@ -106,6 +106,14 @@ export type LessonPlacement = {
   courseId: string;
   courseName: string;
   courseNameAr: string | null;
+  /**
+   * Phase L final polish — the canonical `Course.academicLevel` of the course
+   * this lesson belongs to. Display context ONLY (the platform's two official
+   * courses share one display name, so a listing that shows both needs the
+   * level to stay readable). Never an authorization input: authority is always
+   * derived from the teacher's own Group rows.
+   */
+  courseAcademicLevel: string | null;
   partId: string;
   partTitle: string;
   partTitleAr: string | null;
@@ -132,7 +140,7 @@ export type ChainLesson = {
       title: string;
       titleAr: string | null;
       courseId: string;
-      course?: { name: string; nameAr: string | null } | null;
+      course?: { name: string; nameAr: string | null; academicLevel?: string | null } | null;
     };
   } | null;
   topic?: {
@@ -145,7 +153,7 @@ export type ChainLesson = {
         title: string;
         titleAr: string | null;
         courseId: string;
-        course?: { name: string; nameAr: string | null } | null;
+        course?: { name: string; nameAr: string | null; academicLevel?: string | null } | null;
       };
     };
   } | null;
@@ -173,6 +181,7 @@ export function lessonPlacement(lesson: ChainLesson | null | undefined): LessonP
     courseId: part.courseId,
     courseName: course?.name ?? "",
     courseNameAr: course?.nameAr ?? null,
+    courseAcademicLevel: course?.academicLevel ?? null,
     partId: part.id,
     partTitle: part.title,
     partTitleAr: part.titleAr,
@@ -201,7 +210,10 @@ export const LESSON_PLACEMENT_SELECT = {
           title: true,
           titleAr: true,
           courseId: true,
-          course: { select: { name: true, nameAr: true } },
+          // Phase L final polish — the level travels with the placement so a
+          // teacher who owns BOTH official courses can tell their identically
+          // named courses apart in the list/filter labels.
+          course: { select: { name: true, nameAr: true, academicLevel: true } },
         },
       },
     },

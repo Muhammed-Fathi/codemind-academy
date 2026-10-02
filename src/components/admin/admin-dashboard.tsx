@@ -890,6 +890,16 @@ function AddStudentDialog({
     // Phase K2 — typed academic level replaces the free-text grade input;
     // the server derives `grade` from it.
     academicLevel: "SECOND_SECONDARY" as "FIRST_SECONDARY" | "SECOND_SECONDARY",
+    // Phase L manual-QA fix — the student's canonical Track / school type.
+    // Deliberately starts EMPTY: the admin must choose مدارس عربي or مدارس
+    // لغات explicitly. There is no default, because a default would silently
+    // classify the student and end them up in the "غير محدد" tab while the
+    // group-assignment gate later rejected them for a track they never picked.
+    // The value is the SAME `SchoolType` enum the rest of the platform uses
+    // (`Student.schoolType`, Group audience, registration) — no second
+    // authority, and the free-text `schoolName` field below is only the
+    // school's name.
+    schoolType: "",
     schoolName: "",
   });
   const [saving, setSaving] = React.useState(false);
@@ -897,6 +907,12 @@ function AddStudentDialog({
   const submit = async () => {
     if (!form.name || !form.email || !form.password || !form.academicLevel) {
       toast.error(tr("admin.026"));
+      return;
+    }
+    // Same contract text the server returns for a missing track (api.210), so
+    // the client guard and the server gate can never drift apart.
+    if (!form.schoolType) {
+      toast.error(tr("api.210"));
       return;
     }
     setSaving(true);
@@ -911,7 +927,7 @@ function AddStudentDialog({
       toast.success(tr("admin.028"));
       onCreated();
       onOpenChange(false);
-      setForm({ name: "", email: "", password: "", phone: "", academicLevel: "SECOND_SECONDARY", schoolName: "" });
+      setForm({ name: "", email: "", password: "", phone: "", academicLevel: "SECOND_SECONDARY", schoolType: "", schoolName: "" });
     } catch (e: any) {
       toast.error(e.message || tr("admin.001"));
     } finally {
@@ -959,6 +975,24 @@ function AddStudentDialog({
                 </SelectContent>
               </Select>
             </div>
+          </div>
+          <div>
+            <Label>{tr("admin.055")}</Label>
+            {/* Phase L manual-QA fix — REQUIRED explicit Track / school type.
+                The options are the canonical SchoolType enum values with the
+                canonical labels already used by the students tabs and the
+                group audience selector (admin.200 / admin.201), so the admin
+                sees exactly the same two choices everywhere in the platform.
+                No "unspecified" option: that state is for legacy rows only. */}
+            <Select value={form.schoolType} onValueChange={(v) => setForm({ ...form, schoolType: v })}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder={tr("admin.645")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ARABIC">{tr("admin.200")}</SelectItem>
+                <SelectItem value="LANGUAGE">{tr("admin.201")}</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div>
             <Label>{tr("admin.037")}</Label>
@@ -1063,6 +1097,97 @@ function StudentProfileDrawer({
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ academicLevel: level }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j?.error || "err");
+      }
+      toast.success(tr("admin.044"));
+      onUpdated();
+      onClose();
+    } catch (e: any) {
+      toast.error(e?.message && e.message !== "err" ? e.message : tr("admin.001"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Phase L manual-QA fix — DELETE STUDENT. The action is irreversible, so it
+  // sits behind the shared AlertDialog (never window.confirm) and names the
+  // student by name + email + code, so the admin can see WHO is about to go.
+  // The SERVER owns every safety rule: it refuses (409) a student with
+  // financial history and reports exactly what it removed otherwise.
+  const [confirmDelete, setConfirmDelete] = React.useState(false);
+  const [deleting, setDeleting] = React.useState(false);
+  // The server's per-category breakdown of a REFUSED delete, so the admin sees
+  // exactly which protected classes exist instead of a vague failure.
+  const [blocked, setBlocked] = React.useState<Record<string, number> | null>(null);
+  const deleteStudent = async () => {
+    if (!student) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/admin/students/${student.id}`, { method: "DELETE" });
+      const j = await res.json().catch(() => ({} as any));
+      if (!res.ok) {
+        // The refusal text is shown verbatim and the breakdown stays visible in
+        // the dialog (the toast may be missed).
+        toast.error(j?.error || tr("admin.001"));
+        setBlocked(j?.blocked && typeof j.blocked === "object" ? j.blocked : null);
+        return;
+      }
+      toast.success(tr("admin.657"));
+      setBlocked(null);
+      setConfirmDelete(false);
+      // Same refresh contract as every other mutation here: the list AND the
+      // per-tab counters come from the same response, so both update.
+      onUpdated();
+      onClose();
+    } catch {
+      toast.error(tr("admin.001"));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  /** Localized label for one protected-history category. */
+  const blockedLabel = (key: string) => {
+    const map: Record<string, string> = {
+      financial: "admin.660",
+      subscription: "admin.661",
+      attendance: "admin.662",
+      assessments: "admin.663",
+      progress: "admin.664",
+      notes: "admin.665",
+      achievements: "admin.666",
+      account: "admin.667",
+    };
+    return tr(map[key] || "admin.667");
+  };
+
+  // Phase L manual-QA fix — the student's canonical Track / school type, Editable.
+  //
+  // Same derived-default + explicit-choice pattern as the level control above
+  // (no effect-driven state sync), and the SAME canonical `Student.schoolType`
+  // values and labels as the Add Student form. A legacy student whose track is
+  // still NULL shows the empty placeholder and can be classified here.
+  //
+  // Safety is NOT re-implemented in the UI: the PATCH route already refuses a
+  // track change that would leave the student in a group of another audience
+  // (409 api.286), and its error text is surfaced verbatim below. The drawer
+  // never unassigns the student, never rewrites the group and never forces the
+  // change through — the admin must move the student out of the group first.
+  const [trackChoice, setTrackChoice] = React.useState<{ id: string; value: string } | null>(null);
+  const track =
+    trackChoice && student && trackChoice.id === student.id ? trackChoice.value : student?.schoolType || "";
+  const setTrack = (v: string) => student && setTrackChoice({ id: student.id, value: v });
+  const saveTrack = async () => {
+    if (!student || !track) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/admin/students/${student.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ schoolType: track }),
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
@@ -1187,6 +1312,26 @@ function StudentProfileDrawer({
                 </Button>
               </div>
 
+              {/* Phase L manual-QA fix — typed Track / school type (the ONLY
+                  track authority; the server refuses a change that would leave
+                  the student in a group of another audience, and the free-text
+                  school name above stays a profile field). */}
+              <div className="rounded-lg border p-3 space-y-2">
+                <div className="text-xs text-muted-foreground">{tr("admin.055")}</div>
+                <Select value={track} onValueChange={setTrack}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder={tr("admin.645")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ARABIC">{tr("admin.200")}</SelectItem>
+                    <SelectItem value="LANGUAGE">{tr("admin.201")}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button size="sm" variant="outline" onClick={saveTrack} disabled={saving || !track} className="w-full">
+                  {tr("admin.040")}
+                </Button>
+              </div>
+
               <div className="rounded-lg border p-3 space-y-2">
                 <div className="text-xs text-muted-foreground">{tr("admin.023")}</div>
                 <Select value={groupId} onValueChange={setGroupId}>
@@ -1221,6 +1366,54 @@ function StudentProfileDrawer({
                     {tr("admin.066")}</>
                 )}
               </Button>
+
+              {/* Phase L manual-QA fix — permanent delete, separate from the
+                  reversible deactivate above so the two can never be confused. */}
+              <Button
+                onClick={() => setConfirmDelete(true)}
+                disabled={saving}
+                variant="outline"
+                className="w-full border-destructive/40 text-destructive hover:bg-destructive/10"
+              >
+                <Trash2 className="w-4 h-4 ms-2" />
+                {tr("admin.655")}
+              </Button>
+
+              <ConfirmDialog
+                open={confirmDelete}
+                onOpenChange={setConfirmDelete}
+                busy={deleting}
+                title={tr("admin.655")}
+                description={
+                  <span>
+                    <span className="block font-semibold text-foreground mb-1">
+                      {student.name}
+                    </span>
+                    <span className="block text-xs" dir="ltr">
+                      {student.email}
+                      {student.studentCode ? ` · ${student.studentCode}` : ""}
+                    </span>
+                    <span className="mt-2 block">{tr("admin.656")}</span>
+                    {blocked && Object.keys(blocked).length > 0 ? (
+                      <span className="mt-2 block rounded-md border border-destructive/30 bg-destructive/5 p-2">
+                        <span className="block text-[11px] font-bold text-destructive">
+                          {tr("api.383")}
+                        </span>
+                        <span className="mt-1 block space-y-0.5">
+                          {Object.entries(blocked).map(([key, n]) => (
+                            <span key={key} className="block text-[11px] text-muted-foreground">
+                              {blockedLabel(key)} — {n}
+                            </span>
+                          ))}
+                        </span>
+                      </span>
+                    ) : null}
+                  </span>
+                }
+                confirmLabel={tr("admin.655")}
+                cancelLabel={tr("admin.038")}
+                onConfirm={deleteStudent}
+              />
 
               {/* Phase H — progression overrides: grant / list / revoke. */}
               <ProgressionOverrideSection studentId={student.id} />
@@ -2343,12 +2536,25 @@ function CoursesView() {
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || tr("admin.121"));
       const report = j.report || {};
-      toast.success(
-        tr("admin.654", {
-          p1: report.officialLessonCodes?.length ?? 0,
-          p2: report.archivedLessonIds?.length ?? 0,
-        })
-      );
+      // Phase L manual-QA fix — the reconcile report now covers EVERY
+      // registered curriculum, so a bare aggregate ("85 active lessons") no
+      // longer tells the admin which level received how many sessions. The
+      // aggregate is kept (its numbers are real: official codes and archived
+      // legacy rows over the whole run) and the per-level breakdown from the
+      // report's own `levels[]` is appended, labelled with the shared level
+      // vocabulary. Nothing is hard-coded, and a level-targeted run simply
+      // shows its one level.
+      const summary = tr("admin.654", {
+        p1: report.officialLessonCodes?.length ?? 0,
+        p2: report.archivedLessonIds?.length ?? 0,
+      });
+      const perLevel = (Array.isArray(report.levels) ? report.levels : [])
+        .map(
+          (r: any) =>
+            `${academicLevelLabel(tr, r?.academicLevel)}: ${r?.officialLessonCodes?.length ?? 0}`
+        )
+        .join(" · ");
+      toast.success(perLevel ? `${summary} — ${perLevel}` : summary);
       reload();
     } catch (e: any) {
       toast.error(e.message || tr("admin.001"));

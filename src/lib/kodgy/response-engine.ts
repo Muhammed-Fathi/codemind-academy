@@ -21,9 +21,12 @@
 // echoes raw input back into responses.
 //
 // GROUNDING (Phase 19): every curriculum reference in this knowledge set
-// points at the OFFICIAL 23-session curriculum (2 parts / 7 units, sessions
-// coded 1-1 … 7-3 — see docs/curriculum/knowledge-model.json and
-// `CURRICULUM_GROUNDING` below). Only the grounding DATA changed; the
+// points at the OFFICIAL Second Secondary 23-session curriculum (2 parts /
+// 7 units, sessions coded 1-1 … 7-3 — see
+// docs/curriculum/second-secondary/knowledge-model.json and the
+// level-scoped `CURRICULUM_GROUNDING_BY_LEVEL` below; Phase L made the
+// grounding level-scoped because First Secondary reuses 18 of those codes).
+// Only the grounding DATA changed; the
 // response-engine contract (`match`, `pickAnswer`, `suggestedPrompts`,
 // `supportedIntents`, scoring rules) is untouched and no LLM/network/DB was
 // introduced.
@@ -113,14 +116,23 @@ export function tokens(normalized: string): string[] {
 // ---------------------------------------------------------------------------
 //
 // The response engine never talks to the database, so the official session
-// set is duplicated here as DATA, not queried. Keep this list in sync with
-// `docs/curriculum/knowledge-model.json` — the Phase 19 regression test
-// cross-checks every code below against `OFFICIAL_LESSON_CODES` and every
-// title against the knowledge model, so drift fails CI rather than
-// shipping to students.
+// set is duplicated here as DATA, not queried. Keep this list in sync with the
+// Second Secondary model `docs/curriculum/second-secondary/knowledge-model.json`
+// — the Phase 19 regression test cross-checks every code below against
+// `OFFICIAL_LESSON_CODES` and every title against the knowledge model, so
+// drift fails CI rather than shipping to students.
+//
+// PHASE L — LEVEL SCOPE. `officialCode` is NO LONGER a global key now that a
+// second official curriculum exists: First Secondary and Second Secondary
+// legitimately share 18 codes ("1-1" … "7-3"), each unique only WITHIN its
+// level (`@@unique([academicLevel, officialCode])`). This knowledge set is
+// authored for SECOND SECONDARY only, so it is reachable exclusively through
+// the level-scoped accessors below — `curriculumSessionForLevel(level, code)`.
+// There is deliberately no level-free code lookup: resolving a session by code
+// alone is the ambiguity Phase L removes.
 
 export interface KodgyCurriculumSession {
-  /** Official session code: 1-1 … 7-3. */
+  /** Official session code within its own level: e.g. 1-1 … 7-3. */
   code: string;
   /** The intent whose answer teaches this session's concepts. */
   intent: string;
@@ -128,7 +140,18 @@ export interface KodgyCurriculumSession {
   titleEn: string;
 }
 
-/** The exact 23 official sessions, in curriculum order. */
+/**
+ * The academic levels the platform knows, as a structural union.
+ *
+ * Mirrors `AcademicLevel` in `@/lib/academic-level` on purpose: this module is
+ * bundled into the CLIENT (Kodgy's chat panel), and that module imports the
+ * database, so it must not be pulled into the client graph. The union is not an
+ * authority — `Course.academicLevel` in the database is; this is only the shape
+ * of the key used to SCOPE an already-authoritative lookup.
+ */
+export type KodgyAcademicLevel = "FIRST_SECONDARY" | "SECOND_SECONDARY";
+
+/** The exact 23 official Second Secondary sessions, in curriculum order. */
 export const CURRICULUM_GROUNDING: readonly KodgyCurriculumSession[] = [
   { code: "1-1", intent: "edu.it-society", titleAr: "تطور تكنولوجيا المعلومات والتحول الاجتماعي", titleEn: "Development of Information Technology and Social Transformation" },
   { code: "1-2", intent: "edu.ai-basics", titleAr: "كيف يعمل الذكاء الاصطناعي", titleEn: "How AI Works" },
@@ -154,6 +177,52 @@ export const CURRICULUM_GROUNDING: readonly KodgyCurriculumSession[] = [
   { code: "7-2", intent: "edu.neural-network", titleAr: "الشبكات العصبية والتعلم العميق", titleEn: "Neural Networks and Deep Learning" },
   { code: "7-3", intent: "edu.llm", titleAr: "نماذج اللغة الكبيرة (LLM) والذكاء الاصطناعي التوليدي", titleEn: "Large Language Models (LLM) and Generative AI" },
 ];
+
+// ---------------------------------------------------------------------------
+// Phase L — level-scoped accessors (the ONLY way to reach a grounded session)
+// ---------------------------------------------------------------------------
+//
+// `CURRICULUM_GROUNDING` is the Second Secondary set, referenced — never copied
+// — so the two representations cannot drift.
+//
+// FIRST_SECONDARY is intentionally EMPTY: Phase L adds the First Secondary
+// CURRICULUM (13 units / 62 lessons) but authors NO Kodgy answers for it. Kodgy's
+// curated knowledge set is Second Secondary content, and inventing First
+// Secondary answers would fabricate curriculum material. A First Secondary
+// student therefore keeps every platform intent (navigation, quizzes, mock
+// exams, study planning) and gets the graceful fallback for curriculum-concept
+// questions, which is exactly today's behaviour for an unknown concept.
+// Authoring that coverage is a later, explicitly-scoped phase.
+export const CURRICULUM_GROUNDING_BY_LEVEL: Record<
+  KodgyAcademicLevel,
+  readonly KodgyCurriculumSession[]
+> = {
+  SECOND_SECONDARY: CURRICULUM_GROUNDING,
+  FIRST_SECONDARY: [],
+};
+
+/** Every grounded session of one academic level (possibly none). */
+export function curriculumGroundingForLevel(
+  level: KodgyAcademicLevel
+): readonly KodgyCurriculumSession[] {
+  return CURRICULUM_GROUNDING_BY_LEVEL[level] ?? [];
+}
+
+/**
+ * LEVEL-SCOPED session resolution — the replacement for any `code`-only lookup.
+ *
+ * Returns null when the level has no grounding or the code is not part of it,
+ * so a First Secondary "1-1" can never resolve to the Second Secondary "1-1"
+ * (or vice versa).
+ */
+export function curriculumSessionForLevel(
+  level: KodgyAcademicLevel,
+  code: string
+): KodgyCurriculumSession | null {
+  const wanted = String(code ?? "").trim();
+  if (!wanted) return null;
+  return curriculumGroundingForLevel(level).find((s) => s.code === wanted) ?? null;
+}
 
 // ---------------------------------------------------------------------------
 // Knowledge set (curated, initial Phase 10 coverage)

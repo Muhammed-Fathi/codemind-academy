@@ -1,5 +1,10 @@
 "use client";
 import { useT, translate , pickAuto } from "@/lib/i18n";
+import {
+  AcademicLevelBadge,
+  OptionalAcademicLevelFilter,
+  academicLevelLabel,
+} from "@/components/admin/academic-level-ui";
 
 // ============================================================
 // CodeMind Academy — Teacher Dashboard (Task 4)
@@ -191,6 +196,8 @@ type GroupInfo = {
     name: string;
     nameAr: string;
     color: string;
+    /** Phase L manual-QA fix — derived via Group → Course (never Teacher). */
+    academicLevel?: string | null;
   } | null;
   studentsCount: number;
   students: Array<{
@@ -242,7 +249,24 @@ type DashboardPayload = {
   upcomingSessions: UpcomingSession[];
   recentActivity: ActivityItem[];
   pendingHomeworkCount: number;
+  /** Phase L manual-QA fix #4 — the teacher's FULL level scope (never
+      filtered), so a level separator is offered only when it is meaningful. */
+  scope?: { academicLevels?: string[]; spansBothLevels?: boolean };
 };
+
+/** The same scope metadata, shipped by the list endpoints. */
+type LevelScopeInfo = { academicLevels?: string[]; spansBothLevels?: boolean };
+
+/** `?academicLevel=` suffix for a level-filtered request ("" = every level). */
+function levelQuery(level: string): string {
+  return level ? `?academicLevel=${encodeURIComponent(level)}` : "";
+}
+
+/** `?`-aware variant, for endpoints that already carry a query string. */
+function withLevelQuery(base: string, level: string): string {
+  if (!level) return base;
+  return `${base}${base.includes("?") ? "&" : "?"}academicLevel=${encodeURIComponent(level)}`;
+}
 
 type AttendanceStatus = "PRESENT" | "ABSENT" | "LATE" | "EXCUSED";
 
@@ -296,7 +320,7 @@ type QuizListItem = {
     chain?: string | null;
     part?: { id: string; title: string } | null;
     unit?: { id: string; title: string } | null;
-    course: { id: string; name: string } | null;
+    course: { id: string; name: string; academicLevel?: string | null } | null;
   } | null;
   questionCount: number;
   totalMarks: number;
@@ -390,7 +414,7 @@ type HomeworkListItem = {
     curriculumStatus?: string;
     part?: { id: string; title: string } | null;
     unit?: { id: string; title: string } | null;
-    course: { id: string; name: string } | null;
+    course: { id: string; name: string; academicLevel?: string | null } | null;
   } | null;
   stats: {
     submitted: number;
@@ -590,10 +614,14 @@ function EmptyState({
 function OverviewView() {
   const tr = useT();
   const setView = useApp((s) => s.setView);
+  // Phase L manual-QA fix #4 — the teacher's academic-level separator. The
+  // narrowing happens in the SERVER query, so the group cards, the counters
+  // and the upcoming sessions all describe ONE level.
+  const [level, setLevel] = React.useState("");
   const { data, isLoading, isError, refetch } = useQuery<DashboardPayload>({
-    queryKey: ["teacher-dashboard"],
+    queryKey: ["teacher-dashboard", level || "ALL"],
     queryFn: async () => {
-      const r = await fetch("/api/teacher/dashboard");
+      const r = await fetch(`/api/teacher/dashboard${levelQuery(level)}`);
       if (!r.ok) throw new Error("fail");
       return (await r.json()) as DashboardPayload;
     },
@@ -614,6 +642,20 @@ function OverviewView() {
 
   return (
     <div className="space-y-6">
+      {/* Phase L manual-QA fix #4 — one-click level separator (only rendered
+          when the teacher actually owns groups in both levels). */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <div className="text-xs font-bold">{tr("admin.642")}</div>
+          <div className="text-[11px] text-muted-foreground">{tr("teacher.312")}</div>
+        </div>
+        <OptionalAcademicLevelFilter
+          scope={data.scope}
+          value={level}
+          onChange={setLevel}
+        />
+      </div>
+
       {/* Welcome header */}
       <motion.div
         initial={{ opacity: 0, y: 8 }}
@@ -877,8 +919,13 @@ function GroupCard({ group }: { group: GroupInfo }) {
             />
             <h3 className="font-bold text-base truncate">{group.name}</h3>
           </div>
-          <p className="text-xs text-muted-foreground mt-1">
-            {pickAuto(group.course?.nameAr, group.course?.name) || tr("teacher.026")}
+          {/* Phase L manual-QA fix — the group's LEVEL (derived, Group →
+              Course) sits with its course line: both official courses share
+              one display name, so this is what tells a teacher's First and
+              Second Secondary groups apart. */}
+          <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1.5 flex-wrap">
+            <AcademicLevelBadge level={group.course?.academicLevel} />
+            <span>{pickAuto(group.course?.nameAr, group.course?.name) || tr("teacher.026")}</span>
           </p>
         </div>
         <Badge
@@ -1007,11 +1054,15 @@ function AttendanceView() {
   const tr = useT();
   const queryClient = useQueryClient();
 
-  // 1. Get dashboard just for the groups list (so we don't duplicate call)
+  // 1. Get dashboard just for the groups list (so we don't duplicate call).
+  // Phase L manual-QA fix #4 — the level separator narrows the group list in
+  // the SERVER query, so a teacher who owns both levels can only ever pick a
+  // group of the level they are currently working in.
+  const [level, setLevel] = React.useState("");
   const dashQuery = useQuery<DashboardPayload>({
-    queryKey: ["teacher-dashboard"],
+    queryKey: ["teacher-dashboard", level || "ALL"],
     queryFn: async () => {
-      const r = await fetch("/api/teacher/dashboard");
+      const r = await fetch(`/api/teacher/dashboard${levelQuery(level)}`);
       if (!r.ok) throw new Error("fail");
       return (await r.json()) as DashboardPayload;
     },
@@ -1027,9 +1078,15 @@ function AttendanceView() {
     name: string;
   } | null>(null);
 
-  // Default-select first group
+  // Default-select first group; when the LEVEL changes, a group from the other
+  // level must not stay selected — the picker re-homes to the first group of
+  // the newly chosen level (or waits, if that level has none yet).
   React.useEffect(() => {
-    if (!groupId && groups.length > 0) {
+    if (groups.length === 0) {
+      if (groupId) setGroupId("");
+      return;
+    }
+    if (!groupId || !groups.some((g) => g.id === groupId)) {
       setGroupId(groups[0].id);
     }
   }, [groups, groupId]);
@@ -1183,6 +1240,10 @@ function AttendanceView() {
         icon={CalendarDays}
       />
 
+      {/* Phase L manual-QA fix #4 — level separator for the groups/students
+          surface (rendered only when this teacher really owns both levels). */}
+      <OptionalAcademicLevelFilter scope={dashQuery.data?.scope} value={level} onChange={setLevel} />
+
       {/* Selectors */}
       <Card className="p-4 sm:p-5">
         <div className="grid sm:grid-cols-2 gap-4">
@@ -1195,7 +1256,9 @@ function AttendanceView() {
               <SelectContent>
                 {groups.map((g) => (
                   <SelectItem key={g.id} value={g.id}>
-                    {g.name}
+                    {/* Level first: a teacher may own groups in both levels,
+                        and both official courses share one display name. */}
+                    {academicLevelLabel(tr, g.course?.academicLevel)} · {g.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -1648,26 +1711,28 @@ function QuizzesView() {
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = React.useState(false);
   const [filterGroupId, setFilterGroupId] = React.useState<string>("");
+  // Phase L manual-QA fix #4 — level separator for the quiz list. Passed to the
+  // API, so the list is narrowed IN THE QUERY (and `scope` tells us whether the
+  // teacher's own groups span both levels at all).
+  const [level, setLevel] = React.useState("");
 
   const dashQuery = useQuery<DashboardPayload>({
-    queryKey: ["teacher-dashboard"],
+    queryKey: ["teacher-dashboard", level || "ALL"],
     queryFn: async () => {
-      const r = await fetch("/api/teacher/dashboard");
+      const r = await fetch(`/api/teacher/dashboard${levelQuery(level)}`);
       if (!r.ok) throw new Error("fail");
       return (await r.json()) as DashboardPayload;
     },
   });
   const groups = dashQuery.data?.groups ?? [];
 
-  const quizzesQuery = useQuery<{ quizzes: QuizListItem[] }>({
-    queryKey: ["teacher-quizzes", filterGroupId],
+  const quizzesQuery = useQuery<{ quizzes: QuizListItem[]; scope?: LevelScopeInfo }>({
+    queryKey: ["teacher-quizzes", filterGroupId, level || "ALL"],
     queryFn: async () => {
-      const q = filterGroupId
-        ? `?groupId=${encodeURIComponent(filterGroupId)}`
-        : "";
-      const r = await fetch(`/api/teacher/quizzes${q}`);
+      const q = filterGroupId ? `?groupId=${encodeURIComponent(filterGroupId)}` : "";
+      const r = await fetch(withLevelQuery(`/api/teacher/quizzes${q}`, level));
       if (!r.ok) throw new Error("fail");
-      return (await r.json()) as { quizzes: QuizListItem[] };
+      return (await r.json()) as { quizzes: QuizListItem[]; scope?: LevelScopeInfo };
     },
   });
 
@@ -1740,8 +1805,18 @@ function QuizzesView() {
         }
       />
 
-      {/* Filter */}
+      {/* Filters — the LEVEL separator (only when this teacher owns both
+          levels) narrows the list in the server query; the group filter then
+          narrows further inside the chosen level. */}
       <div className="flex items-center gap-2 flex-wrap">
+        <OptionalAcademicLevelFilter
+          scope={quizzesQuery.data?.scope ?? dashQuery.data?.scope}
+          value={level}
+          onChange={(v) => {
+            setLevel(v);
+            setFilterGroupId("");
+          }}
+        />
         <span className="text-xs text-muted-foreground">{tr("teacher.060")}</span>
         <Select
           value={filterGroupId || "__all__"}
@@ -1754,7 +1829,7 @@ function QuizzesView() {
             <SelectItem value="__all__">{tr("teacher.061")}</SelectItem>
             {groups.map((g) => (
               <SelectItem key={g.id} value={g.id}>
-                {g.name}
+                {academicLevelLabel(tr, g.course?.academicLevel)} · {g.name}
               </SelectItem>
             ))}
           </SelectContent>
@@ -1810,6 +1885,7 @@ function QuizzesView() {
           <QuizEditor
             lessons={lessonsQuery.data?.lessons ?? []}
             lessonsLoading={lessonsQuery.isLoading}
+            levelScope={quizzesQuery.data?.scope ?? dashQuery.data?.scope}
             onSubmit={(payload) => createMutation.mutate(payload)}
             submitting={createMutation.isPending}
           />
@@ -1958,9 +2034,13 @@ function QuizEditor({
   lessonsLoading,
   onSubmit,
   submitting,
+  levelScope,
 }: {
   lessons: TeacherLesson[];
   lessonsLoading: boolean;
+  /** Phase L fix #4 — threaded from the list payload so the picker offers the
+      level separator only when this teacher really owns both levels. */
+  levelScope?: LevelScopeInfo | null;
   onSubmit: (payload: {
     lessonId: string;
     title: string;
@@ -2098,6 +2178,7 @@ function QuizEditor({
           loading={lessonsLoading}
           value={lessonId}
           onChange={setLessonId}
+          levelScope={levelScope}
         />
         {/* Placement of the chosen lesson (officialCode / part / unit / track /
             lifecycle) so the teacher sees WHICH curriculum node they are
@@ -2504,6 +2585,9 @@ function HomeworkView() {
   const tr = useT();
   const queryClient = useQueryClient();
   const [filterGroupId, setFilterGroupId] = React.useState<string>("");
+  // Phase L manual-QA fix #4 — level separator for the homework list, enforced
+  // in the server query exactly like the quiz list above.
+  const [level, setLevel] = React.useState("");
   const [gradingFor, setGradingFor] = React.useState<{
     homeworkId: string;
     homeworkTitle: string;
@@ -2520,24 +2604,22 @@ function HomeworkView() {
   const lessonsQuery = useTeacherLessons();
 
   const dashQuery = useQuery<DashboardPayload>({
-    queryKey: ["teacher-dashboard"],
+    queryKey: ["teacher-dashboard", level || "ALL"],
     queryFn: async () => {
-      const r = await fetch("/api/teacher/dashboard");
+      const r = await fetch(`/api/teacher/dashboard${levelQuery(level)}`);
       if (!r.ok) throw new Error("fail");
       return (await r.json()) as DashboardPayload;
     },
   });
   const groups = dashQuery.data?.groups ?? [];
 
-  const homeworkQuery = useQuery<{ homework: HomeworkListItem[] }>({
-    queryKey: ["teacher-homework", filterGroupId],
+  const homeworkQuery = useQuery<{ homework: HomeworkListItem[]; scope?: LevelScopeInfo }>({
+    queryKey: ["teacher-homework", filterGroupId, level || "ALL"],
     queryFn: async () => {
-      const q = filterGroupId
-        ? `?groupId=${encodeURIComponent(filterGroupId)}`
-        : "";
-      const r = await fetch(`/api/teacher/homework${q}`);
+      const q = filterGroupId ? `?groupId=${encodeURIComponent(filterGroupId)}` : "";
+      const r = await fetch(withLevelQuery(`/api/teacher/homework${q}`, level));
       if (!r.ok) throw new Error("fail");
-      return (await r.json()) as { homework: HomeworkListItem[] };
+      return (await r.json()) as { homework: HomeworkListItem[]; scope?: LevelScopeInfo };
     },
   });
 
@@ -2616,6 +2698,7 @@ function HomeworkView() {
         onOpenChange={(o) => !o && setAuthoring(null)}
         lessons={lessonsQuery.data?.lessons ?? []}
         lessonsLoading={lessonsQuery.isLoading}
+        levelScope={homeworkQuery.data?.scope ?? dashQuery.data?.scope}
         homework={
           authoring?.homework
             ? {
@@ -2635,8 +2718,18 @@ function HomeworkView() {
         }
       />
 
-      {/* Filter */}
+      {/* Filters — the LEVEL separator (only when this teacher owns both
+          levels) narrows the list in the server query; the group filter then
+          narrows further inside the chosen level. */}
       <div className="flex items-center gap-2 flex-wrap">
+        <OptionalAcademicLevelFilter
+          scope={homeworkQuery.data?.scope ?? dashQuery.data?.scope}
+          value={level}
+          onChange={(v) => {
+            setLevel(v);
+            setFilterGroupId("");
+          }}
+        />
         <span className="text-xs text-muted-foreground">{tr("teacher.060")}</span>
         <Select
           value={filterGroupId || "__all__"}
@@ -2649,7 +2742,7 @@ function HomeworkView() {
             <SelectItem value="__all__">{tr("teacher.061")}</SelectItem>
             {groups.map((g) => (
               <SelectItem key={g.id} value={g.id}>
-                {g.name}
+                {academicLevelLabel(tr, g.course?.academicLevel)} · {g.name}
               </SelectItem>
             ))}
           </SelectContent>
@@ -3378,19 +3471,32 @@ function AnalyticsView() {
   const tr = useT();
   const [data, setData] = React.useState<any>(null);
   const [loading, setLoading] = React.useState(true);
+  // Phase L manual-QA fix #4 — the analytics headline numbers and per-group
+  // rows follow ONE level at a time; the narrowing is a server-side `where` on
+  // the teacher's own groups, so no number is computed from another level.
+  const [level, setLevel] = React.useState("");
 
   React.useEffect(() => {
     setLoading(true);
-    fetch("/api/teacher/analytics")
+    fetch(`/api/teacher/analytics${levelQuery(level)}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => setData(d))
       .catch(() => toast.error(tr("teacher.169")))
       .finally(() => setLoading(false));
-  }, []);
+  }, [level, tr]);
+
+  const levelFilter = (
+    <OptionalAcademicLevelFilter
+      scope={data?.scope}
+      value={level}
+      onChange={setLevel}
+    />
+  );
 
   if (loading) {
     return (
       <div className="space-y-4">
+        {levelFilter}
         <Skeleton className="h-8 w-48" />
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[1, 2, 3, 4].map((i) => (
@@ -3416,6 +3522,10 @@ function AnalyticsView() {
         <p className="text-xs text-muted-foreground mt-1">
           {tr("teacher.170")}</p>
       </div>
+
+      {/* Phase L manual-QA fix #4 — level separator (rendered only when this
+          teacher owns groups in both levels). */}
+      {levelFilter}
 
       {/* Overview stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -3457,9 +3567,12 @@ function AnalyticsView() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle className="text-base">{g.groupName}</CardTitle>
+                  <CardTitle className="text-base flex items-center gap-2 flex-wrap">
+                    {g.groupName}
+                    <AcademicLevelBadge level={g.academicLevel} />
+                  </CardTitle>
                   <CardDescription className="text-xs">
-                    {g.courseName} · {g.totalStudents} {tr("teacher.171")}</CardDescription>
+                    {academicLevelLabel(tr, g.academicLevel)} · {g.courseName} · {g.totalStudents} {tr("teacher.171")}</CardDescription>
                 </div>
                 <Badge variant="outline" className="bg-primary/5">
                   {g.totalStudents} students

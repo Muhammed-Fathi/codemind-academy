@@ -2398,6 +2398,17 @@ export const DICT_2026: Record<string, DictEntry> = {
   "live.unifiedNotice": { ar: "نفس مصدر الحصص لكل الأدوار: جدولة واحدة وتذكيرات واحدة.", en: "One schedule source for every role." },
   // ---- teacher workspace ----
   "teacher.live.title": { ar: "الحصص المباشرة والحضور", en: "Live sessions & attendance" },
+  // ---- Phase L final polish: the two-column live workspace ----------------
+  // The detail column is the PRIMARY one; the session list is the SECONDARY
+  // one. Every label below is presentation only — no lifecycle meaning.
+  "teacher.live.list": { ar: "الحصص", en: "Sessions" },
+  "teacher.live.details": { ar: "تفاصيل الحصة", en: "Session details" },
+  "teacher.live.level": { ar: "الصف الدراسي", en: "Academic level" },
+  "teacher.live.date": { ar: "التاريخ", en: "Date" },
+  "teacher.live.time": { ar: "الوقت", en: "Time" },
+  "teacher.live.summary": { ar: "ملخص الحضور", en: "Attendance summary" },
+  "teacher.live.actions": { ar: "إجراءات الحصة", en: "Session actions" },
+  "teacher.live.moreActions": { ar: "خيارات أخرى", en: "More options" },
   "teacher.live.subtitle": { ar: "جدولة الحصص، تسجيل الحضور، وتأكيده.", en: "Schedule sessions, take attendance, finalize it." },
   "teacher.live.new": { ar: "حصة جديدة", en: "New session" },
   "teacher.live.schedule": { ar: "جدولة حصة", en: "Schedule a session" },
@@ -2851,5 +2862,55 @@ export const DICT_2026: Record<string, DictEntry> = {
   "auth.233": {
     ar: "تعذّر تحميل خيارات التسجيل — حاول تاني",
     en: "Could not load registration options — try again",
+  },
+
+  // -------------------------------------------------------------------------
+  // Phase L manual-QA fix — multi-level UX completeness + safe admin delete.
+  // Keys are chosen ABOVE every existing number in their family, and each is
+  // defined exactly once (the runtime merge is {...DICT, ...DICT_2026}, so a
+  // re-used key here would silently shadow the earlier one).
+  // -------------------------------------------------------------------------
+  "admin.655": { ar: "حذف الطالب", en: "Delete student" },
+  "admin.656": {
+    ar: "لا يمكن التراجع عن حذف حساب الطالب نهائيًا. سيتم حذف: بيانات الدخول، وسجل الحضور، والدرجات، والواجبات، والتقدّم، والملاحظات، وروابط ولي الأمر، والاشتراك.",
+    en: "Deleting a student account cannot be undone. Removed: login, attendance, quiz results, homework, progress, notes, parent links and the subscription.",
+  },
+  "admin.657": { ar: "اتحذف الطالب نهائيًا", en: "Student deleted permanently" },
+  "admin.660": { ar: "سجل مالي (مدفوعات/كوبونات)", en: "Financial records (payments / coupons)" },
+  "admin.661": { ar: "اشتراك أو تسجيل", en: "Subscription or enrollment" },
+  "admin.662": { ar: "حضور وغياب", en: "Attendance and absence" },
+  "admin.663": { ar: "اختبارات وواجبات وامتحانات", en: "Quizzes, homework and mock exams" },
+  "admin.664": { ar: "تقدّم دراسي ومشاهدة فيديو", en: "Lesson progress and video views" },
+  "admin.665": { ar: "ملاحظات ومهام دراسية", en: "Notes and study tasks" },
+  "admin.666": { ar: "شارات وإحالات", en: "Badges and referrals" },
+  "admin.667": { ar: "إشعارات وسجل تدقيق", en: "Notifications and audit history" },
+  // The one admin-facing rule for a refused hard delete. It is intentionally
+  // generic ("academic OR financial") because the breakdown underneath names
+  // exactly which classes exist.
+  "api.382": {
+    ar: "لا يمكن حذف الطالب لوجود سجل أكاديمي أو مالي مرتبط به ({p1} سجل). الحذف النهائي مسموح فقط لحساب نظيف تمامًا — استخدم إيقاف الحساب بدل الحذف.",
+    en: "This student cannot be deleted because academic or financial history is linked to the account ({p1} records). Permanent deletion is allowed only for a completely clean account — deactivate the account instead.",
+  },
+  "api.383": {
+    ar: "السجلات المرتبطة:",
+    en: "Linked records:",
+  },
+  "api.379": {
+    ar: "لا يمكن حذف الطالب: له سجل مالي ({p1} دفعة، {p2} كوبون). السجل المالي بيتحفظ دايمًا — أوقف الحساب بدل الحذف.",
+    en: "Cannot delete this student: they have financial records ({p1} payments, {p2} coupon redemptions). Financial history is always preserved — deactivate the account instead.",
+  },
+  "api.380": {
+    ar: "فشل حذف الطالب — ما تمش حذف أي حاجة. حاول تاني.",
+    en: "Student deletion failed — nothing was removed. Please try again.",
+  },
+  "api.381": {
+    ar: "لا يمكن حذف المجموعة: عليها {p1} حالة غياب مسجّلة. أوقف المجموعة بدل الحذف للحفاظ على السجل.",
+    en: "Cannot delete this group: it has {p1} recorded absence case(s). Deactivate it instead to preserve the history.",
+  },
+  // The control's own heading reuses `admin.642` («الصف الدراسي»); this is the
+  // teacher-side explanation of WHY the levels must be told apart.
+  "teacher.312": {
+    ar: "مدرّس واحد ممكن يكون له مجموعات في الصفين، والمنهجين الرسميين ليهم نفس الاسم — فلازم تعرف كل درس بانتمائه لصفه.",
+    en: "One teacher can own groups in both levels, and both official courses share one name — so every lesson is labelled with its level.",
   },
 };

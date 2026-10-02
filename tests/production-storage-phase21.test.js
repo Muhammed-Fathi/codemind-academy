@@ -631,8 +631,15 @@ console.log("HARNESS_JSON " + JSON.stringify(results));
     ok(backupIdx !== -1 && txIdx !== -1 && backupIdx < txIdx, "backup occurs BEFORE first mutation (transaction)");
 
     // 9. Final verification checks role counts, identity, curriculum, official-code uniqueness, content preservation, FK integrity, backup state
-    ok(/Verification/.test(setup) && /identity\/state mismatch/.test(setup) && /isActive/.test(setup) && /OFFICIAL_COURSE_SLUG/.test(setup) && /EXPECTED_OFFICIAL_COUNTS/.test(setup) && /OFFICIAL_LESSON_CODES/.test(setup),
-      "final verification checks role counts, identity, curriculum (OFFICIAL_COURSE_SLUG, EXPECTED_COUNTS, OFFICIAL_CODES)");
+    //
+    // Phase L (deliberate update): the curriculum verification is PER LEVEL
+    // now. `EXPECTED_OFFICIAL_COUNTS` / `OFFICIAL_LESSON_CODES` describe only
+    // Second Secondary; with a second official curriculum (First Secondary,
+    // 1/13/62) sharing 18 codes with it, a single-level check is insufficient
+    // — the setup script iterates `LEVEL_CURRICULUM_SPECS` and compares each
+    // level against ITS OWN `spec.expectedCounts` / `spec.expectedCodes`.
+    ok(/Verification/.test(setup) && /identity\/state mismatch/.test(setup) && /isActive/.test(setup) && /OFFICIAL_COURSE_SLUG/.test(setup) && /LEVEL_CURRICULUM_SPECS/.test(setup) && /spec\.expectedCounts\.parts/.test(setup) && /spec\.expectedCounts\.units/.test(setup) && /spec\.expectedCounts\.lessons/.test(setup) && /spec\.expectedCodes\.filter/.test(setup),
+      "final verification checks role counts, identity, curriculum PER LEVEL (registry specs: expected counts + expected codes)");
     ok(/groupBy/.test(setup) && /officialCode/.test(setup) && /duplicate/.test(setup) && /missing.*official.*codes/i.test(setup) && /contentSnapshot/.test(setup) && /contentBefore/.test(setup) && /contentAfter/.test(setup) && /SHRANK/.test(setup) && /foreign_key_check/.test(setup) && /Backup preserved at/.test(setup),
       "final verification checks official-code uniqueness, content preservation (no shrink), FK integrity, backup state");
 

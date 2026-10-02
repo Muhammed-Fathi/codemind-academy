@@ -50,6 +50,15 @@ export type SessionLinkActionsProps = {
   size?: "default" | "sm" | "compact";
   className?: string;
   onNavigated?: () => void;
+  /**
+   * Styling of the JOIN button when the caller has decided this control is the
+   * ONE emphasised action of its screen (the caller reaches that decision from
+   * the server's own `joinAllowed`/status flags). Defaults to the platform's
+   * primary button, so every existing caller is unchanged.
+   */
+  joinVariant?: "default" | "outline" | "secondary";
+  /** Optional stable hook for QA — presentation only, never behaviour. */
+  testId?: string;
 };
 
 function fmt(value?: string | null): string {
@@ -71,6 +80,8 @@ export function SessionLinkActions({
   size = "default",
   className,
   onNavigated,
+  joinVariant = "default",
+  testId,
 }: SessionLinkActionsProps) {
   const t = useT();
   const [busy, setBusy] = React.useState(false);
@@ -177,8 +188,10 @@ export function SessionLinkActions({
     <div className={`flex items-center gap-2 flex-wrap ${className ?? ""}`}>
       <Button
         size={small ? "sm" : "default"}
+        variant={joinVariant}
         className={compact ? "h-7 px-2 text-xs" : undefined}
         onClick={open}
+        data-testid={testId ? `${testId}-join` : undefined}
         disabled={busy || disabled}
         aria-disabled={busy || disabled}
         title={disabled ? denialLabel() : undefined}
@@ -191,7 +204,13 @@ export function SessionLinkActions({
         {compact ? t("live.join.now") : joinLabel}
       </Button>
       {!compact && (
-        <Button size={small ? "sm" : "default"} variant="outline" onClick={copy} disabled={busy || disabled}>
+        <Button
+          size={small ? "sm" : "default"}
+          variant="outline"
+          onClick={copy}
+          disabled={busy || disabled}
+          data-testid={testId ? `${testId}-copy` : undefined}
+        >
           <Copy className="w-4 h-4 ms-1.5" />
           {t("live.join.copy")}
         </Button>

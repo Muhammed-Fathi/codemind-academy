@@ -12,6 +12,10 @@ import { NextRequest } from "next/server";
 import { ok, err, requireUser, getTeacherProfile } from "@/lib/api";
 import { getServerT } from "@/lib/i18n-server";
 import { listTeacherSessions } from "@/lib/teacher-sessions";
+import {
+  academicLevelParamOf,
+  academicLevelScope,
+} from "@/lib/teacher-academic-level";
 
 export async function GET(req: NextRequest) {
   const tApi = await getServerT();
@@ -21,9 +25,18 @@ export async function GET(req: NextRequest) {
   const teacher = await getTeacherProfile(user.id);
   if (!teacher) return err(tApi("api.180"), 403);
   const url = new URL(req.url);
+  // Phase L manual-QA fix #4 — OPTIONAL academic-level separator, applied to
+  // the teacher's OWN course set inside the shared list builder (one
+  // implementation, same dual-curriculum chains). Unknown value → 400, never a
+  // silent widening.
+  const levelParam = academicLevelParamOf(req);
+  if (!levelParam.ok) return err("Unknown academic level", 400);
   const sessions = await listTeacherSessions({
     teacher,
     filterCourseId: url.searchParams.get("courseId"),
+    filterAcademicLevel: levelParam.level,
   });
-  return ok({ sessions });
+  // Presentation metadata: the teacher's FULL level scope (never filtered),
+  // so the client knows whether a level separator is even meaningful here.
+  return ok({ sessions, scope: academicLevelScope(teacher.groups) });
 }

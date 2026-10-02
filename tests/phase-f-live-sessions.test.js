@@ -206,7 +206,12 @@ section("A. Scheduling authority and validation (1–7)");
   ok(
     src.includes("export async function loadTeacherScope") &&
       src.includes("teacher.findUnique") &&
-      src.includes("groups: { select: { id: true, name: true, courseId: true } }"),
+      // The scope must still select the teacher's OWN groups with these three
+      // fields, in this order. Phase L manual-QA fix added ONE display-only
+      // field (`course.academicLevel`) so the scheduling form can label two
+      // identically-named groups of different academic levels — the group set
+      // itself is still resolved from `Teacher.groups`, never from a request.
+      /groups:\s*\{\s*select:\s*\{\s*id: true,\s*name: true,\s*courseId: true/.test(src),
     "1. teacher scope is loaded from Teacher.groups (server-side)"
   );
   ok(

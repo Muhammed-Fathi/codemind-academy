@@ -69,7 +69,7 @@ section("2. Security Audit Gate Status");
 section("3. Curriculum Provisioning (2 Parts, 7 Units, 23 Lessons 1-1…7-3)");
 // ---------------------------------------------------------------------------
 {
-  const model = JSON.parse(read("docs/curriculum/knowledge-model.json"));
+  const model = JSON.parse(read("docs/curriculum/second-secondary/knowledge-model.json"));
   ok(model.parts.length === 2, "Model has 2 Parts");
   const units = model.parts.flatMap(p=>p.units);
   ok(units.length === 7, "Model has 7 Units");

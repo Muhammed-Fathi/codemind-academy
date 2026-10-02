@@ -1,10 +1,9 @@
 import { PrismaClient, Role } from "@prisma/client";
 import { hashPassword } from "../src/lib/auth";
-import { reconcileOfficialCurriculum } from "../src/lib/official-curriculum";
 import {
+  LEVEL_CURRICULUM_SPECS,
   OFFICIAL_COURSE_SLUG,
-  EXPECTED_OFFICIAL_COUNTS,
-  OFFICIAL_LESSON_CODES,
+  reconcileAllOfficialCurricula,
 } from "../src/lib/official-curriculum";
 import { DatabaseSync } from "node:sqlite";
 import readline from "node:readline";
@@ -27,9 +26,11 @@ import { fileURLToPath } from "node:url";
 //      (SQLite: read-only `VACUUM INTO`; PostgreSQL: the repo's pg backup
 //      script). It never overwrites an existing backup.
 //   3. Reconciles the official curriculum using the CANONICAL repository
-//      implementation (`reconcileOfficialCurriculum`) — create-mostly and
+//      implementation (`reconcileOfficialCurriculum`, fanned out over the
+//      LevelCurriculumSpec registry) — create-mostly and
 //      idempotent. Existing curriculum is PRESERVED; missing pieces are
-//      reconciled from `docs/curriculum/knowledge-model.json`.
+//      reconciled from the per-level curriculum models under
+//      `docs/curriculum/<level>/knowledge-model.json`.
 //   4. Selectively removes ONLY non-allowlisted (demo/test) users and their
 //      own dependent data, in a dependency-safe order. It NEVER deletes
 //      curriculum, media, assessments, plans, settings, groups, batches, or
@@ -453,27 +454,36 @@ async function main() {
     }
   }
 
-  console.log("\nCurriculum (canonical reconciliation source: knowledge-model.json):");
-  const course = await prisma.course.findUnique({
-    where: { slug: OFFICIAL_COURSE_SLUG },
-    select: { id: true },
-  });
-  const curParts = course
-    ? await prisma.part.count({ where: { courseId: course.id } })
-    : 0;
-  const curUnits = course
-    ? await prisma.unit.count({ where: { part: { courseId: course.id } } })
-    : 0;
-  // Phase K3: official codes are unique per level, so the Second Secondary
-  // catalog counts are scoped to SECOND_SECONDARY rows only.
-  const curOfficialLessons = await prisma.lesson.count({
-    where: { academicLevel: "SECOND_SECONDARY", officialCode: { not: null }, curriculumStatus: "OFFICIAL" },
-  });
-  console.log(
-    `  Course=${course ? "present" : "MISSING"} Parts=${curParts}/${EXPECTED_OFFICIAL_COUNTS.parts} ` +
-      `Units=${curUnits}/${EXPECTED_OFFICIAL_COUNTS.units} ` +
-      `OfficialLessons=${curOfficialLessons}/${EXPECTED_OFFICIAL_COUNTS.lessons}`
-  );
+  // Phase L — one line PER REGISTERED LEVEL. The platform now carries two
+  // official curricula that legitimately share 18 codes, so every count is
+  // scoped to its own course slug + its own level and compared against that
+  // level's own expected counts. A global count would be meaningless.
+  console.log("\nCurriculum (canonical sources: docs/curriculum/<level>/knowledge-model.json):");
+  for (const spec of LEVEL_CURRICULUM_SPECS) {
+    const courseRow = await prisma.course.findUnique({
+      where: { slug: spec.courseSlug },
+      select: { id: true },
+    });
+    const curParts = courseRow
+      ? await prisma.part.count({ where: { courseId: courseRow.id } })
+      : 0;
+    const curUnits = courseRow
+      ? await prisma.unit.count({ where: { part: { courseId: courseRow.id } } })
+      : 0;
+    const curOfficialLessons = await prisma.lesson.count({
+      where: {
+        academicLevel: spec.academicLevel,
+        officialCode: { not: null },
+        curriculumStatus: "OFFICIAL",
+      },
+    });
+    console.log(
+      `  [${spec.academicLevel}] Course=${courseRow ? "present" : "MISSING"} ` +
+        `Parts=${curParts}/${spec.expectedCounts.parts} ` +
+        `Units=${curUnits}/${spec.expectedCounts.units} ` +
+        `OfficialLessons=${curOfficialLessons}/${spec.expectedCounts.lessons}`
+    );
+  }
 
   console.log("\nUser plan:");
   console.log(`  KEEP (allowlisted, ${keep.length}): ${keep.map((u) => u.email).join(", ") || "none"}`);
@@ -551,13 +561,16 @@ async function main() {
   await prisma.$transaction(
     async (tx) => {
     // 1. Curriculum: canonical, idempotent reconciliation (create-mostly).
-    const report = await reconcileOfficialCurriculum(tx as any);
-    console.log(
-      `  ✓ Curriculum reconciled: parts +${report.partsCreated}, units +${report.unitsCreated}, ` +
-        `lessons +${report.lessonsCreated} (updated ${report.lessonsUpdated}); ` +
-        `official codes=${report.officialLessonCodes.length}`
-    );
-    for (const w of report.warnings) console.log(`    ! ${w}`);
+    //    Phase L: one fully-scoped run per registered academic level.
+    const summary = await reconcileAllOfficialCurricula(tx as any);
+    for (const r of summary.levels) {
+      console.log(
+        `  ✓ Curriculum reconciled [${r.academicLevel}]: parts +${r.partsCreated}, ` +
+          `units +${r.unitsCreated}, lessons +${r.lessonsCreated} ` +
+          `(updated ${r.lessonsUpdated}); official codes=${r.officialLessonCodes.length}`
+      );
+    }
+    for (const w of summary.warnings) console.log(`    ! ${w}`);
 
     // 2. Selective, dependency-safe removal of non-allowlisted users.
     for (const u of remove) await removeUser(tx, u.id);
@@ -662,45 +675,58 @@ async function main() {
     }
   }
 
-  // Curriculum.
-  const courseAfter = await prisma.course.findUnique({
-    where: { slug: OFFICIAL_COURSE_SLUG },
-    select: { id: true },
-  });
-  const partsAfter = courseAfter ? await prisma.part.count({ where: { courseId: courseAfter.id } }) : 0;
-  const unitsAfter = courseAfter
-    ? await prisma.unit.count({ where: { part: { courseId: courseAfter.id } } })
-    : 0;
-  const officialAfter = await prisma.lesson.count({
-    where: { academicLevel: "SECOND_SECONDARY", officialCode: { not: null }, curriculumStatus: "OFFICIAL" },
-  });
+  // Curriculum — verified PER LEVEL (Phase L). Same reasoning as the
+  // pre-flight: two curricula, 18 shared codes, so counts, duplicate codes and
+  // missing codes are all checked inside their own level and against their own
+  // expected contract — never globally, and never by code alone.
   console.log("\nCurriculum:");
-  console.log(`  Course  : ${courseAfter ? "present" : "MISSING"}`);
-  console.log(`  Parts   : ${partsAfter} (expect ${EXPECTED_OFFICIAL_COUNTS.parts})`);
-  console.log(`  Units   : ${unitsAfter} (expect ${EXPECTED_OFFICIAL_COUNTS.units})`);
-  console.log(`  Official lessons: ${officialAfter} (expect ${EXPECTED_OFFICIAL_COUNTS.lessons})`);
-  if (!courseAfter) problems.push("official Course missing");
-  if (partsAfter !== EXPECTED_OFFICIAL_COUNTS.parts) problems.push(`Parts=${partsAfter}`);
-  if (unitsAfter !== EXPECTED_OFFICIAL_COUNTS.units) problems.push(`Units=${unitsAfter}`);
-  if (officialAfter !== EXPECTED_OFFICIAL_COUNTS.lessons) problems.push(`OfficialLessons=${officialAfter}`);
+  for (const spec of LEVEL_CURRICULUM_SPECS) {
+    const courseRow = await prisma.course.findUnique({
+      where: { slug: spec.courseSlug },
+      select: { id: true },
+    });
+    const parts = courseRow ? await prisma.part.count({ where: { courseId: courseRow.id } }) : 0;
+    const units = courseRow
+      ? await prisma.unit.count({ where: { part: { courseId: courseRow.id } } })
+      : 0;
+    const official = await prisma.lesson.count({
+      where: {
+        academicLevel: spec.academicLevel,
+        officialCode: { not: null },
+        curriculumStatus: "OFFICIAL",
+      },
+    });
+    // Phase K3: the DB unique is (academicLevel, officialCode), so the SAME
+    // code at another level is a different, legitimate row — excluded here.
+    const grouped = await prisma.lesson.groupBy({
+      by: ["officialCode"],
+      where: { academicLevel: spec.academicLevel, officialCode: { not: null } },
+      _count: { officialCode: true },
+    });
+    const dupes = grouped.filter((g) => (g._count.officialCode ?? 0) > 1);
+    const presentCodes = new Set(grouped.map((g) => g.officialCode));
+    const missingCodes = spec.expectedCodes.filter((c) => !presentCodes.has(c));
 
-  // Unique official codes WITHIN the Second Secondary level (no duplicates),
-  // and all expected codes present. Phase K3: the DB unique is
-  // (academicLevel, officialCode), so another level legitimately holding the
-  // same code is not a duplicate and is excluded here.
-  const grouped = await prisma.lesson.groupBy({
-    by: ["officialCode"],
-    where: { academicLevel: "SECOND_SECONDARY", officialCode: { not: null } },
-    _count: { officialCode: true },
-  });
-  const dupes = grouped.filter((g) => (g._count.officialCode ?? 0) > 1);
-  if (dupes.length) problems.push(`duplicate official codes: ${dupes.map((d) => d.officialCode).join(", ")}`);
-  const presentCodes = new Set(grouped.map((g) => g.officialCode));
-  const missingCodes = OFFICIAL_LESSON_CODES.filter((c) => !presentCodes.has(c));
-  if (missingCodes.length) problems.push(`missing official codes: ${missingCodes.join(", ")}`);
-  console.log(
-    `  Official codes: ${presentCodes.size} distinct, duplicates=${dupes.length}, missing=${missingCodes.length}`
-  );
+    console.log(`  [${spec.academicLevel}] ${spec.courseSlug}`);
+    console.log(`    Course  : ${courseRow ? "present" : "MISSING"}`);
+    console.log(`    Parts   : ${parts} (expect ${spec.expectedCounts.parts})`);
+    console.log(`    Units   : ${units} (expect ${spec.expectedCounts.units})`);
+    console.log(`    Official lessons: ${official} (expect ${spec.expectedCounts.lessons})`);
+    console.log(
+      `    Official codes: ${presentCodes.size} distinct, duplicates=${dupes.length}, missing=${missingCodes.length}`
+    );
+    if (!courseRow) problems.push(`${spec.academicLevel}: official Course missing`);
+    if (parts !== spec.expectedCounts.parts) problems.push(`${spec.academicLevel}: Parts=${parts}`);
+    if (units !== spec.expectedCounts.units) problems.push(`${spec.academicLevel}: Units=${units}`);
+    if (official !== spec.expectedCounts.lessons)
+      problems.push(`${spec.academicLevel}: OfficialLessons=${official}`);
+    if (dupes.length)
+      problems.push(
+        `${spec.academicLevel}: duplicate official codes: ${dupes.map((d) => d.officialCode).join(", ")}`
+      );
+    if (missingCodes.length)
+      problems.push(`${spec.academicLevel}: missing official codes: ${missingCodes.join(", ")}`);
+  }
 
   // Content preservation: nothing critical shrank.
   const contentAfter = await contentSnapshot();

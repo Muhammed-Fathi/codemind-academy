@@ -125,8 +125,12 @@ export type TeacherScope = {
   userId: string;
   groupIds: string[];
   courseIds: string[];
-  /** The same groups with the labels the UI needs (never client-supplied). */
-  groups: Array<{ id: string; name: string; courseId: string }>;
+  /** The same groups with the labels the UI needs (never client-supplied).
+      Phase L manual-QA fix — `academicLevel` is DERIVED from the group's own
+      Course relation (Group carries no level of its own), so a teacher with
+      groups in BOTH levels can tell two identically-named groups apart in the
+      scheduling form. Display context only: nothing is ever written from it. */
+  groups: Array<{ id: string; name: string; courseId: string; academicLevel: string | null }>;
 };
 
 /**
@@ -140,9 +144,23 @@ export async function loadTeacherScope(
 ): Promise<TeacherScope | null> {
   const teacher = (await (client as any).teacher.findUnique({
     where: { userId },
-    include: { groups: { select: { id: true, name: true, courseId: true } } },
+    // Phase L manual-QA fix — the group's course is read for its canonical
+    // level (display context in the group selector), never for authority.
+    include: {
+      groups: {
+        select: { id: true, name: true, courseId: true, course: { select: { academicLevel: true } } },
+      },
+    },
   })) as
-    | { id: string; groups: Array<{ id: string; name: string; courseId: string }> }
+    | {
+        id: string;
+        groups: Array<{
+          id: string;
+          name: string;
+          courseId: string;
+          course?: { academicLevel?: string | null } | null;
+        }>;
+      }
     | null;
   if (!teacher) return null;
   return {
@@ -150,7 +168,12 @@ export async function loadTeacherScope(
     userId,
     groupIds: teacher.groups.map((g) => g.id),
     courseIds: Array.from(new Set(teacher.groups.map((g) => g.courseId))),
-    groups: teacher.groups.map((g) => ({ id: g.id, name: g.name, courseId: g.courseId })),
+    groups: teacher.groups.map((g) => ({
+      id: g.id,
+      name: g.name,
+      courseId: g.courseId,
+      academicLevel: g.course?.academicLevel ?? null,
+    })),
   };
 }
 
@@ -226,7 +249,14 @@ export type LiveSessionPayload = {
   rescheduleCount: number;
   originalStartAt: string | null;
   lastRescheduledAt: string | null;
-  group: { id: string; name: string; courseId: string } | null;
+  /**
+   * Phase L final polish — the group's canonical level travels with the session
+   * so every surface (list rows, detail header, schedule dialog) can show the
+   * academic level without a second query. It is DERIVED from
+   * `Group.course.academicLevel` (Course owns the level); nothing is stored on
+   * the teacher or on the session.
+   */
+  group: { id: string; name: string; courseId: string; academicLevel: string | null } | null;
   lesson: { id: string; title: string; titleAr: string; officialCode?: string | null } | null;
   teacher: { id: string; name: string } | null;
   substituteTeacher: { id: string; name: string } | null;
@@ -288,7 +318,15 @@ export function toLiveSessionPayload(params: {
     originalStartAt: toIso(session.originalStartAt),
     lastRescheduledAt: toIso(session.lastRescheduledAt),
     group: session.group
-      ? { id: session.group.id, name: session.group.name, courseId: session.group.courseId }
+      ? {
+          id: session.group.id,
+          name: session.group.name,
+          courseId: session.group.courseId,
+          // Tolerant by design: the level is display context, never a decision
+          // input, so a caller that selects the group without its course simply
+          // yields `null` instead of failing.
+          academicLevel: session.group.course?.academicLevel ?? null,
+        }
       : null,
     lesson: session.lesson
       ? {
@@ -314,7 +352,17 @@ export function toLiveSessionPayload(params: {
 
 const SESSION_WITH_CONTEXT = {
   ...LIVE_SESSION_SELECT,
-  group: { select: { id: true, name: true, courseId: true } },
+  group: {
+    select: {
+      id: true,
+      name: true,
+      courseId: true,
+      // Derived level (display context only): the two official courses share a
+      // display name, so a surface that lists sessions of both levels needs the
+      // level to tell them apart.
+      course: { select: { academicLevel: true } },
+    },
+  },
   // Finding 2 — `officialCode` is the canonical curriculum identity of the
   // lesson ("1-1"), so every surface can show `1-1 — <title>` instead of a
   // free-text session title.

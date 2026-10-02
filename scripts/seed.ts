@@ -3,7 +3,11 @@
 import { randomBytes } from "crypto";
 import { db } from "../src/lib/db";
 import { hashPassword } from "../src/lib/auth";
-import { reconcileOfficialCurriculum } from "../src/lib/official-curriculum";
+import {
+  LEVEL_CURRICULUM_SPECS,
+  reconcileAllOfficialCurricula,
+  type LevelCurriculumSpec,
+} from "../src/lib/official-curriculum";
 
 // ---------------------------------------------------------------------------
 // Demo-user credentials — SECURITY CONTRACT (Security Audit Gate, pre-P21)
@@ -55,6 +59,41 @@ function resolveSeedPassword(
     return null;
   }
   return { value: generatedPassword(), fromEnv: false };
+}
+
+/**
+ * Phase L — which official curricula this run reconciles.
+ *
+ *   SEED_CURRICULUM_LEVELS unset                  → every registered level
+ *   SEED_CURRICULUM_LEVELS=SECOND_SECONDARY       → only that level
+ *   SEED_CURRICULUM_LEVELS=FIRST_SECONDARY        → only that level
+ *
+ * This is a SCHEMA-era switch, not a test convenience. The per-level composite
+ * unique `@@unique([academicLevel, officialCode])` only exists from migration
+ * `20260923180000_k3_academic_level_constraints` onward; before it, the GLOBAL
+ * `Lesson_officialCode_key` unique is enforced, so the two curricula's shared
+ * codes ("1-1" … "7-3") cannot physically coexist in one database. A harness
+ * that reproduces a pre-K3 database (the K1 migration verification) therefore
+ * has to seed a single curriculum — asking for both there is a constraint
+ * violation, not a preference. An unknown level name fails closed.
+ */
+function seedCurriculumSpecs(): readonly LevelCurriculumSpec[] {
+  const raw = (process.env.SEED_CURRICULUM_LEVELS ?? "").trim();
+  if (!raw) return LEVEL_CURRICULUM_SPECS;
+  const wanted = raw
+    .split(",")
+    .map((v) => v.trim().toUpperCase())
+    .filter(Boolean);
+  const unknown = wanted.filter(
+    (l) => !LEVEL_CURRICULUM_SPECS.some((s) => s.academicLevel === l)
+  );
+  if (unknown.length > 0) {
+    throw new Error(
+      `SEED_CURRICULUM_LEVELS contains unknown level(s): ${unknown.join(", ")}. ` +
+        `Known levels: ${LEVEL_CURRICULUM_SPECS.map((s) => s.academicLevel).join(", ")}`
+    );
+  }
+  return LEVEL_CURRICULUM_SPECS.filter((s) => wanted.includes(s.academicLevel));
 }
 
 async function main() {
@@ -205,14 +244,20 @@ async function main() {
   });
 
   // 4. Official curriculum (Phase 11: reconciled from
-  // docs/curriculum/knowledge-model.json — the legacy synthetic CURRICULUM
+  // docs/curriculum/<level>/knowledge-model.json — the legacy synthetic CURRICULUM
   // seed is retired and must never run again). Idempotent: re-running never
   // duplicates content; legacy rows are archived, never deleted.
-  const reconcileReport = await reconcileOfficialCurriculum(db);
-  console.log(
-    `  ✓ Curriculum reconciled: ${reconcileReport.officialLessonCodes.length} official lessons ` +
-      `(${reconcileReport.archivedLessonIds.length} archived)`
-  );
+  // Phase L: every registered level is reconciled, each against its own
+  // model and its own course slug (the summary aggregates the per-level runs).
+  // See `seedCurriculumSpecs()` for the schema-era scope switch.
+  const reconcileSummary = await reconcileAllOfficialCurricula(db, seedCurriculumSpecs());
+  for (const report of reconcileSummary.levels) {
+    console.log(
+      `  ✓ Curriculum reconciled [${report.academicLevel}/${report.courseSlug}]: ` +
+        `${report.officialLessonCodes.length} official lessons ` +
+        `(${report.archivedLessonIds.length} archived)`
+    );
+  }
 
   // Sample quiz + homework on the FIRST official lesson (code 1-1) of the
   // SECOND SECONDARY curriculum, so the demo student has something to open.

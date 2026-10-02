@@ -1,0 +1,1645 @@
+{
+  "manifestType": "curriculum-extraction-manifest",
+  "manifestVersion": "0.2.0",
+  "supersedes": {
+    "manifestVersion": "0.1.0",
+    "commit": "cf3388e",
+    "reason": "the 0.1.0 manifest was extracted from the English PDF alone, before the Arabic authoritative source existed; its Arabic fields were null by necessity and are NOT authority for this checkpoint"
+  },
+  "phase": "Phase L — First Secondary bilingual extraction checkpoint (sync + extraction + alignment only)",
+  "status": "PROPOSED FOR REVIEW",
+  "implementationStatus": "NOT IMPLEMENTED — no Prisma schema, migration, seed, reconciler, spec, Kodgy, registration, progression, UI or database row accompanies this file",
+  "extractedAt": "2026-09-24",
+  "repositoryBase": {
+    "headSha": "6a90adffd42e42055bdbb0e433607789984d83fd",
+    "expectedBase": "6a90adf",
+    "branch": "arena/01a0d313-codemind-academy"
+  },
+  "academicLevel": "FIRST_SECONDARY",
+  "authoritativeSources": [
+    {
+      "locale": "en",
+      "role": "authoritative for the English wording",
+      "path": "docs/curriculum/first-secondary/official-first-secondary-programming-ai-en.pdf",
+      "sha256": "626605e0719ad894b7f26b99c6200d872e0dc854584a4a76e0af2100d6328713",
+      "pdfPages": 202,
+      "contentsPdfPages": [
+        2,
+        3
+      ],
+      "printedFoliosPresent": [
+        "4-174",
+        "176-202"
+      ],
+      "printedFoliosMissing": [
+        175
+      ],
+      "unnumberedPdfPages": [
+        1,
+        2,
+        3,
+        202
+      ],
+      "pageMappingRule": "for PDF pages 4-174 the printed folio equals the PDF index; for PDF pages 175-201 the printed folio equals PDF index + 1",
+      "pdfMetadata": {
+        "creator": "Icecream PDF Candy Desktop 3.13",
+        "producer": "PDF Xpansion, Version 12.0.3.3",
+        "creationDate": "D:20250922183205+03'00'",
+        "modDate": "D:20260831232940+03'00'"
+      },
+      "titlePage": {
+        "title": "Programming and Artificial Intelligence",
+        "subtitle": "An Introduction to Information and Communication Technology",
+        "edition": "For First Year of Secondary School 2025 – 2026"
+      },
+      "headingConventions": {
+        "chapters1to12": "<code> <title>  e.g. '1-1 Information and Media'",
+        "chapter13": "<title><code>  e.g. 'About Generative AI13-1'"
+      }
+    },
+    {
+      "locale": "ar",
+      "role": "authoritative for the Arabic wording",
+      "path": "docs/curriculum/first-secondary/official-first-secondary-programming-ai-ar.pdf",
+      "sha256": "3d044172375c8d4ac77cf228eb46f8e5e323f0e43ba0aa1993906e8f404b92d0",
+      "pdfPages": 218,
+      "contentsPdfPages": [
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "unitDividerPdfPages": [
+        7,
+        16,
+        29,
+        48,
+        53,
+        61,
+        96,
+        107,
+        124,
+        135,
+        153,
+        167,
+        190
+      ],
+      "pageMappingRule": "the printed folio equals the PDF index for every numbered page of the Arabic edition (no offset, no missing folio)",
+      "printedFoliosPresent": [
+        "8-218"
+      ],
+      "printedFoliosMissing": [
+        7,
+        16,
+        29,
+        48,
+        53,
+        61,
+        96,
+        107,
+        124,
+        135,
+        153,
+        167,
+        190,
+        "these are the 13 unit DIVIDER pages: they carry a decorative band instead of a folio"
+      ],
+      "pdfMetadata": {
+        "creator": "Adobe InDesign 21.1 (Windows)",
+        "producer": "Adobe PDF Library 18.0",
+        "creationDate": "D:20260305020822+02'00'",
+        "modDate": "D:20260308120644+02'00'"
+      },
+      "titlePage": {
+        "title": "البرمجة والذكاء الاصطناعي",
+        "subtitle": "مقدمة في تكنولوجيا المعلومات والاتصالات",
+        "edition": "للصف الأول الثانوي 2026 - 2025"
+      },
+      "headingConvention": "<lessonNumberInUnit>-<unitNumber>  e.g. '1-13' = lesson 1 of unit 13"
+    }
+  ],
+  "extractionMethodology": {
+    "tooling": "pypdf 6.19.0 text-layer extraction of all 420 pages of both PDFs (dump kept outside the repository) + pypdfium2/Pillow renders for visual verification of the Arabic cover, contents, unit dividers and 20 lesson badge headers.",
+    "english": "structure taken from the contents pages (PDF 2-3) AND independently re-derived from every lesson heading in the body; the two sets were compared (identical).",
+    "arabic": "structure taken from the document order: the 13 unit-divider pages define the unit boundaries and the 62 lesson pages (each carrying a 'النقاط الرئيسية' band) define the lessons inside them.",
+    "arabicBadgeReading": "the printed badge is a text run at effective font size 20.0 (the lesson title is 19.0), read per page; where the content stream repeats a run the duplicates are collapsed before parsing.",
+    "alignmentRule": "structural identity only — a lesson is aligned by (chapter/unit number, order inside that chapter/unit). No title-similarity matching was used anywhere.",
+    "noGuessingRule": "no title, translation, code, chapter or lesson was invented, machine-translated or taken from the web or from memory. Every string below is transcribed from the named PDF.",
+    "normalization": "whitespace only (the PDFs separate words with tabs and non-breakable spaces); no wording, casing, punctuation or hyphenation was changed."
+  },
+  "platformMapping": {
+    "status": "proposed per the Phase L brief",
+    "course": 1,
+    "syntheticParts": 1,
+    "units": 13,
+    "lessons": 62,
+    "topics": 0,
+    "rule": "the 13 official chapters become Unit rows in order; the 62 official lessons become Lesson rows in order; NO Topic rows in the First Secondary official chain",
+    "canonicalChain": "Lesson → Unit → Part → Course",
+    "fieldMapping": {
+      "officialCode": "officialCode — PROPOSED: the English '<chapter>-<lesson>' code (e.g. '13-1'), because the platform's existing official codes are chapter-first (Second Secondary) and one code must identify a lesson platform-wide per level. The Arabic '<lesson>-<unit>' badge is preserved separately as arabicPrintedCode.",
+      "titleEn": "title",
+      "titleAr": "titleAr",
+      "order": "order (unit order 1..13 inside the single Part; lesson order restarts at 1 inside each Unit)",
+      "academicLevel": "derived cache of Course.academicLevel (never an independently editable input)"
+    }
+  },
+  "expectedCounts": {
+    "parts": 1,
+    "units": 13,
+    "lessons": 62,
+    "topics": 0
+  },
+  "computedCounts": {
+    "en": {
+      "chapters": 13,
+      "lessons": 62,
+      "lessonsPerChapter": {
+        "1": 2,
+        "2": 3,
+        "3": 5,
+        "4": 1,
+        "5": 3,
+        "6": 10,
+        "7": 3,
+        "8": 5,
+        "9": 3,
+        "10": 6,
+        "11": 4,
+        "12": 5,
+        "13": 12
+      }
+    },
+    "ar": {
+      "units": 13,
+      "lessons": 62,
+      "lessonsPerUnit": {
+        "1": 2,
+        "2": 3,
+        "3": 5,
+        "4": 1,
+        "5": 3,
+        "6": 10,
+        "7": 3,
+        "8": 5,
+        "9": 3,
+        "10": 6,
+        "11": 4,
+        "12": 5,
+        "13": 12
+      }
+    },
+    "alignedLessons": 62,
+    "uniqueOfficialCodesEn": 62,
+    "uniquePrintedCodesAr": 61
+  },
+  "course": {
+    "status": "PROPOSED — platform metadata; the PDFs print the cover titles recorded in authoritativeSources",
+    "slug": "programming-ai-1st-sec",
+    "slugRationale": "mirrors the existing official Second Secondary slug 'programming-ai-2nd-sec'",
+    "academicLevel": "FIRST_SECONDARY",
+    "name": "Programming & AI",
+    "nameRationale": "mirrors the existing Second Secondary course name",
+    "nameAr": "البرمجة والذكاء الاصطناعي",
+    "nameArSource": "the Arabic PDF cover/title page (PDF page 1) — now source-backed, unlike in manifest 0.1.0",
+    "color": "#10b981"
+  },
+  "part": {
+    "id": "first-secondary-part-1",
+    "order": 1,
+    "synthetic": true,
+    "structuralOnly": true,
+    "official": false,
+    "mustNotImpersonateMinistryChapter": true,
+    "titleSelected": null,
+    "titleCandidates": [
+      {
+        "titleEn": "First Secondary Curriculum",
+        "titleAr": "منهج الصف الأول الثانوي",
+        "source": "suggested concept in the Phase L brief (§8) — not present in either PDF"
+      },
+      {
+        "titleEn": "Part 1",
+        "titleAr": "الجزء الأول",
+        "source": "existing Second Secondary naming convention — not present in either PDF"
+      }
+    ],
+    "requiresReview": true
+  },
+  "units": [
+    {
+      "id": "first-secondary-unit-1",
+      "officialChapterNumber": 1,
+      "order": 1,
+      "titleEn": "What is Information?",
+      "titleAr": "ما هي المعلومات ؟",
+      "titleArStatus": "source-backed",
+      "icon": null,
+      "iconStatus": "not source-backed — platform curation required at implementation time",
+      "lessonCount": 2,
+      "sources": {
+        "en": {
+          "contentsPdfPage": 2,
+          "firstLessonPdfPage": 4
+        },
+        "ar": {
+          "dividerPdfPage": 7,
+          "firstLessonPdfPage": 8
+        }
+      },
+      "lessons": [
+        {
+          "id": "first-secondary-lesson-1-1",
+          "officialCode": "1-1",
+          "arabicPrintedCode": "1-1",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 1,
+          "titleEn": "Information and Media",
+          "titleAr": "المعلومات والوسائط",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 4,
+          "enPrintedPage": 4,
+          "arPdfPage": 8,
+          "arPrintedPage": 8
+        },
+        {
+          "id": "first-secondary-lesson-1-2",
+          "officialCode": "1-2",
+          "arabicPrintedCode": "1-2",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 2,
+          "titleEn": "Information Ethics",
+          "titleAr": "أخلاقيات المعلومات",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 8,
+          "enPrintedPage": 8,
+          "arPdfPage": 12,
+          "arPrintedPage": 12
+        }
+      ]
+    },
+    {
+      "id": "first-secondary-unit-2",
+      "officialChapterNumber": 2,
+      "order": 2,
+      "titleEn": "Regulations and Rights in the Information Society",
+      "titleAr": "القوانين والحقوق في مجتمع المعلومات",
+      "titleArStatus": "source-backed",
+      "icon": null,
+      "iconStatus": "not source-backed — platform curation required at implementation time",
+      "lessonCount": 3,
+      "sources": {
+        "en": {
+          "contentsPdfPage": 2,
+          "firstLessonPdfPage": 12
+        },
+        "ar": {
+          "dividerPdfPage": 16,
+          "firstLessonPdfPage": 17
+        }
+      },
+      "lessons": [
+        {
+          "id": "first-secondary-lesson-2-1",
+          "officialCode": "2-1",
+          "arabicPrintedCode": "1-2",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 1,
+          "titleEn": "Personal Information",
+          "titleAr": "البيانات الشخصية",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 12,
+          "enPrintedPage": 12,
+          "arPdfPage": 17,
+          "arPrintedPage": 17
+        },
+        {
+          "id": "first-secondary-lesson-2-2",
+          "officialCode": "2-2",
+          "arabicPrintedCode": "2-2",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 2,
+          "titleEn": "Intellectual Property Rights",
+          "titleAr": "حقوق الملكية الفكرية",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 16,
+          "enPrintedPage": 16,
+          "arPdfPage": 21,
+          "arPrintedPage": 21
+        },
+        {
+          "id": "first-secondary-lesson-2-3",
+          "officialCode": "2-3",
+          "arabicPrintedCode": "3-2",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 3,
+          "titleEn": "Utilization and Disclosure of Information",
+          "titleAr": "استخدام المعلومات والكشف عنها",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 20,
+          "enPrintedPage": 20,
+          "arPdfPage": 25,
+          "arPrintedPage": 25
+        }
+      ]
+    },
+    {
+      "id": "first-secondary-unit-3",
+      "officialChapterNumber": 3,
+      "order": 3,
+      "titleEn": "Information Security",
+      "titleAr": "أمن المعلومات",
+      "titleArStatus": "source-backed",
+      "icon": null,
+      "iconStatus": "not source-backed — platform curation required at implementation time",
+      "lessonCount": 5,
+      "sources": {
+        "en": {
+          "contentsPdfPage": 2,
+          "firstLessonPdfPage": 24
+        },
+        "ar": {
+          "dividerPdfPage": 29,
+          "firstLessonPdfPage": 30
+        }
+      },
+      "lessons": [
+        {
+          "id": "first-secondary-lesson-3-1",
+          "officialCode": "3-1",
+          "arabicPrintedCode": "1-3",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 1,
+          "titleEn": "Threats and Countermeasures in Information Security [1]",
+          "titleAr": "1 تهديدات وإجراءات مواجهة أمن المعلومات",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 24,
+          "enPrintedPage": 24,
+          "arPdfPage": 30,
+          "arPrintedPage": 30
+        },
+        {
+          "id": "first-secondary-lesson-3-2",
+          "officialCode": "3-2",
+          "arabicPrintedCode": "2-3",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 2,
+          "titleEn": "Threats and Countermeasures in Information Security [2]",
+          "titleAr": "2 التهديدات والتدابير المضادة في أمن المعلومات",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 28,
+          "enPrintedPage": 28,
+          "arPdfPage": 34,
+          "arPrintedPage": 34
+        },
+        {
+          "id": "first-secondary-lesson-3-3",
+          "officialCode": "3-3",
+          "arabicPrintedCode": "3-3",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 3,
+          "titleEn": "Threats and Countermeasures in Information Security [3]",
+          "titleAr": "3 التهديدات والتدابير المضادة فى أمن المعلومات",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 32,
+          "enPrintedPage": 32,
+          "arPdfPage": 38,
+          "arPrintedPage": 38
+        },
+        {
+          "id": "first-secondary-lesson-3-4",
+          "officialCode": "3-4",
+          "arabicPrintedCode": "4-3",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 4,
+          "titleEn": "Information Technology for Safety [1]",
+          "titleAr": "4 تقنيات المعلومات للسلامة",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 35,
+          "enPrintedPage": 35,
+          "arPdfPage": 41,
+          "arPrintedPage": 41
+        },
+        {
+          "id": "first-secondary-lesson-3-5",
+          "officialCode": "3-5",
+          "arabicPrintedCode": "5-3",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 5,
+          "titleEn": "Information Technology for Safety [2]",
+          "titleAr": "2 تكنولوجيا المعلومات للسلامة",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 38,
+          "enPrintedPage": 38,
+          "arPdfPage": 44,
+          "arPrintedPage": 44
+        }
+      ]
+    },
+    {
+      "id": "first-secondary-unit-4",
+      "officialChapterNumber": 4,
+      "order": 4,
+      "titleEn": "Information Technology and Society",
+      "titleAr": "تكنولوجيا المعلومات والمجتمع",
+      "titleArStatus": "source-backed",
+      "icon": null,
+      "iconStatus": "not source-backed — platform curation required at implementation time",
+      "lessonCount": 1,
+      "sources": {
+        "en": {
+          "contentsPdfPage": 2,
+          "firstLessonPdfPage": 42
+        },
+        "ar": {
+          "dividerPdfPage": 48,
+          "firstLessonPdfPage": 49
+        }
+      },
+      "lessons": [
+        {
+          "id": "first-secondary-lesson-4-1",
+          "officialCode": "4-1",
+          "arabicPrintedCode": "1-4",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 1,
+          "titleEn": "Development of Information Technology",
+          "titleAr": "تطور تكنولوجيا المعلومات",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 42,
+          "enPrintedPage": 42,
+          "arPdfPage": 49,
+          "arPrintedPage": 49
+        }
+      ]
+    },
+    {
+      "id": "first-secondary-unit-5",
+      "officialChapterNumber": 5,
+      "order": 5,
+      "titleEn": "Communication",
+      "titleAr": "الاتصالات",
+      "titleArStatus": "source-backed",
+      "icon": null,
+      "iconStatus": "not source-backed — platform curation required at implementation time",
+      "lessonCount": 3,
+      "sources": {
+        "en": {
+          "contentsPdfPage": 2,
+          "firstLessonPdfPage": 46
+        },
+        "ar": {
+          "dividerPdfPage": 53,
+          "firstLessonPdfPage": 54
+        }
+      },
+      "lessons": [
+        {
+          "id": "first-secondary-lesson-5-1",
+          "officialCode": "5-1",
+          "arabicPrintedCode": "1-5",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 1,
+          "titleEn": "Development of Communication Methods",
+          "titleAr": "تطوير وسائل الاتصال",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 46,
+          "enPrintedPage": 46,
+          "arPdfPage": 54,
+          "arPrintedPage": 54
+        },
+        {
+          "id": "first-secondary-lesson-5-2",
+          "officialCode": "5-2",
+          "arabicPrintedCode": "2-5",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 2,
+          "titleEn": "Communication and Its Forms",
+          "titleAr": "الاتصال وأشكاله",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 48,
+          "enPrintedPage": 48,
+          "arPdfPage": 56,
+          "arPrintedPage": 56
+        },
+        {
+          "id": "first-secondary-lesson-5-3",
+          "officialCode": "5-3",
+          "arabicPrintedCode": "3-5",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 3,
+          "titleEn": "Internet and Communication",
+          "titleAr": "الإنترنت والاتصالات",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 50,
+          "enPrintedPage": 50,
+          "arPdfPage": 58,
+          "arPrintedPage": 58
+        }
+      ]
+    },
+    {
+      "id": "first-secondary-unit-6",
+      "officialChapterNumber": 6,
+      "order": 6,
+      "titleEn": "Information Design",
+      "titleAr": "تصميم المعلومات",
+      "titleArStatus": "source-backed",
+      "icon": null,
+      "iconStatus": "not source-backed — platform curation required at implementation time",
+      "lessonCount": 10,
+      "sources": {
+        "en": {
+          "contentsPdfPage": 2,
+          "firstLessonPdfPage": 53
+        },
+        "ar": {
+          "dividerPdfPage": 61,
+          "firstLessonPdfPage": 62
+        }
+      },
+      "lessons": [
+        {
+          "id": "first-secondary-lesson-6-1",
+          "officialCode": "6-1",
+          "arabicPrintedCode": "1-6",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 1,
+          "titleEn": "Analog and Digital",
+          "titleAr": "التناظري والرقمي",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 53,
+          "enPrintedPage": 53,
+          "arPdfPage": 62,
+          "arPrintedPage": 62
+        },
+        {
+          "id": "first-secondary-lesson-6-2",
+          "officialCode": "6-2",
+          "arabicPrintedCode": "2-6",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 2,
+          "titleEn": "Binary and Amount of Information",
+          "titleAr": "النظام الثنائي وكمية البيانات",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 55,
+          "enPrintedPage": 55,
+          "arPdfPage": 64,
+          "arPrintedPage": 64
+        },
+        {
+          "id": "first-secondary-lesson-6-3",
+          "officialCode": "6-3",
+          "arabicPrintedCode": "3-6",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 3,
+          "titleEn": "Hexadecimal",
+          "titleAr": ") Hexadecimal ( النظام السادس عشر",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 59,
+          "enPrintedPage": 59,
+          "arPdfPage": 68,
+          "arPrintedPage": 68
+        },
+        {
+          "id": "first-secondary-lesson-6-4",
+          "officialCode": "6-4",
+          "arabicPrintedCode": "4-6",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 4,
+          "titleEn": "Digital Representation of Characters",
+          "titleAr": "التمثيل الرقمي للأحرف",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 61,
+          "enPrintedPage": 61,
+          "arPdfPage": 70,
+          "arPrintedPage": 70
+        },
+        {
+          "id": "first-secondary-lesson-6-5",
+          "officialCode": "6-5",
+          "arabicPrintedCode": "5-6",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 5,
+          "titleEn": "Numerical Calculations [1]",
+          "titleAr": "] 1 [ العمليات الحسابات العددية",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 65,
+          "enPrintedPage": 65,
+          "arPdfPage": 74,
+          "arPrintedPage": 74
+        },
+        {
+          "id": "first-secondary-lesson-6-6",
+          "officialCode": "6-6",
+          "arabicPrintedCode": "6-6",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 6,
+          "titleEn": "Numerical Calculations [2]",
+          "titleAr": "] 2 [ العمليات الحسابات العددية",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 67,
+          "enPrintedPage": 67,
+          "arPdfPage": 76,
+          "arPrintedPage": 76
+        },
+        {
+          "id": "first-secondary-lesson-6-7",
+          "officialCode": "6-7",
+          "arabicPrintedCode": "7-6",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 7,
+          "titleEn": "Digitalization of Sound",
+          "titleAr": "رقمنة الصوت",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 69,
+          "enPrintedPage": 69,
+          "arPdfPage": 79,
+          "arPrintedPage": 79
+        },
+        {
+          "id": "first-secondary-lesson-6-8",
+          "officialCode": "6-8",
+          "arabicPrintedCode": "8-6",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 8,
+          "titleEn": "Digitization of Images",
+          "titleAr": "رقمنة الصور",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 73,
+          "enPrintedPage": 73,
+          "arPdfPage": 83,
+          "arPrintedPage": 83
+        },
+        {
+          "id": "first-secondary-lesson-6-9",
+          "officialCode": "6-9",
+          "arabicPrintedCode": "9-6",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 9,
+          "titleEn": "Digital Representation and Compression Technology for Videos",
+          "titleAr": "التمثيل الرقمي وضغط الفيديو",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 77,
+          "enPrintedPage": 77,
+          "arPdfPage": 87,
+          "arPrintedPage": 87
+        },
+        {
+          "id": "first-secondary-lesson-6-10",
+          "officialCode": "6-10",
+          "arabicPrintedCode": "10-6",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 10,
+          "titleEn": "Information Design",
+          "titleAr": "تصميم البيانات",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 81,
+          "enPrintedPage": 81,
+          "arPdfPage": 92,
+          "arPrintedPage": 92
+        }
+      ]
+    },
+    {
+      "id": "first-secondary-unit-7",
+      "officialChapterNumber": 7,
+      "order": 7,
+      "titleEn": "Computers",
+      "titleAr": "الكمبيوترات",
+      "titleArStatus": "source-backed",
+      "icon": null,
+      "iconStatus": "not source-backed — platform curation required at implementation time",
+      "lessonCount": 3,
+      "sources": {
+        "en": {
+          "contentsPdfPage": 2,
+          "firstLessonPdfPage": 85
+        },
+        "ar": {
+          "dividerPdfPage": 96,
+          "firstLessonPdfPage": 97
+        }
+      },
+      "lessons": [
+        {
+          "id": "first-secondary-lesson-7-1",
+          "officialCode": "7-1",
+          "arabicPrintedCode": "1-7",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 1,
+          "titleEn": "Computer Configuration",
+          "titleAr": "بنية الكمبيوتر",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 85,
+          "enPrintedPage": 85,
+          "arPdfPage": 97,
+          "arPrintedPage": 97
+        },
+        {
+          "id": "first-secondary-lesson-7-2",
+          "officialCode": "7-2",
+          "arabicPrintedCode": "2-7",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 2,
+          "titleEn": "Computer Software",
+          "titleAr": "برامج الكمبيوتر",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 89,
+          "enPrintedPage": 89,
+          "arPdfPage": 101,
+          "arPrintedPage": 101
+        },
+        {
+          "id": "first-secondary-lesson-7-3",
+          "officialCode": "7-3",
+          "arabicPrintedCode": "3-7",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 3,
+          "titleEn": "Logic Circuits",
+          "titleAr": "الدوائر المنطقية",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 91,
+          "enPrintedPage": 91,
+          "arPdfPage": 103,
+          "arPrintedPage": 103
+        }
+      ]
+    },
+    {
+      "id": "first-secondary-unit-8",
+      "officialChapterNumber": 8,
+      "order": 8,
+      "titleEn": "Networks",
+      "titleAr": "الشبكات",
+      "titleArStatus": "source-backed",
+      "icon": null,
+      "iconStatus": "not source-backed — platform curation required at implementation time",
+      "lessonCount": 5,
+      "sources": {
+        "en": {
+          "contentsPdfPage": 2,
+          "firstLessonPdfPage": 95
+        },
+        "ar": {
+          "dividerPdfPage": 107,
+          "firstLessonPdfPage": 108
+        }
+      },
+      "lessons": [
+        {
+          "id": "first-secondary-lesson-8-1",
+          "officialCode": "8-1",
+          "arabicPrintedCode": "1-8",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 1,
+          "titleEn": "Computer Networks",
+          "titleAr": "شبكات الكمبيوتر",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 95,
+          "enPrintedPage": 95,
+          "arPdfPage": 108,
+          "arPrintedPage": 108
+        },
+        {
+          "id": "first-secondary-lesson-8-2",
+          "officialCode": "8-2",
+          "arabicPrintedCode": "2-8",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 2,
+          "titleEn": "IP Addresses and Domain Names",
+          "titleAr": "وأسماء النطاقات IP عناوين",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 99,
+          "enPrintedPage": 99,
+          "arPdfPage": 112,
+          "arPrintedPage": 112
+        },
+        {
+          "id": "first-secondary-lesson-8-3",
+          "officialCode": "8-3",
+          "arabicPrintedCode": "3-8",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 3,
+          "titleEn": "Communication Protocol",
+          "titleAr": "بروتوكول الاتصال",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 101,
+          "enPrintedPage": 101,
+          "arPdfPage": 114,
+          "arPrintedPage": 114
+        },
+        {
+          "id": "first-secondary-lesson-8-4",
+          "officialCode": "8-4",
+          "arabicPrintedCode": "4-8",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 4,
+          "titleEn": "Mechanism of Web Pages and Emails",
+          "titleAr": "آلية عمل صفحات الويب والبريد الإلكتروني",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 105,
+          "enPrintedPage": 105,
+          "arPdfPage": 118,
+          "arPrintedPage": 118
+        },
+        {
+          "id": "first-secondary-lesson-8-5",
+          "officialCode": "8-5",
+          "arabicPrintedCode": "5-8",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 5,
+          "titleEn": "Network Transfer Speed",
+          "titleAr": "سرعة نقل البيانات على الشبكات",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 109,
+          "enPrintedPage": 109,
+          "arPdfPage": 122,
+          "arPrintedPage": 122
+        }
+      ]
+    },
+    {
+      "id": "first-secondary-unit-9",
+      "officialChapterNumber": 9,
+      "order": 9,
+      "titleEn": "Databases",
+      "titleAr": "قواعد البيانات",
+      "titleArStatus": "source-backed",
+      "icon": null,
+      "iconStatus": "not source-backed — platform curation required at implementation time",
+      "lessonCount": 3,
+      "sources": {
+        "en": {
+          "contentsPdfPage": 3,
+          "firstLessonPdfPage": 111
+        },
+        "ar": {
+          "dividerPdfPage": 124,
+          "firstLessonPdfPage": 125
+        }
+      },
+      "lessons": [
+        {
+          "id": "first-secondary-lesson-9-1",
+          "officialCode": "9-1",
+          "arabicPrintedCode": "1-9",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 1,
+          "titleEn": "Database [1]",
+          "titleAr": "] 1 [ قواعد البيانات",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 111,
+          "enPrintedPage": 111,
+          "arPdfPage": 125,
+          "arPrintedPage": 125
+        },
+        {
+          "id": "first-secondary-lesson-9-2",
+          "officialCode": "9-2",
+          "arabicPrintedCode": "2-9",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 2,
+          "titleEn": "Database [2]",
+          "titleAr": "] 2 [ قواعد بيانات",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 115,
+          "enPrintedPage": 115,
+          "arPdfPage": 129,
+          "arPrintedPage": 129
+        },
+        {
+          "id": "first-secondary-lesson-9-3",
+          "officialCode": "9-3",
+          "arabicPrintedCode": "3-9",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 3,
+          "titleEn": "Various Information Systems",
+          "titleAr": "نظم المعلومات المختلفة",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 119,
+          "enPrintedPage": 119,
+          "arPdfPage": 133,
+          "arPrintedPage": 133
+        }
+      ]
+    },
+    {
+      "id": "first-secondary-unit-10",
+      "officialChapterNumber": 10,
+      "order": 10,
+      "titleEn": "Data Analysis",
+      "titleAr": "تحليل البيانات",
+      "titleArStatus": "source-backed",
+      "icon": null,
+      "iconStatus": "not source-backed — platform curation required at implementation time",
+      "lessonCount": 6,
+      "sources": {
+        "en": {
+          "contentsPdfPage": 3,
+          "firstLessonPdfPage": 123
+        },
+        "ar": {
+          "dividerPdfPage": 135,
+          "firstLessonPdfPage": 136
+        }
+      },
+      "lessons": [
+        {
+          "id": "first-secondary-lesson-10-1",
+          "officialCode": "10-1",
+          "arabicPrintedCode": "1-10",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 1,
+          "titleEn": "Types of Data and Analysis",
+          "titleAr": "أنواع البيانات والتحليل",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 123,
+          "enPrintedPage": 123,
+          "arPdfPage": 136,
+          "arPrintedPage": 136
+        },
+        {
+          "id": "first-secondary-lesson-10-2",
+          "officialCode": "10-2",
+          "arabicPrintedCode": "2-10",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 2,
+          "titleEn": "Data Analysis [1]",
+          "titleAr": "] 1 [ تحليل البيانات",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 127,
+          "enPrintedPage": 127,
+          "arPdfPage": 138,
+          "arPrintedPage": 138
+        },
+        {
+          "id": "first-secondary-lesson-10-3",
+          "officialCode": "10-3",
+          "arabicPrintedCode": "3-10",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 3,
+          "titleEn": "Data Analysis [2]",
+          "titleAr": "] 2 [ تحليل البيانات",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 131,
+          "enPrintedPage": 131,
+          "arPdfPage": 142,
+          "arPrintedPage": 142
+        },
+        {
+          "id": "first-secondary-lesson-10-4",
+          "officialCode": "10-4",
+          "arabicPrintedCode": "4-10",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 4,
+          "titleEn": "Data Analysis [3]",
+          "titleAr": "] 3 [ تحليل البيانات",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 134,
+          "enPrintedPage": 134,
+          "arPdfPage": 145,
+          "arPrintedPage": 145
+        },
+        {
+          "id": "first-secondary-lesson-10-5",
+          "officialCode": "10-5",
+          "arabicPrintedCode": "5-10",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 5,
+          "titleEn": "Data Analysis [4]",
+          "titleAr": "] 4 [ تحليل البيانات",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 136,
+          "enPrintedPage": 136,
+          "arPdfPage": 147,
+          "arPrintedPage": 147
+        },
+        {
+          "id": "first-secondary-lesson-10-6",
+          "officialCode": "10-6",
+          "arabicPrintedCode": "6-10",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 6,
+          "titleEn": "Data Analysis [5]",
+          "titleAr": "] 5 [ تحليل البيانات",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 140,
+          "enPrintedPage": 140,
+          "arPdfPage": 151,
+          "arPrintedPage": 151
+        }
+      ]
+    },
+    {
+      "id": "first-secondary-unit-11",
+      "officialChapterNumber": 11,
+      "order": 11,
+      "titleEn": "Simulations",
+      "titleAr": "المحاكاة",
+      "titleArStatus": "source-backed",
+      "icon": null,
+      "iconStatus": "not source-backed — platform curation required at implementation time",
+      "lessonCount": 4,
+      "sources": {
+        "en": {
+          "contentsPdfPage": 3,
+          "firstLessonPdfPage": 142
+        },
+        "ar": {
+          "dividerPdfPage": 153,
+          "firstLessonPdfPage": 154
+        }
+      },
+      "lessons": [
+        {
+          "id": "first-secondary-lesson-11-1",
+          "officialCode": "11-1",
+          "arabicPrintedCode": "1-11",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 1,
+          "titleEn": "Modeling",
+          "titleAr": "النمذجة",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 142,
+          "enPrintedPage": 142,
+          "arPdfPage": 154,
+          "arPrintedPage": 154
+        },
+        {
+          "id": "first-secondary-lesson-11-2",
+          "officialCode": "11-2",
+          "arabicPrintedCode": "2-11",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 2,
+          "titleEn": "Simulations [1]",
+          "titleAr": "] 1 [ المحاكاة",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 145,
+          "enPrintedPage": 145,
+          "arPdfPage": 157,
+          "arPrintedPage": 157
+        },
+        {
+          "id": "first-secondary-lesson-11-3",
+          "officialCode": "11-3",
+          "arabicPrintedCode": "3-11",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 3,
+          "titleEn": "Simulations [2]",
+          "titleAr": "] 2 [ المحاكاة",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 149,
+          "enPrintedPage": 149,
+          "arPdfPage": 161,
+          "arPrintedPage": 161
+        },
+        {
+          "id": "first-secondary-lesson-11-4",
+          "officialCode": "11-4",
+          "arabicPrintedCode": "4-11",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 4,
+          "titleEn": "Queues",
+          "titleAr": "Queues",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 153,
+          "enPrintedPage": 153,
+          "arPdfPage": 165,
+          "arPrintedPage": 165
+        }
+      ]
+    },
+    {
+      "id": "first-secondary-unit-12",
+      "officialChapterNumber": 12,
+      "order": 12,
+      "titleEn": "Programming (Python)",
+      "titleAr": "البرمجة",
+      "titleArStatus": "source-backed",
+      "icon": null,
+      "iconStatus": "not source-backed — platform curation required at implementation time",
+      "lessonCount": 5,
+      "sources": {
+        "en": {
+          "contentsPdfPage": 3,
+          "firstLessonPdfPage": 155
+        },
+        "ar": {
+          "dividerPdfPage": 167,
+          "firstLessonPdfPage": 168
+        }
+      },
+      "lessons": [
+        {
+          "id": "first-secondary-lesson-12-1",
+          "officialCode": "12-1",
+          "arabicPrintedCode": "1-12",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 1,
+          "titleEn": "Algorithm",
+          "titleAr": "الخوارزميات",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 155,
+          "enPrintedPage": 155,
+          "arPdfPage": 168,
+          "arPrintedPage": 168
+        },
+        {
+          "id": "first-secondary-lesson-12-2",
+          "officialCode": "12-2",
+          "arabicPrintedCode": "2-12",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 2,
+          "titleEn": "Programming Basics [1] (Python)",
+          "titleAr": "] 1 [ أساسيات البرمجة",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 159,
+          "enPrintedPage": 159,
+          "arPdfPage": 172,
+          "arPrintedPage": 172
+        },
+        {
+          "id": "first-secondary-lesson-12-3",
+          "officialCode": "12-3",
+          "arabicPrintedCode": "3-12",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 3,
+          "titleEn": "Programming Basics [2] (Python)",
+          "titleAr": "] 2 [ أساسيات البرمجة",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 163,
+          "enPrintedPage": 163,
+          "arPdfPage": 176,
+          "arPrintedPage": 176
+        },
+        {
+          "id": "first-secondary-lesson-12-4",
+          "officialCode": "12-4",
+          "arabicPrintedCode": "4-12",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 4,
+          "titleEn": "Application of Programming [1] (Python)",
+          "titleAr": "] 1 [ البرمجة التطبيقية",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 168,
+          "enPrintedPage": 168,
+          "arPdfPage": 182,
+          "arPrintedPage": 182
+        },
+        {
+          "id": "first-secondary-lesson-12-5",
+          "officialCode": "12-5",
+          "arabicPrintedCode": "5-12",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 5,
+          "titleEn": "Application of Programming [2] (Python)",
+          "titleAr": "] 2 [ البرمجة التطبيقية",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 172,
+          "enPrintedPage": 172,
+          "arPdfPage": 186,
+          "arPrintedPage": 186
+        }
+      ]
+    },
+    {
+      "id": "first-secondary-unit-13",
+      "officialChapterNumber": 13,
+      "order": 13,
+      "titleEn": "AI Programming",
+      "titleAr": "الذكاء الاصطناعي التوليدي",
+      "titleArStatus": "source-backed",
+      "icon": null,
+      "iconStatus": "not source-backed — platform curation required at implementation time",
+      "lessonCount": 12,
+      "sources": {
+        "en": {
+          "contentsPdfPage": 3,
+          "firstLessonPdfPage": 175
+        },
+        "ar": {
+          "dividerPdfPage": 190,
+          "firstLessonPdfPage": 191
+        }
+      },
+      "lessons": [
+        {
+          "id": "first-secondary-lesson-13-1",
+          "officialCode": "13-1",
+          "arabicPrintedCode": "1-13",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 1,
+          "titleEn": "About Generative AI",
+          "titleAr": "الذكاء الاصطناعي التوليدي",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 175,
+          "enPrintedPage": 176,
+          "arPdfPage": 191,
+          "arPrintedPage": 191
+        },
+        {
+          "id": "first-secondary-lesson-13-2",
+          "officialCode": "13-2",
+          "arabicPrintedCode": "2-13",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 2,
+          "titleEn": "HTML, CSS",
+          "titleAr": "HTML, CSS",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 177,
+          "enPrintedPage": 178,
+          "arPdfPage": 193,
+          "arPrintedPage": 193
+        },
+        {
+          "id": "first-secondary-lesson-13-3",
+          "officialCode": "13-3",
+          "arabicPrintedCode": "3-13",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 3,
+          "titleEn": "HTML, JS",
+          "titleAr": "HTML, JS",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 180,
+          "enPrintedPage": 181,
+          "arPdfPage": 196,
+          "arPrintedPage": 196
+        },
+        {
+          "id": "first-secondary-lesson-13-4",
+          "officialCode": "13-4",
+          "arabicPrintedCode": "4-13",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 4,
+          "titleEn": "Creating Static Web Pages",
+          "titleAr": "إنشاء صفحة ويب ثابتة",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 185,
+          "enPrintedPage": 186,
+          "arPdfPage": 201,
+          "arPrintedPage": 201
+        },
+        {
+          "id": "first-secondary-lesson-13-5",
+          "officialCode": "13-5",
+          "arabicPrintedCode": "5-13",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 5,
+          "titleEn": "Creating Dynamic Web Pages",
+          "titleAr": "إنشاء صفحات ويب تفاعلية",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 189,
+          "enPrintedPage": 190,
+          "arPdfPage": 205,
+          "arPrintedPage": 205
+        },
+        {
+          "id": "first-secondary-lesson-13-6",
+          "officialCode": "13-6",
+          "arabicPrintedCode": "6-13",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 6,
+          "titleEn": "Presenting Your Website",
+          "titleAr": "عرض تقديمي لموقع الويب",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 191,
+          "enPrintedPage": 192,
+          "arPdfPage": 207,
+          "arPrintedPage": 207
+        },
+        {
+          "id": "first-secondary-lesson-13-7",
+          "officialCode": "13-7",
+          "arabicPrintedCode": "7-13",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 7,
+          "titleEn": "Developing a Quiz App",
+          "titleAr": "تطوير تطبيق اختبارات",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 192,
+          "enPrintedPage": 193,
+          "arPdfPage": 208,
+          "arPrintedPage": 208
+        },
+        {
+          "id": "first-secondary-lesson-13-8",
+          "officialCode": "13-8",
+          "arabicPrintedCode": "8-13",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 8,
+          "titleEn": "Quiz App Review",
+          "titleAr": "مراجعة تطبيق الاختبارات",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 194,
+          "enPrintedPage": 195,
+          "arPdfPage": 210,
+          "arPrintedPage": 210
+        },
+        {
+          "id": "first-secondary-lesson-13-9",
+          "officialCode": "13-9",
+          "arabicPrintedCode": "9-13",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 9,
+          "titleEn": "Developing a Block Breaker Game 1",
+          "titleAr": "تطوير لعبة تكسير القوالب",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 195,
+          "enPrintedPage": 196,
+          "arPdfPage": 211,
+          "arPrintedPage": 211
+        },
+        {
+          "id": "first-secondary-lesson-13-10",
+          "officialCode": "13-10",
+          "arabicPrintedCode": "10-13",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 10,
+          "titleEn": "Developing a Block Breaker Game 2",
+          "titleAr": "2 تطوير لعبة تكسير القوالب",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 197,
+          "enPrintedPage": 198,
+          "arPdfPage": 213,
+          "arPrintedPage": 213
+        },
+        {
+          "id": "first-secondary-lesson-13-11",
+          "officialCode": "13-11",
+          "arabicPrintedCode": "11-13",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 11,
+          "titleEn": "Block Breaker Summary",
+          "titleAr": "ملخص لعبة تكسير القوالب",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 199,
+          "enPrintedPage": 200,
+          "arPdfPage": 215,
+          "arPrintedPage": 215
+        },
+        {
+          "id": "first-secondary-lesson-13-12",
+          "officialCode": "13-12",
+          "arabicPrintedCode": "12-13",
+          "arabicPrintedCodeNote": "the Arabic edition prints '<lesson>-<unit>' (reverse of the English '<chapter>-<lesson>'); stored for provenance only",
+          "order": 12,
+          "titleEn": "Block Breaker Development Presentation",
+          "titleAr": "عرض تقديمي للعبة تكسير القوالب المطورة",
+          "titleArStatus": "source-backed",
+          "enPdfPage": 201,
+          "enPrintedPage": 202,
+          "arPdfPage": 217,
+          "arPrintedPage": 217
+        }
+      ]
+    }
+  ],
+  "crossLevel": {
+    "sharedOfficialCodesWithSecondSecondary": [
+      "1-1",
+      "1-2",
+      "2-1",
+      "2-2",
+      "2-3",
+      "3-1",
+      "3-2",
+      "3-3",
+      "4-1",
+      "5-1",
+      "5-2",
+      "5-3",
+      "6-1",
+      "6-2",
+      "6-3",
+      "7-1",
+      "7-2",
+      "7-3"
+    ],
+    "note": "K3's @@unique([academicLevel, officialCode]) keeps these distinct; no lookup may resolve a lesson by officialCode alone."
+  },
+  "notExtracted": {
+    "note": "deliberately out of scope for this checkpoint",
+    "unitIcons": "platform curation (Second Secondary units carry lucide icons; nothing equivalent exists in either PDF)",
+    "knowledgeSummaries": "not extracted",
+    "learningObjectives": "not extracted",
+    "keyConceptsAndDefinitions": "not extracted",
+    "prerequisiteKnowledgeRelations": "not extracted",
+    "lessonEndPages": "derivable from the next lesson's start page in the same edition",
+    "assessmentOrKodgyGrounding": "not extracted"
+  },
+  "openQuestionsForReview": [
+    {
+      "id": "OQ-1",
+      "status": "RESOLVED by this checkpoint",
+      "question": "How must Arabic titles be supplied for First Secondary?",
+      "resolution": "The Arabic PDF is now committed and is authoritative for Arabic wording. Every one of the 13 unit titles and 62 lesson titles is source-backed; no fallback and no translation is used."
+    },
+    {
+      "id": "OQ-2",
+      "question": "Confirm the proposed course slug 'programming-ai-1st-sec' and course name 'Programming & AI' (= 'البرمجة والذكاء الاصطناعي' in Arabic).",
+      "detail": "Both remain proposals; the PDFs only print the cover titles."
+    },
+    {
+      "id": "OQ-3",
+      "question": "Which title should the single synthetic Part carry?",
+      "detail": "see part.titleCandidates — the brief's suggestion versus the existing Second Secondary convention."
+    },
+    {
+      "id": "OQ-4",
+      "question": "What shape should the Phase L spec / knowledge-model file take?",
+      "detail": "The K2 engine consumes a knowledge-model-shaped file. This manifest is structure-only. Decide whether Phase L wraps it into a knowledge-model file for FIRST_SECONDARY (with a FIRST_SECONDARY_SPEC), and whether the Second Secondary file should be renamed/moved to match the new docs/curriculum/<level>/ layout."
+    },
+    {
+      "id": "OQ-5",
+      "question": "Are 13 curated Unit icons required?"
+    },
+    {
+      "id": "OQ-6",
+      "question": "Should Phase L also re-point the stale curriculum paths and make Kodgy level-aware?",
+      "detail": "13 executable resolution paths still reference the pre-relocation docs/curriculum/knowledge-model.json, and src/lib/kodgy/response-engine.ts hardcodes the 23 Second Secondary sessions (1-1 … 7-3). 18 of the 62 First Secondary officialCodes collide with those codes. Reported, NOT fixed."
+    },
+    {
+      "id": "OQ-7",
+      "question": "Which lesson code becomes Lesson.officialCode?",
+      "detail": "PROPOSED: the English '<chapter>-<lesson>' code, with the Arabic '<lesson>-<unit>' badge preserved as display metadata (arabicPrintedCode). The two editions genuinely print different codes for the same lesson (e.g. English 13-1 = Arabic 1-13), so this must be an explicit decision, not an assumption."
+    },
+    {
+      "id": "OQ-8",
+      "question": "Should the Arabic '<lesson>-<unit>' badge be shown to Arabic-speaking students instead of the platform code?",
+      "detail": "The badge is what the printed Arabic textbook shows on every lesson header, so a student holding the Arabic book sees '1-13' where the platform would print '13-1'."
+    }
+  ],
+  "integrity": {
+    "expectedCounts": {
+      "units": 13,
+      "lessons": 62,
+      "topics": 0
+    },
+    "validationChecks": [
+      {
+        "check": "English chapter count",
+        "result": "PASS",
+        "detail": "13 chapters on the contents pages, numbered 1..13 with no gaps"
+      },
+      {
+        "check": "English lesson count",
+        "result": "PASS",
+        "detail": "62 contents rows and 62 body headings"
+      },
+      {
+        "check": "Arabic unit count",
+        "result": "PASS",
+        "detail": "13 unit divider pages, in order, each followed by its lessons"
+      },
+      {
+        "check": "Arabic lesson count",
+        "result": "PASS",
+        "detail": "62 lesson pages in document order (61 'النقاط الرئيسية' bands + 1 page whose band renders a different glyph form)"
+      },
+      {
+        "check": "same chapter count",
+        "result": "PASS",
+        "detail": "EN 13 = AR 13"
+      },
+      {
+        "check": "same lesson count",
+        "result": "PASS",
+        "detail": "EN 62 = AR 62"
+      },
+      {
+        "check": "same lessons per chapter",
+        "result": "PASS",
+        "detail": "2,3,5,1,3,10,3,5,3,6,4,5,12 on both sides"
+      },
+      {
+        "check": "same chapter membership / order / sequence",
+        "result": "PASS",
+        "detail": "aligned by structural identity (chapter number + order inside the chapter); every EN key found exactly one AR counterpart, 62/62"
+      },
+      {
+        "check": "Arabic heading title equals the Arabic contents entry",
+        "result": "PASS",
+        "detail": "62/62 after ignoring whitespace and RTL punctuation placement"
+      },
+      {
+        "check": "English contents title equals the English heading",
+        "result": "PASS",
+        "detail": "62/62"
+      },
+      {
+        "check": "printed page provenance",
+        "result": "PASS",
+        "detail": "EN contents page number = the folio printed on the heading page for all 62; AR badge page = the folio printed on that page for all 61 numbered pages"
+      },
+      {
+        "check": "duplicate officialCode (EN convention)",
+        "result": "PASS",
+        "detail": "62 unique"
+      },
+      {
+        "check": "duplicate printed badge (AR convention)",
+        "result": "FAIL — REPORTED, NOT RECONCILED",
+        "detail": "'1-2' is printed twice: AR PDF page 12 (أخلاقيات المعلومات, lesson 2 of unit 1) and AR PDF page 17 (البيانات الشخصية, lesson 1 of unit 2). The Arabic edition therefore cannot identify a lesson by its printed badge alone."
+      },
+      {
+        "check": "invented Topics",
+        "result": "PASS",
+        "detail": "0 — neither edition groups lessons below the lesson level"
+      },
+      {
+        "check": "guessed or machine-translated titles",
+        "result": "PASS",
+        "detail": "none; every string is transcribed from the named source"
+      }
+    ]
+  },
+  "sourceAnomalies": [
+    {
+      "id": "AN-1",
+      "severity": "high",
+      "locale": "ar",
+      "finding": "The Arabic lesson badge uses '<lesson>-<unit>', the REVERSE of the English '<chapter>-<lesson>'.",
+      "evidence": "Visually verified renders: AR page 30 badge '1-3' = English 3-1; AR page 191 badge '1-13' = English 13-1; AR page 217 badge '12-13' = English 13-12. Text-layer runs agree for all 62 badges.",
+      "consequence": "The same lesson prints a different code in each edition. The manifest keeps both (officialCode + arabicPrintedCode)."
+    },
+    {
+      "id": "AN-2",
+      "severity": "high",
+      "locale": "ar",
+      "finding": "The printed badge '1-2' is duplicated: unit 1 lesson 2 and unit 2 lesson 1 both print '1-2'.",
+      "evidence": "AR PDF page 12 (أخلاقيات المعلومات) and AR PDF page 17 (البيانات الشخصية), confirmed at 5x zoom.",
+      "consequence": "Every other badge follows '<lesson>-<unit>' exactly (61/62). The document order plus the ToC page ranges confirm that page 17 belongs to unit 2 (the unit-2 divider is AR PDF page 16). This is an Arabic-edition printing defect; it is reported here and NOT reconciled."
+    },
+    {
+      "id": "AN-3",
+      "severity": "medium",
+      "locale": "ar",
+      "finding": "Only 3 of the 62 Arabic lesson titles are not Arabic script: 11-4 'Queues', 13-2 'HTML, CSS', 13-3 'HTML, JS'.",
+      "evidence": "AR PDF pages 165, 193, 196 — the badge headings print the Latin words, exactly as the English edition does.",
+      "consequence": "These are source-faithful, not missing translations; the Arabic contents pages print the same Latin strings."
+    },
+    {
+      "id": "AN-4",
+      "severity": "medium",
+      "locale": "en",
+      "finding": "Printed page 175 does not exist in the English edition (content jumps 174 → 176 at the Chapter 12/13 boundary).",
+      "evidence": "202-page file, 198 numbered folios (4-174, 176-202); no duplicate or out-of-order folio. The Arabic edition has no such gap.",
+      "consequence": "The English page mapping carries an offset from PDF page 175 on; both the PDF page and the printed folio are recorded per lesson."
+    },
+    {
+      "id": "AN-5",
+      "severity": "low",
+      "locale": "ar",
+      "finding": "The 13 unit divider pages carry no printed folio (their page area is a decorative band).",
+      "evidence": "AR PDF pages 7, 16, 29, 48, 53, 61, 96, 107, 124, 135, 153, 167, 190.",
+      "consequence": "Unit source references use the PDF page index; lesson references always carry a real printed folio."
+    },
+    {
+      "id": "AN-6",
+      "severity": "low",
+      "locale": "ar",
+      "finding": "The Arabic lesson START page differs from the English lesson start page by 1-5 pages on 24 lessons (never a different order).",
+      "evidence": "e.g. 1-1 EN p.4 / AR p.8; 13-1 EN p.176 / AR p.178. The arrays are strictly increasing on both sides.",
+      "consequence": "Page provenance must never be used to align the editions; structural order was used instead."
+    },
+    {
+      "id": "AN-7",
+      "severity": "low",
+      "locale": "ar",
+      "finding": "The Arabic edition pluralizes two unit titles: unit 7 'الكمبيوترات' (EN 'Computers') and unit 12 'البرمجة' (EN 'Programming (Python)').",
+      "evidence": "AR contents page 4/toC rows and the divider pages 96 and 167; English contents page 2.",
+      "consequence": "Titles are stored exactly as printed in each edition; no harmonization was applied."
+    },
+    {
+      "id": "AN-8",
+      "severity": "info",
+      "locale": "en",
+      "finding": "Chapter 13 headings invert the code position ('About Generative AI13-1'); chapters 1-12 print the code first.",
+      "evidence": "EN PDF pages 175, 177, 180, 185, 189, 191, 192, 194, 195, 197, 199, 201.",
+      "consequence": "Handled explicitly during extraction; no Chapter 13 lesson could be silently dropped."
+    },
+    {
+      "id": "AN-9",
+      "severity": "info",
+      "locale": "both",
+      "finding": "Two bracketed lesson titles render with the numeric marker wrapped/placed by RTL bidi rules (6-5/6-6 'العمليات الحسابات العددية [1]', 9-1/9-2 'قواعد البيانات [1]').",
+      "evidence": "AR PDF pages 74, 76, 125, 129 (heading) versus the same rows on the AR contents pages.",
+      "consequence": "The stored strings are the logical text-layer order, which agrees with the Arabic contents rows; only the visual placement of the bracketed marker varies."
+    },
+    {
+      "id": "AN-10",
+      "severity": "info",
+      "locale": "both",
+      "finding": "The two committed files were produced by different tools (EN: Icecream PDF Candy re-export; AR: Adobe InDesign).",
+      "evidence": "PDF metadata blocks recorded above.",
+      "consequence": "Most plausible explanation for AN-1…AN-4; the Arabic file is the more faithful artwork of the two."
+    }
+  ],
+  "previousManifestComparison": {
+    "path": "manifestVersion 0.1.0 (commit cf3388e, English-only)",
+    "structureUnchanged": true,
+    "detail": "identical 13 chapters / 62 lessons / per-chapter counts and identical English titles and English page provenance; the only substantive change is that the 13 unit titles and 62 lesson titles are now Arabic-sourced instead of null, and the Arabic page provenance plus the AN-1…AN-3 findings are new."
+  }
+}

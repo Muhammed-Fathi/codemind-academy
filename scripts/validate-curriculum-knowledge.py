@@ -28,7 +28,7 @@ except ImportError as exc:  # pragma: no cover - exercised by a human command
     ) from exc
 
 ROOT = Path(__file__).resolve().parents[1]
-MODEL_PATH = ROOT / "docs/curriculum/knowledge-model.json"
+MODEL_PATH = ROOT / "docs/curriculum/second-secondary/knowledge-model.json"
 
 
 def normalize(value: str) -> str:

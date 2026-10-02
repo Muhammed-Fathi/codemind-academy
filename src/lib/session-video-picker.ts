@@ -54,6 +54,30 @@ export type PickerBatch = {
   course: { id: string } | null | undefined;
 };
 
+/**
+ * Phase L manual-QA fix — the ACADEMIC LEVEL dimension of the picker.
+ *
+ *   "" (or absent)         → ALL levels (no filter)
+ *   "FIRST_SECONDARY"      → only courses of that level
+ *   "SECOND_SECONDARY"     → only courses of that level
+ *
+ * The value is compared against the CANONICAL `Course.academicLevel` of the
+ * lesson's own course chain — never against a lesson title, an `officialCode`
+ * prefix, a static id list, or the Arabic/Language track (a DIFFERENT axis
+ * that composes with this one and is handled by `lessonFitsBatch`). A course
+ * with no level (legacy `null`) is shown only under "All": it can never be
+ * claimed by a specific level.
+ *
+ * This is deliberately the same equality the rest of the platform uses
+ * (`normalizeAcademicLevel`), so the picker cannot drift from the Course
+ * authority.
+ */
+export function courseMatchesLevel(courseAcademicLevel: unknown, levelFilter: unknown): boolean {
+  const filter = typeof levelFilter === "string" ? levelFilter.trim() : "";
+  if (!filter) return true; // ALL
+  return typeof courseAcademicLevel === "string" && courseAcademicLevel === filter;
+}
+
 /** Arabic-first display name for a course node of the admin courses tree. */
 export function courseDisplayName(course: {
   nameAr?: unknown;
@@ -74,10 +98,24 @@ export function courseDisplayName(course: {
  * course. Within the scope each lesson must be non-archived and track-fitting
  * (lessonFitsBatch). Dual-chained lessons (unit + topic) appear once per
  * unit. Groups come back in tree order — the caller renders the labels.
+ *
+ * Phase L manual-QA fix — optional ACADEMIC LEVEL filter, applied per COURSE
+ * (the canonical `Course.academicLevel`), before any lesson is considered.
+ * It is a separate axis from the track filter above and composes with it:
+ * `(batch by course) ∩ (track fits) ∩ (level matches)`. The whole node is
+ * skipped for a non-matching course, so a level filter can never leak a Part,
+ * a Unit or a lesson of the other level — including the 18 officialCodes that
+ * exist at BOTH levels, which share a code but never a course.
+ *
+ * Selection itself has always been by lesson ID (`Select value={l.id}`), so a
+ * lesson chosen under one level can never resolve to the same-coded lesson of
+ * the other level: the id is the identity, the code is only a label.
  */
 export function buildLessonGroups(
   courses: unknown,
-  batch: PickerBatch
+  batch: PickerBatch,
+  /** "" / undefined = ALL levels, or a canonical AcademicLevel value. */
+  levelFilter?: string | null
 ): LessonGroup[] {
   const courseNodes = Array.isArray(courses) ? courses : [];
   const groups: LessonGroup[] = [];
@@ -86,6 +124,8 @@ export function buildLessonGroups(
     if (!c || typeof c.id !== "string") continue;
     // Course-bound batches are scoped to their own course.
     if (batch.course && batch.course.id !== c.id) continue;
+    // Academic-level scope (canonical Course.academicLevel, never a label).
+    if (!courseMatchesLevel(c.academicLevel, levelFilter)) continue;
 
     for (const part of c.parts || []) {
       for (const unit of part?.units || []) {

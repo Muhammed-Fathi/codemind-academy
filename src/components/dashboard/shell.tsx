@@ -183,7 +183,12 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
             src/components/shared/support-card.tsx; people/numbers come from
             the SUPPORT_CONTACTS config in src/lib/brand.ts). */}
         <div className="mt-6 px-3">
-          <SupportCard />
+          {/* Phase L final polish 2 — on the live-sessions workspace (an
+              operational, in-class surface) the support block renders in its
+              quiet variant so it stops competing with the session detail card.
+              It is NOT hidden and nothing about the global sidebar changed: every
+              contact, tel: link and WhatsApp action stays exactly where it was. */}
+          <SupportCard variant={view === "teacher-live-sessions" ? "quiet" : "default"} />
         </div>
       </ScrollArea>
 

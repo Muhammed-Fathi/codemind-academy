@@ -128,7 +128,24 @@ section("K2-A4. Derived lesson level + level-aware reconciler");
   ok(/export type LevelCurriculumSpec/.test(rec) && /export const SECOND_SECONDARY_SPEC/.test(rec) && /export function loadLevelCurriculumModel/.test(rec), "A4: reconciler is spec-parameterised");
   ok(/expectedCounts: EXPECTED_OFFICIAL_COUNTS/.test(rec) && /expectedCodes: OFFICIAL_LESSON_CODES/.test(rec) && /courseSlug: OFFICIAL_COURSE_SLUG/.test(rec), "A4: SECOND_SECONDARY_SPEC byte-pins slug / 2-7-23 / codes");
   ok(/Reconciliation refused: course/.test(rec) && /academicLevel: level,/.test(rec), "A4: G7 refuses spec/course level drift; every created lesson gets the spec level");
-  ok(!/FIRST_SECONDARY_SPEC/.test(rec) && !fs.existsSync(path.join(REPO, "docs", "curriculum", "knowledge-model-1st-sec.json")), "A4: NO First Secondary spec / knowledge model in K2 (Phase L)");
+  // Phase L (deliberate supersession): this assertion used to read
+  // "NO First Secondary spec / knowledge model in K2". That was a SCOPE claim
+  // about Phase K2 (capability only, no First Secondary data) — Phase L is the
+  // phase that introduces First Secondary, so the claim is now false BY
+  // DESIGN, not by regression. What must still hold is HOW it exists: one
+  // registered spec in the SAME single engine, sourced from its own level
+  // folder, and no resurrected global `docs/curriculum/knowledge-model.json`.
+  ok(
+    /export const FIRST_SECONDARY_SPEC: LevelCurriculumSpec = \{/.test(rec) &&
+      /academicLevel: "FIRST_SECONDARY"/.test(rec) &&
+      /courseSlug: "programming-ai-1st-sec"/.test(rec) &&
+      /knowledgeModel: firstSecondaryModelFile/.test(rec) &&
+      /from "\.\.\/\.\.\/docs\/curriculum\/first-secondary\/knowledge-model\.json"/.test(rec) &&
+      /export const LEVEL_CURRICULUM_SPECS: readonly LevelCurriculumSpec\[\] = \[\s*SECOND_SECONDARY_SPEC,\s*FIRST_SECONDARY_SPEC,/.test(rec) &&
+      !fs.existsSync(path.join(REPO, "docs", "curriculum", "knowledge-model.json")) &&
+      !fs.existsSync(path.join(REPO, "docs", "curriculum", "knowledge-model-1st-sec.json")),
+    "A4: Phase L registers FIRST_SECONDARY_SPEC in the same engine (per-level model; no global/stray knowledge model)"
+  );
 }
 
 // ---------------------------------------------------------------------------
