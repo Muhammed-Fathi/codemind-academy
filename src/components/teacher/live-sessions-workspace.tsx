@@ -71,6 +71,7 @@ import {
   CalendarDays,
   CalendarPlus,
   Check,
+  ClipboardCheck,
   Clock,
   Lock,
   Play,
@@ -201,6 +202,21 @@ function fmtTimeOnly(value: string | null, locale: Locale): string {
   return formatDateTime(value, locale, { hour: "2-digit", minute: "2-digit" });
 }
 
+/**
+ * Short "day month, hh:mm" for the narrow session list. Same shared formatter,
+ * shorter option set — the narrow column keeps the real instant without
+ * truncating the row.
+ */
+function fmtDateTimeShort(value: string | null, locale: Locale): string {
+  if (!value) return "";
+  return formatDateTime(value, locale, {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 /** `datetime-local` value for a Date (local, no timezone surprises). */
 function toLocalInput(value: Date | string): string {
   const d = value instanceof Date ? value : new Date(value);
@@ -267,13 +283,13 @@ export function TeacherLiveSessionsWorkspace() {
           </CardContent>
         </Card>
       ) : (
-        // Phase L final polish — a clear two-column desktop structure:
-        //   PRIMARY   (first column = the RIGHT side in RTL): the selected
-        //             session's details, context, actions and attendance;
-        //   SECONDARY (second column = the LEFT side in RTL): the session list.
-        // The detail panel leads the DOM order so the hierarchy is unmistakable
-        // in Arabic RTL, and the list column sticks while the detail scrolls.
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-4 items-start">
+        // Phase L final polish 2 — desktop balance: the detail column takes the
+        // remaining space (~70%) and the list column is a proportional slice
+        // with a floor for long Arabic titles (`30%`, never narrower than 18rem
+        // and never wider than 24rem). Everything stays in layout utilities —
+        // no hard-coded pixel width — and the list column sticks while the
+        // detail panel scrolls.
+        <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,7fr)_minmax(18rem,3fr)] xl:grid-cols-[minmax(0,7fr)_minmax(20rem,3fr)]">
           {selectedId ? (
             <div className="order-2 min-w-0 lg:order-1" aria-label={t("teacher.live.details")}>
               <SessionDetail
@@ -339,7 +355,7 @@ function SessionListCard({
 }) {
   const t = useT();
   const locale = useApp((s) => (s.locale === "en" ? "en" : "ar")) as Locale;
-  const fmt = (value: string | null) => (value ? formatDateTime(value, locale) : "");
+  const fmtShort = (value: string | null) => fmtDateTimeShort(value, locale);
 
   return (
     <Card className={`glass lg:sticky lg:top-4 ${className ?? ""}`}>
@@ -350,7 +366,7 @@ function SessionListCard({
         </div>
         <ScrollArea
           className="min-h-0"
-          viewportClassName="max-h-[min(60dvh,calc(100dvh-18rem))] overscroll-contain"
+          viewportClassName="max-h-[min(62dvh,calc(100dvh-16rem))] overscroll-contain"
         >
           <ul className="pb-1 space-y-1">
             {sessions.map((s) => {
@@ -360,10 +376,10 @@ function SessionListCard({
                   <button
                     type="button"
                     onClick={() => onSelect(s.id)}
-                    className={`relative w-full text-start rounded-lg border p-2.5 ps-3 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
+                    className={`relative w-full min-w-0 rounded-lg border px-2.5 py-2 text-start transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
                       selected
-                        ? "border-primary/60 bg-primary/10 ring-1 ring-primary/30 shadow-sm"
-                        : "border-transparent hover:bg-muted/60"
+                        ? "border-primary/50 bg-primary/15 ps-3 ring-1 ring-primary/30 shadow-sm"
+                        : "border-border/50 ps-2.5 hover:border-border hover:bg-muted/60"
                     }`}
                     aria-current={selected ? "true" : undefined}
                     data-session-id={s.id}
@@ -376,20 +392,23 @@ function SessionListCard({
                         className="absolute inset-y-1.5 start-0 w-0.5 rounded-full bg-primary"
                       />
                     ) : null}
-                    <span className="flex items-start justify-between gap-2">
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-semibold">
-                          {s.titleAr || s.title}
-                        </span>
-                        <span className="mt-1 flex flex-wrap items-center gap-1.5">
-                          <AcademicLevelBadge level={s.group?.academicLevel} />
-                          <span className="truncate text-[11px] text-muted-foreground">
-                            {s.group?.name ?? ""}
-                          </span>
-                        </span>
-                        <span className="mt-1 block text-[11px] text-muted-foreground">
-                          {fmt(s.startAt)} • {t("live.duration", { p1: s.duration })}
-                        </span>
+                    {/* A. title — up to two lines, never clipped mid-word... */}
+                    <span className="block text-[13px] font-semibold leading-snug break-words line-clamp-2 [overflow-wrap:anywhere]">
+                      {s.titleAr || s.title}
+                    </span>
+                    {/* B. level badge + group name ... */}
+                    <span className="mt-1 flex min-w-0 items-center gap-1.5">
+                      <AcademicLevelBadge level={s.group?.academicLevel} />
+                      <span className="min-w-0 truncate text-[11px] text-muted-foreground">
+                        {s.group?.name ?? ""}
+                      </span>
+                    </span>
+                    {/* C. time · duration · status — one aligned metadata line
+                        (RTL audit: the status sits at the logical END of the row
+                        via `ms-auto`, so it lines up in both directions). */}
+                    <span className="mt-1 flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+                      <span className="truncate">
+                        {fmtShort(s.startAt)} • {t("live.duration", { p1: s.duration })}
                       </span>
                       <Badge
                         variant={
@@ -399,7 +418,7 @@ function SessionListCard({
                               ? "destructive"
                               : "outline"
                         }
-                        className="shrink-0"
+                        className="ms-auto h-5 shrink-0 px-1.5 text-[10px] font-medium"
                       >
                         {t(statusKey(s.status))}
                       </Badge>
@@ -630,20 +649,37 @@ function SessionDetail({
         : "NONE";
   /** Reschedule/cancel keep the EXACT conditions they had before the polish. */
   const manageable = session.status !== "CANCELLED" && session.status !== "COMPLETED";
+  /**
+   * Final polish banding — where the destructive ceremony lives.
+   *
+   * The lifecycle authority is STILL the server (`manageable`); this only
+   * decides on which row the cancel button is placed, so a destructive action
+   * can never sit shoulder-to-shoulder with the primary one:
+   *   * SCHEDULED / LIVE → its own band under the utility row;
+   *   * ENDED             → the session can no longer be cancelled, so the band
+   *                         holds nothing and is not rendered at all.
+   */
+  const showDestructiveBand = manageable;
   const startBlockReason =
     session.startDenialCode === "TOO_EARLY"
       ? t("teacher.live.startTooEarly", { p1: fmt(session.startAt) })
       : t("teacher.live.startWindowClosed");
 
   return (
-    <div className="space-y-4">
+    // The detail panel and the attendance register are ONE workspace: the same
+    // 10px rhythm inside the card and between the cards keeps them visually
+    // attached (page-level gaps stay wider — `gap-4` — so the panel still reads
+    // as a unit against the rest of the page).
+    <div className="space-y-2.5">
       {/* ================= A. HEADER — identity of the selected session ===== */}
       <Card className="glass">
-        <CardContent className="p-4 space-y-3">
+        <CardContent className="p-4 space-y-2.5">
           <div className="flex items-start justify-between gap-3 flex-wrap">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-base font-bold break-words">{session.titleAr || session.title}</h2>
+            <div className="min-w-0 flex-1 basis-64">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <h2 className="text-base font-bold leading-snug break-words">
+                  {session.titleAr || session.title}
+                </h2>
                 <AcademicLevelBadge level={session.group?.academicLevel} />
                 <Badge
                   variant={
@@ -673,7 +709,7 @@ function SessionDetail({
           )}
 
           {/* ================= B. CONTEXT — scannable at a glance ============ */}
-          <dl className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-x-4 gap-y-3 border-t pt-3">
+          <dl className="grid grid-cols-1 gap-x-5 gap-y-1.5 border-t pt-3 sm:grid-cols-2">
             <ContextItem
               icon={<CalendarDays className="w-3.5 h-3.5" />}
               label={t("teacher.live.date")}
@@ -703,11 +739,16 @@ function SessionDetail({
             />
           </dl>
 
-          {/* ================= C. PRIMARY ACTION — at most ONE =============== */}
-          <div className="flex flex-wrap items-center gap-2 border-t pt-3" data-live-primary={primaryAction}>
-            <span className="text-[11px] font-medium text-muted-foreground">
-              {t("teacher.live.actions")}
-            </span>
+          {/* ================= C. ACTIONS — primary + utilities in ONE band ===
+              The metadata grid above is divided from this band by a hairline, so
+              the two scan zones read as a unit instead of two loose blocks. */}
+          <div className="space-y-2.5 border-t pt-3.5">
+            <div
+              className="flex flex-wrap items-center gap-2"
+              data-live-primary={primaryAction}
+              role="group"
+              aria-label={t("teacher.live.actions")}
+            >
             {primaryAction === "JOIN" && (
               <SessionLinkActions
                 sessionId={session.id}
@@ -731,7 +772,9 @@ function SessionDetail({
                   disabled={busy || startBlocked}
                   title={startBlocked ? startBlockReason : undefined}
                 >
-                  <Play className="w-4 h-4 ms-1.5" />
+                  {/* RTL audit — the play triangle points in the reading
+                      direction (the repo's own `.flip-rtl` helper). */}
+                  <Play className="w-4 h-4 ms-1.5 flip-rtl" />
                   {t("teacher.live.start")}
                 </Button>
                 {startBlocked ? (
@@ -740,7 +783,7 @@ function SessionDetail({
               </>
             )}
             {phase === "LIVE" && (
-              <Button size="sm" variant="outline" onClick={() => lifecycle("end")} disabled={busy}>
+              <Button size="sm" variant="secondary" onClick={() => lifecycle("end")} disabled={busy}>
                 {t("teacher.live.end")}
               </Button>
             )}
@@ -752,16 +795,16 @@ function SessionDetail({
                 {phase === "CANCELLED" ? t("live.join.cancelled") : t("live.join.ended")}
               </span>
             )}
-          </div>
+            </div>
 
-          {/* ================= D. SECONDARY UTILITIES ======================== */}
-          <div
-            className="flex flex-wrap items-center gap-2 border-t pt-3"
-            data-live-utilities="true"
-          >
-            <span className="text-[11px] font-medium text-muted-foreground">
-              {t("teacher.live.moreActions")}
-            </span>
+            {/* D. SECONDARY UTILITIES — present in EVERY phase (never hide the
+                copy control); they stay flat and tonally quiet. */}
+            <div
+              className="flex flex-wrap items-center gap-1.5"
+              data-live-utilities="true"
+              role="group"
+              aria-label={t("teacher.live.moreActions")}
+            >
             {primaryAction !== "JOIN" && (
               <SessionLinkActions
                 sessionId={session.id}
@@ -778,21 +821,33 @@ function SessionDetail({
               />
             )}
             {manageable && (
-              <>
-                <Button size="sm" variant="ghost" onClick={() => setRescheduleOpen(true)} disabled={busy}>
-                  <CalendarDays className="w-4 h-4 ms-1.5" />
-                  {t("teacher.live.reschedule")}
-                </Button>
+              <Button size="sm" variant="ghost" onClick={() => setRescheduleOpen(true)} disabled={busy}>
+                <CalendarDays className="w-4 h-4 ms-1.5" />
+                {t("teacher.live.reschedule")}
+              </Button>
+            )}
+            </div>
+
+            {/* D2. DESTRUCTIVE — isolated on its own hairline so it can never be
+                mistaken for the primary action, and still clearly destructive. */}
+            {showDestructiveBand && (
+              <div
+                className="flex flex-wrap items-center gap-2 border-t pt-2"
+                data-live-destructive="true"
+              >
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="text-destructive hover:text-destructive"
+                  className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                   onClick={() => setCancelOpen(true)}
                   disabled={busy}
                 >
                   {t("teacher.live.cancel")}
                 </Button>
-              </>
+                <span className="text-[11px] text-muted-foreground">
+                  {t("teacher.live.cancelConfirm")}
+                </span>
+              </div>
             )}
           </div>
         </CardContent>
@@ -805,9 +860,10 @@ function SessionDetail({
           is untouched: the same draft, the same endpoints, the same lock. */}
       <Card className="glass" data-live-attendance-for={session.id}>
         <CardContent className="p-4 space-y-3">
-          <div className="flex items-start justify-between gap-2 flex-wrap">
+          <div className="flex flex-wrap items-start justify-between gap-2 border-b pb-2.5">
             <div className="min-w-0">
               <h3 className="flex flex-wrap items-center gap-2 text-sm font-bold">
+                <ClipboardCheck className="h-4 w-4 shrink-0 text-primary" />
                 {t("teacher.live.attendance")}
                 {locked && (
                   <Badge variant="secondary" className="gap-1 text-[10px]">
@@ -865,26 +921,44 @@ function SessionDetail({
           ) : null}
 
           {!locked && (
-            <div className="flex items-center gap-2 flex-wrap">
-              <div className="relative flex-1 min-w-48">
-                <Search className="w-4 h-4 absolute top-2.5 start-2.5 text-muted-foreground" />
+            // RTL audit: the search field takes the start of the row and the
+            // three tools hug the logical end; every control is the same height
+            // (`h-9`) so the row has one baseline instead of three.
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative min-w-0 flex-1 basis-48">
+                <Search className="absolute top-1/2 start-2.5 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder={t("teacher.live.search")}
-                  className="ps-8"
+                  className="h-9 ps-8"
                 />
               </div>
-              <Button size="sm" variant="outline" onClick={markAllPresent} disabled={roster.length === 0}>
-                <Zap className="w-4 h-4 ms-1.5" />
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-9"
+                onClick={markAllPresent}
+                disabled={roster.length === 0}
+              >
+                <Zap className="h-4 w-4 ms-1.5" />
                 {t("teacher.live.markAllPresent")}
               </Button>
-              <Button size="sm" onClick={save} disabled={busy || !dirty}>
-                <Check className="w-4 h-4 ms-1.5" />
+              {/* The register's own primary: saving the LOCAL draft is the one
+                  action the teacher must not miss; finalize keeps its own solid
+                  weight but is rendered as the secondary of the pair. */}
+              <Button size="sm" className="h-9" onClick={save} disabled={busy || !dirty}>
+                <Check className="h-4 w-4 ms-1.5" />
                 {t("teacher.live.save")}
               </Button>
-              <Button size="sm" variant="default" onClick={() => setFinalizeOpen(true)} disabled={busy}>
-                <Lock className="w-4 h-4 ms-1.5" />
+              <Button
+                size="sm"
+                variant="secondary"
+                className="h-9"
+                onClick={() => setFinalizeOpen(true)}
+                disabled={busy}
+              >
+                <Lock className="h-4 w-4 ms-1.5" />
                 {t("teacher.live.finalize")}
               </Button>
             </div>
@@ -900,11 +974,11 @@ function SessionDetail({
                   return (
                     <li
                       key={row.studentId}
-                      className="flex items-center gap-2 flex-wrap rounded-lg border p-2"
+                      className="flex flex-wrap items-center gap-2 rounded-lg border border-border/60 px-2.5 py-1.5"
                     >
-                      <div className="flex-1 min-w-40">
-                        <p className="text-sm font-medium truncate">{row.name}</p>
-                        <p className="text-[11px] text-muted-foreground">
+                      <div className="min-w-40 flex-1">
+                        <p className="truncate text-[13px] font-medium leading-snug">{row.name}</p>
+                        <p className="truncate text-[11px] text-muted-foreground">
                           {row.studentCode ? `${row.studentCode} • ` : ""}
                           {t("teacher.live.overall")}: {row.overallPct === null ? "—" : `${row.overallPct}%`}
                           {" • "}
@@ -914,13 +988,15 @@ function SessionDetail({
                       {locked ? (
                         <Badge variant="secondary">{t(attendanceKey(status))}</Badge>
                       ) : (
-                        <div className="flex gap-1">
+                        <div className="flex shrink-0 items-center gap-1">
                           {(["PRESENT", "LATE", "ABSENT"] as const).map((option) => (
                             <Button
                               key={option}
                               size="sm"
                               variant={status === option ? "default" : "outline"}
-                              className="h-7 px-2 text-xs"
+                              className={`h-7 px-2 text-[11px] ${
+                                status !== option ? "text-muted-foreground" : ""
+                              }`}
                               onClick={() => setStatus(row.studentId, option)}
                               aria-pressed={status === option}
                             >
@@ -1066,12 +1142,15 @@ function ContextItem({
   code?: string | null;
 }) {
   return (
-    <div className="min-w-0 space-y-0.5">
-      <dt className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+    // RTL audit: one fixed label column (`dt`) so every value starts on the same
+    // optical line; `start-*`/`text-start` logical utilities only, no physical
+    // left/right, so LTR and RTL both line up.
+    <div className="flex min-w-0 items-start gap-2">
+      <dt className="flex w-[5.5rem] shrink-0 items-center gap-1.5 pt-0.5 text-[11px] font-medium text-muted-foreground">
         {icon}
-        {label}
+        <span className="truncate">{label}</span>
       </dt>
-      <dd className="min-w-0 text-sm font-semibold break-words">
+      <dd className="min-w-0 flex-1 pt-0.5 text-sm font-semibold leading-snug break-words">
         <span className="flex flex-wrap items-center gap-1.5">
           {code ? (
             <Badge variant="outline" className="font-mono text-[10px]" dir="ltr">
