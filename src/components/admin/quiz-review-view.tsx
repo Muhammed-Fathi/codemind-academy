@@ -14,6 +14,7 @@
 import * as React from "react";
 import { motion } from "framer-motion";
 import { useT, pickAuto } from "@/lib/i18n";
+import { AcademicLevelBadge, AcademicLevelFilterSelect } from "@/components/admin/academic-level-ui";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -36,7 +37,12 @@ type AttemptRow = {
   percentage: number;
   cameraStatus: string;
   student: { id: string; name: string; email: string; studentCode: string | null };
-  quiz: { id: string; title: string; titleAr: string };
+  quiz: {
+    id: string;
+    title: string;
+    titleAr: string;
+    lesson?: { academicLevel?: string | null; officialCode?: string | null; title?: string; titleAr?: string } | null;
+  };
   evidence: EvidenceItem[];
 };
 
@@ -45,12 +51,15 @@ export function QuizReviewView() {
   const [rows, setRows] = React.useState<AttemptRow[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [page, setPage] = React.useState(1);
+  const [academicLevel, setAcademicLevel] = React.useState("");
   const [totalPages, setTotalPages] = React.useState(1);
 
   React.useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetch(`/api/admin/quiz-evidence?page=${page}`)
+    const params = new URLSearchParams({ page: String(page) });
+    if (academicLevel) params.set("academicLevel", academicLevel);
+    fetch(`/api/admin/quiz-evidence?${params.toString()}`)
       .then((r) => r.json())
       .then((d) => {
         if (cancelled) return;
@@ -62,7 +71,7 @@ export function QuizReviewView() {
     return () => {
       cancelled = true;
     };
-  }, [page]);
+  }, [page, academicLevel]);
 
   return (
     <motion.div
@@ -84,6 +93,12 @@ export function QuizReviewView() {
           <span>{tr("quiz.202")}</span>
         </p>
       </Card>
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="flex flex-col gap-1">
+          <span className="text-xs font-medium text-muted-foreground">{tr("admin.642")}</span>
+          <AcademicLevelFilterSelect value={academicLevel} onChange={(value) => { setAcademicLevel(value); setPage(1); }} />
+        </div>
+      </div>
 
       {loading ? (
         <div className="space-y-3">
@@ -105,6 +120,7 @@ export function QuizReviewView() {
                     <CardTitle className="text-base">{row.student.name}</CardTitle>
                     <CardDescription className="text-xs">
                       {pickAuto(row.quiz.titleAr, row.quiz.title)}
+                      {row.quiz.lesson && <AcademicLevelBadge level={row.quiz.lesson.academicLevel} className="ms-1.5" />}
                       {row.student.studentCode && (
                         <>
                           {" · "}

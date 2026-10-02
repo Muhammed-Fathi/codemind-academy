@@ -23,6 +23,7 @@ import { db } from "@/lib/db";
 import { ok, err, requireRole } from "@/lib/api";
 import { normalizeSchoolType, questionBankFilter } from "@/lib/school-type";
 import { normalizeAcademicLevel } from "@/lib/academic-level";
+import { parseAcademicLevelParam } from "@/lib/academic-level-query";
 import { getServerT } from "@/lib/i18n-server";
 import {
   countMockExamEligiblePool,
@@ -37,9 +38,15 @@ export async function GET(req: NextRequest) {
 
   const url = new URL(req.url);
   const schoolType = normalizeSchoolType(url.searchParams.get("schoolType"));
+  const levelParam = parseAcademicLevelParam(url.searchParams);
+  if (!levelParam.ok) return err("INVALID_ACADEMIC_LEVEL:academicLevel", 400);
+
+  const examWhere: any = {};
+  if (schoolType) examWhere.schoolType = schoolType;
+  if (levelParam.level) examWhere.course = { academicLevel: levelParam.level };
 
   const exams = await db.mockExam.findMany({
-    where: schoolType ? { schoolType } : {},
+    where: examWhere,
     orderBy: { createdAt: "desc" },
     include: {
       course: { select: { id: true, name: true, nameAr: true, academicLevel: true } },

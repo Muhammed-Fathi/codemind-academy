@@ -15,8 +15,10 @@ import {
 } from "@/lib/academic-level";
 import { reconcileStudentBatch } from "@/lib/enrollment";
 import { getVideoProgressForStudents } from "@/lib/progress";
+import { parseAcademicLevelParam } from "@/lib/academic-level-query";
 
 export async function GET(req: NextRequest) {
+  const tApi = await getServerT();
   const { error } = await requireRole("ADMIN");
   if (error) return error;
 
@@ -34,16 +36,14 @@ export async function GET(req: NextRequest) {
   // Academic-level view (Phase K manual-QA pass). Filters in SQL against the
   // TYPED Student.academicLevel column — never the derived `grade` string —
   // and composes with the track (schoolType) and status filters below.
-  // "" / "all" = every level; anything else must be a real enum value.
-  const academicLevelParam = (url.searchParams.get("academicLevel") || "").trim();
-  const academicLevel =
-    academicLevelParam && academicLevelParam !== "all"
-      ? normalizeAcademicLevel(academicLevelParam)
-      : null;
-  if (academicLevelParam && academicLevelParam !== "all" && !academicLevel) {
+  const academicLevelParam = parseAcademicLevelParam(url.searchParams);
+  if (!academicLevelParam.ok) {
     const tApi = await getServerT();
     return err(tApi("api.371"), 400);
   }
+  const academicLevel = academicLevelParam.level;
+  const groupId = url.searchParams.get("groupId")?.trim() || "";
+  const eligibleForGroupId = url.searchParams.get("eligibleForGroupId")?.trim() || "";
   const withProgress = url.searchParams.get("withProgress") === "1";
   const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
   const pageSize = Math.min(100, Math.max(1, parseInt(url.searchParams.get("pageSize") || "20", 10)));
@@ -65,6 +65,31 @@ export async function GET(req: NextRequest) {
   else if (unspecifiedOnly) where.schoolType = null;
   if (academicLevel) where.academicLevel = academicLevel;
 
+  // Group member and eligible-member queries are server-scoped. The old
+  // dialog loaded page 1 (20 students) and filtered that page in React,
+  // which made larger rosters look incomplete. `eligibleForGroupId` derives
+  // both orthogonal gates from the target Group → Course and returns only
+  // unassigned compatible students (the member roster has its own query).
+  if (groupId) where.groupId = groupId;
+  if (eligibleForGroupId) {
+    const targetGroup = await db.group.findUnique({
+      where: { id: eligibleForGroupId },
+      select: { trackScope: true, course: { select: { academicLevel: true } } },
+    });
+    if (!targetGroup) return err(tApi("api.020"), 404);
+    const targetLevel = normalizeAcademicLevel(targetGroup.course?.academicLevel);
+    const targetTrack = normalizeSchoolType(targetGroup.trackScope);
+    if (!targetLevel || !targetTrack) return err(tApi("api.285"), 409);
+    where.academicLevel = targetLevel;
+    where.schoolType = targetTrack;
+    if (where.OR) {
+      where.AND = [{ OR: where.OR }, { groupId: null }];
+      delete where.OR;
+    } else {
+      where.groupId = null;
+    }
+  }
+
   const [total, students] = await Promise.all([
     db.student.count({ where }),
     db.student.findMany({
@@ -73,7 +98,7 @@ export async function GET(req: NextRequest) {
         user: true,
         // Phase K2 — the course level is read so the list can flag an I1
         // mismatch (diagnostic only; never repaired at read time).
-        group: { select: { id: true, name: true, course: { select: { nameAr: true, academicLevel: true } } } },
+        group: { select: { id: true, name: true, trackScope: true, course: { select: { nameAr: true, name: true, academicLevel: true } } } },
         subscription: {
           select: {
             status: true,

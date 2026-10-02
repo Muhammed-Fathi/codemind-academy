@@ -14,19 +14,50 @@ import { db } from "@/lib/db";
 import { ok, err, requireRole } from "@/lib/api";
 import { parseGroupTrackScope } from "@/lib/track-scope";
 import { normalizeAcademicLevel } from "@/lib/academic-level";
+import { parseAcademicLevelParam } from "@/lib/academic-level-query";
+import { normalizeSchoolType } from "@/lib/school-type";
 
-export async function GET() {
+export async function GET(req?: NextRequest) {
   const { error } = await requireRole("ADMIN");
   if (error) return error;
 
-  const groups = await db.group.findMany({
-    include: {
-      course: { select: { id: true, nameAr: true, color: true, academicLevel: true } },
-      teacher: { select: { id: true, user: { select: { name: true } } } },
-      _count: { select: { students: true } },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+  const url = req ? new URL(req.url) : new URL("http://localhost/api/admin/groups");
+  const level = parseAcademicLevelParam(url.searchParams);
+  if (!level.ok) return err("INVALID_ACADEMIC_LEVEL:academicLevel", 400);
+  const search = url.searchParams.get("search")?.trim() || "";
+  const trackParam = url.searchParams.get("trackScope")?.trim() || "";
+  const track = trackParam ? normalizeSchoolType(trackParam) : null;
+  if (trackParam && !track) return err("INVALID_TRACK_SCOPE", 400);
+  const activeParam = url.searchParams.get("active");
+  const page = Math.max(1, Number.parseInt(url.searchParams.get("page") || "1", 10) || 1);
+  const pageSize = Math.min(100, Math.max(1, Number.parseInt(url.searchParams.get("pageSize") || "100", 10) || 100));
+  const where: any = {};
+  if (level.level) where.course = { academicLevel: level.level };
+  if (track) where.trackScope = track;
+  if (activeParam === "true") where.isActive = true;
+  if (activeParam === "false") where.isActive = false;
+  if (search) {
+    where.OR = [
+      { name: { contains: search } },
+      { course: { name: { contains: search } } },
+      { course: { nameAr: { contains: search } } },
+    ];
+  }
+
+  const [total, groups] = await Promise.all([
+    db.group.count({ where }),
+    db.group.findMany({
+      where,
+      include: {
+        course: { select: { id: true, name: true, nameAr: true, color: true, academicLevel: true } },
+        teacher: { select: { id: true, user: { select: { name: true } } } },
+        _count: { select: { students: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+  ]);
 
   return ok({
     groups: groups.map((g) => ({
@@ -34,6 +65,7 @@ export async function GET() {
       name: g.name,
       courseId: g.courseId,
       courseName: g.course?.nameAr,
+      courseNameEn: g.course?.name,
       courseColor: g.course?.color,
       // Phase K2 — derived from the course (never stored on the group).
       academicLevel: g.course?.academicLevel ?? null,
@@ -46,6 +78,13 @@ export async function GET() {
       trackScope: g.trackScope ?? null,
       studentsCount: g._count.students,
     })),
+    pagination: {
+      page,
+      pageSize,
+      total,
+      totalPages: Math.ceil(total / pageSize),
+      hasMore: page * pageSize < total,
+    },
   });
 }
 

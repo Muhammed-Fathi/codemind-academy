@@ -19,6 +19,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { KeyRound, Search, X } from "lucide-react";
+import { AcademicLevelBadge } from "@/components/admin/academic-level-ui";
+import { lessonLabelFor } from "@/lib/academic-level-labels";
 
 type OverrideRow = {
   id: string;
@@ -29,7 +31,13 @@ type OverrideRow = {
   revokedAt: string | null;
   revokeReason: string | null;
   active: boolean;
-  lesson: { id: string; title: string; titleAr: string; officialCode: string | null } | null;
+  lesson: {
+    id: string;
+    title: string;
+    titleAr: string;
+    officialCode: string | null;
+    academicLevel?: string | null;
+  } | null;
   grantedBy: { id: string; name: string | null };
   revokedBy: { id: string; name: string | null } | null;
 };
@@ -39,7 +47,12 @@ type LessonOption = {
   title: string;
   titleAr: string;
   officialCode: string | null;
+  academicLevel?: string | null;
   status: string;
+  identity?: {
+    course?: { name: string; nameAr: string; academicLevel?: string | null } | null;
+    unit?: { title: string; titleAr: string } | null;
+  } | null;
 };
 
 function fmtDate(iso: string | null): string {
@@ -97,11 +110,22 @@ export function ProgressionOverrideSection({ studentId }: { studentId: string })
   // Grantable lessons are PUBLISHED sessions; the server re-validates the
   // course + track + lifecycle rules, so a stale option can never over-grant.
   React.useEffect(() => {
-    fetch("/api/admin/lessons?status=PUBLISHED&pageSize=200")
+    let cancelled = false;
+    // The API derives the student's canonical Group → Course scope and
+    // returns only lessons from that course. This is intentionally not a
+    // client-side filter: duplicate official codes are valid across levels.
+    fetch(`/api/admin/lessons?status=PUBLISHED&pageSize=200&studentId=${encodeURIComponent(studentId)}`)
       .then((r) => r.json())
-      .then((j) => setLessons((j.lessons ?? []) as LessonOption[]))
-      .catch(() => {});
-  }, []);
+      .then((j) => {
+        if (!cancelled) setLessons((j.lessons ?? []) as LessonOption[]);
+      })
+      .catch(() => {
+        if (!cancelled) setLessons([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [studentId]);
 
   const picked = lessons.find((l) => l.id === lessonId) ?? null;
   const q = search.trim().toLowerCase();
@@ -190,10 +214,20 @@ export function ProgressionOverrideSection({ studentId }: { studentId: string })
           <Label>{tr("phaseh.ovLesson")}</Label>
           {picked ? (
             <div className="flex items-center gap-2 rounded-md border px-2 py-1.5 text-sm">
-              <span className="flex-1 truncate">
-                {picked.titleAr || picked.title}
-                {picked.officialCode ? ` (${picked.officialCode})` : ""}
+              <span className="flex-1 min-w-0 truncate" title={lessonLabelFor(tr, {
+                academicLevel: picked.identity?.course?.academicLevel ?? picked.academicLevel,
+                officialCode: picked.officialCode,
+                title: picked.titleAr || picked.title,
+                unitLabel: picked.identity?.unit?.titleAr || picked.identity?.unit?.title,
+              })}>
+                {lessonLabelFor(tr, {
+                  academicLevel: picked.identity?.course?.academicLevel ?? picked.academicLevel,
+                  officialCode: picked.officialCode,
+                  title: picked.titleAr || picked.title,
+                  unitLabel: picked.identity?.unit?.titleAr || picked.identity?.unit?.title,
+                })}
               </span>
+              <AcademicLevelBadge level={picked.identity?.course?.academicLevel ?? picked.academicLevel} />
               <button
                 type="button"
                 className="text-muted-foreground hover:text-foreground"
@@ -229,10 +263,17 @@ export function ProgressionOverrideSection({ studentId }: { studentId: string })
                         setSearch("");
                       }}
                     >
-                      <span className="block truncate">{l.titleAr || l.title}</span>
-                      {l.officialCode && (
-                        <span className="block text-xs text-muted-foreground">{l.officialCode}</span>
-                      )}
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <span className="min-w-0 truncate">
+                          {lessonLabelFor(tr, {
+                            academicLevel: l.identity?.course?.academicLevel ?? l.academicLevel,
+                            officialCode: l.officialCode,
+                            title: l.titleAr || l.title,
+                            unitLabel: l.identity?.unit?.titleAr || l.identity?.unit?.title,
+                          })}
+                        </span>
+                        <AcademicLevelBadge level={l.identity?.course?.academicLevel ?? l.academicLevel} />
+                      </span>
                     </button>
                   ))}
                 </div>

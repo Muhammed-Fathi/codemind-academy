@@ -2839,6 +2839,18 @@ export const DICT_2026: Record<string, DictEntry> = {
     ar: "الصف الدراسي للكورس ثابت طالما له طلاب أو جلسات أو اشتراكات مرتبطة",
     en: "The course level is locked while students, sessions or enrollments depend on it",
   },
+  "admin.668": { ar: "فحص سلامة الصفوف", en: "Academic level integrity" },
+  "admin.669": { ar: "سليم", en: "Healthy" },
+  "admin.670": { ar: "تعذر تحميل فحص سلامة الصفوف", en: "Could not load the academic-level integrity check" },
+  "admin.671": { ar: "يحتاج مراجعة", en: "Needs review" },
+  "admin.672": { ar: "لا توجد مخالفات أو بيانات غير مكتملة في العلاقات الأساسية.", en: "No mismatches or incomplete level data were found in the core relationships." },
+  "admin.673": { ar: "هذه قراءة تشخيصية فقط. راجع السجلات قبل أي إصلاح صريح؛ لم يتم تعديل أي بيانات.", en: "This is a read-only diagnostic. Review the records before an explicit fix; no data was changed." },
+  "admin.674": { ar: "تعارضات الطالب/المجموعة", en: "Student/group mismatches" },
+  "admin.675": { ar: "تعارضات الدروس", en: "Lesson mismatches" },
+  "admin.676": { ar: "بيانات غير مكتملة", en: "Incomplete level data" },
+  "admin.677": { ar: "إجمالي التنبيهات", en: "Total findings" },
+  "admin.678": { ar: "تظهر هنا فقط الطلاب المطابقون للصف والمسار ويمكن البحث في كامل النتائج.", en: "Only students compatible with this level and track are shown; search covers the full result set." },
+  "admin.679": { ar: "إضافة", en: "Add" },
   // Phase 11 — official-curriculum reconcile (moved from admin.318–320, which
   // collided with the base-dictionary group-audience keys).
   "admin.652": { ar: "مطابقة المنهج الرسمي", en: "Reconcile official curriculum" },

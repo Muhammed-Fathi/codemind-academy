@@ -10,6 +10,7 @@ import {
   type LevelCurriculumSpec,
 } from "@/lib/official-curriculum";
 import { requireAcademicLevel } from "@/lib/academic-level";
+import { parseAcademicLevelParam } from "@/lib/academic-level-query";
 
 export async function POST(req: NextRequest) {
   const tApi = await getServerT();
@@ -91,6 +92,8 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const withTree = url.searchParams.get("tree") === "1";
   const courseId = url.searchParams.get("id");
+  const levelParam = parseAcademicLevelParam(url.searchParams);
+  if (!levelParam.ok) return err(tApi("api.371"), 400);
 
   if (courseId) {
     const course = await db.course.findUnique({
@@ -176,6 +179,7 @@ export async function GET(req: NextRequest) {
   };
 
   const courses = await db.course.findMany({
+    where: levelParam.level ? { academicLevel: levelParam.level } : undefined,
     include: {
       parts: (withTree ? FULL_PARTS : COUNT_ONLY_PARTS) as any,
       _count: { select: { groups: true } },

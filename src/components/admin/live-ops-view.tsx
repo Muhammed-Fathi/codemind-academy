@@ -25,7 +25,7 @@
 "use client";
 
 import * as React from "react";
-import { useT } from "@/lib/i18n";
+import { useT, pickAuto } from "@/lib/i18n";
 import { useApp } from "@/lib/store";
 import { fmtDateTime as formatDateTime, type Locale } from "@/lib/i18n-core";
 import { useJson, sendJson } from "@/lib/use-json";
@@ -38,6 +38,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { EntitySelect, type EntityOption } from "@/components/shared/entity-select";
+import { AcademicLevelFilterSelect, academicLevelLabel } from "@/components/admin/academic-level-ui";
 import {
   sessionDisplayOverride,
   sessionLessonIdentity,
@@ -85,7 +86,13 @@ type SessionRow = {
   attendanceLocked: boolean;
   attendanceFinalizedAt: string | null;
   rescheduleCount: number;
-  group: { id: string; name: string } | null;
+  group: {
+    id: string;
+    name: string;
+    academicLevel?: string | null;
+    courseName?: string | null;
+    courseNameEn?: string | null;
+  } | null;
   lesson: { id: string; title: string; titleAr: string; officialCode?: string | null } | null;
   teacher: { id: string; name: string } | null;
   substituteTeacher: { id: string; name: string } | null;
@@ -103,7 +110,13 @@ type AbsenceCase = {
   student: { id: string; name: string; studentCode: string | null };
   session: { id: string; title: string; titleAr: string; startAt: string };
   lesson: { id: string; title: string; titleAr: string; officialCode?: string | null } | null;
-  group: { id: string; name: string } | null;
+  group: {
+    id: string;
+    name: string;
+    academicLevel?: string | null;
+    courseName?: string | null;
+    courseNameEn?: string | null;
+  } | null;
   teacherName: string | null;
   hold: { status: string } | null;
   submissions: Array<{ id: string; reason: string; role: string; at: string; byName: string | null }>;
@@ -182,18 +195,22 @@ export function AdminLiveOpsView() {
   const fmt = (value: string | null) => (value ? formatDateTime(value, locale) : "");
 
   const [tab, setTab] = React.useState<"sessions" | "review" | "absences" | "flags">("sessions");
-  const [filters, setFilters] = React.useState({ from: "", to: "", groupId: "", teacherId: "", status: "", q: "" });
+  const [filters, setFilters] = React.useState({ from: "", to: "", groupId: "", teacherId: "", status: "", q: "", academicLevel: "" });
   // Finding 1 — the teacher/group filters are SELECTORS over the authoritative
   // admin lists (the screen can never invent an id), while the query sent to
   // /api/admin/live-ops keeps exactly the same `groupId` / `teacherId` params.
-  const filterGroups = useJson<{ groups: Array<{ id: string; name: string; courseName?: string | null; studentsCount?: number }> }>("/api/admin/groups");
+  const groupFilterQuery = React.useMemo(
+    () => `/api/admin/groups${filters.academicLevel ? `?academicLevel=${encodeURIComponent(filters.academicLevel)}` : ""}`,
+    [filters.academicLevel]
+  );
+  const filterGroups = useJson<{ groups: Array<{ id: string; name: string; academicLevel?: string | null; courseName?: string | null; courseNameEn?: string | null; studentsCount?: number }> }>(groupFilterQuery);
   const filterTeachers = useJson<{ teachers: Array<{ id: string; name: string; email?: string | null; groupsCount?: number }> }>("/api/admin/teachers");
   const groupOptions: EntityOption[] = React.useMemo(
     () =>
       (filterGroups.data?.groups ?? []).map((g) => ({
         value: g.id,
-        label: g.name,
-        hint: g.courseName || undefined,
+        label: `${g.academicLevel ? `${academicLevelLabel(t, g.academicLevel)} · ` : ""}${g.name}`,
+        hint: pickAuto(g.courseName, g.courseNameEn) || undefined,
         meta: typeof g.studentsCount === "number" ? t("live.filter.optionCount", { p1: g.studentsCount }) : undefined,
       })),
     [filterGroups.data, t]
@@ -218,6 +235,7 @@ export function AdminLiveOpsView() {
     if (filters.teacherId) params.set("teacherId", filters.teacherId);
     if (filters.status) params.set("status", filters.status);
     if (filters.q) params.set("q", filters.q);
+    if (filters.academicLevel) params.set("academicLevel", filters.academicLevel);
     params.set("absenceStatus", absenceStatus);
     return `/api/admin/live-ops?${params.toString()}`;
   }, [filters, absenceStatus]);
@@ -306,7 +324,15 @@ export function AdminLiveOpsView() {
       ) : !data ? null : tab === "sessions" ? (
         <Card className="glass">
           <CardContent className="p-4 space-y-3">
-            <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-2">
+            <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-7 gap-2">
+              <div>
+                <Label className="text-[11px]">{t("admin.642")}</Label>
+                <AcademicLevelFilterSelect
+                  value={filters.academicLevel}
+                  onChange={(academicLevel) => setFilters({ ...filters, academicLevel, groupId: "" })}
+                  className="w-full"
+                />
+              </div>
               <div>
                 <Label className="text-[11px]">{t("admin.live.filterFrom")}</Label>
                 <Input type="date" value={filters.from} onChange={(e) => setFilters({ ...filters, from: e.target.value })} />
@@ -419,7 +445,10 @@ export function AdminLiveOpsView() {
                             )}
                           </TableCell>
                           <TableCell className="text-xs whitespace-nowrap">{fmt(s.startAt)}</TableCell>
-                          <TableCell className="text-xs">{s.group?.name ?? "—"}</TableCell>
+                          <TableCell className="text-xs">
+                            {s.group?.academicLevel ? `${academicLevelLabel(t, s.group.academicLevel)} · ` : ""}{s.group?.name ?? "—"}
+                            {s.group?.courseName ? ` · ${pickAuto(s.group.courseName, s.group.courseNameEn)}` : ""}
+                          </TableCell>
                           <TableCell className="text-xs">
                             {s.substituteTeacher ? `${s.substituteTeacher.name} (${t("admin.live.substitute")})` : s.teacher?.name ?? "—"}
                           </TableCell>
@@ -495,7 +524,7 @@ export function AdminLiveOpsView() {
                     <div className="min-w-0">
                       <p className="font-medium text-sm truncate">{s.titleAr || s.title}</p>
                       <p className="text-[11px] text-muted-foreground">
-                        {fmt(s.startAt)} • {s.group?.name ?? "—"} • {s.teacher?.name ?? "—"}
+                        {fmt(s.startAt)} • {s.group?.academicLevel ? `${academicLevelLabel(t, s.group.academicLevel)} · ` : ""}{s.group?.name ?? "—"} • {s.teacher?.name ?? "—"}
                       </p>
                       <p className="text-[11px] text-muted-foreground">
                         {t("teacher.live.completion", { p1: s.counts.marked, p2: s.counts.total })}
@@ -664,7 +693,9 @@ function AbsenceReviewRow({
               sessionDisplayOverride(item.session.titleAr || item.session.title, item.lesson, locale) ??
               (item.session.titleAr || item.session.title)}{" "}
             • {fmt(item.session.startAt)}
-            {item.group ? ` • ${item.group.name}` : ""}
+            {item.group
+              ? ` • ${item.group.academicLevel ? `${academicLevelLabel(t, item.group.academicLevel)} · ` : ""}${item.group.name}${item.group.courseName ? ` · ${pickAuto(item.group.courseName, item.group.courseNameEn)}` : ""}`
+              : ""}
             {item.teacherName ? ` • ${item.teacherName}` : ""}
           </p>
         </div>
@@ -1047,7 +1078,7 @@ function AdminScheduleDialog({
   const locale = useApp((s) => (s.locale === "en" ? "en" : "ar")) as Locale;
   // Finding 2 — the group is chosen from the authoritative list and carries its
   // COURSE, which is what constrains the selectable Lessons below.
-  const groups = useJson<{ groups: Array<{ id: string; name: string; courseId: string; courseName?: string | null }> }>(open ? "/api/admin/groups" : null);
+  const groups = useJson<{ groups: Array<{ id: string; name: string; courseId: string; courseName?: string | null; courseNameEn?: string | null; academicLevel?: string | null }> }>(open ? "/api/admin/groups" : null);
   const [groupId, setGroupId] = React.useState("");
   const [lessonId, setLessonId] = React.useState("");
   const [teacherId, setTeacherId] = React.useState("");
@@ -1067,20 +1098,21 @@ function AdminScheduleDialog({
     () => (groups.data?.groups ?? []).find((g) => g.id === groupId)?.courseId ?? null,
     [groups.data, groupId]
   );
-  const lessons = useJson<{ lessons: Array<{ id: string; officialCode?: string | null; title: string; titleAr: string }> }>(
+  const lessons = useJson<{ lessons: Array<{ id: string; officialCode?: string | null; title: string; titleAr: string; academicLevel?: string | null }> }>(
     open && selectedGroupCourseId ? `/api/admin/lessons?courseId=${selectedGroupCourseId}&limit=200` : null
   );
   const lessonOptions: EntityOption[] = React.useMemo(
     () =>
       (lessons.data?.lessons ?? []).map((l) => ({
         value: l.id,
-        label:
+        label: `${l.academicLevel ? `${academicLevelLabel(t, l.academicLevel)} · ` : ""}${
           sessionLessonIdentity(
             { officialCode: l.officialCode ?? null, title: l.title, titleAr: l.titleAr },
             locale
-          ) ?? l.id,
+          ) ?? l.id
+        }`,
       })),
-    [lessons.data, locale]
+    [lessons.data, locale, t]
   );
   const selectedLessonLabel = React.useMemo(
     () => lessonOptions.find((o) => o.value === lessonId)?.label ?? "",
@@ -1153,8 +1185,8 @@ function AdminScheduleDialog({
               onChange={setGroupId}
               options={(groups.data?.groups ?? []).map((g) => ({
                 value: g.id,
-                label: g.name,
-                hint: g.courseName || undefined,
+                label: `${g.academicLevel ? `${academicLevelLabel(t, g.academicLevel)} · ` : ""}${g.name}`,
+                hint: pickAuto(g.courseName, g.courseNameEn) || undefined,
               }))}
               placeholder={t("admin.live.filterGroup")}
               searchPlaceholder={t("live.filter.searchGroups")}

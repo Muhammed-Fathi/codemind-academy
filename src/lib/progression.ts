@@ -1503,6 +1503,7 @@ export type OverrideListItem = {
     title: string;
     titleAr: string;
     officialCode: string | null;
+    academicLevel: string | null;
   } | null;
   /** Granting Admin (audit identity; id always present, name best-effort). */
   grantedBy: { id: string; name: string | null } | null;
@@ -1549,11 +1550,17 @@ export async function listProgressionOverrides(input: {
   ];
   // Sequential + explicitly typed: the generated client is `any` in this
   // repo's toolchain, so tuple inference through Promise.all collapses.
-  const lessons: { id: string; title: string; titleAr: string; officialCode: string | null }[] =
+  const lessons: { id: string; title: string; titleAr: string; officialCode: string | null; academicLevel: string | null }[] =
     lessonIds.length > 0
       ? await db.lesson.findMany({
           where: { id: { in: lessonIds } },
-          select: { id: true, title: true, titleAr: true, officialCode: true },
+          select: {
+            id: true,
+            title: true,
+            titleAr: true,
+            officialCode: true,
+            academicLevel: true,
+          },
         })
       : [];
   const users: { id: string; name: string | null }[] =
@@ -1563,7 +1570,7 @@ export async function listProgressionOverrides(input: {
           select: { id: true, name: true },
         })
       : [];
-  const lessonById = new Map<string, { id: string; title: string; titleAr: string; officialCode: string | null }>(
+  const lessonById = new Map<string, { id: string; title: string; titleAr: string; officialCode: string | null; academicLevel: string | null }>(
     lessons.map((l) => [l.id, l])
   );
   const userById = new Map<string, { id: string; name: string | null }>(users.map((u) => [u.id, u]));
@@ -1590,6 +1597,7 @@ export async function listProgressionOverrides(input: {
             title: lesson.title,
             titleAr: lesson.titleAr,
             officialCode: lesson.officialCode ?? null,
+            academicLevel: lesson.academicLevel ?? null,
           }
         : null,
       grantedBy: granter
