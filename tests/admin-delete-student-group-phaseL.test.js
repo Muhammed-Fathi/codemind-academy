@@ -74,6 +74,7 @@ const os = require("os");
 const path = require("path");
 const Module = require("module");
 const { pathToFileURL } = require("url");
+const { cleanupTempDir } = require("./helpers/temp-dir-cleanup.cjs");
 
 const REPO = path.join(__dirname, "..");
 const OUT = fs.mkdtempSync(path.join(os.tmpdir(), "cm-delete-"));
@@ -199,10 +200,16 @@ function section(t) {
   };
 
   let scenario = 0;
+  // Every scenario opens its OWN database file inside OUT. They used to stay
+  // open (each `freshDb()` call leaked the previous handle), which is invisible
+  // on POSIX but makes the teardown `fs.rmSync(OUT)` fail with EPERM on Windows.
+  // Keep them all so teardown can close them deterministically.
+  const OPEN_DBS = [];
   function freshDb() {
     scenario++;
     const file = path.join(OUT, `db-${scenario}.db`);
     const d = new DatabaseSync(file);
+    OPEN_DBS.push(d);
     quiet(() => applyMigrations(d, { withBaseSchema: true, label: "" }));
     global.__CM_DB__ = createSqlitePrisma({ db: d, schemaPath: path.join(REPO, "prisma/schema.prisma") });
     global.__CM_DB__.__raw = d;
@@ -890,7 +897,13 @@ function section(t) {
   }
 
   // -------------------------------------------------------------------------
-  fs.rmSync(OUT, { recursive: true, force: true });
+  // Harness teardown — Windows-safe ordering: close EVERY scenario database
+  // (plus the Prisma-shaped shim), restore the module-resolution patch, and
+  // only then remove the temp dir. `cleanupTempDir` retries the removal with
+  // bounded backoff for the residual AV/indexer window and throws — never
+  // swallows — if the directory survives.
+  Module._resolveFilename = origResolve;
+  await cleanupTempDir(OUT, { databases: OPEN_DBS, clients: [global.__CM_DB__] });
   console.log(`\nadmin delete student/group (phase L): ${passed} passed, ${failed} failed`);
   if (failed) {
     console.log("\nFailures:");

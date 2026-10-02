@@ -66,6 +66,7 @@ const os = require("os");
 const path = require("path");
 const Module = require("module");
 const { pathToFileURL } = require("url");
+const { cleanupTempDir } = require("./helpers/temp-dir-cleanup.cjs");
 
 const REPO = path.join(__dirname, "..");
 const OUT = fs.mkdtempSync(path.join(os.tmpdir(), "cm-teacherlevel-"));
@@ -708,7 +709,16 @@ function read(rel) {
   }
 
   // -------------------------------------------------------------------------
-  fs.rmSync(OUT, { recursive: true, force: true });
+  // Harness teardown — Windows-safe ordering: release the handles the harness
+  // owns (the SQLite database opened on `OUT/teacher.db` and the Prisma-shaped
+  // shim around it) and restore the module-resolution patch BEFORE removing the
+  // temp dir. Windows keeps a mandatory lock on an open database file, so a
+  // bare `fs.rmSync(OUT)` ended the run with EPERM even though every assertion
+  // above had passed. `cleanupTempDir` still applies bounded retry semantics
+  // for the residual AV/indexer window, and it THROWS rather than silently
+  // leaving the directory behind.
+  Module._resolveFilename = origResolve;
+  await cleanupTempDir(OUT, { databases: [d], clients: [global.__CM_DB__] });
   console.log(`\nteacher academic level (phase L): ${passed} passed, ${failed} failed`);
   if (failed) {
     console.log("\nFailures:");
