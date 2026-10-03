@@ -34,6 +34,10 @@ import * as React from "react";
 import { useT } from "@/lib/i18n";
 import { useApp } from "@/lib/store";
 import { navigateDeepLink, resolveDeepLinkForRole } from "@/lib/deep-link";
+import {
+  openStudentLesson,
+  studentLessonIdFromNotificationLink,
+} from "@/lib/student-navigation";
 import { SessionLinkActions } from "@/components/shared/session-link-actions";
 import { isViewForRole } from "@/lib/view-roles";
 import { Card, CardContent } from "@/components/ui/card";
@@ -182,12 +186,21 @@ export function NotificationsPanel({
   };
 
   const openNotification = (n: NotifItem) => {
+    if (!user) return; // unauthenticated: nothing is navigable
     const view = targetViewFor(n);
     if (!view) return; // informational — the row click already read it
     if (!n.isRead) void markRead(n.id);
-    // navigateDeepLink keeps the Phase 16 ORDER: setView first (which resets
-    // navParam), setNavParam second — a `lesson:<id>` link must land on the
-    // specific lesson, not the list.
+    // Phase M4.2 — `lesson:<id>` is opened through the ONE student
+    // lesson-navigation rule: the lesson view re-fetches by the store's
+    // `lessonId`, NOT by `navParam`, so a stale previous selection would
+    // otherwise win. `openStudentLesson` moves the fetch key first and then
+    // the (view, navParam) pair, reusing the same strict parse + role gate
+    // this panel already applies.
+    const lessonId = studentLessonIdFromNotificationLink(n.link, user.role);
+    if (lessonId && openStudentLesson(useApp.getState(), lessonId)) return;
+    // Every other kind keeps the Phase 16 ORDER: setView first (which resets
+    // navParam), setNavParam second — a `video:<id>`/`homework:<id>` link must
+    // land on the specific resource, not the list.
     navigateDeepLink(n.link, useApp.getState());
   };
 

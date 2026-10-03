@@ -3008,4 +3008,27 @@ export const DICT_2026: Record<string, DictEntry> = {
     ar: "النقاط والمستوى والشارات وسلسلة الأيام: على مستوى الأكاديمية بالكامل — الدروس والاختبارات في القائمة: الكورس الحالي",
     en: "XP, level, badges and streak are academy-wide — the lesson and quiz counts in the list are this course's",
   },
+
+  // ========================================================================
+  // Phase M4.2 — Student learning & content flows. `student.253` replaces the
+  // hard-coded English "Mock Exam Mode" title. The PASSIVE Academic Level
+  // captions added in this phase compose their text through the ONE shared
+  // vocabulary in src/lib/academic-level-labels.ts (D3), so no second set of
+  // level strings is registered here.
+  // ========================================================================
+  "student.253": {
+    ar: "وضع الامتحان التجريبي",
+    en: "Mock Exam Mode",
+  },
+
+  // ========================================================================
+  // Phase M4.2 — StudyTask lesson validation. ONE generic sentence for every
+  // rejected `lessonId` shape (another course, another level, archived,
+  // unpublished, foreign track, unknown id): the response must not become an
+  // oracle that tells a caller WHICH clause refused the id.
+  // ========================================================================
+  "api.384": {
+    ar: "الحصة المختارة مش جزء من منهج كورسك الحالي.",
+    en: "The selected lesson is not part of your current course curriculum.",
+  },
 };

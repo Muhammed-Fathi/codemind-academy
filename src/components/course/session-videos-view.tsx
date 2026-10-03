@@ -26,6 +26,7 @@ import { useApp } from "@/lib/store";
 // render mode here (rather than trusting a server flag) also repairs rows
 // stored before the URL contract existed.
 import { resolveExternalVideoPlayback } from "@/lib/video-url";
+import { academicLevelLabelFor } from "@/lib/academic-level-labels";
 import { CheckCircle2, PlayCircle, Video, Lock } from "lucide-react";
 
 type SessionVideo = {
@@ -40,6 +41,14 @@ type SessionVideo = {
     titleAr: string;
     /** Phase B — human-readable session identity (1-1). Never a raw id. */
     officialCode: string | null;
+    /** Derived cache; the course's level below is the authority when present. */
+    academicLevel?: string | null;
+    /**
+     * Phase M4.2 — read-only course context (canonical chain first), enough to
+     * tell two recordings apart when they share a printed session code. Display
+     * only: nothing here re-scopes the list or affects a requirement verdict.
+     */
+    course?: { id: string; name: string; nameAr: string; academicLevel: string } | null;
   } | null;
   requiredPercent: number;
   publishedAt: string | null;
@@ -274,6 +283,20 @@ export function StudentSessionVideosView() {
                             ? `${v.lesson.officialCode} · `
                             : ""}
                           {pickAuto(v.lesson.titleAr, v.lesson.title)}
+                        </div>
+                      )}
+                      {/* Phase M4.2 — level + course caption. The same printed
+                          code (and often the same title) exists at both levels,
+                          so the row names the level the recording belongs to. */}
+                      {v.lesson && (
+                        <div className="truncate text-[10px] text-muted-foreground/80">
+                          {academicLevelLabelFor(
+                            tr,
+                            v.lesson.course?.academicLevel ?? v.lesson.academicLevel
+                          )}
+                          {v.lesson.course
+                            ? ` · ${pickAuto(v.lesson.course.nameAr, v.lesson.course.name)}`
+                            : ""}
                         </div>
                       )}
                       <div className="mt-1">

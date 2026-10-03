@@ -467,6 +467,13 @@ export async function GET(
           slug: chainCourse.slug,
           name: chainCourse.name,
           nameAr: chainCourse.nameAr,
+          // Phase M4.2 — PASSIVE Academic Level context, read straight off
+          // the canonical course authority (`Course.academicLevel`). The
+          // lesson's own denormalized `academicLevel` is a derived cache and
+          // is deliberately NOT what the client is told to trust here. This
+          // field is display-only: it changes no gating, no ordering and no
+          // progression rule in this route.
+          academicLevel: chainCourse.academicLevel,
         }
       : null,
     // Every quiz of the session — the engine requires all of them.

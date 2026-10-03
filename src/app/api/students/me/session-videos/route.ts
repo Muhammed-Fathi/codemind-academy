@@ -52,6 +52,36 @@ import { canAccessLesson } from "@/lib/session-progress";
 import { isManagedPrivateStorage } from "@/lib/media";
 import { effectiveRequirementMode, loadVideoApplicability } from "@/lib/video-applicability";
 
+/**
+ * Phase M4.2 — READ-ONLY course context for one recording's lesson.
+ *
+ * Canonical chain first (`Lesson → Unit → Part → Course`), the legacy
+ * `Lesson → Topic → Unit → Part → Course` chain as the documented fallback.
+ * This exists because the same printed session code exists at BOTH Academic
+ * Levels: a list row can only be truthful about which session a recording
+ * belongs to when it names the level (and the course) next to the code.
+ *
+ * It decides nothing: authorization, applicability, `requirementMode`, watch
+ * progress and lifecycle stay exactly where they were.
+ */
+function lessonCourseContext(lesson: {
+  unit?: { part?: { course?: unknown } | null } | null;
+  topic?: { unit?: { part?: { course?: unknown } | null } | null } | null;
+}): { id: string; name: string; nameAr: string; academicLevel: unknown } | null {
+  const raw =
+    lesson.unit?.part?.course ?? lesson.topic?.unit?.part?.course ?? null;
+  const course = raw as
+    | { id?: unknown; name?: unknown; nameAr?: unknown; academicLevel?: unknown }
+    | null;
+  if (!course || typeof course.id !== "string") return null;
+  return {
+    id: course.id,
+    name: String(course.name ?? ""),
+    nameAr: String(course.nameAr ?? course.name ?? ""),
+    academicLevel: course.academicLevel ?? null,
+  };
+}
+
 export async function GET(req: NextRequest) {
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
@@ -117,7 +147,42 @@ export async function GET(req: NextRequest) {
       // It is skeleton metadata (safe for every status, as the course tree
       // already serialises it) and lets the standalone library identify WHICH
       // session each recording belongs to without raw ids.
-      lesson: { select: { id: true, title: true, titleAr: true, officialCode: true } },
+      lesson: {
+        select: {
+          id: true,
+          title: true,
+          titleAr: true,
+          officialCode: true,
+          // Derived denormalized cache — caption fallback only.
+          academicLevel: true,
+          unit: {
+            select: {
+              part: {
+                select: {
+                  course: {
+                    select: { id: true, name: true, nameAr: true, academicLevel: true },
+                  },
+                },
+              },
+            },
+          },
+          topic: {
+            select: {
+              unit: {
+                select: {
+                  part: {
+                    select: {
+                      course: {
+                        select: { id: true, name: true, nameAr: true, academicLevel: true },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
       views: { where: { studentId: student.id }, take: 1 },
     },
     take: 100,
@@ -176,7 +241,20 @@ export async function GET(req: NextRequest) {
         title: v.title,
         titleAr: v.titleAr,
         description: v.description,
-        lesson: v.lesson,
+        // Phase M4.2 — the same lesson identity the Phase 13 payload always
+        // carried, plus read-only level/course context. `id` stays the ONLY
+        // identity; `officialCode` is not unique across levels and is always
+        // rendered together with the level.
+        lesson: v.lesson
+          ? {
+              id: v.lesson.id,
+              title: v.lesson.title,
+              titleAr: v.lesson.titleAr,
+              officialCode: v.lesson.officialCode,
+              academicLevel: v.lesson.academicLevel,
+              course: lessonCourseContext(v.lesson),
+            }
+          : null,
         isRequiredForProgression: v.isRequiredForProgression,
         // Requirement identity for THIS student: the mode, the engine's
         // applicable/exempt verdict, and the machine-readable reason.

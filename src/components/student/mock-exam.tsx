@@ -4,6 +4,7 @@ import { useT , pickAuto } from "@/lib/i18n";
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useApp } from "@/lib/store";
+import { academicLevelLabelFor } from "@/lib/academic-level-labels";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -32,6 +33,12 @@ type Question = {
   marks: number;
   source: string;
   lessonTitle: string;
+  /**
+   * Phase M4.2 — the lesson's printed code (`1-1`), DISPLAY context only. It is
+   * not unique across Academic Levels, so it is always rendered next to the
+   * level/title and never used as an identity.
+   */
+  lessonCode?: string | null;
 };
 
 // Post-submit review row from the server. Correctness is server truth — the
@@ -76,6 +83,14 @@ type AssignedExam = {
   selectionMode: string;
   attempts: number;
   bestPercentage: number | null;
+  /**
+   * Phase M4.2 — read-only context of the exam's OWN course (canonical
+   * `Course.academicLevel`). The strict `MockExam.courseId` scope is unchanged;
+   * this only lets two same-named exams be told apart on screen.
+   */
+  academicLevel?: string | null;
+  courseName?: string | null;
+  courseNameAr?: string | null;
 };
 
 type Phase = "setup" | "exam" | "result";
@@ -222,7 +237,10 @@ export function MockExamRunner() {
                   <Timer className="w-5 h-5" />
                 </div>
                 <div>
-                  <CardTitle className="text-xl">Mock Exam Mode</CardTitle>
+                  {/* Phase M4.2 — this was the last hard-coded English title on
+                      the student surface; the level caption below is passive
+                      context (`Course.academicLevel`). */}
+                  <CardTitle className="text-xl">{tr("student.253")}</CardTitle>
                   <CardDescription>
                     {tr("student.058")}</CardDescription>
                 </div>
@@ -248,6 +266,15 @@ export function MockExamRunner() {
                               {pickAuto(e.titleAr, e.title)}
                             </div>
                             <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                              {/* Level + course context: the two courses share
+                                  a name and reuse the same printed codes, so the
+                                  level is what makes the row unambiguous. */}
+                              <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold text-primary">
+                                {academicLevelLabelFor(tr, e.academicLevel)}
+                                {e.courseName || e.courseNameAr
+                                  ? ` · ${pickAuto(e.courseNameAr, e.courseName ?? "")}`
+                                  : ""}
+                              </span>
                               <span>
                                 {e.questionCount} {tr("student.060")}
                               </span>
@@ -401,6 +428,7 @@ export function MockExamRunner() {
                     </Badge>
                   </div>
                   <div className="text-xs text-muted-foreground truncate max-w-[200px]">
+                    {q.lessonCode ? `${q.lessonCode} · ` : ""}
                     {q.lessonTitle}
                   </div>
                 </div>
@@ -559,6 +587,15 @@ export function MockExamRunner() {
                         {correct ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
                       </div>
                       <div className="flex-1 min-w-0">
+                        {/* Phase M4.2 — the review row names WHERE the question
+                            came from (code + title), so a corrected paper can be
+                            traced back to its session. Display only. */}
+                        {(q.lessonCode || q.lessonTitle) && (
+                          <div className="mb-1 truncate text-[11px] text-muted-foreground">
+                            {q.lessonCode ? `${q.lessonCode} · ` : ""}
+                            {q.lessonTitle}
+                          </div>
+                        )}
                         <div className="text-sm font-semibold mb-2">
                           {i + 1}. {q.prompt}
                         </div>

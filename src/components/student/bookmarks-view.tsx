@@ -4,6 +4,8 @@ import { useT , pickAuto } from "@/lib/i18n";
 import * as React from "react";
 import { motion } from "framer-motion";
 import { useApp } from "@/lib/store";
+import { openStudentLesson } from "@/lib/student-navigation";
+import { academicLevelLabelFor } from "@/lib/academic-level-labels";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -25,14 +27,28 @@ type Bookmark = {
     id: string;
     title: string;
     titleAr: string;
-    topic: { unit: { part: { titleAr: string; title: string } } };
+    /** Printed session code — context only, NOT unique across levels. */
+    officialCode: string | null;
+    /** Derived cache; the course's level below is the authority when present. */
+    academicLevel: string | null;
   };
+  /**
+   * Phase M4.2 — the disambiguating context, resolved server-side (canonical
+   * `Lesson → Unit → Part → Course` first, legacy `Topic → Unit → Part → Course`
+   * as the documented fallback). The lesson id stays the identity; the level +
+   * code + unit/part are what let two identically-coded sessions be told apart.
+   */
+  context: {
+    chain: "UNIT" | "TOPIC" | null;
+    unit: { id: string; title: string; titleAr: string } | null;
+    part: { id: string; title: string; titleAr: string } | null;
+    course: { id: string; name: string; nameAr: string; academicLevel: string } | null;
+  } | null;
 };
 
 export function BookmarksView() {
   const t = useT();
   const setView = useApp((s) => s.setView);
-  const setNavParam = useApp((s) => s.setNavParam);
   const [items, setItems] = React.useState<Bookmark[]>([]);
   const [loading, setLoading] = React.useState(true);
 
@@ -117,20 +133,40 @@ export function BookmarksView() {
                       <BookmarkCheck className="w-5 h-5" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-semibold truncate">
-                        {pickAuto(b.lesson.titleAr, b.lesson.title)}
+                      <div className="text-sm font-semibold truncate flex items-center gap-1.5">
+                        {b.lesson.officialCode && (
+                          <span className="shrink-0 rounded bg-amber-400/15 px-1.5 py-0.5 text-[10px] font-bold text-amber-600 tabular-nums">
+                            {b.lesson.officialCode}
+                          </span>
+                        )}
+                        <span className="truncate">{pickAuto(b.lesson.titleAr, b.lesson.title)}</span>
                       </div>
+                      {/* Level + chain context: the SAME printed code and title
+                          exist at both levels, so the level is rendered from
+                          the canonical `Course.academicLevel` (falling back to
+                          the lesson's derived cache when the chain is gone). */}
                       <div className="text-xs text-muted-foreground truncate">
-                        {pickAuto(b.lesson.topic?.unit?.part?.titleAr, b.lesson.topic?.unit?.part?.title)}
+                        <span className="font-medium text-foreground/70">
+                          {academicLevelLabelFor(
+                            t,
+                            b.context?.course?.academicLevel ?? b.lesson.academicLevel
+                          )}
+                        </span>
+                        {(() => {
+                          const part = pickAuto(b.context?.part?.titleAr, b.context?.part?.title);
+                          const unit = pickAuto(b.context?.unit?.titleAr, b.context?.unit?.title);
+                          const chain = [part, unit].filter(Boolean).join(" › ");
+                          return chain ? <> · {chain}</> : null;
+                        })()}
                       </div>
                     </div>
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={() => {
-                        setView("student-lesson");
-                        useApp.getState().setLessonId(b.lessonId);
-                        setNavParam(b.lessonId);
+                        // Phase M4.2 — the canonical lesson id is the identity
+                        // and the shared rule moves the view's fetch key.
+                        openStudentLesson(useApp.getState(), b.lessonId);
                       }}
                     >
                       {t("student.017")}<ChevronLeft className="w-3.5 h-3.5 flip-rtl" />

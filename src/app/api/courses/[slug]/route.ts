@@ -581,6 +581,14 @@ export async function GET(
       description: course.description,
       color: course.color,
       iconUrl: course.iconUrl,
+      // Phase M4.2 — PASSIVE Academic Level context for the course header and
+      // every lesson row in the tree. It is read straight off the canonical
+      // authority (`Course.academicLevel`); it is NOT a filter, NOT a client
+      // input, and never a gate — the route's enrollment/course authorization
+      // above is unchanged. Both levels ship courses with the same display
+      // name and the same printed lesson codes, so the level is the only way
+      // the header can be truthful about WHICH curriculum is on screen.
+      academicLevel: course.academicLevel,
     },
     parts,
     progress: {

@@ -242,7 +242,14 @@ export async function GET(req: NextRequest) {
               mockExamRandomScopeWhere(lessonIds, mockExam?.id ?? null),
             ],
           },
-    include: { quiz: { select: { lesson: { select: { titleAr: true, title: true } } } } },
+    // Phase M4.2 — `officialCode` joins the select as DISPLAY context for the
+    // question/review caption. It is not unique across Academic Levels, so it
+    // is always shown together with the lesson title; no rule reads it.
+    include: {
+      quiz: {
+        select: { lesson: { select: { titleAr: true, title: true, officialCode: true } } },
+      },
+    },
   });
 
   // Get exam questions (same bank isolation and, for RANDOM exams, the same
@@ -260,7 +267,7 @@ export async function GET(req: NextRequest) {
               mockExamRandomExamScopeWhere(lessonIds, mockExam?.id ?? null),
             ],
           },
-    include: { lesson: { select: { titleAr: true, title: true } } },
+    include: { lesson: { select: { titleAr: true, title: true, officialCode: true } } },
   });
 
   // Combine all questions. Duplicate ids are impossible across the two tables
@@ -282,6 +289,8 @@ export async function GET(req: NextRequest) {
     marks: number;
     source: string;
     lessonTitle: string;
+    /** Phase M4.2 — the lesson's printed code, for the display caption only. */
+    lessonCode: string | null;
     createdAt: Date | null;
   };
   const allQs: Q[] = dedupeById([
@@ -295,6 +304,7 @@ export async function GET(req: NextRequest) {
       marks: q.marks,
       source: "quiz",
       lessonTitle: q.quiz?.lesson?.titleAr || q.quiz?.lesson?.title || "",
+      lessonCode: q.quiz?.lesson?.officialCode ?? null,
       createdAt: q.createdAt ?? null,
     })),
     ...examQuestions.map((q) => ({
@@ -307,6 +317,7 @@ export async function GET(req: NextRequest) {
       marks: q.marks,
       source: "exam",
       lessonTitle: q.lesson?.titleAr || q.lesson?.title || "",
+      lessonCode: q.lesson?.officialCode ?? null,
       // ExamQuestion has no createdAt column; null sorts it before quiz rows
       // and the id tie-break keeps the order stable.
       createdAt: null,
@@ -404,6 +415,9 @@ export async function GET(req: NextRequest) {
       marks: q.marks,
       source: q.source,
       lessonTitle: q.lessonTitle,
+      // Phase M4.2 — the review caption pairs the printed code with the title.
+      // Display only: grading, selection and attempt isolation are untouched.
+      lessonCode: q.lessonCode,
     };
   });
 

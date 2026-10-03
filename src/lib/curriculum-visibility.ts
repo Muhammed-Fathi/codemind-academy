@@ -48,6 +48,7 @@ import {
   LESSON_STUDENT_STATUS_FILTER,
   isStudentVisibleStatus,
 } from "@/lib/session-lifecycle";
+import { normalizeAcademicLevel } from "@/lib/academic-level";
 import { canAccessTrackScope, trackScopeWhere } from "@/lib/track-scope";
 import type { SchoolType } from "@/lib/school-type";
 
@@ -149,4 +150,71 @@ export async function canStudentSeeLesson(
     },
     { schoolType: student.schoolType, courseId }
   );
+}
+
+/**
+ * Phase M4.2 — may THIS student ASSOCIATE this lesson with their own study
+ * plan? Same visibility predicate as `canStudentSeeLesson` (PUBLISHED +
+ * non-archived + own track + own enrolled course, resolved canonical-first),
+ * PLUS an explicit level-integrity clause.
+ *
+ * WHY THE EXTRA CLAUSE: `Lesson.academicLevel` is the K1/K3 denormalized cache
+ * of the level of the lesson's own Course. If a row's cached level ever
+ * disagrees with the course its chain actually resolves to (a corrupted or
+ * hand-edited row), the lesson is NOT accepted — a study-plan entry may never
+ * carry a lesson whose level and course disagree. The two live levels reuse the
+ * same printed `officialCode`s, so "it looked like the right code" is not
+ * evidence; only the canonical course and the row's own level, both known and
+ * equal, pass. Fail-closed: any unknown value (missing chain, missing cache,
+ * unrecognised enum) returns `false`, and the caller answers exactly like an
+ * invisible lesson.
+ *
+ * This adds NO authority of its own: it ANDs the same primitives the bookmark
+ * and note gates use, and it never weakens enrollment, progression, track or
+ * lifecycle rules.
+ */
+export async function canStudentAttachLesson(
+  studentId: string,
+  lessonId: string
+): Promise<boolean> {
+  if (!studentId || !lessonId) return false;
+  const [lesson, student] = await Promise.all([
+    db.lesson.findUnique({
+      where: { id: lessonId },
+      select: { ...LESSON_VISIBILITY_SELECT, academicLevel: true },
+    }),
+    db.student.findUnique({
+      where: { id: studentId },
+      select: {
+        schoolType: true,
+        group: {
+          select: {
+            courseId: true,
+            isActive: true,
+            course: { select: { academicLevel: true } },
+          },
+        },
+      },
+    }),
+  ]);
+  if (!lesson || !student) return false;
+  const group = student.group && student.group.isActive ? student.group : null;
+  const courseId = group?.courseId ?? null;
+  if (
+    !isLessonVisibleToViewer(
+      lesson as LessonChain & {
+        status: unknown;
+        curriculumStatus: unknown;
+        trackScope: unknown;
+      },
+      { schoolType: student.schoolType, courseId }
+    )
+  ) {
+    return false;
+  }
+  const courseLevel = normalizeAcademicLevel(group?.course?.academicLevel);
+  const lessonLevel = normalizeAcademicLevel(
+    (lesson as { academicLevel?: unknown }).academicLevel
+  );
+  return courseLevel !== null && lessonLevel !== null && courseLevel === lessonLevel;
 }

@@ -15,6 +15,8 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useApp } from "@/lib/store";
+import { openStudentLesson } from "@/lib/student-navigation";
+import { academicLevelLabelFor } from "@/lib/academic-level-labels";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
 import {
@@ -135,7 +137,8 @@ type LessonView = {
   unit: { id: string; title: string; titleAr: string } | null;
   /** Legacy-only: canonical unit-linked lessons have no topic. */
   topic: { id: string; title: string; titleAr: string } | null;
-  course: { id: string; slug: string; name: string; nameAr: string } | null;
+  /** `academicLevel` is the canonical `Course.academicLevel` (M4.2, display only). */
+  course: { id: string; slug: string; name: string; nameAr: string; academicLevel?: string | null } | null;
   /** All quizzes of the session — the progression engine requires every one. */
   quizzes: {
     id: string;
@@ -569,6 +572,16 @@ export function StudentLessonView() {
             )}
           </div>
           <div className="flex items-center gap-2 shrink-0 flex-wrap">
+            {/* Phase M4.2 — passive Academic Level context of the lesson's
+                canonical course. Display only: the lesson id is identity, the
+                code is not unique across levels, and nothing here is sent
+                back to the server or used to decide access. */}
+            {data.course && (
+              <Badge variant="outline" className="bg-muted/50 text-[11px] font-semibold">
+                <GraduationCap className="w-3 h-3 ms-1" />
+                {academicLevelLabelFor(t, data.course.academicLevel)}
+              </Badge>
+            )}
             {data.lesson.officialCode && (
               <Badge
                 variant="outline"

@@ -16,6 +16,8 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { useApp } from "@/lib/store";
+import { openStudentLesson } from "@/lib/student-navigation";
+import { academicLevelLabelFor } from "@/lib/academic-level-labels";
 // Phase C representation fix — the ONE unit-summary counter (pure, shared
 // with the Phase C suite): canonical Lessons vs legacy Topics, with zero
 // segments impossible by construction.
@@ -173,6 +175,14 @@ type CourseData = {
     nameAr: string;
     description: string;
     color: string;
+    /**
+     * Phase M4.2 — passive Academic Level context (`Course.academicLevel`),
+     * display only. Both levels ship a course with the same display name and
+     * the same printed lesson codes, so the header names the level instead of
+     * letting two identical-looking curricula blur together. It is never
+     * sent back to the server and never gates a lesson.
+     */
+    academicLevel?: string | null;
   };
   parts: PartItem[];
   progress: {
@@ -291,6 +301,12 @@ export function StudentCourseView() {
               <BookOpen className="w-5 h-5" />
             </span>
             <span className="text-gradient">{pickAuto(data.course.nameAr, data.course.name)}</span>
+            {/* Phase M4.2 — passive level context, shared label vocabulary
+                (D3): the level is composed by the ONE label module, never by
+                an inline template or a second vocabulary. */}
+            <Badge variant="outline" className="shrink-0 text-[11px] font-semibold">
+              {academicLevelLabelFor(tr, data.course.academicLevel)}
+            </Badge>
           </h1>
           <p className="text-sm text-muted-foreground mt-2 max-w-2xl">
             {data.course.description}
@@ -458,8 +474,6 @@ export function StudentCourseView() {
 // ============================================================
 function LessonRow({ lesson }: { lesson: LessonItem }) {
   const tr = useT();
-  const setView = useApp((s) => s.setView);
-  const setNavParam = useApp((s) => s.setNavParam);
 
   const isLocked = lesson.status === "locked";
   // Phase H — the server-computed Arabic reason travels with the row, so a
@@ -473,9 +487,8 @@ function LessonRow({ lesson }: { lesson: LessonItem }) {
       toast.warning(lockReason || tr("course.044"));
       return;
     }
-    setView("student-lesson");
-    useApp.getState().setLessonId(lesson.id);
-    setNavParam(lesson.id);
+    // Phase M4.2 — the shared student lesson-navigation rule (fetch key first).
+    openStudentLesson(useApp.getState(), lesson.id);
   };
 
   const StatusIcon =

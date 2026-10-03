@@ -51,7 +51,58 @@ export async function GET() {
           id: true,
           title: true,
           titleAr: true,
-          topic: { select: { unit: { select: { part: { select: { titleAr: true, title: true } } } } } },
+          // Phase M4.2 — the printed code is context, never identity: the same
+          // code exists at both Academic Levels (`@@unique([academicLevel,
+          // officialCode])`), so it is always rendered NEXT TO the level.
+          officialCode: true,
+          // Derived denormalized cache (`Lesson.academicLevel`). Used only as a
+          // last-resort caption when the canonical chain below is gone; the
+          // canonical `Course.academicLevel` always wins when it exists.
+          academicLevel: true,
+          // Canonical chain first: Lesson → Unit → Part → Course.
+          unit: {
+            select: {
+              id: true,
+              title: true,
+              titleAr: true,
+              part: {
+                select: {
+                  id: true,
+                  title: true,
+                  titleAr: true,
+                  course: {
+                    select: { id: true, name: true, nameAr: true, academicLevel: true },
+                  },
+                },
+              },
+            },
+          },
+          // Legacy chain, kept as the documented fallback: Lesson → Topic →
+          // Unit → Part → Course (the pre-Phase-19 shape).
+          topic: {
+            select: {
+              id: true,
+              title: true,
+              titleAr: true,
+              unit: {
+                select: {
+                  id: true,
+                  title: true,
+                  titleAr: true,
+                  part: {
+                    select: {
+                      id: true,
+                      title: true,
+                      titleAr: true,
+                      course: {
+                        select: { id: true, name: true, nameAr: true, academicLevel: true },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
         },
       },
     },
@@ -59,12 +110,45 @@ export async function GET() {
   });
 
   return ok({
-    bookmarks: bookmarks.map((b) => ({
-      id: b.id,
-      lessonId: b.lessonId,
-      createdAt: b.createdAt,
-      lesson: b.lesson,
-    })),
+    bookmarks: bookmarks.map((b) => {
+      // CANONICAL FIRST, legacy fallback — resolved server-side so no client
+      // has to guess which chain a lesson belongs to. The two chains can never
+      // both be "right": the canonical unit chain is the current curriculum
+      // shape, the topic chain is history.
+      const canonical = b.lesson.unit?.part ?? null;
+      const legacy = b.lesson.topic?.unit?.part ?? null;
+      const part = canonical ?? legacy;
+      const unit = canonical ? b.lesson.unit : b.lesson.topic?.unit ?? null;
+      const course = part?.course ?? null;
+      return {
+        id: b.id,
+        lessonId: b.lessonId,
+        createdAt: b.createdAt,
+        lesson: {
+          id: b.lesson.id,
+          title: b.lesson.title,
+          titleAr: b.lesson.titleAr,
+          officialCode: b.lesson.officialCode,
+          academicLevel: b.lesson.academicLevel,
+        },
+        // Enough context to disambiguate two bookmarks that share a printed
+        // code and a title: WHICH chain (canonical vs legacy), the unit/part,
+        // and the course (whose `academicLevel` is the canonical authority).
+        context: {
+          chain: canonical ? "UNIT" : legacy ? "TOPIC" : null,
+          unit: unit ? { id: unit.id, title: unit.title, titleAr: unit.titleAr } : null,
+          part: part ? { id: part.id, title: part.title, titleAr: part.titleAr } : null,
+          course: course
+            ? {
+                id: course.id,
+                name: course.name,
+                nameAr: course.nameAr,
+                academicLevel: course.academicLevel,
+              }
+            : null,
+        },
+      };
+    }),
   });
 }
 

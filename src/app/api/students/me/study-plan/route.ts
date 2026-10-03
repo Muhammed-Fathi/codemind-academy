@@ -3,6 +3,7 @@ import { getServerT } from "@/lib/i18n-server";
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
+import { canStudentAttachLesson } from "@/lib/curriculum-visibility";
 
 // GET /api/students/me/study-plan?from=&to= — list tasks in date range
 export async function GET(req: NextRequest) {
@@ -60,12 +61,30 @@ export async function POST(req: NextRequest) {
   };
   if (!title || !scheduledDate) return err(tApi("api.152"), 400);
 
+  // Phase M4.2 — SERVER-SIDE `lessonId` VALIDATION (owner decision D6).
+  //
+  // `StudyTask.lessonId` stays in the API contract, but it is never trusted:
+  // an id that is not part of THIS student's visible CURRENT-course curriculum
+  // is refused before any row is written. The gate is the shared
+  // `canStudentAttachLesson` (PUBLISHED + non-archived + own track + own
+  // enrolled course through the canonical chain + the lesson's derived level
+  // matching its course's canonical level), so an id from another course,
+  // another Academic Level, an archived/unpublished/foreign-track lesson, or a
+  // non-existent id all fail closed with the same plain 400. Labels, codes and
+  // titles are never consulted: identity is the canonical lesson id.
+  const attachedLessonId =
+    typeof lessonId === "string" && lessonId.length > 0 ? lessonId : null;
+  if (attachedLessonId && !(await canStudentAttachLesson(student.id, attachedLessonId))) {
+    return err(tApi("api.384"), 400);
+  }
+
   const task = await db.studyTask.create({
     data: {
       studentId: student.id,
       title,
       description: description || null,
-      lessonId: lessonId || null,
+      // Only a validated (or absent) id ever reaches the column.
+      lessonId: attachedLessonId,
       scheduledDate: new Date(scheduledDate),
       durationMin: durationMin || 60,
     },
@@ -82,17 +101,38 @@ export async function PATCH(req: NextRequest) {
   if (!student) return err(tApi("api.151"), 404);
 
   const body = await req.json().catch(() => ({}));
-  const { taskId, status, title, description, scheduledDate, durationMin } = body as {
-    taskId?: string;
-    status?: string;
-    title?: string;
-    description?: string;
-    scheduledDate?: string;
-    durationMin?: number;
-  };
+  const { taskId, status, title, description, lessonId, scheduledDate, durationMin } =
+    body as {
+      taskId?: string;
+      status?: string;
+      title?: string;
+      description?: string;
+      lessonId?: string | null;
+      scheduledDate?: string;
+      durationMin?: number;
+    };
   if (!taskId) return err(tApi("api.153"), 400);
 
+  // Phase M4.2 — an update may re-point the task at a lesson, so the SAME
+  // server-side gate as create applies whenever `lessonId` is supplied.
+  // `null` / `""` clears the link (no lesson to validate); any non-empty string
+  // must pass `canStudentAttachLesson` BEFORE the update runs, so a rejected id
+  // can never be stored by a PATCH. Fail closed: no labels, no codes, no
+  // client-supplied level ever decide here.
+  const patchHasLesson = Object.prototype.hasOwnProperty.call(body, "lessonId");
+  let patchLessonId: string | null = null;
+  if (patchHasLesson) {
+    const raw = typeof lessonId === "string" ? lessonId : null;
+    patchLessonId = raw && raw.length > 0 ? raw : null;
+    if (patchLessonId && !(await canStudentAttachLesson(student.id, patchLessonId))) {
+      return err(tApi("api.384"), 400);
+    }
+  }
+
   const data: any = {};
+  // Only written when supplied, and only ever a validated id (or an explicit
+  // clear). The ownership-scoped `updateMany` below is unchanged.
+  if (patchHasLesson) data.lessonId = patchLessonId;
   if (status) data.status = status;
   if (title) data.title = title;
   if (description !== undefined) data.description = description;

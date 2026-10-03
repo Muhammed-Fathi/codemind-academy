@@ -18,8 +18,10 @@ import {
   TrendingUp,
   Calendar,
   BookOpen,
+  GraduationCap,
 } from "lucide-react";
 import { CodeMindLogo } from "@/components/logo";
+import { academicLevelLabelFor } from "@/lib/academic-level-labels";
 
 type Certificate = {
   studentName: string;
@@ -32,6 +34,13 @@ type Certificate = {
   avgQuizScore: number;
   attendanceRate: number;
   certificateId: string;
+  /**
+   * Phase M4.2 — the PASSIVE Academic Level context M4.1 already returns from
+   * the API (`Course.academicLevel`, the course artifact's own authority).
+   * Rendered as a caption; it changes no threshold, no eligibility rule and no
+   * certificate id (the id is still the secret-keyed `CM-…` reference).
+   */
+  academicLevel?: string | null;
 };
 
 export function CertificateView() {
@@ -147,6 +156,14 @@ export function CertificateView() {
                       {t("student.025")}</div>
                     <div className="text-2xl font-bold mt-2 text-teal-700">
                       {cert.courseName}
+                    </div>
+                    {/* Phase M4.2 — passive level caption, composed through the
+                        shared label vocabulary (D3). The two official courses
+                        share one display name, so the certificate names the
+                        level the certificate was earned at. */}
+                    <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                      <GraduationCap className="w-3.5 h-3.5" />
+                      {academicLevelLabelFor(t, cert.academicLevel)}
                     </div>
                   </div>
 

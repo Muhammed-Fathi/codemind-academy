@@ -56,6 +56,12 @@ export async function GET(_req: NextRequest) {
       passMark: true,
       difficulty: true,
       selectionMode: true,
+      // Phase M4.2 — read-only course/level context. Every exam is course-bound
+      // (K3), and the two live courses share one display name and reuse the
+      // same printed lesson codes, so the list names the level of the exam's
+      // OWN course. Display only: the `courseId` clause above is still the only
+      // thing that decides which exams exist for this student.
+      course: { select: { id: true, name: true, nameAr: true, academicLevel: true } },
     },
     take: 100,
   });
@@ -80,6 +86,11 @@ export async function GET(_req: NextRequest) {
       const h = bestByExam.get(e.id);
       return {
         ...e,
+        // The canonical course level (never the student's `grade`), plus the
+        // course name so two identically-named exams stay distinguishable.
+        academicLevel: e.course?.academicLevel ?? null,
+        courseName: e.course?.name ?? null,
+        courseNameAr: e.course?.nameAr ?? null,
         attempts: h?.attempts ?? 0,
         bestPercentage: h ? h.best : null,
       };

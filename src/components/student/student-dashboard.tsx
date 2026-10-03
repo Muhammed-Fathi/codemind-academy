@@ -17,6 +17,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { useApp } from "@/lib/store";
+import { openStudentLesson } from "@/lib/student-navigation";
 // Phase 25 PR3 — the payment experience panel (entitlement vs request).
 import {
   StudentPaymentPanel,
@@ -464,9 +465,9 @@ function DashboardHome({
   ).format(new Date());
 
   const openLesson = (lessonId: string) => {
-    setView("student-lesson");
-    useApp.getState().setLessonId(lessonId);
-    setNavParam(lessonId);
+    // Phase M4.2 — one navigation rule for every student lesson entry point
+    // (the lesson view fetches by the store's `lessonId`, never by navParam).
+    openStudentLesson(useApp.getState(), lessonId);
   };
 
   const openCourse = () => {
@@ -1410,7 +1411,6 @@ function HomeworkSubmitForm({
 function HomeworkView() {
   const t = useT();
   const setView = useApp((s) => s.setView);
-  const setNavParam = useApp((s) => s.setNavParam);
   // Phase 16 — deep-link landing: `homework:<id>` arrives here as navParam.
   // The list is the authorized set, so highlighting a matching id cannot
   // bypass anything — a foreign id simply matches nothing.
@@ -1556,8 +1556,11 @@ function HomeworkView() {
                           variant="ghost"
                           size="sm"
                           onClick={() => {
-                            setView("student-lesson");
-                            setNavParam(h.lessonId);
+                            // Phase M4.2 — the SAME rule as every other entry
+                            // point: the canonical lesson id moves the fetch
+                            // key, so "open lesson" can never land on the
+                            // lesson that happened to be selected before.
+                            openStudentLesson(useApp.getState(), h.lessonId);
                           }}
                         >
                           {t("student.182")}<ChevronLeft className="w-3.5 h-3.5 flip-rtl" />
