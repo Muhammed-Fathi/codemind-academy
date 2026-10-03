@@ -115,6 +115,10 @@ function read(rel) {
     "src/app/api/teacher/analytics/route.ts",
     "src/app/api/teacher/attendance/route.ts",
   ];
+  // The group-selected legacy endpoint must keep its strict pair binding while
+  // the canonical session-only register route remains substitute-capable.
+  const LIVE_ATTENDANCE_REL = "src/app/api/live-sessions/[id]/attendance/route.ts";
+  const COMPILE_ROUTES = [...ROUTES, LIVE_ATTENDANCE_REL];
   fs.writeFileSync(
     path.join(OUT, "tsconfig.json"),
     JSON.stringify({
@@ -125,7 +129,7 @@ function read(rel) {
         typeRoots: [path.join(REPO, "node_modules/@types")],
         rootDir: REPO, outDir: OUT, noEmitOnError: false,
       },
-      files: ROUTES.map((r) => path.join(REPO, r)),
+      files: COMPILE_ROUTES.map((r) => path.join(REPO, r)),
     })
   );
   const TSC_BIN = path.join(REPO, "node_modules", "typescript", "bin", "tsc");
@@ -136,6 +140,7 @@ function read(rel) {
   spawnSync(process.execPath, [TSC_BIN, "-p", path.join(OUT, "tsconfig.json")], { cwd: REPO, encoding: "utf8" });
   const EMIT = path.join(OUT, "src");
   const LESSONS_JS = path.join(EMIT, "app/api/teacher/lessons/route.js");
+  const LIVE_ATTENDANCE_JS = path.join(EMIT, LIVE_ATTENDANCE_REL.replace(/^src\//, "").replace(/\.ts$/, ".js"));
   const ROUTE_JS = {};
   for (const rel of ROUTES) {
     const js = path.join(EMIT, rel.replace(/^src\//, "").replace(/\.ts$/, ".js"));
@@ -144,6 +149,10 @@ function read(rel) {
       console.error(`tsc did not emit ${js}`);
       process.exit(1);
     }
+  }
+  if (!fs.existsSync(LIVE_ATTENDANCE_JS)) {
+    console.error(`tsc did not emit ${LIVE_ATTENDANCE_JS}`);
+    process.exit(1);
   }
 
   // -------------------------------------------------------------------------
@@ -297,6 +306,8 @@ function read(rel) {
     ins("Quiz", { id: "qz-ss", lessonId: "l-ss-1", trackScope: "SHARED", title: "Q SS", titleAr: "اختبار ث" });
     ins("LiveSession", { id: "sess-fs", groupId: "g-fs", title: "FS live", titleAr: "حصة ف", startAt: NOW, duration: 60, status: "SCHEDULED", createdAt: NOW });
     ins("LiveSession", { id: "sess-ss", groupId: "g-ss", title: "SS live", titleAr: "حصة ث", startAt: NOW, duration: 60, status: "SCHEDULED", createdAt: NOW });
+    ins("LiveSession", { id: "sess-foreign", groupId: "g-ss2", teacherId: "t-ss", title: "Foreign live", titleAr: "حصة أجنبية", startAt: NOW, duration: 60, status: "SCHEDULED", createdAt: NOW });
+    ins("LiveSession", { id: "sess-substitute", groupId: "g-ss2", teacherId: "t-ss", substituteTeacherId: "t-both", title: "Substitute live", titleAr: "حصة بديلة", startAt: NOW, duration: 60, status: "SCHEDULED", createdAt: NOW });
   }
   seedSharedSurface();
 
@@ -430,6 +441,7 @@ function read(rel) {
     // (Every row these routes read was seeded above, before the O sections.)
     const routes = {};
     for (const rel of ROUTES) routes[rel] = require(ROUTE_JS[rel]);
+    const liveAttendanceRoute = require(LIVE_ATTENDANCE_JS);
 
     const R_LESSONS = ROUTES[0];
     const R_HOMEWORK = "src/app/api/teacher/homework/route.ts";
@@ -558,16 +570,34 @@ function read(rel) {
       ok(!JSON.stringify(body(fs)).includes("SS group"), "E2E/analytics: no Second Secondary group row leaks into the FS analytics");
     }
 
-    // ---- 8. attendance (roster + the mismatch guard) -----------------------
+    // ---- 8. attendance: group/session identity, level, and substitute path --
     {
       const fs = await call(R_ATTENDANCE, "?groupId=g-fs&sessionId=sess-fs&academicLevel=FIRST_SECONDARY", both);
-      eq(fs.status, 200, "E2E/attendance: the FS group roster loads under the FS level");
+      eq(fs.status, 200, "E2E/attendance: the correct owned FS group/session pair loads under the FS level");
       eqArr((body(fs).students || []).map((x) => x.id), ["s-fs"], "E2E/attendance: …and contains only the FS student");
-      const mismatch = await call(R_ATTENDANCE, "?groupId=g-fs&sessionId=sess-fs&academicLevel=SECOND_SECONDARY", both);
-      eq(mismatch.status, 403, "E2E/attendance: pairing an FS group with the SS level is REFUSED (403)");
-      eq(body(mismatch).error, "api.156", "E2E/attendance: …through the existing ownership refusal");
-      const foreign = await call(R_ATTENDANCE, "?groupId=g-ss2&sessionId=sess-fs", both);
-      eq(foreign.status, 403, "E2E/attendance: a group this teacher does NOT own is still refused (authz unchanged)");
+      eq(body(fs).session?.id, "sess-fs", "E2E/attendance: the matching session context is returned");
+
+      const ownedMismatch = await call(R_ATTENDANCE, "?groupId=g-fs&sessionId=sess-ss", both);
+      eq(ownedMismatch.status, 403, "E2E/attendance: an owned FS group paired with the teacher's owned SS session is refused");
+      eq(body(ownedMismatch).error, "api.156", "E2E/attendance: a crossed owned pair uses the existing fail-closed refusal");
+
+      const levelMismatch = await call(R_ATTENDANCE, "?groupId=g-fs&sessionId=sess-fs&academicLevel=SECOND_SECONDARY", both);
+      eq(levelMismatch.status, 403, "E2E/attendance: an FS group/session pair with the SS level cannot widen scope");
+      eq(body(levelMismatch).error, "api.156", "E2E/attendance: level mismatch remains a fail-closed ownership refusal");
+
+      const foreignGroup = await call(R_ATTENDANCE, "?groupId=g-ss2&sessionId=sess-fs", both);
+      eq(foreignGroup.status, 403, "E2E/attendance: a foreign group remains refused");
+      const foreignSession = await call(R_ATTENDANCE, "?groupId=g-fs&sessionId=sess-foreign", both);
+      eq(foreignSession.status, 404, "E2E/attendance: an otherwise owned group paired with a foreign session fails closed");
+
+      // Substitute authority stays on the canonical session-ID route, where
+      // there is intentionally no group selector to cross-pair.
+      setUser(both.user);
+      const substitute = await liveAttendanceRoute.GET(req(""), {
+        params: Promise.resolve({ id: "sess-substitute" }),
+      });
+      eq(substitute.status, 200, "E2E/live-attendance: the assigned substitute can still read the session register");
+      eq(body(substitute).via, "SUBSTITUTE_TEACHER", "E2E/live-attendance: substitute access remains explicitly session-scoped");
     }
 
     // ---- 9. a single-level teacher never receives the other level ---------
@@ -597,7 +627,144 @@ function read(rel) {
       // The OTHER teacher's group of the SAME level is still invisible.
       const bothSameLevel = await call(R_DASHBOARD, SS, both);
       eqArr((body(bothSameLevel).groups || []).map((g) => g.id), ["g-ss"], "E2E/dashboard: ownership is still enforced inside a level (a peer's group is not listed)");
+
+      // Exercise the existing teacher quiz creation contract end-to-end: the
+      // bilingual editor sends promptAr, the route persists it, and its
+      // response reads the persisted value back from the canonical Question.
+      global.__TEACHER__ = both;
+      setUser(both.user);
+      const arabicPrompt = "ما ناتج جمع اثنين واثنين؟";
+      const createdQuiz = await routes[R_QUIZZES].POST({
+        json: async () => ({
+          lessonId: "l-fs-1",
+          title: "Arabic prompt persistence",
+          titleAr: "حفظ السؤال العربي",
+          description: "M3.4 prompt contract",
+          passMark: 60,
+          timeLimit: null,
+          trackScope: "SHARED",
+          cameraPolicy: "OPTIONAL",
+          questions: [{
+            type: "MCQ",
+            prompt: "What is two plus two?",
+            promptAr: arabicPrompt,
+            options: ["Four", "Five"],
+            answer: "0",
+            explanation: "",
+            difficulty: "MEDIUM",
+            marks: 1,
+          }],
+        }),
+      });
+      eq(createdQuiz.status, 200, "E2E/quiz-create: the existing quiz authoring POST accepts the bilingual question");
+      const createdQuestion = body(createdQuiz).quiz?.questions?.[0];
+      eq(createdQuestion?.promptAr, arabicPrompt, "E2E/quiz-create: the response carries the persisted Arabic prompt");
+      const persistedQuestion = createdQuestion?.id
+        ? await global.__CM_DB__.question.findUnique({ where: { id: createdQuestion.id } })
+        : null;
+      eq(persistedQuestion?.promptAr, arabicPrompt, "E2E/quiz-create: the database row stores promptAr under the existing contract");
     }
+  }
+
+  // =========================================================================
+  section("M3.2. Lesson catalogue group scope is owner-checked and intersects level");
+  // =========================================================================
+  {
+    // Add a second First-level course only after the earlier shared-surface
+    // assertions, so this focused group test can prove that a same-level,
+    // same-code lesson from another course is excluded without changing M3.1's
+    // dashboard/analytics fixture.
+    ins("Course", {
+      id: "c-fs-peer",
+      slug: "programming-ai-1st-sec-peer",
+      academicLevel: "FIRST_SECONDARY",
+      name: "Programming & AI",
+      nameAr: "البرمجة والذكاء الاصطناعي",
+      description: "M3.2 peer course",
+      color: "#123456",
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    ins("Part", { id: "p-c-fs-peer", courseId: "c-fs-peer", title: "Curriculum", titleAr: "منهج", order: 1 });
+    ins("Unit", { id: "u-c-fs-peer", partId: "p-c-fs-peer", title: "Unit 1", titleAr: "الوحدة ١", order: 1 });
+    ins("Lesson", {
+      id: "l-fs-peer",
+      unitId: "u-c-fs-peer",
+      officialCode: "9-9",
+      academicLevel: "FIRST_SECONDARY",
+      trackScope: "LANGUAGE",
+      status: "PUBLISHED",
+      title: "Peer course duplicate code",
+      titleAr: "درس موازٍ",
+      order: 1,
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    ins("Group", {
+      id: "g-fs-peer",
+      name: "FS peer course",
+      courseId: "c-fs-peer",
+      teacherId: "t-both",
+      capacity: 20,
+      schedule: "Sun",
+      isActive: 1,
+      trackScope: "LANGUAGE",
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    const bothWithPeerCourse = {
+      ...both,
+      groups: [
+        ...both.groups,
+        {
+          id: "g-fs-peer",
+          name: "FS peer course",
+          courseId: "c-fs-peer",
+          trackScope: "LANGUAGE",
+          students: [],
+          course: {
+            id: "c-fs-peer",
+            name: "Programming & AI",
+            nameAr: "البرمجة والذكاء الاصطناعي",
+            academicLevel: "FIRST_SECONDARY",
+          },
+        },
+      ],
+    };
+    setUser(both.user);
+    global.__TEACHER__ = bothWithPeerCourse;
+
+    const firstGroup = await route.GET(req("?groupId=g-fs"));
+    eq(firstGroup.status, 200, "M3.2: an owned group ID is accepted");
+    eq(ids(firstGroup.body).sort().join(","), "l-fs-1,l-fs-2,l-fs-3,l-legacy", "M3.2: group scope includes canonical and legacy lessons from its course only");
+    ok(!ids(firstGroup.body).includes("l-ss-1") && !ids(firstGroup.body).includes("l-ss-2"), "M3.2: group scope excludes other-level lessons");
+    ok(!ids(firstGroup.body).includes("l-fs-peer"), "M3.2: group scope excludes a same-level lesson from another course");
+    const firstGroupCode = (firstGroup.body.lessons || []).filter((lesson) => lesson.officialCode === "1-1");
+    eq(firstGroupCode.length, 1, "M3.2: duplicate printed codes do not widen the group result");
+    eq(firstGroupCode[0]?.id, "l-fs-1", "M3.2: lesson identity remains its canonical database ID");
+    const secondGroup = await route.GET(req("?groupId=g-ss"));
+    const secondGroupCode = (secondGroup.body.lessons || []).filter((lesson) => lesson.officialCode === "1-1");
+    eq(secondGroupCode.length, 1, "M3.2: the same printed code is separately scoped for the second group");
+    eq(secondGroupCode[0]?.id, "l-ss-1", "M3.2: duplicate printed codes resolve to a distinct canonical lesson ID per course");
+    ok(firstGroupCode[0]?.id !== secondGroupCode[0]?.id, "M3.2: display codes never act as lesson identity across group scopes");
+    eq((firstGroup.body.lessons || []).map((lesson) => lesson.trackScope).filter((track) => track !== "SHARED").sort().join(","), "ARABIC,LANGUAGE", "M3.2: group scoping does not change independent Track semantics");
+
+    const spoofedCourse = await route.GET(req("?groupId=g-fs&courseId=c-fs-peer"));
+    eq(ids(spoofedCourse.body).sort().join(","), "l-fs-1,l-fs-2,l-fs-3,l-legacy", "M3.2: a client courseId is ignored; the group course is server-derived");
+    const peerGroup = await route.GET(req("?groupId=g-fs-peer"));
+    eq(ids(peerGroup.body).join(","), "l-fs-peer", "M3.2: another owned group returns its own same-level course by lesson ID");
+
+    const intersected = await route.GET(req("?groupId=g-fs&academicLevel=FIRST_SECONDARY"));
+    eq(ids(intersected.body).sort().join(","), "l-fs-1,l-fs-2,l-fs-3,l-legacy", "M3.2: group and matching level filters intersect");
+    const crossed = await route.GET(req("?groupId=g-fs&academicLevel=SECOND_SECONDARY"));
+    eq(crossed.status, 200, "M3.2: a valid but mismatching group+level pair is an empty scope");
+    eq(ids(crossed.body).length, 0, "M3.2: a mismatching level never substitutes another owned group/course");
+    const invalidLevel = await route.GET(req("?groupId=g-fs&academicLevel=THIRD_SECONDARY"));
+    eq(invalidLevel.status, 400, "M3.2: invalid-level behavior remains a 400 with groupId present");
+    const foreignGroup = await route.GET(req("?groupId=g-ss2"));
+    eq(foreignGroup.status, 404, "M3.2: a foreign teacher's group fails closed");
+    const emptyGroup = await route.GET(req("?groupId=%20%20"));
+    eq(emptyGroup.status, 404, "M3.2: an explicitly supplied empty group scope cannot widen to all teacher lessons");
   }
 
   // =========================================================================
@@ -655,8 +822,8 @@ function read(rel) {
       ["src/components/teacher/teacher-dashboard.tsx", /withLevelQuery\(/, "quizzes/homework lists"],
       ["src/components/teacher/teacher-dashboard.tsx", /levelQuery\(level\)/, "dashboard/analytics payloads"],
       ["src/components/teacher/teacher-sessions.tsx", /academicLevel=\$\{encodeURIComponent\(level\)\}/, "session roster"],
-      ["src/components/teacher/readiness-view.tsx", /academicLevel=\$\{encodeURIComponent\(level\)\}/, "readiness picker"],
-      ["src/components/teacher/teacher-authoring.tsx", /useTeacherLessons\(level \|\| undefined\)/, "authoring picker"],
+      ["src/components/teacher/readiness-view.tsx", /academicLevel=\$\{encodeURIComponent\(requestedScope\)\}/, "readiness picker"],
+      ["src/components/teacher/teacher-authoring.tsx", /useTeacherLessons\(level \|\| undefined, group \|\| undefined\)/, "authoring picker"],
     ];
     for (const [file, re, label] of serverWired) {
       ok(re.test(read(file)), `UI: the ${label} separator narrows the SERVER query (never a client-side hide)`);
@@ -687,6 +854,27 @@ function read(rel) {
 
     const readiness = read("src/components/teacher/readiness-view.tsx");
     ok(/academicLevelLabel/.test(readiness), "UI: the readiness lesson picker labels lessons with their level");
+
+    // M3.2 selector integrity: selected scopes are server-backed, transitions
+    // clear/disable old values, and readiness group identity is never a name.
+    const lessonRoute = read("src/app/api/teacher/lessons/route.ts");
+    ok(/params\.get\("groupId"\)/.test(lessonRoute), "M3.2/UI: the lesson API reads groupId");
+    ok(/teacher\.groups[\s\S]*?find\(\(group\) => group\.id === groupId\)/.test(lessonRoute), "M3.2/UI: the requested group is checked against this Teacher's owned profile");
+    ok(/selectedGroup\.courseId/.test(lessonRoute) && !/params\.get\("courseId"\)/.test(lessonRoute), "M3.2/UI: the group course is server-derived; client courseId is not authority");
+
+    const scheduler = read("src/components/teacher/live-sessions-workspace.tsx");
+    ok(/onValueChange=\{\(nextGroupId\) => \{\s*if \(nextGroupId !== groupId\) setLessonId\(""\);/.test(scheduler), "M3.2/UI: changing the scheduler group clears the chosen lesson synchronously");
+    ok(/lessonRequestIsCurrent[\s\S]*?scopedLessonsLoading[\s\S]*?lessons\.data\?\.lessons/.test(scheduler), "M3.2/UI: lesson options are hidden until the selected group's request is current and complete");
+    ok(/encodeURIComponent\(groupId\)/.test(scheduler), "M3.2/UI: scheduler requests carry an encoded groupId to the server");
+
+    ok(/queryKey: \["teacher-lessons", level \|\| "ALL", group \|\| "ALL"\]/.test(authoring), "M3.2/UI: lesson-query cache identity includes both level and group");
+    ok(/React\.useLayoutEffect\([\s\S]*?previousScope\.current = scopeKey;[\s\S]*?onChange\(""\)/.test(authoring), "M3.2/UI: shared LessonPicker clears selection when an external group scope changes");
+    ok(/scopedError[\s\S]*?teacher\.313[\s\S]*?scopedQuery\.refetch/.test(authoring), "M3.2/UI: shared LessonPicker gives scoped failures visible retry feedback");
+
+    ok(/lessonOptionsMatchScope/.test(readiness) && /!lessonOptionsMatchScope \|\| lessonOptionsState\.status === "loading"/.test(readiness), "M3.2/UI: readiness blocks old-level options while the new scope loads");
+    ok(/if \(cancelled\) return;[\s\S]*?status: "ready"/.test(readiness), "M3.2/UI: late readiness lesson-list responses are discarded after a level transition");
+    ok(/groupFilter === "ALL" \|\| s\.groupId === groupFilter/.test(readiness) && /<SelectItem key=\{g\.id\} value=\{g\.id\}>/.test(readiness), "M3.2/UI: readiness group filtering and option values use canonical group IDs");
+    ok(/setLessonOptionsState\(\{ scope: v, status: "loading", lessons: \[\] \}\)/.test(readiness), "M3.2/UI: a level change immediately clears the readiness catalogue and selection");
 
     const live = read("src/components/teacher/live-sessions-workspace.tsx");
     ok(/academicLevelLabel/.test(live), "UI: the live-session schedule form labels its group options with the level");

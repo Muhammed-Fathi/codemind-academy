@@ -134,6 +134,7 @@ const REAL_CODE_MODULES = [
   "src/app/api/teacher/quizzes/[id]/route.ts",
   "src/app/api/teacher/quizzes/[id]/questions/route.ts",
   "src/app/api/teacher/quizzes/[id]/attempts/route.ts",
+  "src/app/api/teacher/quizzes/[id]/attempts/[attemptId]/route.ts",
   "src/app/api/teacher/questions/[id]/route.ts",
   "src/app/api/teacher/templates/route.ts",
   "src/app/api/teacher/templates/[id]/route.ts",
@@ -250,6 +251,7 @@ function loadRealCode(outDir) {
     tQuizById: route("teacher/quizzes/[id]/route.js"),
     tQuizQuestions: route("teacher/quizzes/[id]/questions/route.js"),
     tQuizAttempts: route("teacher/quizzes/[id]/attempts/route.js"),
+    tQuizAttemptById: route("teacher/quizzes/[id]/attempts/[attemptId]/route.js"),
     tQuestionById: route("teacher/questions/[id]/route.js"),
     tTemplates: route("teacher/templates/route.js"),
     tTemplateById: route("teacher/templates/[id]/route.js"),
@@ -824,6 +826,34 @@ async function main() {
   const tAttForeign = await GET(R.tQuizAttempts, url(`/api/teacher/quizzes/${foreignQuiz.id}/attempts`), { id: foreignQuiz.id });
   eq(tAttForeign.status, 403, "QUIZ-24/23: teacher cannot inspect a foreign quiz's attempts → 403");
 
+  // M3.3 — the dedicated nested route reauthorizes this quiz and binds the
+  // exact attempt to it, rather than routing through a Student quiz page.
+  const tReviewFinished = await GET(
+    R.tQuizAttemptById,
+    url(`/api/teacher/quizzes/${bpQuiz.id}/attempts/${start3.json.attemptId}`),
+    { id: bpQuiz.id, attemptId: start3.json.attemptId }
+  );
+  eq(tReviewFinished.status, 200, "M3.3: Teacher opens the selected finished attempt → 200");
+  eq(tReviewFinished.json.quiz.id, bpQuiz.id, "M3.3: review carries the canonical quiz ID");
+  eq(tReviewFinished.json.attempt.id, start3.json.attemptId, "M3.3: review carries the selected attempt ID");
+  eq(tReviewFinished.json.attempt.quizId, bpQuiz.id, "M3.3: attempt is bound to the requested quiz");
+  eq(tReviewFinished.json.attempt.student.id, studentAr.id, "M3.3: selected student identity is returned");
+  eq(tReviewFinished.json.quiz.course.id, courseA.id, "M3.3: course identity comes from the canonical lesson chain");
+  eq(tReviewFinished.json.quiz.course.academicLevel, courseA.academicLevel, "M3.3: Academic Level comes from Course.academicLevel");
+  eq(tReviewFinished.json.quiz.lesson.id, L.pub.id, "M3.3: lesson identity is the canonical lesson ID");
+  eq(tReviewFinished.json.quiz.lesson.officialCode, L.pub.officialCode, "M3.3: official code is displayed from the selected lesson");
+  eq(tReviewFinished.json.quiz.lesson.title, L.pub.title, "M3.3: lesson title is returned with the selected review");
+  eq(tReviewFinished.json.canGrantRetry, false, "M3.3: selected review exposes no Teacher retry grant path");
+  eq(tReviewFinished.json.attempt.answerKeyRevealed, true, "M3.3: finished review follows the answer-key reveal policy");
+  ok(tReviewFinished.json.attempt.questions.length > 0, "M3.3: finished review contains per-question inspection data");
+  ok(tReviewFinished.json.attempt.questions.every((q) => typeof q.correctAnswer === "string"), "M3.3: finished review includes frozen correct answers");
+  const tReviewForeign = await GET(
+    R.tQuizAttemptById,
+    url(`/api/teacher/quizzes/${foreignQuiz.id}/attempts/${start3.json.attemptId}`),
+    { id: foreignQuiz.id, attemptId: start3.json.attemptId }
+  );
+  eq(tReviewForeign.status, 403, "M3.3: a foreign quiz fails closed before attempt detail is returned");
+
   // QUIZ-25 — student sees only their own.
   asUser(studentUserAr);
   const sAtt = await GET(R.quizAttempts, url(`/api/quizzes/${bpQuiz.id}/attempts`), { id: bpQuiz.id });
@@ -849,6 +879,122 @@ async function main() {
   const openInspect = await GET(R.aAttemptById, url(`/api/admin/quiz-attempts/${openStart.json.attemptId}`), { id: openStart.json.attemptId });
   eq(openInspect.json.attempt.answerKeyRevealed, false, "QUIZ-26: an OPEN attempt reveals no answer key, even to Admin");
   ok((openInspect.json.attempt.questions || []).every((q) => q.correctAnswer === undefined), "QUIZ-26: no correctAnswer field on an OPEN attempt");
+
+  asUser(teacherUserA);
+  const tReviewOpen = await GET(
+    R.tQuizAttemptById,
+    url(`/api/teacher/quizzes/${bpQuiz.id}/attempts/${openStart.json.attemptId}`),
+    { id: bpQuiz.id, attemptId: openStart.json.attemptId }
+  );
+  eq(tReviewOpen.status, 200, "M3.3: Teacher can review the selected OPEN attempt → 200");
+  eq(tReviewOpen.json.attempt.answerKeyRevealed, false, "M3.3: OPEN Teacher review keeps the answer key hidden");
+  ok(tReviewOpen.json.attempt.questions.every((q) => q.correctAnswer === undefined), "M3.3: OPEN Teacher review contains no correct answers");
+  eq(tReviewOpen.json.canGrantRetry, false, "M3.3: OPEN review remains read-only with no retry grant");
+  asUser(studentUserAr);
+  const studentReviewDenied = await GET(
+    R.tQuizAttemptById,
+    url(`/api/teacher/quizzes/${bpQuiz.id}/attempts/${start3.json.attemptId}`),
+    { id: bpQuiz.id, attemptId: start3.json.attemptId }
+  );
+  eq(studentReviewDenied.status, 403, "M3.3: Student role cannot use the Teacher review route");
+
+  // An attempt from another quiz that the SAME Teacher owns must not be
+  // returned when paired with bpQuiz's route ID (composite identity check).
+  asUser(ar3User);
+  const mismatchStart = await POST(R.quizStart, url(`/api/quizzes/${legacyQuiz.id}/start`), {}, { id: legacyQuiz.id });
+  eq(mismatchStart.status, 200, "M3.3: fixture starts an attempt on a second owned quiz");
+  asUser(teacherUserA);
+  const mismatchedPair = await GET(
+    R.tQuizAttemptById,
+    url(`/api/teacher/quizzes/${bpQuiz.id}/attempts/${mismatchStart.json.attemptId}`),
+    { id: bpQuiz.id, attemptId: mismatchStart.json.attemptId }
+  );
+  eq(mismatchedPair.status, 404, "M3.3: mismatched quiz/attempt IDs fail closed → 404");
+
+  // Same printed lesson code at a different canonical Academic Level. The
+  // route and the recent-activity payload must retain the correct relational
+  // IDs instead of resolving context from the shared code or displayed title.
+  const sameCodeCourse = await client.course.create({
+    data: {
+      academicLevel: "FIRST_SECONDARY",
+      slug: "m33-same-code-first",
+      name: "M3.3 First Secondary",
+      nameAr: "أولى ثانوي",
+      description: "M3.3 identity fixture",
+    },
+  });
+  const sameCodePart = await client.part.create({
+    data: { courseId: sameCodeCourse.id, title: "M3.3 Part", titleAr: "جزء م3.3", order: 1 },
+  });
+  const sameCodeUnit = await client.unit.create({
+    data: { partId: sameCodePart.id, title: "M3.3 Unit", titleAr: "وحدة م3.3", order: 1 },
+  });
+  const sameCodeGroup = await client.group.create({
+    data: { name: "M3.3 First Group", courseId: sameCodeCourse.id, teacherId: teacherA.id, isActive: true, trackScope: "ARABIC" },
+  });
+  const sameCodeLesson = await client.lesson.create({
+    data: {
+      academicLevel: "FIRST_SECONDARY",
+      unitId: sameCodeUnit.id,
+      officialCode: L.pub.officialCode,
+      title: "Same printed code, first level",
+      titleAr: "الكود نفسه في مستوى آخر",
+      order: 1,
+      trackScope: "SHARED",
+      status: "PUBLISHED",
+      curriculumStatus: "OFFICIAL",
+    },
+  });
+  const sameCodeQuiz = await client.quiz.create({
+    data: { lessonId: sameCodeLesson.id, title: "M3.3 same-code quiz", titleAr: "اختبار الكود المكرر", passMark: 50 },
+  });
+  const sameCodeQuestion = await client.question.create({
+    data: { quizId: sameCodeQuiz.id, prompt: "M3.3 question", options: '["yes","no"]', answer: "0", marks: 1, difficulty: "EASY" },
+  });
+  const sameCodeStudentUser = await client.user.create({
+    data: { email: "m33-same-code-student@cm.test", password: "x", name: "M3.3 Student", role: "STUDENT" },
+  });
+  const sameCodeStudent = await client.student.create({
+    data: { academicLevel: "FIRST_SECONDARY", userId: sameCodeStudentUser.id, groupId: sameCodeGroup.id, schoolType: "ARABIC" },
+  });
+  asUser(sameCodeStudentUser);
+  const sameCodeStart = await POST(R.quizStart, url(`/api/quizzes/${sameCodeQuiz.id}/start`), {}, { id: sameCodeQuiz.id });
+  eq(sameCodeStart.status, 200, "M3.3: fixture starts a quiz for the duplicate-code lesson");
+  const sameCodeSubmit = await POST(
+    R.quizSubmit,
+    url(`/api/quizzes/${sameCodeQuiz.id}/submit`),
+    { answers: [{ questionId: sameCodeQuestion.id, selected: "0" }] },
+    { id: sameCodeQuiz.id }
+  );
+  eq(sameCodeSubmit.status, 200, "M3.3: duplicate-code fixture completes its attempt");
+  asUser(teacherUserA);
+  const sameCodeReview = await GET(
+    R.tQuizAttemptById,
+    url(`/api/teacher/quizzes/${sameCodeQuiz.id}/attempts/${sameCodeStart.json.attemptId}`),
+    { id: sameCodeQuiz.id, attemptId: sameCodeStart.json.attemptId }
+  );
+  eq(sameCodeReview.status, 200, "M3.3: Teacher can review the duplicate-code lesson attempt");
+  eq(sameCodeReview.json.quiz.course.id, sameCodeCourse.id, "M3.3: review course ID follows the canonical course relation");
+  eq(sameCodeReview.json.quiz.course.academicLevel, "FIRST_SECONDARY", "M3.3: review Academic Level follows Course.academicLevel");
+  eq(sameCodeReview.json.quiz.lesson.id, sameCodeLesson.id, "M3.3: review keeps the canonical lesson ID despite a duplicate code");
+  eq(sameCodeReview.json.quiz.lesson.courseId, sameCodeCourse.id, "M3.3: lesson context carries its canonical course ID");
+  eq(sameCodeReview.json.quiz.lesson.officialCode, L.pub.officialCode, "M3.3: duplicate printed code is preserved as display-only context");
+  eq(sameCodeReview.json.attempt.student.id, sameCodeStudent.id, "M3.3: selected student identity belongs to the canonical attempt");
+  const teacherQuizList = await GET(R.tQuizzes, url("/api/teacher/quizzes"));
+  const duplicateCodeQuiz = teacherQuizList.json.quizzes.find((quiz) => quiz.id === sameCodeQuiz.id);
+  eq(duplicateCodeQuiz?.lesson?.id, sameCodeLesson.id, "M3.3: quiz manager list keeps the selected lesson ID");
+  eq(duplicateCodeQuiz?.lesson?.course?.id, sameCodeCourse.id, "M3.3: quiz manager context keeps the selected course ID");
+  eq(duplicateCodeQuiz?.lesson?.course?.academicLevel, "FIRST_SECONDARY", "M3.3: quiz manager context keeps Course.academicLevel");
+  const dashWithSameCode = await GET(R.tDashboard, url("/api/teacher/dashboard"));
+  const sameCodeActivity = dashWithSameCode.json.recentActivity.find(
+    (activity) => activity.quizId === sameCodeQuiz.id && activity.attemptId === sameCodeStart.json.attemptId
+  );
+  ok(!!sameCodeActivity, "M3.3: selected attempt appears in Teacher recent activity");
+  eq(sameCodeActivity?.course?.id, sameCodeCourse.id, "M3.3: recent activity carries canonical course ID");
+  eq(sameCodeActivity?.course?.academicLevel, "FIRST_SECONDARY", "M3.3: recent activity carries canonical Academic Level");
+  eq(sameCodeActivity?.lesson?.id, sameCodeLesson.id, "M3.3: recent activity carries canonical lesson ID");
+  eq(sameCodeActivity?.lesson?.courseId, sameCodeCourse.id, "M3.3: recent activity binds lesson to canonical course ID");
+  eq(sameCodeActivity?.lesson?.officialCode, L.pub.officialCode, "M3.3: recent activity displays but does not resolve by printed code");
 
   // =========================================================================
   section("N. QUIZ-29 backward compatibility (legacy FIXED quiz)");

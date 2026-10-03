@@ -254,6 +254,9 @@ export async function GET(req: NextRequest) {
               ? {
                   id: lessonCourse.id,
                   name: lessonCourse.nameAr || lessonCourse.name,
+                  nameRaw: lessonCourse.name,
+                  nameAr: lessonCourse.nameAr,
+                  academicLevel: lessonCourse.academicLevel,
                 }
               : null,
           }

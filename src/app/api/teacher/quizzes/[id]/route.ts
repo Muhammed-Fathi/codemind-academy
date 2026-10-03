@@ -108,6 +108,8 @@ export async function GET(
     );
   }
 
+  const lessonContext = owned.lesson ? lessonPlacement(owned.lesson) : null;
+
   // Deterministic question order — the same order the attempt freezes in
   // (creation order, id tie-break), so the management view and the frozen set
   // cannot disagree about which question is "question 3".
@@ -149,10 +151,28 @@ export async function GET(
     lesson: owned.lesson
       ? {
           id: owned.lesson.id,
+          title: owned.lesson.titleAr || owned.lesson.title || "",
+          titleRaw: owned.lesson.title || "",
+          titleAr: owned.lesson.titleAr ?? null,
           officialCode: owned.lesson.officialCode,
           trackScope: owned.lesson.trackScope,
           status: owned.lesson.status,
           curriculumStatus: owned.lesson.curriculumStatus,
+          chain: lessonContext?.chain ?? null,
+          part: lessonContext
+            ? { id: lessonContext.partId, name: lessonContext.partTitleAr || lessonContext.partTitle }
+            : null,
+          unit: lessonContext
+            ? { id: lessonContext.unitId, name: lessonContext.unitTitleAr || lessonContext.unitTitle }
+            : null,
+          course: lessonContext
+            ? {
+                id: lessonContext.courseId,
+                name: lessonContext.courseName,
+                nameAr: lessonContext.courseNameAr,
+                academicLevel: lessonContext.courseAcademicLevel,
+              }
+            : null,
         }
       : null,
     questions: withRefs,

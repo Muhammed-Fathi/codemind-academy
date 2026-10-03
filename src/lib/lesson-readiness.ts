@@ -64,7 +64,10 @@ export type ReadinessVideoItem = {
 export type ReadinessStudentRow = {
   studentId: string;
   studentName: string;
+  groupId: string;
   groupName: string | null;
+  groupCourseName: string | null;
+  groupAcademicLevel: string | null;
   /** Nothing left to do (requirements met, waived by override, or vacuous). */
   ready: boolean;
   /** An ACTIVE override waives this lesson's requirements for the student. */
@@ -94,6 +97,7 @@ export type ReadinessTeacherGroup = {
   id: string;
   courseId: string | null;
   name: string;
+  course?: { name?: string | null; academicLevel?: string | null } | null;
   students: {
     id: string;
     schoolType: unknown;
@@ -274,7 +278,16 @@ export async function loadLessonReadiness(
   // Students of MY groups in THIS course (deduped — a student sits in one
   // group, but never trust multiplicity for correctness).
   const seen = new Set<string>();
-  const students: { id: string; name: string; groupName: string; schoolType: string | null; batchId: string | null }[] = [];
+  const students: {
+    id: string;
+    name: string;
+    groupId: string;
+    groupName: string;
+    groupCourseName: string | null;
+    groupAcademicLevel: string | null;
+    schoolType: string | null;
+    batchId: string | null;
+  }[] = [];
   for (const g of groups) {
     for (const s of g.students ?? []) {
       if (seen.has(s.id)) continue;
@@ -282,7 +295,10 @@ export async function loadLessonReadiness(
       students.push({
         id: s.id,
         name: s.user?.name ?? "—",
+        groupId: g.id,
         groupName: g.name,
+        groupCourseName: g.course?.name ?? null,
+        groupAcademicLevel: g.course?.academicLevel ?? null,
         schoolType: normalizeSchoolType(s.schoolType) as string | null,
         batchId: s.batchId ?? null,
       });
@@ -574,7 +590,10 @@ export async function loadLessonReadiness(
     return {
       studentId: s.id,
       studentName: s.name,
+      groupId: s.groupId,
       groupName: s.groupName,
+      groupCourseName: s.groupCourseName,
+      groupAcademicLevel: s.groupAcademicLevel,
       ready,
       overridden,
       video: {
@@ -604,7 +623,8 @@ export async function loadLessonReadiness(
     const ga = a.groupName ?? "";
     const gb = b.groupName ?? "";
     if (ga !== gb) return ga < gb ? -1 : 1;
-    return a.studentName < b.studentName ? -1 : 1;
+    if (a.groupId !== b.groupId) return a.groupId < b.groupId ? -1 : 1;
+    return a.studentName < b.studentName ? -1 : a.studentName > b.studentName ? 1 : 0;
   });
 
   return {

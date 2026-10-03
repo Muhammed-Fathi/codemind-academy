@@ -53,7 +53,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-import { useT } from "@/lib/i18n";
+import { useT, useLocale, localeDirection, translate } from "@/lib/i18n";
 import { useApp } from "@/lib/store";
 import {
   CurriculumBadge,
@@ -208,9 +208,12 @@ const shortDate = (iso: string) => {
 
 /** localize-with-fallback for labels that are plain, dict-keyed copy. */
 function lifecycleLabel(status: string | undefined, homework = false): string {
-  if (status === "DRAFT") return "مسودة";
-  if (status === "CLOSED") return "مغلق";
-  return homework ? "منشور" : "منشور";
+  const key = status === "DRAFT"
+    ? homework ? "teacher.homework.statusDraft" : "teacher.quiz.draft"
+    : status === "CLOSED"
+      ? homework ? "teacher.homework.statusClosed" : "teacher.quiz.closedStatus"
+      : homework ? "teacher.homework.statusPublished" : "teacher.quiz.publishedStatus";
+  return translate(curLocale(), key);
 }
 
 function lifecycleTone(status: string | undefined): string {
@@ -1002,16 +1005,16 @@ function QuizzesCard({ ws, refresh }: { ws: Workspace; refresh: () => void }) {
   const publish = useMutation({
     mutationFn: async (id: string) => {
       const r = await fetch(`/api/teacher/quizzes/${encodeURIComponent(id)}/publish`, { method: "POST" });
-      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || "تعذر النشر"); }
+      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || tr("teacher.quiz.publishError")); }
       return r.json();
     },
-    onSuccess: () => { toast.success("تم نشر الاختبار"); refresh(); },
+    onSuccess: () => { toast.success(tr("teacher.quiz.publishDone")); refresh(); },
     onError: (e: Error) => toast.error(e.message),
   });
 
   const duplicate = useMutation({
-    mutationFn: async (id: string) => { const r = await fetch(`/api/teacher/quizzes/${encodeURIComponent(id)}/duplicate`, { method: "POST" }); if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "تعذر نسخ الاختبار"); return r.json(); },
-    onSuccess: (data: any) => { const title = data?.quiz?.titleAr || data?.quiz?.title || "الاختبار"; toast.success(`تم إنشاء نسخة جديدة كمسودة: ${title}`); refresh(); }, onError: (e: Error) => toast.error(e.message),
+    mutationFn: async (id: string) => { const r = await fetch(`/api/teacher/quizzes/${encodeURIComponent(id)}/duplicate`, { method: "POST" }); if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || tr("teacher.quiz.duplicateError")); return r.json(); },
+    onSuccess: (data: any) => { const title = data?.quiz?.titleAr || data?.quiz?.title || tr("teacher.quiz.draft"); toast.success(tr("teacher.quiz.duplicateDone", { p1: title })); refresh(); }, onError: (e: Error) => toast.error(e.message),
   });
   const preview = (id: string) => setPreviewQuizId(id);
 
@@ -1064,7 +1067,7 @@ function QuizzesCard({ ws, refresh }: { ws: Workspace; refresh: () => void }) {
                 </Badge>
                 <TrackScopeBadge scope={q.trackScope} />
                 <span className="text-muted-foreground">
-                  {tr("teacher.267")}: {q.passMark}٪
+                  {tr("teacher.267")}: {q.passMark}%
                 </span>
                 {q.timeLimit != null && (
                   <Badge variant="outline" className="text-[10px]" dir="ltr">
@@ -1095,12 +1098,12 @@ function QuizzesCard({ ws, refresh }: { ws: Workspace; refresh: () => void }) {
                   </Badge>
                 )}
                 <span className="ms-auto flex items-center gap-1">
-                  <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => preview(q.id)}>معاينة</Button>
-                  {q.attemptsCount > 0 && <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => duplicate.mutate(q.id)} disabled={duplicate.isPending}>نسخ الاختبار</Button>}
-                  {q.attemptsCount > 0 && <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => setAttemptsQuizId(q.id)}>عرض المحاولات</Button>}
+                  <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => preview(q.id)}>{tr("teacher.quiz.preview")}</Button>
+                  {q.attemptsCount > 0 && <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => duplicate.mutate(q.id)} disabled={duplicate.isPending}>{tr("teacher.quiz.duplicate")}</Button>}
+                  {q.attemptsCount > 0 && <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => setAttemptsQuizId(q.id)}>{tr("teacher.quiz.viewAttempts")}</Button>}
                   {q.status === "DRAFT" && q.questionCount > 0 && (
                     <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => publish.mutate(q.id)} disabled={publish.isPending}>
-                      نشر
+                      {tr("teacher.quiz.publish")}
                     </Button>
                   )}
                   <Button
@@ -1187,35 +1190,186 @@ function QuizzesCard({ ws, refresh }: { ws: Workspace; refresh: () => void }) {
   );
 }
 
-function QuizAttemptsDialog({ id, open, onOpenChange }: { id: string | null; open: boolean; onOpenChange: (v: boolean) => void }) {
-  const [data, setData] = React.useState<any>(null); const [error, setError] = React.useState<string | null>(null);
-  React.useEffect(() => { if (!open || !id) return; let live=true; setData(null); setError(null); fetch(`/api/teacher/quizzes/${encodeURIComponent(id)}/attempts`).then(async r => { const b=await r.json(); if(!r.ok) throw new Error(b.error||"تعذر تحميل النتائج"); return b; }).then(b=>live&&setData(b)).catch(e=>live&&setError(e.message)); return ()=>{live=false}; },[id,open]);
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-w-3xl max-h-[88vh] overflow-y-auto" dir="rtl"><DialogHeader><DialogTitle>نتائج الطلاب</DialogTitle></DialogHeader>{!data&&!error&&<div className="py-10 text-center text-muted-foreground">جارٍ التحميل…</div>}{error&&<p className="text-destructive">{error}</p>}{data&&(!data.attempts?.length?<p className="py-8 text-center text-muted-foreground">لا توجد محاولات بعد</p>:<div className="space-y-2">{data.attempts.map((a:any,i:number)=><div key={a.id||i} className="rounded border p-3 flex flex-wrap gap-3 items-center"><strong>{a.student?.name || "طالب"}</strong><span>المحاولة {a.attemptNumber}</span><span>{a.score ?? 0}/{a.totalMarks ?? 0}</span><span>{a.percentage ?? 0}%</span><Badge variant="outline">{a.passed ? "ناجح" : "غير ناجح"}</Badge><span className="text-muted-foreground text-xs">{a.finishedAt ? new Date(a.finishedAt).toLocaleString("ar-EG") : "مفتوحة"}</span></div>)}</div>)}<DialogFooter><Button variant="outline" onClick={()=>onOpenChange(false)}>إغلاق</Button></DialogFooter></DialogContent></Dialog>;
-}
-
-function QuizPreviewDialog({ id, open, onOpenChange }: { id: string | null; open: boolean; onOpenChange: (v: boolean) => void }) {
+function QuizAttemptsDialog({
+  id,
+  open,
+  onOpenChange,
+}: {
+  id: string | null;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+}) {
+  const tr = useT();
+  const locale = useLocale();
+  const direction = localeDirection(locale);
   const [data, setData] = React.useState<any>(null);
   const [error, setError] = React.useState<string | null>(null);
+
   React.useEffect(() => {
     if (!open || !id) return;
-    let alive = true; setData(null); setError(null);
-    fetch(`/api/teacher/quizzes/${encodeURIComponent(id)}/preview`)
-      .then(async (r) => { const body = await r.json(); if (!r.ok) throw new Error(body.error || "تعذر فتح المعاينة"); return body.preview; })
-      .then((v) => alive && setData(v)).catch((e) => alive && setError(e.message));
-    return () => { alive = false; };
-  }, [id, open]);
-  return <Dialog open={open} onOpenChange={onOpenChange}>
-    <DialogContent className="max-w-3xl max-h-[88vh] overflow-y-auto" dir="rtl">
-      <DialogHeader><DialogTitle>معاينة الاختبار</DialogTitle><DialogDescription>معاينة مدرسية لا تنشئ محاولة للطالب</DialogDescription></DialogHeader>
-      {!data && !error && <div className="py-12 text-center text-muted-foreground">جارٍ تحميل المعاينة…</div>}
-      {error && <div className="rounded border border-destructive/30 p-4 text-destructive">{error}</div>}
-      {data && <div className="space-y-4">
-        <div className="rounded-lg border p-4 space-y-2"><h3 className="font-semibold">{data.quiz.title}</h3><p className="text-sm text-muted-foreground">{data.quiz.description || "لا يوجد وصف"}</p><div className="flex flex-wrap gap-2 text-xs"><Badge variant="outline">{data.quiz.status === "DRAFT" ? "مسودة" : "منشور"}</Badge><Badge variant="outline">درجة النجاح: {data.quiz.passMark}</Badge><Badge variant="outline">المدة: {data.quiz.timeLimit ?? "بدون حد"}</Badge><Badge variant="outline">الأسئلة: {data.quiz.questionCount}</Badge><Badge variant="outline">الدرجة الكلية: {data.quiz.totalMarks}</Badge></div></div>
-        {data.questions?.length === 0 ? <div className="p-8 text-center text-muted-foreground">لا توجد أسئلة للمعاينة</div> : data.questions.map((q: any, i: number) => <div key={q.id || i} className="rounded-lg border p-4 space-y-2"><div className="flex justify-between text-xs text-muted-foreground"><span>سؤال {i + 1} · {q.type === "MCQ" ? "اختيار من متعدد" : q.type === "TRUE_FALSE" ? "صح أو خطأ" : "سؤال"}</span><span>{q.marks} درجة · {q.difficulty === "EASY" ? "سهل" : q.difficulty === "HARD" ? "صعب" : "متوسط"}</span></div><p className="font-medium">{q.promptAr || q.prompt}</p><div className="grid gap-2 sm:grid-cols-2">{(Array.isArray(q.options) ? q.options : []).map((o: string, j: number) => <div key={j} className={`rounded border p-2 ${String(q.answer) === String(j) ? "border-emerald-500 bg-emerald-500/10" : ""}`}>{o}</div>)}</div></div>)}
-      </div>}
-      <DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>إغلاق</Button></DialogFooter>
-    </DialogContent>
-  </Dialog>;
+    const controller = new AbortController();
+    let active = true;
+    setData(null);
+    setError(null);
+    fetch(`/api/teacher/quizzes/${encodeURIComponent(id)}/attempts`, { signal: controller.signal })
+      .then(async (response) => {
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(body.error || tr("teacher.quiz.loadAttemptsError"));
+        return body;
+      })
+      .then((body) => {
+        if (active) setData(body);
+      })
+      .catch((cause: unknown) => {
+        if (!active || controller.signal.aborted) return;
+        setError(cause instanceof Error ? cause.message : tr("teacher.quiz.loadAttemptsError"));
+      });
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [id, open, tr]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-3xl max-h-[88vh] overflow-y-auto" dir={direction}>
+        <DialogHeader>
+          <DialogTitle>{tr("teacher.quiz.attemptResults")}</DialogTitle>
+        </DialogHeader>
+        {!data && !error && (
+          <div className="py-10 text-center text-muted-foreground" role="status">
+            {tr("teacher.quiz.loadingAttempts")}
+          </div>
+        )}
+        {error && <p className="text-destructive" role="alert">{error}</p>}
+        {data && (data.attempts?.length ? (
+          <div className="space-y-2">
+            {data.attempts.map((a: any, i: number) => (
+              <div key={a.id || i} className="rounded border p-3 flex flex-wrap gap-3 items-center">
+                <strong dir="auto">{a.student?.name || tr("teacher.quiz.studentFallback")}</strong>
+                <span>{tr("teacher.quiz.attemptNumber", { p1: a.attemptNumber })}</span>
+                <span dir="ltr">{a.score ?? 0}/{a.totalMarks ?? 0}</span>
+                <span dir="ltr">{a.percentage ?? 0}%</span>
+                <Badge variant="outline">
+                  {a.passed ? tr("teacher.quiz.passed") : tr("teacher.quiz.notPassed")}
+                </Badge>
+                <span className="text-muted-foreground text-xs">
+                  {a.finishedAt
+                    ? new Date(a.finishedAt).toLocaleString(locale === "en" ? "en-GB" : "ar-EG")
+                    : tr("teacher.quiz.openAttempt")}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="py-8 text-center text-muted-foreground">{tr("teacher.quiz.noAttempts")}</p>
+        ))}
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            {tr("teacher.quiz.close")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function QuizPreviewDialog({
+  id,
+  open,
+  onOpenChange,
+}: {
+  id: string | null;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+}) {
+  const tr = useT();
+  const locale = useLocale();
+  const direction = localeDirection(locale);
+  const [data, setData] = React.useState<any>(null);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!open || !id) return;
+    const controller = new AbortController();
+    let active = true;
+    setData(null);
+    setError(null);
+    fetch(`/api/teacher/quizzes/${encodeURIComponent(id)}/preview`, { signal: controller.signal })
+      .then(async (response) => {
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(body.error || tr("teacher.quiz.loadPreviewError"));
+        return body.preview;
+      })
+      .then((preview) => {
+        if (active) setData(preview);
+      })
+      .catch((cause: unknown) => {
+        if (!active || controller.signal.aborted) return;
+        setError(cause instanceof Error ? cause.message : tr("teacher.quiz.loadPreviewError"));
+      });
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [id, open, tr]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-3xl max-h-[88vh] overflow-y-auto" dir={direction}>
+        <DialogHeader>
+          <DialogTitle>{tr("teacher.quiz.previewTitle")}</DialogTitle>
+          <DialogDescription>{tr("teacher.quiz.previewDescription")}</DialogDescription>
+        </DialogHeader>
+        {!data && !error && (
+          <div className="py-12 text-center text-muted-foreground" role="status">
+            {tr("teacher.quiz.loadingPreview")}
+          </div>
+        )}
+        {error && <div className="rounded border border-destructive/30 p-4 text-destructive" role="alert">{error}</div>}
+        {data && (
+          <div className="space-y-4">
+            <div className="rounded-lg border p-4 space-y-2">
+              <h3 className="font-semibold" dir="auto">{locale === "en" ? data.quiz.title : data.quiz.titleAr || data.quiz.title}</h3>
+              <p className="text-sm text-muted-foreground" dir="auto">{data.quiz.description || tr("teacher.quiz.noDescription")}</p>
+              <div className="flex flex-wrap gap-2 text-xs">
+                <Badge variant="outline">{data.quiz.status === "DRAFT" ? tr("teacher.quiz.draft") : tr("teacher.quiz.publishedStatus")}</Badge>
+                <Badge variant="outline">{tr("teacher.267")}: {data.quiz.passMark}</Badge>
+                <Badge variant="outline">{tr("teacher.175")}: {data.quiz.timeLimit ?? tr("teacher.quiz.timeLimitNone")}</Badge>
+                <Badge variant="outline">{tr("teacher.quiz.questionCount", { p1: data.quiz.questionCount })}</Badge>
+                <Badge variant="outline">{tr("teacher.quiz.totalMarks")}: {data.quiz.totalMarks}</Badge>
+              </div>
+            </div>
+            {data.questions?.length === 0 ? (
+              <div className="p-8 text-center text-muted-foreground">{tr("teacher.quiz.emptyPreview")}</div>
+            ) : data.questions.map((q: any, i: number) => (
+              <div key={q.id || i} className="rounded-lg border p-4 space-y-2">
+                <div className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground">
+                  <span>{tr("teacher.090")} {i + 1} · {q.type === "MCQ" ? tr("teacher.278") : q.type === "TRUE_FALSE" ? tr("teacher.279") : tr("teacher.quiz.questionType")}</span>
+                  <span dir="ltr">{q.marks} {tr("teacher.070")} · {q.difficulty === "EASY" ? tr("teacher.283") : q.difficulty === "HARD" ? tr("teacher.285") : tr("teacher.284")}</span>
+                </div>
+                <p className="font-medium" dir="auto">
+                  {locale === "en" ? q.prompt : q.promptAr || q.prompt}
+                </p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {(Array.isArray(q.options) ? q.options : []).map((option: string, oi: number) => (
+                    <div key={oi} dir="auto" className={`rounded border p-2 ${String(q.answer) === String(oi) ? "border-emerald-500 bg-emerald-500/10" : ""}`}>
+                      {option}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            {tr("teacher.quiz.close")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 // ------------------------------------------------------------
@@ -1257,6 +1411,7 @@ function QuizCreateDialog({
   refresh: () => void;
 }) {
   const tr = useT();
+  const direction = localeDirection(useLocale());
   const [title, setTitle] = React.useState("");
   const [titleAr, setTitleAr] = React.useState("");
   const [description, setDescription] = React.useState("");
@@ -1327,7 +1482,7 @@ function QuizCreateDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto" dir={direction}>
         <DialogHeader>
           <DialogTitle>{tr("teacher.252")}</DialogTitle>
           <DialogDescription>{ws.lesson.title}</DialogDescription>
@@ -1343,20 +1498,20 @@ function QuizCreateDialog({
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">{tr("teacher.270")}</Label>
-              <Input value={titleAr} onChange={(e) => setTitleAr(e.target.value)} />
+              <Input value={titleAr} onChange={(e) => setTitleAr(e.target.value)} dir="rtl" />
             </div>
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground">{tr("teacher.271")}</Label>
-            <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
+            <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} dir="auto" />
           </div>
           <div className="space-y-1.5 rounded-lg border p-3">
-            <Label className="text-xs text-muted-foreground">الكاميرا أثناء الاختبار</Label>
+            <Label className="text-xs text-muted-foreground">{tr("teacher.quiz.cameraPolicy")}</Label>
             <Select value={cameraPolicy} onValueChange={(v) => setCameraPolicy(v as "OPTIONAL" | "REQUIRED")}>
               <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent><SelectItem value="OPTIONAL">اختيارية</SelectItem><SelectItem value="REQUIRED">مطلوبة</SelectItem></SelectContent>
+              <SelectContent><SelectItem value="OPTIONAL">{tr("teacher.quiz.cameraOptional")}</SelectItem><SelectItem value="REQUIRED">{tr("teacher.quiz.cameraRequired")}</SelectItem></SelectContent>
             </Select>
-            <p className="text-[11px] text-muted-foreground">تحدد هل يجب السماح بالكاميرا قبل بدء المحاولة.</p>
+            <p className="text-[11px] text-muted-foreground">{tr("teacher.quiz.cameraHint")}</p>
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">
@@ -1499,12 +1654,29 @@ function QuestionDraftEditor({
         )}
       </div>
 
-      <Input
-        value={draft.prompt}
-        onChange={(e) => onChange({ prompt: e.target.value })}
-        placeholder={tr("teacher.273")}
-        aria-label={tr("teacher.273")}
-      />
+      <div className="space-y-1.5">
+        <Label className="text-[10px] text-muted-foreground">
+          {tr("teacher.094")} <span className="text-destructive">*</span>
+        </Label>
+        <Input
+          value={draft.prompt}
+          onChange={(e) => onChange({ prompt: e.target.value })}
+          placeholder={tr("teacher.273")}
+          aria-label={tr("teacher.273")}
+          dir="ltr"
+        />
+      </div>
+      <div className="space-y-1.5">
+        <Label className="text-[10px] text-muted-foreground">{tr("teacher.095")}</Label>
+        <Textarea
+          value={draft.promptAr}
+          onChange={(e) => onChange({ promptAr: e.target.value })}
+          placeholder={tr("teacher.096")}
+          aria-label={tr("teacher.095")}
+          rows={2}
+          dir="rtl"
+        />
+      </div>
 
       {draft.type === "MCQ" ? (
         <div className="space-y-1.5">
@@ -1606,6 +1778,7 @@ function QuizEditDialog({
   onSaved: () => void;
 }) {
   const tr = useT();
+  const direction = localeDirection(useLocale());
   const [title, setTitle] = React.useState(quiz.titleRaw);
   const [titleAr, setTitleAr] = React.useState(quiz.titleAr ?? "");
   const [description, setDescription] = React.useState(quiz.description ?? "");
@@ -1646,12 +1819,12 @@ function QuizEditDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg" dir={direction}>
         <DialogHeader>
           <DialogTitle>{tr("teacher.256")}</DialogTitle>
           <DialogDescription>{quiz.title}</DialogDescription>
         </DialogHeader>
-        {locked && <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-800" role="status">تم قفل إعدادات الاختبار بعد بدء أول محاولة. لإجراء تغييرات، أنشئ نسخة جديدة من الاختبار.</div>}
+        {locked && <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-800" role="status">{tr("teacher.quiz.lockedNotice")}</div>}
         <div className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
@@ -1660,12 +1833,12 @@ function QuizEditDialog({
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">{tr("teacher.270")}</Label>
-              <Input value={titleAr} onChange={(e) => setTitleAr(e.target.value)} disabled={locked} />
+              <Input value={titleAr} onChange={(e) => setTitleAr(e.target.value)} dir="rtl" disabled={locked} />
             </div>
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground">{tr("teacher.271")}</Label>
-            <Textarea value={description} onChange={(e) => setDescription(e.target.value)} disabled={locked} rows={2} />
+            <Textarea value={description} onChange={(e) => setDescription(e.target.value)} dir="auto" disabled={locked} rows={2} />
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">
@@ -1756,10 +1929,10 @@ function HomeworkCard({ ws, refresh }: { ws: Workspace; refresh: () => void }) {
   const transition = useMutation({
     mutationFn: async ({ id, action }: { id: string; action: "publish" | "close" }) => {
       const r = await fetch(`/api/teacher/homework/${encodeURIComponent(id)}/${action}`, { method: "POST" });
-      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || "تعذر تحديث حالة الواجب"); }
+      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || tr("teacher.homework.updateStatusError")); }
       return r.json();
     },
-    onSuccess: (_data, vars) => { toast.success(vars.action === "publish" ? "تم نشر الواجب" : "تم إغلاق الواجب"); refresh(); },
+    onSuccess: (_data, vars) => { toast.success(vars.action === "publish" ? tr("teacher.homework.publishDone") : tr("teacher.homework.closeDone")); refresh(); },
     onError: (e: Error) => toast.error(e.message),
   });
 
@@ -1877,8 +2050,8 @@ function HomeworkCard({ ws, refresh }: { ws: Workspace; refresh: () => void }) {
                   </Badge>
                 )}
                 <span className="ms-auto flex items-center gap-1">
-                  {h.status === "DRAFT" && <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => transition.mutate({ id: h.id, action: "publish" })} disabled={transition.isPending}>نشر الواجب</Button>}
-                  {h.status === "PUBLISHED" && <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => transition.mutate({ id: h.id, action: "close" })} disabled={transition.isPending}>إغلاق الواجب</Button>}
+                  {h.status === "DRAFT" && <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => transition.mutate({ id: h.id, action: "publish" })} disabled={transition.isPending}>{tr("teacher.homework.publish")}</Button>}
+                  {h.status === "PUBLISHED" && <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => transition.mutate({ id: h.id, action: "close" })} disabled={transition.isPending}>{tr("teacher.homework.close")}</Button>}
                   <Button
                     variant="ghost"
                     size="sm"

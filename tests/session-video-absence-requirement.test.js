@@ -933,6 +933,43 @@ test("SessionVideo requirement modes + attendance-aware gating (T1–T31)", asyn
   eq(rE.ready, true, "T23: the completed excused student is READY");
   eq(rP.quiz.pending.map((q) => q.id), [Q1.id], "T23: the pending quiz is named");
   eq(rP.homework.pending.map((h) => h.id), [H1.id], "T23: the pending homework is named");
+  eq(rP.groupId, groupG1.id, "T23/M3.2: readiness rows carry the canonical group ID");
+  eq(rP.groupName, groupG1.name, "T23/M3.2: the group label remains available beside its ID");
+  eq(rP.groupCourseName, course.name, "T23/M3.2: group course context is derived for a disambiguating label");
+  eq(rP.groupAcademicLevel, "SECOND_SECONDARY", "T23/M3.2: group level context comes from its canonical course");
+
+  // Same-named, same-course groups remain separate rows by groupId. The UI's
+  // readiness filter uses this ID instead of collapsing the labels into a Set
+  // of names.
+  const duplicateNameGroup = await client.group.create({
+    data: {
+      name: groupG1.name,
+      courseId: course.id,
+      teacherId: teacher.id,
+      trackScope: "ARABIC",
+      isActive: true,
+    },
+  });
+  const duplicateGroupUser = await client.user.create({
+    data: { email: "same-name-group@avreq.test", password: "x", name: "Duplicate group student", role: "STUDENT" },
+  });
+  const duplicateGroupStudent = await client.student.create({
+    data: {
+      userId: duplicateGroupUser.id,
+      academicLevel: "SECOND_SECONDARY",
+      schoolType: "ARABIC",
+      groupId: duplicateNameGroup.id,
+      batchId: batchAr.id,
+    },
+  });
+  const t23sameName = await GET(R.readiness, `http://t/api/teacher/lessons/${L1.id}/readiness`, { id: L1.id });
+  const sameNamedRows = t23sameName.json.students.filter((row) => row.groupName === groupG1.name);
+  eq(t23sameName.status, 200, "T23/M3.2: duplicate-name groups still return readiness successfully");
+  eq(sameNamedRows.length, 9, "T23/M3.2: the two same-named groups' students are both present");
+  eq(sameNamedRows.find((row) => row.studentId === sPresent.student.id)?.groupId, groupG1.id, "T23/M3.2: the original group's row keeps its own groupId");
+  eq(sameNamedRows.find((row) => row.studentId === duplicateGroupStudent.id)?.groupId, duplicateNameGroup.id, "T23/M3.2: the duplicate-name group's row keeps a distinct groupId");
+  eq(new Set(sameNamedRows.map((row) => row.groupId)).size, 2, "T23/M3.2: duplicate printed group names are distinct by canonical group ID");
+
   // No lesson CONTENT crosses: no bytes, no urls, no questions.
   const t23flat = JSON.stringify(t23.json);
   ok(!/storageKey|externalUrl|question|attachmentId/.test(t23flat), "T23: states only — no content fields leak");

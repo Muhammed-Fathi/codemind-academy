@@ -7,7 +7,7 @@ import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { getVideoProgressForStudents } from "@/lib/progress";
 import { ok, err, requireUser, getTeacherProfile } from "@/lib/api";
-import { lessonCourseChainOr, lessonCoursesChainOr } from "@/lib/session-progress";
+import { lessonCourseChainOr } from "@/lib/session-progress";
 import {
   academicLevelParamOf,
   academicLevelScope,
@@ -33,21 +33,53 @@ export async function GET(req: NextRequest) {
   if (!levelParam.ok) return err("Unknown academic level", 400);
   const scopedGroups = await scopedTeacherGroups(teacher, levelParam.level);
 
-  // ---- Concurrent read plan --------------------------------------------
-  // Every read below depends only on `teacher` (already loaded), so all
-  // chains run concurrently. On remote Postgres (Neon) each query is a
-  // network round-trip: total latency becomes the slowest chain instead of
-  // the sum of ~25 sequential queries. Query semantics are unchanged.
+  // ---- Scoped read plan -------------------------------------------------
+  // Resolve each group's content ids first. Once that dependency is ready,
+  // independent per-group KPIs, activity history and upcoming sessions run
+  // concurrently under the already-selected owned-group scope.
+
+  // Resolve every selected group's canonical lesson/content ids once. Both
+  // the per-group KPIs and the recent-activity feed use this same Group →
+  // Course → (Unit or legacy Topic) relationship, rather than a student's
+  // lifetime history or a union of unrelated courses.
+  const groupContentPromise = Promise.all(
+    scopedGroups.map(async (g) => {
+      const courseLessons = await db.lesson.findMany({
+        where: { OR: lessonCourseChainOr(g.courseId) },
+        select: { id: true },
+      });
+      const lessonIds = courseLessons.map((lesson) => lesson.id);
+      const [homeworks, quizzes] = lessonIds.length
+        ? await Promise.all([
+            db.homework.findMany({
+              where: { lessonId: { in: lessonIds } },
+              select: { id: true },
+            }),
+            db.quiz.findMany({
+              where: { lessonId: { in: lessonIds } },
+              select: { id: true },
+            }),
+          ])
+        : [[], []];
+
+      return {
+        studentIds: g.students.map((s) => s.id),
+        homeworkIds: homeworks.map((homework) => homework.id),
+        quizIds: quizzes.map((quiz) => quiz.id),
+      };
+    })
+  );
 
   // ---- Per-group enrichment -------------------------------------------
-  const groupsPromise = Promise.all(
-    scopedGroups.map(async (g) => {
-      const studentIds = g.students.map((s) => s.id);
+  const groupsPromise = (async () => {
+    const groupContent = await groupContentPromise;
+    return Promise.all(
+      scopedGroups.map(async (g, index) => {
+        const content = groupContent[index];
+        const studentIds = content.studentIds;
 
-      // Wave 1: independent per-group reads. Video progress is one batched
-      // service call for the whole group — no per-student N+1 lookups.
-      const [groupVideoProgress, sessions, quizAttempts, courseLessons] =
-        await Promise.all([
+        // Video progress and the group's own sessions are independent reads.
+        const [groupVideoProgress, sessions] = await Promise.all([
           getVideoProgressForStudents(studentIds),
           db.liveSession.findMany({
             where: { groupId: g.id },
@@ -59,126 +91,109 @@ export async function GET(req: NextRequest) {
               titleAr: true,
             },
           }),
-          studentIds.length
-            ? db.quizAttempt.findMany({
-                where: { studentId: { in: studentIds } },
-                select: { percentage: true },
-              })
-            : Promise.resolve([] as { percentage: number }[]),
-          db.lesson.findMany({
-            where: { OR: lessonCourseChainOr(g.courseId) },
-            select: { id: true },
-          }),
         ]);
 
-      // Next session date for this group — derived in JS from `sessions`
-      // (same filter/order the previous findFirst used; saves one query
-      // per group).
-      const nowMs = Date.now();
-      const nextSession =
-        sessions
-          .filter((s) => s.startAt.getTime() >= nowMs)
-          .sort((a, b) => a.startAt.getTime() - b.startAt.getTime())[0] ||
-        null;
+        const nowMs = Date.now();
+        const nextSession =
+          sessions
+            .filter((s) => s.startAt.getTime() >= nowMs)
+            .sort((a, b) => a.startAt.getTime() - b.startAt.getTime())[0] ||
+          null;
 
-      // Wave 2: reads that depend on wave-1 ids.
-      const sessionIds = sessions.map((s) => s.id);
-      const lessonIds = courseLessons.map((l) => l.id);
-      const [attendanceRows, homeworks] = await Promise.all([
-        studentIds.length
-          ? db.attendance.findMany({
-              where: { sessionId: { in: sessionIds } },
-            })
-          : Promise.resolve([]),
-        lessonIds.length
-          ? db.homework.findMany({
-              where: { lessonId: { in: lessonIds } },
-              select: { id: true },
-            })
-          : Promise.resolve([] as { id: string }[]),
-      ]);
+        // KPIs are intersected across the current roster, this group's own
+        // sessions/content, and (for quiz outcomes) finished attempts only.
+        const sessionIds = sessions.map((s) => s.id);
+        const [attendanceRows, quizAttempts, pendingSubmissions] =
+          await Promise.all([
+            studentIds.length && sessionIds.length
+              ? db.attendance.findMany({
+                  where: {
+                    studentId: { in: studentIds },
+                    sessionId: { in: sessionIds },
+                  },
+                })
+              : Promise.resolve([]),
+            studentIds.length && content.quizIds.length
+              ? db.quizAttempt.findMany({
+                  where: {
+                    studentId: { in: studentIds },
+                    quizId: { in: content.quizIds },
+                    finishedAt: { not: null },
+                  },
+                  select: { percentage: true },
+                })
+              : Promise.resolve([] as { percentage: number }[]),
+            studentIds.length && content.homeworkIds.length
+              ? db.homeworkSubmission.count({
+                  where: {
+                    studentId: { in: studentIds },
+                    homeworkId: { in: content.homeworkIds },
+                    status: { in: ["PENDING", "SUBMITTED"] },
+                  },
+                })
+              : Promise.resolve(0),
+          ]);
 
-      // Attendance % across the group's students in this group's sessions
-      const presentCount = attendanceRows.filter(
-        (a) => a.status === "PRESENT" || a.status === "LATE"
-      ).length;
-      const attendancePct =
-        attendanceRows.length > 0
-          ? Math.round((presentCount / attendanceRows.length) * 100)
-          : 0;
+        const presentCount = attendanceRows.filter(
+          (a) => a.status === "PRESENT" || a.status === "LATE"
+        ).length;
+        const attendancePct =
+          attendanceRows.length > 0
+            ? Math.round((presentCount / attendanceRows.length) * 100)
+            : 0;
+        const avgQuizScore =
+          quizAttempts.length > 0
+            ? Math.round(
+                quizAttempts.reduce((sum, attempt) => sum + attempt.percentage, 0) /
+                  quizAttempts.length
+              )
+            : 0;
 
-      // Avg quiz score across this group's students
-      const avgQuizScore =
-        quizAttempts.length > 0
-          ? Math.round(
-              quizAttempts.reduce((s, a) => s + a.percentage, 0) /
-                quizAttempts.length
-            )
-          : 0;
-
-      // Pending homework count: homeworks in this course's lessons that
-      // have submissions still in PENDING or SUBMITTED status. Both chains
-      // (official lessons are unit-linked); no archived exclusion — a pending
-      // legacy submission still needs grading.
-      const homeworkIds = homeworks.map((h) => h.id);
-      const pendingSubmissions = homeworkIds.length
-        ? await db.homeworkSubmission.count({
-            where: {
-              homeworkId: { in: homeworkIds },
-              status: { in: ["PENDING", "SUBMITTED"] },
-            },
-          })
-        : 0;
-
-      return {
-        id: g.id,
-        name: g.name,
-        schedule: g.schedule,
-        capacity: g.capacity,
-        courseId: g.courseId,
-        course: g.course
-          ? {
-              id: g.course.id,
-              slug: g.course.slug,
-              name: g.course.name,
-              nameAr: g.course.nameAr,
-              color: g.course.color,
-              // Phase L manual-QA fix — the level comes from the group's
-              // COURSE (Group → Course → AcademicLevel). A teacher may own
-              // groups in both levels and both official courses share one
-              // display name, so this is what keeps their cards distinct.
-              // Teacher itself has no academic level, by design.
-              academicLevel: g.course.academicLevel ?? null,
-            }
-          : null,
-        studentsCount: g.students.length,
-        students: g.students.map((s: any) => ({
-          id: s.id,
-          name: s.user.name,
-          email: s.user.email,
-          avatarUrl: s.user.avatarUrl,
-          grade: s.grade,
-          studentCode: s.studentCode ?? null,
-          schoolType: s.schoolType ?? null,
-          // Same shared progress service used by Admin & Parent dashboards.
-          videoProgress: groupVideoProgress.get(s.id) || null,
-        })),
-        stats: {
-          attendancePct,
-          avgQuizScore,
-          pendingHomework: pendingSubmissions,
-          totalSessions: sessions.length,
-        },
-        nextSession: nextSession
-          ? {
-              id: nextSession.id,
-              startAt: nextSession.startAt,
-              title: nextSession.titleAr || nextSession.title,
-            }
-          : null,
-      };
-    })
-  );
+        return {
+          id: g.id,
+          name: g.name,
+          schedule: g.schedule,
+          capacity: g.capacity,
+          courseId: g.courseId,
+          course: g.course
+            ? {
+                id: g.course.id,
+                slug: g.course.slug,
+                name: g.course.name,
+                nameAr: g.course.nameAr,
+                color: g.course.color,
+                // Level is canonical on the group's Course, never on Teacher.
+                academicLevel: g.course.academicLevel ?? null,
+              }
+            : null,
+          studentsCount: g.students.length,
+          students: g.students.map((s: any) => ({
+            id: s.id,
+            name: s.user.name,
+            email: s.user.email,
+            avatarUrl: s.user.avatarUrl,
+            grade: s.grade,
+            studentCode: s.studentCode ?? null,
+            schoolType: s.schoolType ?? null,
+            videoProgress: groupVideoProgress.get(s.id) || null,
+          })),
+          stats: {
+            attendancePct,
+            avgQuizScore,
+            pendingHomework: pendingSubmissions,
+            totalSessions: sessions.length,
+          },
+          nextSession: nextSession
+            ? {
+                id: nextSession.id,
+                startAt: nextSession.startAt,
+                title: nextSession.titleAr || nextSession.title,
+              }
+            : null,
+        };
+      })
+    );
+  })();
 
   // ---- Upcoming sessions (next 7 days across all teacher groups) ----
   const teacherGroupIds = scopedGroups.map((g) => g.id);
@@ -200,72 +215,111 @@ export async function GET(req: NextRequest) {
       })
     : Promise.resolve([]);
 
-  // ---- Recent activity: last 5 graded homework + last 5 quiz attempts ----
-  const allStudentIds = scopedGroups.flatMap((g) =>
-    g.students.map((s) => s.id)
-  );
-  const recentSubsPromise = allStudentIds.length
-    ? db.homeworkSubmission.findMany({
-        where: {
-          studentId: { in: allStudentIds },
-          status: "GRADED",
-        },
-        orderBy: { id: "desc" },
-        take: 5,
-        include: {
-          student: { include: { user: { select: { name: true } } } },
-          homework: { select: { id: true, title: true, titleAr: true } },
-        },
-      })
-    : Promise.resolve([]);
-
-  const recentAttemptsPromise = allStudentIds.length
-    ? db.quizAttempt.findMany({
-        where: { studentId: { in: allStudentIds } },
-        orderBy: { startedAt: "desc" },
-        take: 5,
-        include: {
-          student: { include: { user: { select: { name: true } } } },
-          quiz: { select: { id: true, title: true, titleAr: true } },
-        },
-      })
-    : Promise.resolve([]);
-
-  // ---- Pending homework count across all groups ----
-  const allCourseIds = scopedGroups.map((g) => g.courseId);
-  const totalPendingPromise = (async () => {
-    const allLessonsForTeacher = allCourseIds.length
-      ? await db.lesson.findMany({
-          where: { OR: lessonCoursesChainOr(allCourseIds) },
-          select: { id: true },
-        })
-      : [];
-    const allLessonIds = allLessonsForTeacher.map((l) => l.id);
-    const allHomeworksForTeacher = allLessonIds.length
-      ? await db.homework.findMany({
-          where: { lessonId: { in: allLessonIds } },
-          select: { id: true },
-        })
-      : [];
-    const allHwIds = allHomeworksForTeacher.map((h) => h.id);
-    return allHwIds.length
-      ? db.homeworkSubmission.count({
-          where: {
-            homeworkId: { in: allHwIds },
-            status: { in: ["PENDING", "SUBMITTED"] },
+  // ---- Recent activity: selected group/course history only --------------
+  const activityPromise = (async () => {
+    const groupContent = await groupContentPromise;
+    const perGroupActivity = await Promise.all(
+      scopedGroups.map(async (g, index) => {
+        const content = groupContent[index];
+        const studentIds = content.studentIds;
+        const [submissions, attempts] = await Promise.all([
+          studentIds.length && content.homeworkIds.length
+            ? db.homeworkSubmission.findMany({
+                where: {
+                  studentId: { in: studentIds },
+                  homeworkId: { in: content.homeworkIds },
+                  status: "GRADED",
+                },
+                orderBy: { id: "desc" },
+                take: 5,
+                include: {
+                  student: { include: { user: { select: { name: true } } } },
+                  homework: {
+                    select: {
+                      id: true,
+                      title: true,
+                      titleAr: true,
+                      lesson: { select: { id: true, title: true, titleAr: true, officialCode: true } },
+                    },
+                  },
+                },
+              })
+            : Promise.resolve([]),
+          studentIds.length && content.quizIds.length
+            ? db.quizAttempt.findMany({
+                where: {
+                  studentId: { in: studentIds },
+                  quizId: { in: content.quizIds },
+                  finishedAt: { not: null },
+                },
+                orderBy: { startedAt: "desc" },
+                take: 5,
+                include: {
+                  student: { include: { user: { select: { name: true } } } },
+                  quiz: {
+                    select: {
+                      id: true,
+                      title: true,
+                      titleAr: true,
+                      lesson: { select: { id: true, title: true, titleAr: true, officialCode: true } },
+                    },
+                  },
+                },
+              })
+            : Promise.resolve([]),
+        ]);
+        const activityContext = {
+          group: { id: g.id, name: g.name },
+          course: {
+            id: g.courseId,
+            name: g.course?.name ?? "",
+            nameAr: g.course?.nameAr ?? "",
+            academicLevel: g.course?.academicLevel ?? null,
           },
-        })
-      : 0;
+        };
+        return {
+          submissions: submissions.map((submission: any) => ({
+            ...submission,
+            ...activityContext,
+            lesson: submission.homework.lesson
+              ? { ...submission.homework.lesson, courseId: g.courseId }
+              : null,
+          })),
+          attempts: attempts.map((attempt: any) => ({
+            ...attempt,
+            ...activityContext,
+            lesson: attempt.quiz.lesson
+              ? { ...attempt.quiz.lesson, courseId: g.courseId }
+              : null,
+          })),
+        };
+      })
+    );
+
+    // Preserve the feed's existing per-type caps after merging the scoped
+    // group histories; a student in one group cannot pull another course's
+    // record into that group's activity context.
+    const recentSubs = perGroupActivity
+      .flatMap((entry) => entry.submissions)
+      .sort((a, b) => String(b.id).localeCompare(String(a.id)))
+      .slice(0, 5);
+    const recentAttempts = perGroupActivity
+      .flatMap((entry) => entry.attempts)
+      .sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime())
+      .slice(0, 5);
+    return { recentSubs, recentAttempts };
   })();
 
-  const [groups, upcomingSessions, recentSubs, recentAttempts, totalPendingHomework] =
-    await Promise.all([
-      groupsPromise,
-      upcomingPromise,
-      recentSubsPromise,
-      recentAttemptsPromise,
-      totalPendingPromise,
-    ]);
+  const [groups, upcomingSessions, activity] = await Promise.all([
+    groupsPromise,
+    upcomingPromise,
+    activityPromise,
+  ]);
+  const { recentSubs, recentAttempts } = activity;
+  const totalPendingHomework = groups.reduce(
+    (sum, group) => sum + group.stats.pendingHomework,
+    0
+  );
 
   const upcomingSessionsPayload = upcomingSessions.map((s) => ({
     id: s.id,
@@ -287,6 +341,20 @@ export async function GET(req: NextRequest) {
     studentName: string;
     time: Date;
     kind: "good" | "neutral" | "warn";
+    group: { id: string; name: string };
+    course: {
+      id: string;
+      name: string;
+      nameAr: string;
+      academicLevel: string | null;
+    };
+    lesson: {
+      id: string;
+      title: string;
+      titleAr: string | null;
+      officialCode: string | null;
+      courseId: string;
+    } | null;
     attemptId?: string;
     quizId?: string;
   };
@@ -299,6 +367,9 @@ export async function GET(req: NextRequest) {
       studentName: s.student?.user?.name || tApi("api.165"),
       time: s.submittedAt || new Date(),
       kind: "good",
+      group: s.group,
+      course: s.course,
+      lesson: s.lesson,
     });
   }
   for (const a of recentAttempts) {
@@ -311,6 +382,9 @@ export async function GET(req: NextRequest) {
       kind: a.passed ? "good" : "warn",
       attemptId: a.id,
       quizId: a.quiz.id,
+      group: a.group,
+      course: a.course,
+      lesson: a.lesson,
     });
   }
   activities.sort((a, b) => b.time.getTime() - a.time.getTime());

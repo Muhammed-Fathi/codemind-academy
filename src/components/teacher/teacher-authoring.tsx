@@ -61,7 +61,7 @@ import {
   StatusBadge,
   TrackScopeBadge,
 } from "@/components/admin/session-workflow-shared";
-import { useT, useLocale } from "@/lib/i18n";
+import { useT, useLocale, localeDirection } from "@/lib/i18n";
 import {
   AcademicLevelBadge,
   OptionalAcademicLevelFilter,
@@ -175,18 +175,24 @@ export type HomeworkRecord = {
  *
  * Phase L manual-QA fix — an optional canonical AcademicLevel narrows the
  * QUERY (`?academicLevel=`), so a level switch genuinely reduces the rows the
- * server returns instead of hiding them in the browser. Passing nothing keeps
- * the original unfiltered query and cache key.
+ * server returns instead of hiding them in the browser. Optional group scope
+ * is included in both the request and cache identity when a caller has one.
  */
-export function useTeacherLessons(academicLevel?: string) {
+export function useTeacherLessons(academicLevel?: string, groupId?: string) {
   const level = academicLevel && academicLevel !== "all" ? academicLevel : "";
+  const group = groupId?.trim() ?? "";
   return useQuery<{ lessons: TeacherLesson[]; grouped: LessonGroupNode[] }>({
-    queryKey: ["teacher-lessons", level || "ALL"],
+    // Both narrowing dimensions are part of cache identity. A late response for
+    // an older level/group can only populate its own cache entry, never the
+    // currently selected scope.
+    queryKey: ["teacher-lessons", level || "ALL", group || "ALL"],
     queryFn: async () => {
-      const r = await fetch(
-        level ? `/api/teacher/lessons?academicLevel=${encodeURIComponent(level)}` : "/api/teacher/lessons"
-      );
-      if (!r.ok) throw new Error("fail");
+      const params = new URLSearchParams();
+      if (group) params.set("groupId", group);
+      if (level) params.set("academicLevel", level);
+      const query = params.toString();
+      const r = await fetch(`/api/teacher/lessons${query ? `?${query}` : ""}`);
+      if (!r.ok) throw new Error("Could not load lessons");
       return (await r.json()) as { lessons: TeacherLesson[]; grouped: LessonGroupNode[] };
     },
   });
@@ -247,6 +253,7 @@ export function LessonPicker({
   levelFilter,
   onLevelFilterChange,
   levelScope = null,
+  groupId,
 }: {
   /** The lessons this teacher may author under (already authorization-scoped). */
   lessons: TeacherLesson[];
@@ -261,6 +268,8 @@ export function LessonPicker({
       The control is rendered ONLY when the teacher really owns both levels, so
       a single-level teacher never sees a meaningless separator. */
   levelScope?: { spansBothLevels?: boolean } | null;
+  /** Optional teacher-owned group scope; the server resolves its course. */
+  groupId?: string;
 }) {
   const tr = useT();
   // Uncontrolled fallback so every existing call site gains the control
@@ -268,13 +277,19 @@ export function LessonPicker({
   const [ownLevel, setOwnLevel] = React.useState("");
   const level = levelFilter !== undefined ? levelFilter : ownLevel;
   const setLevel = onLevelFilterChange || setOwnLevel;
-  // Phase L fix #4 (correction) — the level narrows the list IN THE QUERY. The
-  // prop the parent passes is the teacher's whole catalogue; the moment a level
-  // is chosen the picker fetches that level from the server (the same hook, a
-  // different cache key) instead of hiding rows in the browser. The local pass
-  // below is then a no-op safety net.
-  const scopedQuery = useTeacherLessons(level || undefined);
-  const lessonsSource = level ? scopedQuery.data?.lessons ?? [] : lessonsAll;
+  const group = groupId?.trim() ?? "";
+  const scoped = !!level || !!group;
+  // A level and/or group narrows the QUERY. The server is the scope authority;
+  // client filtering below is only a defensive display pass, never a substitute
+  // for the group/course authorization check.
+  const scopedQuery = useTeacherLessons(level || undefined, group || undefined);
+  const scopedLoading = scoped && scopedQuery.isFetching;
+  const scopedError = scoped && scopedQuery.isError && !scopedLoading;
+  const lessonsSource = scoped
+    ? scopedError
+      ? []
+      : scopedQuery.data?.lessons ?? []
+    : lessonsAll;
   const lessons = React.useMemo(
     () => filterLessonsByLevel(lessonsSource, level || null),
     [lessonsSource, level]
@@ -283,11 +298,22 @@ export function LessonPicker({
     () => new Map(lessons.map((l) => [l.id, l])),
     [lessons]
   );
-  // A lesson that the level switch just hid must not stay selected.
-  React.useEffect(() => {
-    if (value && !byId.has(value)) onChange("");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [level]);
+
+  // Clear a selected canonical lesson before a new external group scope paints.
+  // The in-control level callback below clears synchronously; this also covers
+  // parent-driven changes to a groupId prop.
+  const scopeKey = `${level || "ALL"}\u0000${group || "ALL"}`;
+  const previousScope = React.useRef(scopeKey);
+  React.useLayoutEffect(() => {
+    if (previousScope.current === scopeKey) return;
+    previousScope.current = scopeKey;
+    if (value) onChange("");
+  }, [scopeKey, value, onChange]);
+
+  const changeLevel = (nextLevel: string) => {
+    if (nextLevel !== level && value) onChange("");
+    setLevel(nextLevel);
+  };
   const groups = React.useMemo(() => {
     const byCourse = new Map<
       string,
@@ -308,12 +334,14 @@ export function LessonPicker({
   }, [lessons]);
 
   const selected = value ? byId.get(value) ?? null : null;
+  const pickerLoading = scoped ? scopedLoading : loading;
 
-  if (loading) {
-    return (
-      <div className="h-9 rounded-md border bg-muted/30 animate-pulse" />
-    );
-  }
+  // A seeded/external value is only valid if it appears in the completed result
+  // for the current scope. This also covers a picker first mounted with a group
+  // scope, where there is no prior scope transition to trigger the reset.
+  React.useLayoutEffect(() => {
+    if (value && !pickerLoading && (scopedError || !byId.has(value))) onChange("");
+  }, [pickerLoading, scopedError, byId, value, onChange]);
 
   return (
     <div className="space-y-1.5">
@@ -324,68 +352,87 @@ export function LessonPicker({
           indistinguishable in the list below — but a single-level teacher has
           nothing to separate and gets no control at all. */}
       <div className="flex flex-wrap items-center gap-2">
-        <OptionalAcademicLevelFilter scope={levelScope} value={level} onChange={setLevel} />
+        <OptionalAcademicLevelFilter scope={levelScope} value={level} onChange={changeLevel} />
         {levelScope?.spansBothLevels ? (
           <span className="text-[11px] text-muted-foreground basis-full">{tr("teacher.312")}</span>
         ) : null}
       </div>
-      <Select value={value} onValueChange={onChange}>
-        <SelectTrigger className="w-full">
-          <SelectValue placeholder={tr("teacher.081")} />
-        </SelectTrigger>
-        <SelectContent>
-          {Array.from(groups.entries()).map(([courseId, parts]) => {
-            const head = lessons.find((l) => l.course.id === courseId);
-            const courseName = head?.course.name;
-            return (
-              <SelectGroup key={courseId}>
-                {/* Phase L manual-QA fix — the LEVEL leads the course header.
-                    Both official courses carry the same display name, so
-                    without it two groups are indistinguishable and their
-                    lessons collide on officialCode. */}
-                <SelectLabel className="font-bold text-primary">
-                  {academicLevelLabel(tr, head?.course.academicLevel)} · {courseName}
-                </SelectLabel>
-                {Array.from(parts.entries()).map(([partId, units]) => {
-                  const part = lessons.find((l) => l.part.id === partId)?.part;
-                  return (
-                    <SelectGroup key={partId}>
-                      <SelectLabel className="text-xs ps-3 opacity-80">
-                        {tr("teacher.178")}: {part?.title}
-                      </SelectLabel>
-                      {Array.from(units.entries()).map(([unitId, buckets]) => {
-                        const unit = lessons.find((l) => l.unit.id === unitId)?.unit;
-                        return (
-                          <SelectGroup key={unitId}>
-                            <SelectLabel className="text-xs ps-6 opacity-70">
-                              {tr("teacher.179")}: {unit?.title}
-                            </SelectLabel>
-                            {Array.from(buckets.entries()).map(([key, items]) =>
-                              items.map((l) => (
-                                <SelectItem key={l.id} value={l.id} className="text-xs">
-                                  {lessonLabel(l, tr)}
-                                  {" · "}
-                                  {l.archived
-                                    ? tr("admin.321")
-                                    : l.status === "PUBLISHED"
-                                      ? tr("admin.345")
-                                      : l.status === "READY"
-                                        ? tr("admin.344")
-                                        : tr("admin.343")}
-                                </SelectItem>
-                              ))
-                            )}
-                          </SelectGroup>
-                        );
-                      })}
-                    </SelectGroup>
-                  );
-                })}
-              </SelectGroup>
-            );
-          })}
-        </SelectContent>
-      </Select>
+      {pickerLoading ? (
+        <div
+          className="h-9 rounded-md border bg-muted/30 animate-pulse"
+          role="status"
+          aria-label={tr("live.loading")}
+        />
+      ) : scopedError ? (
+        <div className="flex items-center justify-between gap-2 rounded-md border border-destructive/30 p-2 text-sm text-destructive" role="alert">
+          <span>{tr("teacher.313")}</span>
+          <Button size="sm" variant="outline" onClick={() => void scopedQuery.refetch()}>
+            {tr("live.retry")}
+          </Button>
+        </div>
+      ) : (
+        <Select
+          value={selected ? value : ""}
+          onValueChange={(id) => onChange(byId.has(id) ? id : "")}
+          disabled={scoped && scopedQuery.isFetching}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder={tr("teacher.081")} />
+          </SelectTrigger>
+          <SelectContent>
+            {Array.from(groups.entries()).map(([courseId, parts]) => {
+              const head = lessons.find((l) => l.course.id === courseId);
+              const courseName = head?.course.name;
+              return (
+                <SelectGroup key={courseId}>
+                  {/* Phase L manual-QA fix — the LEVEL leads the course header.
+                      Both official courses carry the same display name, so
+                      without it two groups are indistinguishable and their
+                      lessons collide on officialCode. */}
+                  <SelectLabel className="font-bold text-primary">
+                    {academicLevelLabel(tr, head?.course.academicLevel)} · {courseName}
+                  </SelectLabel>
+                  {Array.from(parts.entries()).map(([partId, units]) => {
+                    const part = lessons.find((l) => l.part.id === partId)?.part;
+                    return (
+                      <SelectGroup key={partId}>
+                        <SelectLabel className="text-xs ps-3 opacity-80">
+                          {tr("teacher.178")}: {part?.title}
+                        </SelectLabel>
+                        {Array.from(units.entries()).map(([unitId, buckets]) => {
+                          const unit = lessons.find((l) => l.unit.id === unitId)?.unit;
+                          return (
+                            <SelectGroup key={unitId}>
+                              <SelectLabel className="text-xs ps-6 opacity-70">
+                                {tr("teacher.179")}: {unit?.title}
+                              </SelectLabel>
+                              {Array.from(buckets.entries()).map(([, items]) =>
+                                items.map((l) => (
+                                  <SelectItem key={l.id} value={l.id} className="text-xs">
+                                    {lessonLabel(l, tr)}
+                                    {" · "}
+                                    {l.archived
+                                      ? tr("admin.321")
+                                      : l.status === "PUBLISHED"
+                                        ? tr("admin.345")
+                                        : l.status === "READY"
+                                          ? tr("admin.344")
+                                          : tr("admin.343")}
+                                  </SelectItem>
+                                ))
+                              )}
+                            </SelectGroup>
+                          );
+                        })}
+                      </SelectGroup>
+                    );
+                  })}
+                </SelectGroup>
+              );
+            })}
+          </SelectContent>
+        </Select>
+      )}
 
       {selected && <LessonMeta lesson={selected} />}
     </div>
@@ -662,6 +709,7 @@ export function HomeworkDialog({
   onChanged,
   fixedLessonId,
   levelScope = null,
+  groupId,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -670,6 +718,8 @@ export function HomeworkDialog({
   /** Phase L fix #4 — the caller's level scope, so the lesson picker offers the
       separator only when both levels are actually in play. */
   levelScope?: { spansBothLevels?: boolean } | null;
+  /** Optional group filter; the lesson API resolves its course server-side. */
+  groupId?: string;
   homework?: HomeworkRecord | null;
   /** Phase E — an embedder (the session workspace) that must refresh its own
       aggregate query after a successful create/edit. Optional and additive:
@@ -682,6 +732,7 @@ export function HomeworkDialog({
   fixedLessonId?: string;
 }) {
   const tr = useT();
+  const direction = localeDirection(useLocale());
   const queryClient = useQueryClient();
   const editing = !!homework;
 
@@ -750,9 +801,9 @@ export function HomeworkDialog({
       const form = new FormData(); form.set("file", file);
       const r = await fetch(`/api/teacher/homework/${encodeURIComponent(homeworkId)}/attachment`, { method: "POST", body: form });
       const data = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(data.error || "تعذر رفع المرفق");
-      setAttachmentMessage(`تم رفع ${data.attachment?.name || file.name}`);
-    } catch (e) { setAttachmentMessage(e instanceof Error ? e.message : "تعذر رفع المرفق"); }
+      if (!r.ok) throw new Error(data.error || tr("teacher.homework.uploadAttachmentError"));
+      setAttachmentMessage(tr("teacher.homework.attachmentUploaded", { p1: data.attachment?.name || file.name }));
+    } catch (e) { setAttachmentMessage(e instanceof Error ? e.message : tr("teacher.homework.uploadAttachmentError")); }
     finally { setAttachmentBusy(false); }
   };
 
@@ -761,9 +812,9 @@ export function HomeworkDialog({
     setAttachmentBusy(true); setAttachmentMessage(null);
     try {
       const r = await fetch(`/api/teacher/homework/${encodeURIComponent(homework.id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ attachmentId: null }) });
-      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "تعذر إزالة المرفق");
-      setAttachmentMessage("تمت إزالة المرفق"); onChanged?.();
-    } catch (e) { setAttachmentMessage(e instanceof Error ? e.message : "تعذر إزالة المرفق"); }
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || tr("teacher.homework.removeAttachmentError"));
+      setAttachmentMessage(tr("teacher.homework.attachmentRemoved")); onChanged?.();
+    } catch (e) { setAttachmentMessage(e instanceof Error ? e.message : tr("teacher.homework.removeAttachmentError")); }
     finally { setAttachmentBusy(false); }
   };
 
@@ -777,7 +828,7 @@ export function HomeworkDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto" dir={direction}>
         <DialogHeader>
           <DialogTitle>{editing ? tr("teacher.183") : tr("teacher.182")}</DialogTitle>
           <DialogDescription>
@@ -797,6 +848,7 @@ export function HomeworkDialog({
                 value={lessonId}
                 onChange={setLessonId}
                 levelScope={levelScope}
+                groupId={groupId}
               />
             </div>
           )}
@@ -804,7 +856,7 @@ export function HomeworkDialog({
           <div className="grid sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Title (EN)</Label>
-              <Input value={title} onChange={(e) => setTitle(e.target.value)} />
+              <Input value={title} onChange={(e) => setTitle(e.target.value)} dir="ltr" />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">{tr("teacher.082")}</Label>
@@ -822,6 +874,7 @@ export function HomeworkDialog({
               value={instructions}
               onChange={(e) => setInstructions(e.target.value)}
               rows={3}
+              dir="auto"
             />
           </div>
 
@@ -833,9 +886,9 @@ export function HomeworkDialog({
           </div>
 
           <div className="rounded-lg border border-dashed p-3 space-y-2">
-            <Label className="text-xs text-muted-foreground">مرفق الواجب (PDF، DOCX، PPTX، ZIP — حتى 25MB)</Label>
+            <Label className="text-xs text-muted-foreground">{tr("teacher.homework.attachmentLabel")}</Label>
             <Input type="file" accept=".pdf,.docx,.pptx,.zip" onChange={(e) => setAttachmentFile(e.target.files?.[0] ?? null)} disabled={attachmentBusy || (editing && homework?.status === "CLOSED")} />
-            {homework?.attachment && <div className="flex items-center gap-2 text-xs"><a className="underline text-primary truncate" href={`/api/media/${homework.attachment.id}`} target="_blank" rel="noreferrer">{homework.attachment.originalName || "تحميل المرفق"}</a><span className="text-muted-foreground">{homework.attachment.mimeType || ""} · {homework.attachment.sizeBytes ? `${(homework.attachment.sizeBytes / 1024 / 1024).toFixed(2)} MB` : ""}</span><Button type="button" variant="ghost" size="sm" disabled={attachmentBusy || homework.status === "CLOSED"} onClick={removeAttachment}>إزالة المرفق</Button></div>}
+            {homework?.attachment && <div className="flex items-center gap-2 text-xs"><a className="underline text-primary truncate" href={`/api/media/${homework.attachment.id}`} target="_blank" rel="noreferrer">{homework.attachment.originalName || tr("teacher.homework.downloadAttachment")}</a><span className="text-muted-foreground">{homework.attachment.mimeType || ""} · {homework.attachment.sizeBytes ? `${(homework.attachment.sizeBytes / 1024 / 1024).toFixed(2)} MB` : ""}</span><Button type="button" variant="ghost" size="sm" disabled={attachmentBusy || homework.status === "CLOSED"} onClick={removeAttachment}>{tr("teacher.homework.removeAttachment")}</Button></div>}
             {attachmentFile && <p className="text-xs text-muted-foreground truncate">{attachmentFile.name} · {(attachmentFile.size / 1024 / 1024).toFixed(2)} MB</p>}
             {attachmentMessage && <p className="text-xs text-emerald-700">{attachmentMessage}</p>}
           </div>
@@ -899,6 +952,19 @@ type QuizDetail = {
     timeLimit: number | null;
     passMark: number;
   };
+  lesson: {
+    id: string;
+    title: string;
+    titleRaw: string;
+    titleAr: string | null;
+    officialCode: string | null;
+    course: {
+      id: string;
+      name: string;
+      nameAr: string | null;
+      academicLevel: string | null;
+    } | null;
+  } | null;
   questions: ManagedQuestion[];
   attempts: { total: number; open: number; finished: number };
 };
@@ -927,6 +993,8 @@ export function QuestionManagerDialog({
   onChanged?: () => void;
 }) {
   const tr = useT();
+  const locale = useLocale();
+  const direction = localeDirection(locale);
   const queryClient = useQueryClient();
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [adding, setAdding] = React.useState(false);
@@ -972,11 +1040,15 @@ export function QuestionManagerDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto" dir={direction}>
         <DialogHeader>
           <DialogTitle>{tr("teacher.192")}</DialogTitle>
           <DialogDescription className="flex items-center gap-2 flex-wrap">
-            {quizTitle}
+            {detail.data
+              ? locale === "en"
+                ? detail.data.quiz.title
+                : detail.data.quiz.titleAr || detail.data.quiz.title
+              : quizTitle}
             {detail.data && <TrackScopeBadge scope={detail.data.quiz.trackScope} />}
             {detail.data && detail.data.quiz.timeLimit ? (
               <Badge variant="outline" dir="ltr">
@@ -984,6 +1056,36 @@ export function QuestionManagerDialog({
               </Badge>
             ) : null}
           </DialogDescription>
+          {detail.data?.lesson && (
+            <div
+              className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"
+              data-testid="question-manager-context"
+              data-quiz-id={detail.data.quiz.id}
+              data-course-id={detail.data.lesson.course?.id}
+              data-lesson-id={detail.data.lesson.id}
+            >
+              {detail.data.lesson.course ? (
+                <AcademicLevelBadge level={detail.data.lesson.course.academicLevel} />
+              ) : null}
+              {detail.data.lesson.course && (
+                <span>
+                  {locale === "en"
+                    ? detail.data.lesson.course.name
+                    : detail.data.lesson.course.nameAr || detail.data.lesson.course.name}
+                </span>
+              )}
+              {detail.data.lesson.officialCode && (
+                <Badge variant="outline" className="font-mono" dir="ltr">
+                  {detail.data.lesson.officialCode}
+                </Badge>
+              )}
+              <span>
+                {locale === "en"
+                  ? detail.data.lesson.titleRaw
+                  : detail.data.lesson.titleAr || detail.data.lesson.title}
+              </span>
+            </div>
+          )}
         </DialogHeader>
 
         {detail.isLoading ? (
@@ -1043,6 +1145,220 @@ export function QuestionManagerDialog({
   );
 }
 
+type TeacherQuizAttemptReviewData = {
+  quiz: {
+    id: string;
+    title: string;
+    titleAr: string;
+    passMark: number;
+    quizMode: string;
+    questionCount: number | null;
+    maxAttempts: number;
+    course: { id: string; name: string; nameAr: string | null; academicLevel: string | null };
+    lesson: { id: string; officialCode: string | null; title: string; titleAr: string | null; courseId: string } | null;
+  };
+  attempt: {
+    id: string;
+    quizId: string;
+    studentId: string;
+    attemptNumber: number;
+    status: string;
+    startedAt: string;
+    finishedAt: string | null;
+    score: number;
+    totalMarks: number;
+    percentage: number;
+    passed: boolean;
+    answerKeyRevealed: boolean;
+    questions: Array<{
+      questionId: string;
+      prompt: string;
+      promptAr: string | null;
+      options: string[];
+      selected: string;
+      isCorrect: boolean;
+      marks: number;
+      difficulty: string;
+      correctAnswer?: string;
+      explanation: string | null;
+      snapshotted: boolean;
+    }>;
+    student: { id: string; name: string; email: string };
+  };
+  canGrantRetry: false;
+};
+
+/** Read-only Teacher inspection of one attempt, scoped by canonical quiz + attempt IDs. */
+export function TeacherQuizAttemptReviewDialog({
+  quizId,
+  attemptId,
+  open,
+  onOpenChange,
+}: {
+  quizId: string;
+  attemptId: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const tr = useT();
+  const locale = useLocale();
+  const direction = localeDirection(locale);
+  const review = useQuery<TeacherQuizAttemptReviewData>({
+    queryKey: ["teacher-quiz-attempt-review", quizId, attemptId],
+    enabled: open && !!quizId && !!attemptId,
+    queryFn: async () => {
+      const response = await fetch(
+        `/api/teacher/quizzes/${encodeURIComponent(quizId)}/attempts/${encodeURIComponent(attemptId)}`
+      );
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body?.error || tr("teacher.324"));
+      return body as TeacherQuizAttemptReviewData;
+    },
+  });
+
+  const localized = (english: string | null | undefined, arabic: string | null | undefined) =>
+    locale === "en" ? english || arabic || "" : arabic || english || "";
+  const answerText = (value: string, options: string[]) => {
+    if (!value) return "";
+    const index = Number(value);
+    return Number.isInteger(index) && index >= 0 && options[index] !== undefined
+      ? options[index]
+      : value;
+  };
+  const data = review.data;
+  const terminal = !!data?.attempt.finishedAt;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className="max-w-3xl max-h-[88vh] overflow-y-auto"
+        dir={direction}
+        data-testid="teacher-attempt-review"
+        data-quiz-id={data?.quiz.id ?? quizId}
+        data-attempt-id={data?.attempt.id ?? attemptId}
+        data-course-id={data?.quiz.course.id}
+        data-lesson-id={data?.quiz.lesson?.id}
+      >
+        <DialogHeader>
+          <DialogTitle>{tr("teacher.315")}</DialogTitle>
+          {data && (
+            <DialogDescription asChild>
+              <div className="space-y-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <AcademicLevelBadge level={data.quiz.course.academicLevel ?? undefined} />
+                  <span>{localized(data.quiz.course.name, data.quiz.course.nameAr)}</span>
+                  {data.quiz.lesson?.officialCode && (
+                    <Badge variant="outline" className="font-mono" dir="ltr">
+                      {data.quiz.lesson.officialCode}
+                    </Badge>
+                  )}
+                  <span>{localized(data.quiz.lesson?.title, data.quiz.lesson?.titleAr)}</span>
+                  <span className="font-semibold">
+                    {localized(data.quiz.title, data.quiz.titleAr)}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                  <span>
+                    {tr("teacher.316")}: {data.attempt.student.name}
+                    {data.attempt.student.email ? ` · ${data.attempt.student.email}` : ""}
+                  </span>
+                  <span dir="ltr" title={data.attempt.id}>
+                    {tr("teacher.317")} #{data.attempt.attemptNumber} · {data.attempt.id.slice(0, 8)}
+                  </span>
+                  <Badge variant="outline">
+                    {data.attempt.status === "EXPIRED"
+                      ? tr("teacher.320")
+                      : terminal
+                        ? tr("teacher.319")
+                        : tr("teacher.318")}
+                  </Badge>
+                  {terminal && (
+                    <>
+                      <span dir="ltr">
+                        {data.attempt.score}/{data.attempt.totalMarks} · {data.attempt.percentage}%
+                      </span>
+                      <Badge variant={data.attempt.passed ? "default" : "destructive"}>
+                        {data.attempt.passed ? tr("teacher.325") : tr("teacher.326")}
+                      </Badge>
+                    </>
+                  )}
+                </div>
+              </div>
+            </DialogDescription>
+          )}
+        </DialogHeader>
+
+        {review.isLoading ? (
+          <div className="h-28 rounded-lg border bg-muted/30 animate-pulse" role="status" />
+        ) : review.isError ? (
+          <div className="rounded-lg border border-destructive/30 p-4 text-sm text-destructive" role="alert">
+            {(review.error as Error).message || tr("teacher.324")}
+          </div>
+        ) : data ? (
+          <div className="space-y-3">
+            {data.attempt.questions.map((question, index) => (
+              <article key={question.questionId} className="rounded-lg border p-3 space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="secondary">{tr("teacher.090")} {index + 1}</Badge>
+                  <span className="text-xs text-muted-foreground" dir="ltr">
+                    {question.marks} {tr("teacher.070")} · {question.difficulty}
+                  </span>
+                  {data.attempt.answerKeyRevealed && (
+                    <Badge variant={question.isCorrect ? "default" : "destructive"}>
+                      {question.isCorrect ? tr("teacher.325") : tr("teacher.326")}
+                    </Badge>
+                  )}
+                </div>
+                <p className="font-medium text-sm">
+                  {localized(question.prompt, question.promptAr)}
+                </p>
+                {question.options.length > 0 && (
+                  <ol className="list-decimal ps-5 space-y-1 text-sm">
+                    {question.options.map((option, optionIndex) => (
+                      <li key={optionIndex} className="break-words">
+                        {option}
+                      </li>
+                    ))}
+                  </ol>
+                )}
+                <div className="grid gap-1.5 text-xs sm:grid-cols-2">
+                  <p>
+                    <span className="font-semibold">{tr("teacher.321")}: </span>
+                    {question.selected
+                      ? answerText(question.selected, question.options)
+                      : tr("teacher.322")}
+                  </p>
+                  {data.attempt.answerKeyRevealed && question.correctAnswer !== undefined && (
+                    <p>
+                      <span className="font-semibold">{tr("teacher.195")}: </span>
+                      {answerText(question.correctAnswer, question.options)}
+                    </p>
+                  )}
+                </div>
+                {data.attempt.answerKeyRevealed && question.explanation && (
+                  <p className="rounded bg-muted/40 p-2 text-xs">
+                    <span className="font-semibold">{tr("teacher.323")}: </span>
+                    {question.explanation}
+                  </p>
+                )}
+              </article>
+            ))}
+            {data.attempt.questions.length === 0 && (
+              <p className="py-6 text-center text-sm text-muted-foreground">{tr("teacher.193")}</p>
+            )}
+          </div>
+        ) : null}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            {tr("teacher.168")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function QuestionRow({
   index,
   question,
@@ -1093,7 +1409,7 @@ function QuestionRow({
               </Badge>
             )}
           </div>
-          <p className="mt-1 text-sm font-medium truncate">{question.prompt}</p>
+          <p className="mt-1 text-sm font-medium truncate" dir="ltr">{question.prompt}</p>
           {question.promptAr && (
             <p className="text-xs text-muted-foreground truncate" dir="rtl">
               {question.promptAr}
@@ -1269,6 +1585,7 @@ export function QuestionForm({
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           rows={2}
+          dir="ltr"
           className="text-sm"
         />
       </div>
@@ -1348,6 +1665,7 @@ export function QuestionForm({
           value={explanation}
           onChange={(e) => setExplanation(e.target.value)}
           rows={2}
+          dir="auto"
           className="text-sm"
         />
       </div>

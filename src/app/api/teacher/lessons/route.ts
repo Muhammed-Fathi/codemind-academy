@@ -54,26 +54,43 @@ export async function GET(req: NextRequest) {
   const teacher = await getTeacherProfile(user.id);
   if (!teacher) return err("Teacher profile not found", 404);
 
-  // Phase L manual-QA fix — OPTIONAL academic-level narrowing, applied in the
-  // QUERY (not hidden client-side), so a level filter genuinely reduces the
-  // rows a teacher can pick from. It composes with the teacher's own course
-  // scope (`AND`): a teacher can never widen their authorization by asking
-  // for another level — the scope is still `teacherCourseIds(teacher)`, and
-  // the level is only an extra restriction on top of it. An unrecognised
-  // value is ignored rather than guessed (the picker's own control only ever
-  // sends the canonical values or "all").
+  // Optional filters are restrictions of the teacher's OWN course set. The
+  // level lives on Course and is validated before either scope is resolved, so
+  // an invalid level never silently becomes "all".
   const levelParam = academicLevelParamOf(req);
   if (!levelParam.ok) return err("Unknown academic level", 400);
 
+  const params = new URL(req.url).searchParams;
+  const hasGroupScope = params.has("groupId");
+  const groupId = (params.get("groupId") ?? "").trim();
   const allCourseIds = teacherCourseIds(teacher);
+
+  // A requested group must be one of this Teacher's groups. Resolve its course
+  // from the owned profile on the server; any client-supplied courseId is
+  // deliberately ignored. A foreign or unknown group fails closed with the
+  // same not-found response rather than widening to the teacher's whole list.
+  const selectedGroup = groupId
+    ? (teacher.groups ?? []).find((group) => group.id === groupId) ?? null
+    : null;
+  if (
+    hasGroupScope &&
+    (!groupId || !selectedGroup || !allCourseIds.includes(selectedGroup.courseId))
+  ) {
+    return err("Group not found", 404);
+  }
+
   if (allCourseIds.length === 0)
     return ok({ lessons: [], grouped: [], scope: academicLevelScope(teacher.groups) });
 
-  // The level lives on the Course, so narrowing by level is a restriction of
-  // the teacher's OWN course set — never a client-supplied course id. ONE
-  // implementation (`scopedTeacherCourseIds`) is shared with every other
-  // teacher surface, so the filter cannot drift between routes.
-  const courseIds = await scopedTeacherCourseIds(teacher, levelParam.level);
+  // The level filter remains database-backed and intersects the optional group
+  // scope. In particular, groupId=First + academicLevel=Second returns EMPTY;
+  // it cannot substitute another same-level course or another owned group.
+  const levelCourseIds = await scopedTeacherCourseIds(teacher, levelParam.level);
+  const courseIds = selectedGroup
+    ? levelCourseIds.includes(selectedGroup.courseId)
+      ? [selectedGroup.courseId]
+      : []
+    : levelCourseIds;
   if (courseIds.length === 0)
     return ok({ lessons: [], grouped: [], scope: academicLevelScope(teacher.groups) });
 

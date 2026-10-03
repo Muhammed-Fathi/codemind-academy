@@ -25,7 +25,7 @@
 "use client";
 
 import * as React from "react";
-import { useT } from "@/lib/i18n";
+import { useT, useLocale, localeDirection } from "@/lib/i18n";
 import { useApp } from "@/lib/store";
 import { fmtDateTime as formatDateTime, type Locale } from "@/lib/i18n-core";
 import { EntitySelect, type EntityOption } from "@/components/shared/entity-select";
@@ -448,7 +448,8 @@ function SessionDetail({
   onChanged: () => void;
 }) {
   const t = useT();
-  const locale = useApp((s) => (s.locale === "en" ? "en" : "ar")) as Locale;
+  const locale = useLocale();
+  const direction = localeDirection(locale);
   const fmt = (value: string | null) => (value ? formatDateTime(value, locale) : "");
 
   const ws = useJson<WorkspaceResponse>(`/api/live-sessions/${sessionId}/attendance`);
@@ -1028,7 +1029,7 @@ function SessionDetail({
       {/* Finalize — the confirmation states the counter and, when students are
           unmarked, exactly what will happen (flagged for review, NOT absent). */}
       <Dialog open={finalizeOpen} onOpenChange={setFinalizeOpen}>
-        <DialogContent className="sm:max-w-lg max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col">
+        <DialogContent className="sm:max-w-lg max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col" dir={direction}>
           <DialogHeader>
             <DialogTitle>{t("teacher.live.finalize")}</DialogTitle>
             <DialogDescription>
@@ -1089,7 +1090,7 @@ function SessionDetail({
       />
 
       <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
-        <DialogContent className="sm:max-w-md max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col">
+        <DialogContent className="sm:max-w-md max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col" dir={direction}>
           <DialogHeader>
             <DialogTitle>{t("teacher.live.cancel")}</DialogTitle>
             <DialogDescription>{t("teacher.live.cancelConfirm")}</DialogDescription>
@@ -1185,7 +1186,7 @@ function CancelForm({
     <>
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain space-y-2 py-2">
         <Label htmlFor="cancel-reason">{t("teacher.live.cancelReason")}</Label>
-        <Textarea id="cancel-reason" rows={3} maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} />
+        <Textarea id="cancel-reason" rows={3} maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} dir="auto" />
       </div>
       <DialogFooter className="gap-2">
         <Button variant="outline" onClick={onClose}>
@@ -1211,6 +1212,7 @@ function RescheduleDialog({
   onDone: () => void;
 }) {
   const t = useT();
+  const direction = localeDirection(useLocale());
   const [startAt, setStartAt] = React.useState(toLocalInput(session.startAt));
   const [duration, setDuration] = React.useState(String(session.duration));
   const [reason, setReason] = React.useState("");
@@ -1243,7 +1245,7 @@ function RescheduleDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col">
+      <DialogContent className="sm:max-w-md max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col" dir={direction}>
         <DialogHeader>
           <DialogTitle>{t("teacher.live.reschedule")}</DialogTitle>
           <DialogDescription>{t("teacher.live.rescheduleNewStart")}</DialogDescription>
@@ -1271,7 +1273,7 @@ function RescheduleDialog({
           </div>
           <div>
             <Label htmlFor="reschedule-reason">{t("teacher.live.rescheduleReason")}</Label>
-            <Textarea id="reschedule-reason" rows={3} maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} />
+            <Textarea id="reschedule-reason" rows={3} maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} dir="auto" />
           </div>
         </div>
         <DialogFooter className="gap-2">
@@ -1287,7 +1289,7 @@ function RescheduleDialog({
   );
 }
 
-function ScheduleDialog({
+export function ScheduleDialog({
   open,
   onOpenChange,
   groups,
@@ -1299,6 +1301,8 @@ function ScheduleDialog({
   onCreated: () => void;
 }) {
   const t = useT();
+  const locale = useLocale();
+  const direction = localeDirection(locale);
   const [groupId, setGroupId] = React.useState("");
   const [lessonId, setLessonId] = React.useState("");
   const [titleAr, setTitleAr] = React.useState("");
@@ -1306,8 +1310,12 @@ function ScheduleDialog({
   const [duration, setDuration] = React.useState("120");
   const [meetingUrl, setMeetingUrl] = React.useState("");
   const [busy, setBusy] = React.useState(false);
+  // `useJson` intentionally retains its last successful value during a reload.
+  // Track the group whose request is current so a just-changed group can never
+  // render that previous group's lesson options, even for the render before the
+  // new request effect starts.
+  const [lessonsRequestGroupId, setLessonsRequestGroupId] = React.useState("");
 
-  const locale = useApp((s) => (s.locale === "en" ? "en" : "ar")) as Locale;
   const lessons = useJson<{
     lessons: Array<{
       id: string;
@@ -1318,8 +1326,19 @@ function ScheduleDialog({
       course?: { id: string; name: string; academicLevel?: string | null } | null;
     }>;
   }>(
-    open && groupId ? `/api/teacher/lessons?groupId=${groupId}` : null
+    open && groupId
+      ? `/api/teacher/lessons?groupId=${encodeURIComponent(groupId)}`
+      : null
   );
+  React.useEffect(() => {
+    setLessonsRequestGroupId(groupId);
+  }, [groupId]);
+
+  const lessonRequestIsCurrent = lessonsRequestGroupId === groupId;
+  const scopedLessonsLoading =
+    open && !!groupId && (!lessonRequestIsCurrent || lessons.loading);
+  const scopedLessonsError =
+    lessonRequestIsCurrent && !lessons.loading ? lessons.error : null;
   // Finding 2 — only a Lesson belonging to the SELECTED GROUP's course may be
   // scheduled (the teacher API scopes them; the server re-validates anyway).
   /** The group currently chosen in the dialog (display context only). */
@@ -1330,7 +1349,10 @@ function ScheduleDialog({
 
   const lessonOptions: EntityOption[] = React.useMemo(
     () =>
-      (lessons.data?.lessons ?? []).map((l) => {
+      (!lessonRequestIsCurrent || scopedLessonsLoading || scopedLessonsError
+        ? []
+        : lessons.data?.lessons ?? []
+      ).map((l) => {
         // Phase L manual-QA fix — the lesson's canonical level leads the label
         // (the level is the ONLY thing distinguishing two official courses that
         // share one display name, and their lessons share printed codes).
@@ -1342,7 +1364,7 @@ function ScheduleDialog({
           ) ?? l.id;
         return { value: l.id, label: level ? `${level} · ${identity}` : identity };
       }),
-    [lessons.data, locale, t]
+    [lessonRequestIsCurrent, scopedLessonsLoading, scopedLessonsError, lessons.data, locale, t]
   );
   const selectedLessonLabel = lessonOptions.find((o) => o.value === lessonId)?.label ?? "";
 
@@ -1393,16 +1415,22 @@ function ScheduleDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col">
+      <DialogContent className="sm:max-w-lg max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col" dir={direction}>
         <DialogHeader>
           <DialogTitle>{t("teacher.live.schedule")}</DialogTitle>
           <DialogDescription>{t("teacher.live.subtitle")}</DialogDescription>
         </DialogHeader>
         <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain space-y-3 py-2">
           <div>
-            <Label>{t("live.group")}</Label>
-            <Select value={groupId} onValueChange={setGroupId}>
-              <SelectTrigger className="w-full">
+            <Label htmlFor="schedule-group">{t("live.group")}</Label>
+            <Select
+              value={groupId}
+              onValueChange={(nextGroupId) => {
+                if (nextGroupId !== groupId) setLessonId("");
+                setGroupId(nextGroupId);
+              }}
+            >
+              <SelectTrigger id="schedule-group" className="w-full">
                 <SelectValue placeholder={t("live.group")} />
               </SelectTrigger>
               <SelectContent>
@@ -1436,10 +1464,10 @@ function ScheduleDialog({
               searchPlaceholder={t("live.filter.searchGroups")}
               allLabel={t("live.lesson.pick")}
               emptyLabel={t("live.lesson.none")}
-              loading={lessons.loading}
-              error={lessons.error ? t("live.lesson.loadError") : null}
+              loading={scopedLessonsLoading}
+              error={scopedLessonsError ? t("live.lesson.loadError") : null}
               onRetry={lessons.reload}
-              disabled={!groupId}
+              disabled={!groupId || scopedLessonsLoading || !!scopedLessonsError}
             />
             {lessonId ? (
               <div className="text-[11px] text-emerald-600 mt-1 truncate">{selectedLessonLabel}</div>
