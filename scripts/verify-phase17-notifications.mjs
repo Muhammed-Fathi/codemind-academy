@@ -63,6 +63,18 @@ function eq(a, b, label) {
     `got ${JSON.stringify(a)} want ${JSON.stringify(b)}`
   );
 }
+function notificationOrNull(response, label) {
+  const notification = response?.json?.notification;
+  const present = notification !== null && typeof notification === "object";
+  ok(
+    present,
+    `${label}: OPEN response carries a notification object`,
+    present
+      ? undefined
+      : `got HTTP ${response?.status}, lifecycle code ${response?.json?.code ?? "missing"}`
+  );
+  return present ? notification : null;
+}
 
 // ---------------------------------------------------------------------------
 // A. scratch database: base DDL + every real migration (incl. Phase 17)
@@ -427,13 +439,125 @@ async function main() {
     data: { userId: uAr3.id, quietHoursStart: quiet.start, quietHoursEnd: quiet.end },
   });
 
-  // Lessons in course A (unit chain), READY-staged via a legacy videoUrl.
+  // Every fixture that is staged for normal publication gets the full current
+  // Phase D readiness set; Lesson.videoUrl is deliberately not readiness credit.
+  const readinessBatches = new Map();
+  let readinessAssets = null;
+  async function getReadinessAssets() {
+    if (!readinessAssets) {
+      const video = await client.mediaAsset.create({
+        data: {
+          kind: "VIDEO",
+          storage: "EXTERNAL_URL",
+          externalUrl: "https://cdn.test/phase17-session.mp4",
+          isPrivate: false,
+        },
+      });
+      const document = await client.mediaAsset.create({
+        data: {
+          kind: "DOCUMENT",
+          storage: "EXTERNAL_URL",
+          externalUrl: "https://cdn.test/phase17-session.pdf",
+          mimeType: "application/pdf",
+          originalName: "phase17-session.pdf",
+          isPrivate: false,
+        },
+      });
+      readinessAssets = { video, document };
+    }
+    return readinessAssets;
+  }
+  async function getReadinessBatch(courseId, schoolType) {
+    const key = `${courseId}:${schoolType}`;
+    let batch = readinessBatches.get(key);
+    if (!batch) {
+      batch = await client.batch.create({
+        data: {
+          name: `Phase 17 ${schoolType} batch`,
+          nameAr: `دفعة تحقق ${schoolType}`,
+          schoolType,
+          courseId,
+        },
+      });
+      readinessBatches.set(key, batch);
+    }
+    return batch;
+  }
+  async function seedReadyResources(lesson, courseId) {
+    const tracks =
+      lesson.trackScope === "SHARED"
+        ? ["ARABIC", "LANGUAGE"]
+        : [lesson.trackScope];
+    const { video, document } = await getReadinessAssets();
+    const suffix = lesson.officialCode ?? lesson.id;
+
+    // VIDEO readiness is audience coverage by published SessionVideo rows:
+    // SHARED requires one in each track's batch, not a legacy Lesson.videoUrl.
+    for (const schoolType of tracks) {
+      const batch = await getReadinessBatch(courseId, schoolType);
+      await client.sessionVideo.create({
+        data: {
+          lessonId: lesson.id,
+          batchId: batch.id,
+          mediaAssetId: video.id,
+          title: `${suffix} ${schoolType} session video`,
+          titleAr: `فيديو ${suffix} ${schoolType}`,
+          requiredPercent: 95,
+          isRequiredForProgression: false,
+          requirementMode: "OPTIONAL",
+          isPublished: true,
+          publishedAt: new Date(),
+        },
+      });
+    }
+
+    await client.material.create({
+      data: {
+        lessonId: lesson.id,
+        kind: "ADMIN_UPLOADED",
+        title: `Session material ${suffix}`,
+        trackScope: lesson.trackScope,
+        isActive: true,
+        mediaAssetId: document.id,
+      },
+    });
+    const quiz = await client.quiz.create({
+      data: {
+        lessonId: lesson.id,
+        trackScope: lesson.trackScope,
+        title: `Quiz ${suffix}`,
+        titleAr: `اختبار ${suffix}`,
+        status: "PUBLISHED",
+      },
+    });
+    await client.question.create({
+      data: {
+        quizId: quiz.id,
+        prompt: `Question for ${suffix}`,
+        options: JSON.stringify(["A", "B"]),
+        answer: "A",
+      },
+    });
+    await client.homework.create({
+      data: {
+        lessonId: lesson.id,
+        trackScope: lesson.trackScope,
+        title: `Homework ${suffix}`,
+        titleAr: `واجب ${suffix}`,
+        instructions: `Complete the session exercises for ${suffix}.`,
+        deadline: new Date(Date.now() + 7 * 86400000),
+        status: "PUBLISHED",
+      },
+    });
+  }
+
+  // Lessons in course A (unit chain), staged with resources for their actual audience.
   const mkLesson = async (code, scope) => {
     const unitNo = { "1-1": 201, "1-2": 202, "1-3": 203, "2-1": 204, "2-2": 205 }[code] ?? 299;
     const u = await client.unit.create({
       data: { partId: (await paA()).id, title: `U${code}`, titleAr: `و${code}`, order: unitNo },
     });
-    return client.lesson.create({
+    const lesson = await client.lesson.create({
       data: {
         academicLevel: "SECOND_SECONDARY",
         unitId: u.id,
@@ -444,9 +568,10 @@ async function main() {
         trackScope: scope,
         status: "DRAFT",
         isPublished: false,
-        videoUrl: "https://youtu.be/p17",
       },
     });
+    await seedReadyResources(lesson, courseA.id);
+    return lesson;
   };
   let _paA = null;
   async function paA() {
@@ -499,22 +624,22 @@ async function main() {
   }
 
   // ---- F. OPEN → targeted, preference-aware fan-out ------------------------
-  let sharedLink;
+  const sharedLink = `lesson:${lessonShared.id}`;
   {
     const r = await POST_JSON(R.open, "http://x/open", {}, { id: lessonShared.id });
     eq(r.status, 200, "F: OPEN succeeds");
     eq(r.json.code, "OK", "F: ceremony code OK");
     eq(r.json.changed, true, "F: this call flipped READY→PUBLISHED");
-    const n = r.json.notification;
-    ok(!!n, "F: the response carries the notification half");
-    eq(n.code, "EMITTED", "F: fan-out emitted");
-    eq(n.eligible, 5, "F: eligible set reported (5)");
-    eq(n.delivered, 3, "F: delivered == eligible minus preference/quiet-hours skips (3)");
-    eq(n.skippedPreference, 1, "F: one recipient suppressed by the newLesson=false flag");
-    eq(n.skippedQuietHours, 1, "F: one recipient suppressed by quiet hours");
-    eq(n.failedChunks, [], "F: no failed chunks");
-    sharedLink = n.link;
-    eq(sharedLink, `lesson:${lessonShared.id}`, "F: the minted link is the canonical session deep link");
+    const n = notificationOrNull(r, "F");
+    if (n) {
+      eq(n.code, "EMITTED", "F: fan-out emitted");
+      eq(n.eligible, 5, "F: eligible set reported (5)");
+      eq(n.delivered, 3, "F: delivered == eligible minus preference/quiet-hours skips (3)");
+      eq(n.skippedPreference, 1, "F: one recipient suppressed by the newLesson=false flag");
+      eq(n.skippedQuietHours, 1, "F: one recipient suppressed by quiet hours");
+      eq(n.failedChunks, [], "F: no failed chunks");
+      eq(n.link, sharedLink, "F: the minted link is the canonical session deep link");
+    }
 
     // The persisted rows: exactly the deliver set, each deep-linked.
     const rows = await publicationRows(lessonShared.id);
@@ -538,29 +663,37 @@ async function main() {
 
     // Publication counters moved with delivery truth.
     const pub = await client.sessionPublication.findUnique({ where: { lessonId: lessonShared.id } });
-    eq(pub.notifiedCount, 3, "F: SessionPublication.notifiedCount == delivered rows");
-    ok(pub.notifiedAt instanceof Date || typeof pub.notifiedAt === "number", "F: SessionPublication.notifiedAt set on first delivery");
+    ok(!!pub, "F: publication anchor exists after OPEN");
+    if (pub) {
+      eq(pub.notifiedCount, 3, "F: SessionPublication.notifiedCount == delivered rows");
+      ok(pub.notifiedAt instanceof Date || typeof pub.notifiedAt === "number", "F: SessionPublication.notifiedAt set on first delivery");
+    }
 
     // The delivery audit row exists and tells the breakdown.
     const audit = await client.auditLog.findMany({
       where: { action: "LESSON_PUBLICATION_NOTIFY", entityId: lessonShared.id },
     });
     eq(audit.length, 1, "F: one LESSON_PUBLICATION_NOTIFY audit row");
-    const det = JSON.parse(audit[0].details);
-    eq([det.eligible, det.delivered, det.skippedPreference, det.skippedQuietHours], [5, 3, 1, 1], "F: audit details carry the exact breakdown");
+    if (audit[0]) {
+      const det = JSON.parse(audit[0].details);
+      eq([det.eligible, det.delivered, det.skippedPreference, det.skippedQuietHours], [5, 3, 1, 1], "F: audit details carry the exact breakdown");
+    }
   }
 
   // ---- G. idempotent re-open (the retry channel) -----------------------------
   {
     const r = await POST_JSON(R.open, "http://x/open", {}, { id: lessonShared.id });
     eq(r.json.code, "NO_OP_ALREADY_IN_STATE", "G: re-open is the idempotent replay");
-    const n = r.json.notification;
-    eq(n.code, "ALREADY_DELIVERED", "G: replay delivers nothing new");
-    eq(n.delivered, 0, "G: zero rows inserted on replay");
-    eq(n.alreadyNotified, 3, "G: the 3 delivered rows are recognized as delivered");
+    const n = notificationOrNull(r, "G replay");
+    if (n) {
+      eq(n.code, "ALREADY_DELIVERED", "G: replay delivers nothing new");
+      eq(n.delivered, 0, "G: zero rows inserted on replay");
+      eq(n.alreadyNotified, 3, "G: the 3 delivered rows are recognized as delivered");
+    }
     eq((await publicationRows(lessonShared.id)).length, 3, "G: still exactly 3 rows (no duplicates)");
     const pub = await client.sessionPublication.findUnique({ where: { lessonId: lessonShared.id } });
-    eq(pub.notifiedCount, 3, "G: counter unchanged after replay");
+    ok(!!pub, "G: publication anchor remains after replay");
+    if (pub) eq(pub.notifiedCount, 3, "G: counter unchanged after replay");
 
     // The admin preview agrees with the fan-out state — and stays honest:
     // the 2 pref/quiet-suppressed students are NOT "pending", they are the
@@ -595,30 +728,42 @@ async function main() {
         trackScope: "SHARED",
         status: "DRAFT",
         isPublished: false,
-        videoUrl: "https://youtu.be/p17-supp",
       },
     });
+    await seedReadyResources(lessonSupp, courseB.id);
     await POST_JSON(R.markReady, "http://x/mark-ready", {}, { id: lessonSupp.id });
     const r = await POST_JSON(R.open, "http://x/open", {}, { id: lessonSupp.id });
     eq([r.status, r.json.code], [200, "OK"], "G2: the publication itself succeeds");
-    eq(r.json.notification.code, "SUPPRESSED_BY_PREFERENCES", "G2: nothing to attempt is reported as SUPPRESSED, not ALREADY_DELIVERED");
-    eq([r.json.notification.delivered, r.json.notification.eligible, r.json.notification.skippedPreference], [0, 1, 1], "G2: delivered 0 of 1 eligible (suppressed)");
+    const n = notificationOrNull(r, "G2");
+    if (n) {
+      eq(n.code, "SUPPRESSED_BY_PREFERENCES", "G2: nothing to attempt is reported as SUPPRESSED, not ALREADY_DELIVERED");
+      eq([n.delivered, n.eligible, n.skippedPreference], [0, 1, 1], "G2: delivered 0 of 1 eligible (suppressed)");
+      ok(n.message.toLowerCase().includes("suppressed"), "G2: the message explains the suppression, not a reassured delivery");
+    }
     eq((await publicationRows(lessonSupp.id)).length, 0, "G2: zero rows persisted");
     const pubS = await client.sessionPublication.findUnique({ where: { lessonId: lessonSupp.id } });
-    eq(pubS.notifiedCount, 0, "G2: counter stays 0 (no fake tally)");
-    ok(pubS.notifiedAt === null || pubS.notifiedAt === undefined, "G2: notifiedAt stays unset when nothing was ever delivered");
-    ok(r.json.notification.message.toLowerCase().includes("suppressed"), "G2: the message explains the suppression, not a reassured delivery");
+    ok(!!pubS, "G2: publication anchor exists even when delivery is fully suppressed");
+    if (pubS) {
+      eq(pubS.notifiedCount, 0, "G2: counter stays 0 (no fake tally)");
+      ok(pubS.notifiedAt === null || pubS.notifiedAt === undefined, "G2: notifiedAt stays unset when nothing was ever delivered");
+    }
     // …and the replay stays honest too (no fake ALREADY_DELIVERED ever).
     const r2 = await POST_JSON(R.open, "http://x/open", {}, { id: lessonSupp.id });
-    eq(r2.json.notification.code, "SUPPRESSED_BY_PREFERENCES", "G2: replay of a fully suppressed audience stays SUPPRESSED");
+    const replayNotification = notificationOrNull(r2, "G2 replay");
+    if (replayNotification) {
+      eq(replayNotification.code, "SUPPRESSED_BY_PREFERENCES", "G2: replay of a fully suppressed audience stays SUPPRESSED");
+    }
   }
 
   // ---- H. track matrix via the real routes -----------------------------------
   {
     await POST_JSON(R.markReady, "http://x/mark-ready", {}, { id: lessonAr.id });
     const r = await POST_JSON(R.open, "http://x/open", {}, { id: lessonAr.id });
-    eq(r.json.notification.eligible, 3, "H: ARABIC lesson → only the 3 active ARABIC students of course A are eligible");
-    eq(r.json.notification.delivered, 1, "H: ARABIC lesson delivers only to the preference-allowed ARABIC student");
+    const arabicNotification = notificationOrNull(r, "H ARABIC");
+    if (arabicNotification) {
+      eq(arabicNotification.eligible, 3, "H: ARABIC lesson → only the 3 active ARABIC students of course A are eligible");
+      eq(arabicNotification.delivered, 1, "H: ARABIC lesson delivers only to the preference-allowed ARABIC student");
+    }
     eq(
       (await notificationsFor(uLang1.id, "NEW_LESSON")).filter((x) => x.link === `lesson:${lessonAr.id}`).length,
       0,
@@ -632,8 +777,11 @@ async function main() {
 
     await POST_JSON(R.markReady, "http://x/mark-ready", {}, { id: lessonLang.id });
     const r2 = await POST_JSON(R.open, "http://x/open", {}, { id: lessonLang.id });
-    eq(r2.json.notification.eligible, 1, "H: LANGUAGE lesson → the single active LANGUAGE student of course A");
-    eq(r2.json.notification.delivered, 1, "H: LANGUAGE lesson delivers to the LANGUAGE student");
+    const languageNotification = notificationOrNull(r2, "H LANGUAGE");
+    if (languageNotification) {
+      eq(languageNotification.eligible, 1, "H: LANGUAGE lesson → the single active LANGUAGE student of course A");
+      eq(languageNotification.delivered, 1, "H: LANGUAGE lesson delivers to the LANGUAGE student");
+    }
     eq(
       (await notificationsFor(uAr1.id, "NEW_LESSON")).filter((x) => x.link === `lesson:${lessonLang.id}`).length,
       0,
@@ -650,7 +798,10 @@ async function main() {
     const openRes = await POST_JSON(R.open, "http://x/open", {}, { id: lPartial.id });
     // The route run delivers everyone (no failure injected there)… too late —
     // this lesson must be exercised through the LIB with an injected client.
-    eq(openRes.json.notification.delivered, 3, "I: route fan-out over a clean client delivers 3");
+    const partialNotification = notificationOrNull(openRes, "I route fan-out");
+    if (partialNotification) {
+      eq(partialNotification.delivered, 3, "I: route fan-out over a clean client delivers 3");
+    }
 
     // The failure semantics themselves are exercised library-level with a
     // wrapped client (same code the route runs, same DB):
@@ -706,7 +857,8 @@ async function main() {
     eq(calls, 2, "I: createMany attempted exactly twice (chunk 1 ok, chunk 2 threw)");
     eq((await publicationRows(lPartial2.id)).length, 1, "I: one row persisted before the failure");
     const pubAfterF = await client.sessionPublication.findUnique({ where: { lessonId: lPartial2.id } });
-    eq(pubAfterF.notifiedCount, 1, "I: counter reflects the partial truth (1)");
+    ok(!!pubAfterF, "I: publication anchor exists after partial delivery");
+    if (pubAfterF) eq(pubAfterF.notifiedCount, 1, "I: counter reflects the partial truth (1)");
 
     // Retry with the CLEAN client: chunk 1 dedupes, chunks 2&3 deliver.
     const r3 = await L.sessionNotifications.emitSessionPublicationNotifications({
@@ -722,11 +874,16 @@ async function main() {
     eq(rowsP.length, 3, "I: final total is 3 rows");
     eq(new Set(rowsP.map((x) => x.userId)).size, 3, "I: final total has 3 DISTINCT users (no duplicates)");
     const pubAfterR = await client.sessionPublication.findUnique({ where: { lessonId: lPartial2.id } });
-    eq(pubAfterR.notifiedCount, 3, "I: counter healed to the full delivered truth");
+    ok(!!pubAfterR, "I: publication anchor remains after retry");
+    if (pubAfterR) eq(pubAfterR.notifiedCount, 3, "I: counter healed to the full delivered truth");
 
     // And the ROUTE-level replay (NO_OP) also settles as ALREADY_DELIVERED:
     const r4 = await POST_JSON(R.open, "http://x/open", {}, { id: lPartial2.id });
-    eq([r4.json.code, r4.json.notification.code], ["NO_OP_ALREADY_IN_STATE", "ALREADY_DELIVERED"], "I: route retry ends idempotent");
+    eq(r4.json.code, "NO_OP_ALREADY_IN_STATE", "I: route retry remains a NO_OP replay");
+    const retryNotification = notificationOrNull(r4, "I route retry");
+    if (retryNotification) {
+      eq(retryNotification.code, "ALREADY_DELIVERED", "I: route retry reports ALREADY_DELIVERED");
+    }
   }
 
   // ---- J. unpublish stops late retries ---------------------------------------
@@ -820,6 +977,10 @@ async function main() {
     await POST_JSON(R.markReady, "http://x/mark-ready", {}, { id: lConc.id });
     const cr = await POST_JSON(R.open, "http://x/open", {}, { id: lConc.id });
     eq(cr.json.code, "OK", "L: race lesson published");
+    const concurrencyNotification = notificationOrNull(cr, "L initial route OPEN");
+    if (concurrencyNotification) {
+      eq(concurrencyNotification.delivered, 3, "L: initial route OPEN delivered all three eligible recipients");
+    }
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const slow = new Proxy(client, {
       get(target, prop) {
@@ -861,6 +1022,10 @@ async function main() {
     const ra = await POST_JSON(R.open, "http://x/open", {}, { id: lConc.id });
     const rb = await POST_JSON(R.open, "http://x/open", {}, { id: lConc.id });
     eq([ra.json.code, rb.json.code], ["NO_OP_ALREADY_IN_STATE", "NO_OP_ALREADY_IN_STATE"], "L: sequential re-opens are replays");
+    const replayA = notificationOrNull(ra, "L route replay A");
+    const replayB = notificationOrNull(rb, "L route replay B");
+    if (replayA) eq(replayA.code, "ALREADY_DELIVERED", "L: replay A reports ALREADY_DELIVERED");
+    if (replayB) eq(replayB.code, "ALREADY_DELIVERED", "L: replay B reports ALREADY_DELIVERED");
     eq((await publicationRows(lConc.id)).length, 3, "L: rows unchanged after repeated opens");
   }
 
@@ -892,13 +1057,16 @@ async function main() {
       const t0 = performance.now();
       const r = await POST_JSON(R.open, "http://x/open", {}, { id: l.id });
       const ms = Math.round(performance.now() - t0);
-      const n2 = r.json.notification;
+      const notification = notificationOrNull(r, `M N=${n}`);
       const rowsN = await publicationRows(l.id);
-      eq(rowsN.length, n2.delivered, `M: N=${n} audience — delivered rows == reported delivered`);
+      if (notification) {
+        eq(rowsN.length, notification.delivered, `M: N=${n} audience — delivered rows == reported delivered`);
+        ok(true, `M: N=${n} — open+fan-out completed in ${ms}ms (eligible ${notification.eligible}, delivered ${notification.delivered}, chunks ${notification.chunksPlanned})`);
+      }
       eq(new Set(rowsN.map((x) => x.userId)).size, rowsN.length, `M: N=${n} — zero duplicates`);
       const pubN = await client.sessionPublication.findUnique({ where: { lessonId: l.id } });
-      eq(pubN.notifiedCount, rowsN.length, `M: N=${n} — counter == rows`);
-      ok(true, `M: N=${n} — open+fan-out completed in ${ms}ms (eligible ${n2.eligible}, delivered ${n2.delivered}, chunks ${n2.chunksPlanned})`);
+      ok(!!pubN, `M: N=${n} — publication anchor exists`);
+      if (pubN) eq(pubN.notifiedCount, rowsN.length, `M: N=${n} — counter == rows`);
     }
     // N=1000+: the bounded-chunk proof. A recording wrapper captures every
     // createMany batch size the lib issues through the route-invisible path.
@@ -936,11 +1104,17 @@ async function main() {
     eq(batchSizes.slice(0, -1).every((s) => s === 500), true, `M: all full chunks are exactly 500 (sizes: ${batchSizes.join("/")})`);
     eq(batchSizes.length, Math.ceil(rn.delivered / 500), "M: chunk count == ceil(delivered/500), no trailing empty insert");
     const pubBig = await client.sessionPublication.findUnique({ where: { lessonId: lBig.id } });
-    eq(pubBig.notifiedCount, rowsBig.length, "M: N=1000+ — counter == rows (the count the admin sees IS the delivery)");
+    ok(!!pubBig, "M: N=1000+ — publication anchor exists");
+    if (pubBig) eq(pubBig.notifiedCount, rowsBig.length, "M: N=1000+ — counter == rows (the count the admin sees IS the delivery)");
     ok(true, `M: N=1000+ fan-out of ${rn.delivered} rows across ${batchSizes.length} chunks completed in ${ms}ms`);
     // A NO_OP open replay at scale inserts nothing and finishes fast.
     const rBig2 = await POST_JSON(R.open, "http://x/open", {}, { id: lBig.id });
-    eq([rBig2.json.code, rBig2.json.notification.code, rBig2.json.notification.delivered], ["NO_OP_ALREADY_IN_STATE", "ALREADY_DELIVERED", 0], "M: scale replay is idempotent");
+    eq(rBig2.json.code, "NO_OP_ALREADY_IN_STATE", "M: scale replay is a NO_OP");
+    const bigReplayNotification = notificationOrNull(rBig2, "M scale replay");
+    if (bigReplayNotification) {
+      eq(bigReplayNotification.code, "ALREADY_DELIVERED", "M: scale replay reports ALREADY_DELIVERED");
+      eq(bigReplayNotification.delivered, 0, "M: scale replay delivers no additional rows");
+    }
     const previewBig = await GET(R.recipients, "http://x/recipients", { id: lBig.id });
     eq(previewBig.json.eligible, rn.eligible, "M: preview eligible == fan-out eligible at scale");
     eq(previewBig.json.alreadyNotified, rowsBig.length, "M: preview alreadyNotified == delivered rows at scale");
