@@ -43,5 +43,11 @@ export async function GET() {
     stats,
     badges,
     newlyEarned: newlyEarned.map((b) => b.code),
+    // M4.1 — these metrics are ACADEMY-LIFETIME by explicit owner decision
+    // (they span every course the student has ever been in). The marker exists
+    // so no consumer presents them as the current course's completion or
+    // progress; course-scoped numbers live on the dashboard/certificate
+    // (`historyScope` / `metricsScope` there).
+    scope: "ACADEMY_LIFETIME",
   });
 }

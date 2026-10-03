@@ -1111,21 +1111,33 @@ async function main() {
       "students/me/dashboard derives the viewer track server-side"
     );
     ok(
-      (studentDash.match(/\.\.\.viewerTrack,/g) || []).length >= 2,
+      (studentDash.match(/\.\.\.viewerTrack,/g) || []).length >= 1,
+      "students/me/dashboard slices the lesson universe to the viewer's track"
+    );
+    // M4.1 moved the dashboard's homework list from an inline `...viewerTrack`
+    // spread to the shared student curriculum universe, and the certificate's
+    // total/completed counters likewise. Both helpers carry the viewer's track
+    // (`student.schoolType` / `viewerSchoolType`) plus the lifecycle clause and
+    // the course-chain predicate, and `src/lib/student-universe.ts` is pinned
+    // as the ONE place those clauses live — so the invariant is "the surface
+    // reads through the track-aware universe", not a particular spelling.
+    ok(
+      /studentHomeworkUniverse\(\s*courseId,\s*viewerSchoolType\s*\)/.test(studentDash) &&
+        /studentLessonUniverse\(\s*courseId,\s*viewerSchoolType\s*\)/.test(studentDash),
       "students/me/dashboard slices BOTH the lesson universe and the homework list"
     );
 
     const cert = read("src/app/api/students/me/certificate/route.ts");
     ok(
-      /const studentTrack = trackScopeWhere\(student\.schoolType\)/.test(cert),
-      "certificate derives the student's track"
+      /studentLessonUniverse\(\s*course\.id,\s*student\.schoolType\s*\)/.test(cert),
+      "certificate derives the student's track through the shared lesson universe"
     );
     ok(
-      (cert.match(/\.\.\.studentTrack,/g) || []).length >= 2,
+      (cert.match(/lessonUniverse/g) || []).length >= 3,
       "certificate filters BOTH the total and the completed denominator"
     );
     ok(
-      cert.indexOf("...studentTrack,") < cert.indexOf("pct >= 80"),
+      cert.indexOf("lessonUniverse") < cert.indexOf("pct >= 80"),
       "the 80% threshold is computed from the filtered counts"
     );
 

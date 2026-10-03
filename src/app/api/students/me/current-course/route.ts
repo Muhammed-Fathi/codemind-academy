@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { ok, err, requireUser, getStudentProfile } from "@/lib/api";
+import { studentAcademicContext } from "@/lib/student-universe";
 
 // GET /api/students/me/current-course
 //
@@ -33,7 +34,15 @@ export async function GET(_req: NextRequest) {
   const student = await getStudentProfile(user.id);
   if (!student) return err("Student profile not found", 404);
 
+  // M4.1 — read-only academic context, resolved from the caller's OWN row.
+  // `studentAcademicLevel` is `Student.academicLevel` (the student-level
+  // authority); `course.academicLevel` is `Course.academicLevel` (the
+  // course-level authority). Nothing is read from the request: there is no
+  // level parameter to accept, and no switcher is introduced.
+  const academic = studentAcademicContext(student);
+
   return ok({
+    studentAcademicLevel: academic.studentAcademicLevel,
     course: student.group
       ? {
           id: student.group.course.id,
@@ -41,6 +50,7 @@ export async function GET(_req: NextRequest) {
           name: student.group.course.name,
           nameAr: student.group.course.nameAr,
           color: student.group.course.color,
+          academicLevel: academic.courseAcademicLevel,
         }
       : null,
   });

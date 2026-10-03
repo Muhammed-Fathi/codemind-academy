@@ -1212,11 +1212,28 @@ section("8. the ceremony — MARK_READY requires readiness");
       // "applies the lifecycle clause" — and the helper itself is pinned
       // immediately below, so this stays a real invariant rather than an
       // allowlist of names.
+      // M4.1 added the student-side curriculum universe helper, which composes
+      // the same PUBLISHED + not-ARCHIVED + own-track + course-chain clauses;
+      // the helper itself is pinned immediately below, so consuming it still
+      // counts as applying the clause rather than as an allowlist entry.
       ok(
-        /LESSON_STUDENT_STATUS_FILTER|isParentLessonPreviewAllowed|isStudentVisibleStatus|canAccessLesson\(|getCourseSessionProgress\(|getStudentCurriculumLessonIds\(|getStudentCurriculumHomeworkIds\(|attemptsInCurriculumUniverse\(/.test(
+        /LESSON_STUDENT_STATUS_FILTER|isParentLessonPreviewAllowed|isStudentVisibleStatus|canAccessLesson\(|getCourseSessionProgress\(|getStudentCurriculumLessonIds\(|getStudentCurriculumHomeworkIds\(|attemptsInCurriculumUniverse\(|studentLessonUniverse\(|studentHomeworkUniverse\(|studentQuizAttemptUniverse\(/.test(
           src
         ),
         `${rel} applies the lifecycle clause (itself, the shared helper, or the progression engine)`
+      );
+    }
+    {
+      // M4.1's shared student helper, pinned as the single definition point.
+      const universe = read("src/lib/student-universe.ts");
+      ok(
+        /LESSON_STUDENT_STATUS_FILTER/.test(universe) &&
+          /EXCLUDE_ARCHIVED_LESSON/.test(universe),
+        "the shared student curriculum universe keeps the PUBLISHED + archived clauses"
+      );
+      ok(
+        /trackScopeWhere\(/.test(universe) && /lessonCourseChainOr\(courseId/.test(universe),
+        "and keeps the child's track and course chain (one predicate, not three)"
       );
     }
     {

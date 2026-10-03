@@ -5,6 +5,14 @@ import { NextResponse } from "next/server";
 import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
 import { buildStats, computeXp, computeLevel, BADGES } from "@/lib/gamification";
+// M4.1 — the current-course activity slice (same predicates as the dashboard
+// and the certificate). The board is the caller's COURSE cohort; its per-row
+// activity counters are cut to that course, while XP/level/badges/streak stay
+// academy-lifetime by explicit owner decision and are labelled as such.
+import {
+  studentLessonUniverse,
+  studentQuizAttemptUniverse,
+} from "@/lib/student-universe";
 
 /**
  * Hard ceiling on rows scanned/scored per request (see the scoping note below).
@@ -48,7 +56,12 @@ export async function GET() {
   const students = await db.student.findMany({
     where: { group: { isActive: true, courseId } },
     take: LEADERBOARD_MAX_ROWS,
-    include: {
+    // `select` (not `include`) so `schoolType` can ride along: each row's
+    // activity slice is computed for that student's OWN track without a second
+    // per-row student read. `email` is never projected outward (see below).
+    select: {
+      id: true,
+      schoolType: true,
       user: { select: { name: true, email: true, avatarUrl: true } },
       badges: { select: { code: true } },
     },
@@ -57,10 +70,34 @@ export async function GET() {
   // Compute XP + level for each student
   const entries: any[] = [];
   for (const s of students) {
+    // Lifetime metrics: XP, level, badges and streak — unchanged (M4.1 keeps
+    // the gamification boundary exactly where the owner drew it).
     const stats = await buildStats(s.id);
     const xp = computeXp(stats);
     const level = computeLevel(xp);
     const badgeCount = s.badges.length;
+    // M4.1 — current-course activity counters. The board ranks a course
+    // cohort, so the activity it SHOWS is that course's; a student's history
+    // from a course/level they left cannot inflate it. Same universe
+    // definition as the dashboard and the certificate. `isCompleted` is the
+    // same historical flag `buildStats` counts — only the universe is
+    // narrowed, the metric itself is not redefined.
+    const [lessonsCompleted, quizzesPassed] = await Promise.all([
+      db.lessonProgress.count({
+        where: {
+          studentId: s.id,
+          isCompleted: true,
+          lesson: studentLessonUniverse(courseId, s.schoolType),
+        },
+      }),
+      db.quizAttempt.count({
+        where: {
+          studentId: s.id,
+          passed: true,
+          ...studentQuizAttemptUniverse(courseId, s.schoolType),
+        },
+      }),
+    ]);
     entries.push({
       studentId: s.id,
       name: s.user.name,
@@ -72,8 +109,8 @@ export async function GET() {
       badgeCount,
       totalBadges: BADGES.length,
       streak: stats.currentStreak,
-      quizzesPassed: stats.quizzesPassed,
-      lessonsCompleted: stats.lessonsCompleted,
+      quizzesPassed,
+      lessonsCompleted,
     });
   }
 
@@ -96,8 +133,11 @@ export async function GET() {
   return ok({
     leaderboard: entries,
     myRank,
+    // M4.1 — `studentId` lets the CLIENT highlight "me" by canonical id
+    // instead of comparing display names (the server already ranks by id).
     myStats: myEntry
       ? {
+          studentId: myEntry.studentId,
           rank: myRank,
           xp: myEntry.xp,
           level: myEntry.level,
@@ -106,5 +146,19 @@ export async function GET() {
           streak: myEntry.streak,
         }
       : null,
+    // M4.1 — the cohort this board belongs to (the caller's own course).
+    courseId,
+    // Machine-readable scope, so no consumer can present a lifetime number as
+    // course progress (or the reverse). XP/level/badges/streak are
+    // academy-lifetime (owner decision D2); the two activity counters are the
+    // current course's.
+    metricsScope: {
+      xp: "ACADEMY_LIFETIME",
+      level: "ACADEMY_LIFETIME",
+      badgeCount: "ACADEMY_LIFETIME",
+      streak: "ACADEMY_LIFETIME",
+      lessonsCompleted: "CURRENT_COURSE",
+      quizzesPassed: "CURRENT_COURSE",
+    },
   });
 }

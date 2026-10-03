@@ -2992,4 +2992,20 @@ export const DICT_2026: Record<string, DictEntry> = {
   "teacher.324": { ar: "تعذّر تحميل مراجعة المحاولة", en: "Could not load this attempt review" },
   "teacher.325": { ar: "ناجح", en: "Passed" },
   "teacher.326": { ar: "غير ناجح", en: "Not passed" },
+
+  // ========================================================================
+  // Phase M4.1 — metric SCOPE labels on the Student surfaces. XP / level /
+  // badges / streak are academy-lifetime (they span every course a student
+  // has been in); the dashboard, certificate and leaderboard activity
+  // counters are current-course. These strings are the only thing that says
+  // so in the UI, so they must not be reworded into a progress claim.
+  // ========================================================================
+  "student.251": {
+    ar: "النقاط والمستوى والشارات: على مستوى الأكاديمية بالكامل (منذ الانضمام) — مش تقدم الكورس الحالي",
+    en: "XP, level and badges are academy-wide (since joining) — not this course's progress",
+  },
+  "student.252": {
+    ar: "النقاط والمستوى والشارات وسلسلة الأيام: على مستوى الأكاديمية بالكامل — الدروس والاختبارات في القائمة: الكورس الحالي",
+    en: "XP, level, badges and streak are academy-wide — the lesson and quiz counts in the list are this course's",
+  },
 };

@@ -147,6 +147,9 @@ export function LeaderboardView() {
                   <div className="text-[10px] text-muted-foreground">Day Streak</div>
                 </div>
               </div>
+              {/* M4.1 — scope label: XP/level/badges/streak are academy-lifetime
+                  metrics, not this course's progress. */}
+              <p className="text-[10px] text-muted-foreground mt-2">{t("student.252")}</p>
             </CardContent>
           </Card>
         </motion.div>
@@ -236,7 +239,10 @@ export function LeaderboardView() {
             <CardContent>
               <div className="space-y-2 max-h-96 overflow-y-auto pe-1">
                 {rest.map((entry, i) => {
-                  const isMe = entry.name === user?.name;
+                  // M4.1 — identity is the canonical student id (returned on
+                  // `myStats`). The old display-name comparison highlighted an
+                  // arbitrary homonym on a board the server already ranks by id.
+                  const isMe = entry.studentId === myStats?.studentId;
                   return (
                     <motion.div
                       key={entry.studentId}

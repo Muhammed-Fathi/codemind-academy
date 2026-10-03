@@ -7,6 +7,7 @@
 import { requireUser, ok, err, getStudentProfile } from "@/lib/api";
 import { db } from "@/lib/db";
 import { getEnrollment } from "@/lib/enrollment";
+import { studentAcademicContext } from "@/lib/student-universe";
 import { getVideoProgressForStudent } from "@/lib/progress";
 import { getCourseSessionProgress } from "@/lib/session-progress";
 
@@ -20,9 +21,15 @@ export async function GET() {
 
   const enrollment = await getEnrollment(student.id);
 
+  // M4.1 — the STUDENT-level authority (`Student.academicLevel`). It is the
+  // student's own column, never `Student.grade` and never a derived guess; the
+  // course-level authority travels on the course object below.
+  const academic = studentAcademicContext(student);
+
   if (!enrollment.isEnrolled || !enrollment.courseId) {
     return ok({
       isEnrolled: false,
+      studentAcademicLevel: academic.studentAcademicLevel,
       course: null,
       schoolType: enrollment.schoolType,
       subscriptionStatus: enrollment.subscriptionStatus,
@@ -34,7 +41,16 @@ export async function GET() {
   const [course, videoProgress, sessionProgress] = await Promise.all([
     db.course.findUnique({
       where: { id: enrollment.courseId },
-      select: { id: true, slug: true, name: true, nameAr: true, description: true, color: true },
+      select: {
+        id: true,
+        slug: true,
+        name: true,
+        nameAr: true,
+        description: true,
+        color: true,
+        // M4.1 — the COURSE-level authority (`Course.academicLevel`).
+        academicLevel: true,
+      },
     }),
     getVideoProgressForStudent(student.id),
     getCourseSessionProgress(student.id, enrollment.courseId),
@@ -42,6 +58,7 @@ export async function GET() {
 
   return ok({
     isEnrolled: true,
+    studentAcademicLevel: academic.studentAcademicLevel,
     course,
     groupId: enrollment.groupId,
     batchId: enrollment.batchId,

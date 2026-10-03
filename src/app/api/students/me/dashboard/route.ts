@@ -20,6 +20,16 @@ import {
 import { evaluateStudentCatchup, toCatchupHoldView } from "@/lib/progression";
 import { fetchStudentPayments } from "@/lib/payment-submission";
 import { resolveStudentEntitlement } from "@/lib/subscription-entitlement";
+// M4.1 — the STUDENT-side current-course universe: one definition of "this
+// student's active course/level", used by every history read below so a
+// previous course's rows can never be presented as current-course history.
+import {
+  studentAcademicContext,
+  studentAttendanceUniverse,
+  studentHomeworkUniverse,
+  studentLessonUniverse,
+  studentQuizAttemptUniverse,
+} from "@/lib/student-universe";
 
 // GET /api/students/me/dashboard
 // Aggregated student dashboard data.
@@ -38,7 +48,17 @@ export async function GET(_req: NextRequest) {
   // is sliced to the student's own track. `getStudentSchoolType` re-reads the
   // row rather than trusting whatever the profile helper happened to select,
   // so an unrecognised or missing value fails closed to SHARED-only.
-  const viewerTrack = trackScopeWhere(await getStudentSchoolType(student.id));
+  const viewerSchoolType = await getStudentSchoolType(student.id);
+  const viewerTrack = trackScopeWhere(viewerSchoolType);
+
+  // M4.1 — the student's canonical academic context, read from the student's
+  // OWN row: `Student.academicLevel` (student authority) and the ACTIVE
+  // course's `Course.academicLevel` (course authority). The two are exposed
+  // separately and never substituted for one another; the course ID is the
+  // relation chain (`Student.groupId → Group.courseId`) that scopes every
+  // history read below.
+  const academic = studentAcademicContext(student);
+  const courseId = academic.courseId;
 
   // ----- Course progress + last viewed lesson -----
   // Course progress runs over the ACTIVE curriculum universe (both chains,
@@ -226,8 +246,12 @@ export async function GET(_req: NextRequest) {
     : null;
 
   // ----- Attendance -----
+  // M4.1 — scoped to the CURRENT canonical course: attendance belongs to a
+  // live session, a session to a group, and a group to exactly one course.
+  // A transfer student's previous-course register therefore stops counting
+  // toward the number shown next to the current course's progress.
   const attendances = await db.attendance.findMany({
-    where: { studentId: student.id },
+    where: { studentId: student.id, ...studentAttendanceUniverse(courseId) },
     include: { session: true },
   });
   const attendanceTotal = attendances.length;
@@ -240,8 +264,11 @@ export async function GET(_req: NextRequest) {
       : 0;
 
   // ----- Latest quiz result -----
+  // M4.1 — "latest" is the latest attempt on a quiz of the STUDENT'S CURRENT
+  // curriculum (same universe as the progress ring), never a leftover attempt
+  // from a course/level the student has left.
   const latestAttempt = await db.quizAttempt.findFirst({
-    where: { studentId: student.id },
+    where: { studentId: student.id, ...studentQuizAttemptUniverse(courseId, viewerSchoolType) },
     include: { quiz: { include: { lesson: true } } },
     orderBy: { finishedAt: "desc" },
   });
@@ -252,30 +279,13 @@ export async function GET(_req: NextRequest) {
   // Only assignments from the ACTIVE curriculum universe (both chains,
   // archived history excluded): archived lessons' homework is history, not a
   // pending to-do, and official unit-linked lessons must be counted.
-  const groupCourseMatch = {
-    course: { groups: { some: { id: student.groupId || "_" } } },
-  };
   const homeworks = await db.homework.findMany({
     where: {
-      // Phase G — DRAFT assignments are authoring-only: never listed, never
-      // counted as pending. CLOSED stays listed (the student still sees the
-      // closed assignment and its grade; only NEW submissions stop).
-      status: { in: ["PUBLISHED", "CLOSED"] },
-      // Phase 12: an assignment belonging to the other school type must not be
-      // listed here — this endpoint returns the row and its lesson title, so
-      // leaving it unfiltered was an outright cross-track content leak.
-      ...viewerTrack,
-      lesson: {
-        // Phase 13: the lifecycle clause mirrors the unlocked-set post-filter
-        // below (`isOpen`), so the SQL and the engine state can never
-        // disagree about which assignments exist for this student.
-        ...LESSON_STUDENT_STATUS_FILTER,
-        ...EXCLUDE_ARCHIVED_LESSON,
-        OR: [
-          { unit: { part: groupCourseMatch } },
-          { topic: { unit: { part: groupCourseMatch } } },
-        ],
-      },
+      // M4.1 — one universe definition: student-visible lifecycle (DRAFT is
+      // authoring-only), own track, own course chain. Identical semantics to
+      // the inline filter this replaced; the shared helper is what keeps this
+      // route and the certificate/leaderboard reads from drifting apart.
+      ...studentHomeworkUniverse(courseId, viewerSchoolType),
     },
     include: {
       submissions: { where: { studentId: student.id } },
@@ -292,20 +302,29 @@ export async function GET(_req: NextRequest) {
   });
 
   // ----- Recent activity timeline -----
+  // M4.1 — every timeline read is cut to the CURRENT course universe (the same
+  // predicate the progress ring uses). Before this, a student who moved course
+  // or Academic Level saw the previous curriculum's lesson/quiz/homework
+  // titles in "Recent Activity" while the rest of the page described the new
+  // course. Identity stays canonical (ids/relations) — never titles or codes.
   const recentLessonProgress = await db.lessonProgress.findMany({
-    where: { studentId: student.id, lastViewedAt: { not: null } },
+    where: {
+      studentId: student.id,
+      lastViewedAt: { not: null },
+      lesson: studentLessonUniverse(courseId, viewerSchoolType),
+    },
     include: { lesson: { include: { topic: { include: { unit: { include: { part: true } } } } } } },
     orderBy: { lastViewedAt: "desc" },
     take: 5,
   });
   const recentQuizAttempts = await db.quizAttempt.findMany({
-    where: { studentId: student.id },
+    where: { studentId: student.id, ...studentQuizAttemptUniverse(courseId, viewerSchoolType) },
     include: { quiz: { include: { lesson: true } } },
     orderBy: { finishedAt: "desc" },
     take: 5,
   });
   const recentHomeworkSubs = await db.homeworkSubmission.findMany({
-    where: { studentId: student.id },
+    where: { studentId: student.id, homework: studentHomeworkUniverse(courseId, viewerSchoolType) },
     include: { homework: { include: { lesson: true } } },
     orderBy: { submittedAt: "desc" },
     take: 5,
@@ -415,6 +434,15 @@ export async function GET(_req: NextRequest) {
   const catchupHolds = rawCatchupHolds.map(toCatchupHoldView);
 
   return ok({
+    // M4.1 — the STUDENT-level authority, read from `Student.academicLevel`.
+    // It is exposed under its own name and never derived from `grade`; the
+    // course's own level travels inside `group.course.academicLevel` below.
+    studentAcademicLevel: academic.studentAcademicLevel,
+    // M4.1 — documents what `attendance`, `latestQuizResult` and
+    // `recentActivity` below are scoped to (the same universe as
+    // `courseProgress`). `gamification` metrics are deliberately lifetime and
+    // are labelled by their own endpoint.
+    historyScope: "CURRENT_COURSE",
     student: {
       id: student.id,
       name: student.user.name,
@@ -438,6 +466,8 @@ export async function GET(_req: NextRequest) {
             name: student.group.course.name,
             nameAr: student.group.course.nameAr,
             color: student.group.course.color,
+            // M4.1 — the COURSE-level authority (`Course.academicLevel`).
+            academicLevel: academic.courseAcademicLevel,
           },
           teacher: student.group.teacher
             ? {

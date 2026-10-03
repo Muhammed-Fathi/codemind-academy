@@ -138,6 +138,9 @@ export function GamificationPanel() {
           </div>
         </CardHeader>
         <CardContent className="pt-0 space-y-3">
+          {/* M4.1 — scope label: XP, level, badges and streak are
+              academy-lifetime metrics; they are not this course's progress. */}
+          <p className="text-[10px] text-muted-foreground">{t("student.251")}</p>
           <div>
             <Progress value={data.level.progress} className="h-2" />
             <div className="flex items-center justify-between text-[10px] text-muted-foreground mt-1">
