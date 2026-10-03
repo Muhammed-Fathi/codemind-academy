@@ -1,5 +1,6 @@
 "use client";
-import { useT, translate , pickAuto } from "@/lib/i18n";
+import { useT, useLocale, localeDirection, translate, pickAuto } from "@/lib/i18n";
+import { latestRequestReducer, type LatestRequestState } from "@/lib/latest-request-state";
 import {
   AcademicLevelBadge,
   OptionalAcademicLevelFilter,
@@ -1148,10 +1149,10 @@ function AttendanceView() {
 
   // Fetch sessions + students for the group (without per-session attendance).
   const groupQuery = useQuery<AttendancePayload>({
-    queryKey: ["teacher-attendance-group", groupId],
+    queryKey: ["teacher-attendance-group", groupId, level || "ALL"],
     queryFn: async () => {
       const r = await fetch(
-        `/api/teacher/attendance?groupId=${encodeURIComponent(groupId)}`
+        withLevelQuery(`/api/teacher/attendance?groupId=${encodeURIComponent(groupId)}`, level)
       );
       if (!r.ok) throw new Error("fail");
       return (await r.json()) as AttendancePayload;
@@ -1161,12 +1162,15 @@ function AttendanceView() {
 
   // Fetch per-session attendance records for the selected session.
   const sessionAttQuery = useQuery<AttendancePayload>({
-    queryKey: ["teacher-attendance-session", groupId, sessionId],
+    queryKey: ["teacher-attendance-session", groupId, sessionId, level || "ALL"],
     queryFn: async () => {
       const r = await fetch(
-        `/api/teacher/attendance?groupId=${encodeURIComponent(
-          groupId
-        )}&sessionId=${encodeURIComponent(sessionId)}`
+        withLevelQuery(
+          `/api/teacher/attendance?groupId=${encodeURIComponent(
+            groupId
+          )}&sessionId=${encodeURIComponent(sessionId)}`,
+          level
+        )
       );
       if (!r.ok) throw new Error("fail");
       return (await r.json()) as AttendancePayload;
@@ -1292,7 +1296,16 @@ function AttendanceView() {
 
       {/* Phase L manual-QA fix #4 — level separator for the groups/students
           surface (rendered only when this teacher really owns both levels). */}
-      <OptionalAcademicLevelFilter scope={dashQuery.data?.scope} value={level} onChange={setLevel} />
+      <OptionalAcademicLevelFilter
+        scope={dashQuery.data?.scope}
+        value={level}
+        onChange={(nextLevel) => {
+          if (nextLevel === level) return;
+          setLevel(nextLevel);
+          setGroupId("");
+          setSessionId("");
+        }}
+      />
 
       {/* Selectors */}
       <Card className="p-4 sm:p-5">
@@ -1419,14 +1432,14 @@ function AttendanceView() {
                   const cur = draft[s.id];
                   return (
                     <TableRow key={s.id} className="hover:bg-muted/30">
-                      <TableCell className="font-medium">
+                      <TableCell className="font-medium min-w-[180px] whitespace-normal">
                         <div className="flex items-center gap-2.5">
-                          <Avatar className="w-8 h-8">
+                          <Avatar className="w-8 h-8 shrink-0">
                             <AvatarFallback className="bg-primary/10 text-primary text-[10px] font-bold">
                               {s.name.slice(0, 2).toUpperCase()}
                             </AvatarFallback>
                           </Avatar>
-                          <div className="min-w-0">
+                          <div className="min-w-0 flex-1">
                             <div className="text-sm font-semibold truncate">
                               {s.name}
                               {(s as any).studentCode && (
@@ -1439,6 +1452,15 @@ function AttendanceView() {
                               {s.email}
                             </div>
                           </div>
+                          <button
+                            type="button"
+                            data-testid="attendance-student-note-mobile"
+                            onClick={() => setNotesTarget({ id: s.id, name: s.name })}
+                            aria-label={`${tr("teacher.212")} — ${s.name}`}
+                            className="sm:hidden ms-auto w-8 h-8 shrink-0 rounded-lg border border-transparent text-muted-foreground/70 inline-flex items-center justify-center hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                          >
+                            <MessageSquare className="w-4 h-4" />
+                          </button>
                         </div>
                       </TableCell>
                       <TableCell className="text-center">
@@ -1552,6 +1574,7 @@ function StudentNotesDialog({
   onClose: () => void;
 }) {
   const tr = useT();
+  const direction = localeDirection(useLocale());
   const [open, setOpen] = React.useState(true);
   const [notes, setNotes] = React.useState<
     { id: string; note: string; createdAt: string }[] | null
@@ -1602,7 +1625,7 @@ function StudentNotesDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg" dir={direction}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <MessageSquare className="w-4 h-4 text-primary" />
@@ -1622,6 +1645,7 @@ function StudentNotesDialog({
               placeholder={tr("teacher.207")}
               rows={3}
               maxLength={2000}
+              dir="auto"
             />
             <div className="flex items-center justify-between gap-2">
               <span className="text-[10px] text-muted-foreground">
@@ -1758,6 +1782,7 @@ function AttendanceSkeleton() {
 // ============================================================
 function QuizzesView() {
   const tr = useT();
+  const direction = localeDirection(useLocale());
   const queryClient = useQueryClient();
   const reviewTarget = useApp((state) => state.teacherQuizAttempt);
   const clearTeacherQuizAttempt = useApp((state) => state.clearTeacherQuizAttempt);
@@ -1926,7 +1951,7 @@ function QuizzesView() {
 
       {/* Create quiz dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto" dir={direction}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Plus className="w-5 h-5 text-primary" />
@@ -2269,6 +2294,7 @@ function QuizEditor({
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="e.g. Lesson 2 Quiz"
+            dir="ltr"
           />
         </div>
         <div className="space-y-1.5">
@@ -2289,6 +2315,7 @@ function QuizEditor({
           onChange={(e) => setDescription(e.target.value)}
           placeholder={tr("teacher.085")}
           rows={2}
+          dir="auto"
         />
       </div>
 
@@ -2460,6 +2487,7 @@ function QuestionEditor({
           onChange={(e) => onChange({ prompt: e.target.value })}
           placeholder="e.g. What does CPU stand for?"
           rows={2}
+          dir="ltr"
           className="text-sm"
         />
       </div>
@@ -2506,6 +2534,7 @@ function QuestionEditor({
                   value={opt}
                   onChange={(e) => setOption(i, e.target.value)}
                   placeholder={tr("teacher.099", { p1: i + 1 })}
+                  dir="auto"
                   className="text-sm h-8"
                 />
                 <button
@@ -2634,7 +2663,7 @@ function QuestionEditor({
           onChange={(e) => onChange({ explanation: e.target.value })}
           placeholder={tr("teacher.107")}
           rows={2}
-          dir="rtl"
+          dir="auto"
           className="text-sm"
         />
       </div>
@@ -2656,6 +2685,7 @@ function RadioGroupLike({
 // ============================================================
 function HomeworkView() {
   const tr = useT();
+  const direction = localeDirection(useLocale());
   const queryClient = useQueryClient();
   const [filterGroupId, setFilterGroupId] = React.useState<string>("");
   // Phase L manual-QA fix #4 — level separator for the homework list, enforced
@@ -2874,7 +2904,7 @@ function HomeworkView() {
         open={!!gradingFor}
         onOpenChange={(o) => !o && setGradingFor(null)}
       >
-        <DialogContent>
+        <DialogContent dir={direction}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <ClipboardCheck className="w-5 h-5 text-primary" />
@@ -2951,7 +2981,7 @@ function HomeworkCard({
           </p>
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
             <TrackScopeBadge scope={hw.trackScope || "SHARED"} />
-            <Badge variant="outline" className={hw.status === "DRAFT" ? "text-amber-700" : hw.status === "CLOSED" ? "text-muted-foreground" : "text-emerald-700"}>{hw.status === "DRAFT" ? "مسودة" : hw.status === "CLOSED" ? "مغلق" : "منشور"}</Badge>
+            <Badge variant="outline" className={hw.status === "DRAFT" ? "text-amber-700" : hw.status === "CLOSED" ? "text-muted-foreground" : "text-emerald-700"}>{hw.status === "DRAFT" ? tr("teacher.homework.statusDraft") : hw.status === "CLOSED" ? tr("teacher.homework.statusClosed") : tr("teacher.homework.statusPublished")}</Badge>
             {hw.lesson?.curriculumStatus === "ARCHIVED" ? (
               <CurriculumBadge value="ARCHIVED" />
             ) : hw.lesson?.status ? (
@@ -3090,7 +3120,7 @@ function SubmissionRow({
         <div className="text-[10px] text-muted-foreground">
           {sub.submittedAt ? timeAgo(sub.submittedAt) : tr("teacher.127")}
         </div>
-        {sub.attachment ? <a className="text-[10px] text-primary underline truncate block" href={`/api/media/${sub.attachment.id}`} target="_blank" rel="noreferrer">{sub.attachment.originalName || "تحميل ملف التسليم"}</a> : <span className="text-[10px] text-muted-foreground">لا يوجد ملف</span>}
+        {sub.attachment ? <a className="text-[10px] text-primary underline truncate block" href={`/api/media/${sub.attachment.id}`} target="_blank" rel="noreferrer">{sub.attachment.originalName || tr("teacher.homework.downloadSubmission")}</a> : <span className="text-[10px] text-muted-foreground">{tr("teacher.homework.noSubmissionFile")}</span>}
       </div>
       <Badge
         variant="secondary"
@@ -3218,7 +3248,7 @@ function GradeForm({
           onChange={(e) => setFeedback(e.target.value)}
           placeholder={tr("teacher.139")}
           rows={4}
-          dir="rtl"
+          dir="auto"
         />
       </div>
 
@@ -3543,29 +3573,80 @@ function CreateTemplateForm({ onDone }: { onDone: () => void }) {
 // ============================================================
 function AnalyticsView() {
   const tr = useT();
-  const [data, setData] = React.useState<any>(null);
-  const [loading, setLoading] = React.useState(true);
+  const [request, dispatchRequest] = React.useReducer(
+    latestRequestReducer<any, { spansBothLevels?: boolean; academicLevels?: string[] }>,
+    {
+      requestId: 0,
+      key: "",
+      status: "loading",
+      data: null,
+      error: null,
+      metadata: null,
+    } satisfies LatestRequestState<any, { spansBothLevels?: boolean; academicLevels?: string[] }>
+  );
+  const requestSequence = React.useRef(0);
+  const [retryCount, setRetryCount] = React.useState(0);
   // Phase L manual-QA fix #4 — the analytics headline numbers and per-group
   // rows follow ONE level at a time; the narrowing is a server-side `where` on
   // the teacher's own groups, so no number is computed from another level.
   const [level, setLevel] = React.useState("");
+  const requestKey = level || "ALL";
 
   React.useEffect(() => {
-    setLoading(true);
-    fetch(`/api/teacher/analytics${levelQuery(level)}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => setData(d))
-      .catch(() => toast.error(tr("teacher.169")))
-      .finally(() => setLoading(false));
-  }, [level, tr]);
+    const requestId = ++requestSequence.current;
+    const controller = new AbortController();
+    dispatchRequest({ type: "start", requestId, key: requestKey });
+    fetch(`/api/teacher/analytics${levelQuery(level)}`, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`Analytics request failed (${response.status})`);
+        return response.json();
+      })
+      .then((nextData) => {
+        if (controller.signal.aborted) return;
+        dispatchRequest({
+          type: "success",
+          requestId,
+          key: requestKey,
+          data: nextData,
+          metadata: nextData?.scope ?? null,
+        });
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        dispatchRequest({ type: "error", requestId, key: requestKey, error });
+      });
+    return () => controller.abort();
+  }, [level, requestKey, retryCount]);
+
+  // During a level transition never render a previously successful payload as
+  // current. The reducer also rejects any late success/error from an older id.
+  const data = request.key === requestKey && request.status === "success"
+    ? request.data
+    : null;
+  const loading = request.key !== requestKey || request.status === "loading";
+  const failed = request.key === requestKey && request.status === "error";
 
   const levelFilter = (
     <OptionalAcademicLevelFilter
-      scope={data?.scope}
+      scope={data?.scope ?? request.metadata}
       value={level}
       onChange={setLevel}
     />
   );
+
+  if (failed) {
+    return (
+      <div className="space-y-4">
+        {levelFilter}
+        <div className="rounded-lg border border-destructive/30 p-4 text-sm text-destructive" role="alert">
+          {tr("teacher.169")}
+          <Button className="ms-3" size="sm" variant="outline" onClick={() => setRetryCount((count) => count + 1)}>
+            {tr("live.retry")}
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

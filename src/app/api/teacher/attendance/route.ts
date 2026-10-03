@@ -67,6 +67,24 @@ export async function GET(req: NextRequest) {
     if (!scoped || !scoped.has(groupId)) return err(tApi("api.156"), 403);
   }
 
+  // The legacy Attendance tab is group-selected: authorize the session, then
+  // bind it to that exact canonical group before reading any roster/attendance
+  // rows. This closes the valid-but-crossed pair (owned group A + owned session
+  // B) without changing the separate /api/live-sessions/:id/attendance route,
+  // which is intentionally session-scoped and supports substitute teachers.
+  let sessionAccess: Awaited<ReturnType<typeof loadSessionForTeacher>> | null = null;
+  if (sessionId) {
+    try {
+      const scope = await loadTeacherScope(user.id);
+      if (!scope) return err("Teacher profile not found", 404);
+      const access = await loadSessionForTeacher(scope, sessionId);
+      if (access.session.groupId !== groupId) return err(tApi("api.156"), 403);
+      sessionAccess = access;
+    } catch (error) {
+      return failureResponse(error);
+    }
+  }
+
   // Sessions for this group (upcoming + past)
   const sessions = await db.liveSession.findMany({
     where: { groupId },
@@ -144,23 +162,21 @@ export async function GET(req: NextRequest) {
 
   // Phase F — the session block: window, lock, counts and review state.
   let sessionBlock: Record<string, unknown> | null = null;
-  if (sessionId) {
+  if (sessionAccess) {
     try {
-      const scope = await loadTeacherScope(user.id);
-      if (scope) {
-        const access = await loadSessionForTeacher(scope, sessionId);
-        const write = decideAttendanceWrite(access.session, new Date());
-        const { counts } = await loadSessionRoster(sessionId);
-        sessionBlock = {
-          ...toLiveSessionPayload({ session: access.session, now: new Date(), counts }),
-          canWrite: write.allowed,
-          writeDenialCode: write.allowed ? null : write.code,
-          via: access.via,
-        };
-      }
-    } catch {
-      // The legacy payload must keep working even if the session vanished.
-      sessionBlock = null;
+      const now = new Date();
+      const write = decideAttendanceWrite(sessionAccess.session, now);
+      const { counts } = await loadSessionRoster(sessionId);
+      sessionBlock = {
+        ...toLiveSessionPayload({ session: sessionAccess.session, now, counts }),
+        canWrite: write.allowed,
+        writeDenialCode: write.allowed ? null : write.code,
+        via: sessionAccess.via,
+      };
+    } catch (error) {
+      // A selected session that disappears between authorization and payload
+      // assembly fails closed; it must not return a mismatched roster as 200.
+      return failureResponse(error);
     }
   }
 

@@ -3,8 +3,10 @@
 // module; client hooks live in src/lib/i18n.ts.
 import { DICT as GENERATED_DICT } from "@/lib/i18n-dict";
 import { DICT_2026 } from "@/lib/i18n-dict-2026";
+import { localeDirection } from "@/lib/locale-direction";
 
 export type Locale = "ar" | "en";
+export { localeDirection };
 
 // The generated catalogue plus the hand-maintained 2026/2027 additions.
 // Keeping them in two files means `scripts/i18n/emit-dict.mjs` can regenerate
@@ -104,8 +106,8 @@ export function fmtDateTime(
 /** Apply locale globally: <html lang/dir> + persist (localStorage + cookie). */
 export function applyLocale(locale: Locale) {
   if (typeof document === "undefined") return;
-  document.documentElement.lang = locale === "ar" ? "ar" : "en";
-  document.documentElement.dir = locale === "ar" ? "rtl" : "ltr";
+  document.documentElement.lang = locale;
+  document.documentElement.dir = localeDirection(locale);
   try {
     localStorage.setItem("cm-locale", locale);
     // Mirror to a cookie so API routes can localize server-side strings too.

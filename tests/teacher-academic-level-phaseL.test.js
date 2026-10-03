@@ -115,6 +115,10 @@ function read(rel) {
     "src/app/api/teacher/analytics/route.ts",
     "src/app/api/teacher/attendance/route.ts",
   ];
+  // The group-selected legacy endpoint must keep its strict pair binding while
+  // the canonical session-only register route remains substitute-capable.
+  const LIVE_ATTENDANCE_REL = "src/app/api/live-sessions/[id]/attendance/route.ts";
+  const COMPILE_ROUTES = [...ROUTES, LIVE_ATTENDANCE_REL];
   fs.writeFileSync(
     path.join(OUT, "tsconfig.json"),
     JSON.stringify({
@@ -125,7 +129,7 @@ function read(rel) {
         typeRoots: [path.join(REPO, "node_modules/@types")],
         rootDir: REPO, outDir: OUT, noEmitOnError: false,
       },
-      files: ROUTES.map((r) => path.join(REPO, r)),
+      files: COMPILE_ROUTES.map((r) => path.join(REPO, r)),
     })
   );
   const TSC_BIN = path.join(REPO, "node_modules", "typescript", "bin", "tsc");
@@ -136,6 +140,7 @@ function read(rel) {
   spawnSync(process.execPath, [TSC_BIN, "-p", path.join(OUT, "tsconfig.json")], { cwd: REPO, encoding: "utf8" });
   const EMIT = path.join(OUT, "src");
   const LESSONS_JS = path.join(EMIT, "app/api/teacher/lessons/route.js");
+  const LIVE_ATTENDANCE_JS = path.join(EMIT, LIVE_ATTENDANCE_REL.replace(/^src\//, "").replace(/\.ts$/, ".js"));
   const ROUTE_JS = {};
   for (const rel of ROUTES) {
     const js = path.join(EMIT, rel.replace(/^src\//, "").replace(/\.ts$/, ".js"));
@@ -144,6 +149,10 @@ function read(rel) {
       console.error(`tsc did not emit ${js}`);
       process.exit(1);
     }
+  }
+  if (!fs.existsSync(LIVE_ATTENDANCE_JS)) {
+    console.error(`tsc did not emit ${LIVE_ATTENDANCE_JS}`);
+    process.exit(1);
   }
 
   // -------------------------------------------------------------------------
@@ -297,6 +306,8 @@ function read(rel) {
     ins("Quiz", { id: "qz-ss", lessonId: "l-ss-1", trackScope: "SHARED", title: "Q SS", titleAr: "اختبار ث" });
     ins("LiveSession", { id: "sess-fs", groupId: "g-fs", title: "FS live", titleAr: "حصة ف", startAt: NOW, duration: 60, status: "SCHEDULED", createdAt: NOW });
     ins("LiveSession", { id: "sess-ss", groupId: "g-ss", title: "SS live", titleAr: "حصة ث", startAt: NOW, duration: 60, status: "SCHEDULED", createdAt: NOW });
+    ins("LiveSession", { id: "sess-foreign", groupId: "g-ss2", teacherId: "t-ss", title: "Foreign live", titleAr: "حصة أجنبية", startAt: NOW, duration: 60, status: "SCHEDULED", createdAt: NOW });
+    ins("LiveSession", { id: "sess-substitute", groupId: "g-ss2", teacherId: "t-ss", substituteTeacherId: "t-both", title: "Substitute live", titleAr: "حصة بديلة", startAt: NOW, duration: 60, status: "SCHEDULED", createdAt: NOW });
   }
   seedSharedSurface();
 
@@ -430,6 +441,7 @@ function read(rel) {
     // (Every row these routes read was seeded above, before the O sections.)
     const routes = {};
     for (const rel of ROUTES) routes[rel] = require(ROUTE_JS[rel]);
+    const liveAttendanceRoute = require(LIVE_ATTENDANCE_JS);
 
     const R_LESSONS = ROUTES[0];
     const R_HOMEWORK = "src/app/api/teacher/homework/route.ts";
@@ -558,16 +570,34 @@ function read(rel) {
       ok(!JSON.stringify(body(fs)).includes("SS group"), "E2E/analytics: no Second Secondary group row leaks into the FS analytics");
     }
 
-    // ---- 8. attendance (roster + the mismatch guard) -----------------------
+    // ---- 8. attendance: group/session identity, level, and substitute path --
     {
       const fs = await call(R_ATTENDANCE, "?groupId=g-fs&sessionId=sess-fs&academicLevel=FIRST_SECONDARY", both);
-      eq(fs.status, 200, "E2E/attendance: the FS group roster loads under the FS level");
+      eq(fs.status, 200, "E2E/attendance: the correct owned FS group/session pair loads under the FS level");
       eqArr((body(fs).students || []).map((x) => x.id), ["s-fs"], "E2E/attendance: …and contains only the FS student");
-      const mismatch = await call(R_ATTENDANCE, "?groupId=g-fs&sessionId=sess-fs&academicLevel=SECOND_SECONDARY", both);
-      eq(mismatch.status, 403, "E2E/attendance: pairing an FS group with the SS level is REFUSED (403)");
-      eq(body(mismatch).error, "api.156", "E2E/attendance: …through the existing ownership refusal");
-      const foreign = await call(R_ATTENDANCE, "?groupId=g-ss2&sessionId=sess-fs", both);
-      eq(foreign.status, 403, "E2E/attendance: a group this teacher does NOT own is still refused (authz unchanged)");
+      eq(body(fs).session?.id, "sess-fs", "E2E/attendance: the matching session context is returned");
+
+      const ownedMismatch = await call(R_ATTENDANCE, "?groupId=g-fs&sessionId=sess-ss", both);
+      eq(ownedMismatch.status, 403, "E2E/attendance: an owned FS group paired with the teacher's owned SS session is refused");
+      eq(body(ownedMismatch).error, "api.156", "E2E/attendance: a crossed owned pair uses the existing fail-closed refusal");
+
+      const levelMismatch = await call(R_ATTENDANCE, "?groupId=g-fs&sessionId=sess-fs&academicLevel=SECOND_SECONDARY", both);
+      eq(levelMismatch.status, 403, "E2E/attendance: an FS group/session pair with the SS level cannot widen scope");
+      eq(body(levelMismatch).error, "api.156", "E2E/attendance: level mismatch remains a fail-closed ownership refusal");
+
+      const foreignGroup = await call(R_ATTENDANCE, "?groupId=g-ss2&sessionId=sess-fs", both);
+      eq(foreignGroup.status, 403, "E2E/attendance: a foreign group remains refused");
+      const foreignSession = await call(R_ATTENDANCE, "?groupId=g-fs&sessionId=sess-foreign", both);
+      eq(foreignSession.status, 404, "E2E/attendance: an otherwise owned group paired with a foreign session fails closed");
+
+      // Substitute authority stays on the canonical session-ID route, where
+      // there is intentionally no group selector to cross-pair.
+      setUser(both.user);
+      const substitute = await liveAttendanceRoute.GET(req(""), {
+        params: Promise.resolve({ id: "sess-substitute" }),
+      });
+      eq(substitute.status, 200, "E2E/live-attendance: the assigned substitute can still read the session register");
+      eq(body(substitute).via, "SUBSTITUTE_TEACHER", "E2E/live-attendance: substitute access remains explicitly session-scoped");
     }
 
     // ---- 9. a single-level teacher never receives the other level ---------
@@ -597,6 +627,42 @@ function read(rel) {
       // The OTHER teacher's group of the SAME level is still invisible.
       const bothSameLevel = await call(R_DASHBOARD, SS, both);
       eqArr((body(bothSameLevel).groups || []).map((g) => g.id), ["g-ss"], "E2E/dashboard: ownership is still enforced inside a level (a peer's group is not listed)");
+
+      // Exercise the existing teacher quiz creation contract end-to-end: the
+      // bilingual editor sends promptAr, the route persists it, and its
+      // response reads the persisted value back from the canonical Question.
+      global.__TEACHER__ = both;
+      setUser(both.user);
+      const arabicPrompt = "ما ناتج جمع اثنين واثنين؟";
+      const createdQuiz = await routes[R_QUIZZES].POST({
+        json: async () => ({
+          lessonId: "l-fs-1",
+          title: "Arabic prompt persistence",
+          titleAr: "حفظ السؤال العربي",
+          description: "M3.4 prompt contract",
+          passMark: 60,
+          timeLimit: null,
+          trackScope: "SHARED",
+          cameraPolicy: "OPTIONAL",
+          questions: [{
+            type: "MCQ",
+            prompt: "What is two plus two?",
+            promptAr: arabicPrompt,
+            options: ["Four", "Five"],
+            answer: "0",
+            explanation: "",
+            difficulty: "MEDIUM",
+            marks: 1,
+          }],
+        }),
+      });
+      eq(createdQuiz.status, 200, "E2E/quiz-create: the existing quiz authoring POST accepts the bilingual question");
+      const createdQuestion = body(createdQuiz).quiz?.questions?.[0];
+      eq(createdQuestion?.promptAr, arabicPrompt, "E2E/quiz-create: the response carries the persisted Arabic prompt");
+      const persistedQuestion = createdQuestion?.id
+        ? await global.__CM_DB__.question.findUnique({ where: { id: createdQuestion.id } })
+        : null;
+      eq(persistedQuestion?.promptAr, arabicPrompt, "E2E/quiz-create: the database row stores promptAr under the existing contract");
     }
   }
 

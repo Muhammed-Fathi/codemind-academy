@@ -243,7 +243,7 @@ const useApp = (selector) => selector({ locale: "en" });
 const useT = () => translation;
 const noop = () => {};
 const stubs = {
-  "@/lib/i18n": { useT, useLocale: () => "en", pickAuto: (_ar, en) => en ?? "" },
+  "@/lib/i18n": { useT, useLocale: () => "en", localeDirection: (locale) => locale === "ar" ? "rtl" : "ltr", pickAuto: (_ar, en) => en ?? "" },
   "@/lib/store": { useApp },
   "@/lib/i18n-core": { fmtDateTime: () => "", type: undefined },
   "@/lib/live-session-policy": {

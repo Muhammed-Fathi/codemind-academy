@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useT } from "@/lib/i18n";
+import { useT, useLocale, localeDirection } from "@/lib/i18n";
 import {
   OptionalAcademicLevelFilter,
   academicLevelLabel,
@@ -126,6 +126,7 @@ const READINESS_NO_LESSON = "__no_lesson__";
  */
 export function TeacherReadinessView() {
   const tr = useT();
+  const direction = localeDirection(useLocale());
   const [lessonOptionsState, setLessonOptionsState] = React.useState<LessonOptionsState>({
     scope: "",
     status: "loading",
@@ -660,7 +661,7 @@ export function TeacherReadinessView() {
       )}
 
       <Dialog open={remindTarget !== null} onOpenChange={(v) => { if (!v) setRemindTarget(null); }}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md" dir={direction}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <BellRing className="w-4 h-4 text-primary" />

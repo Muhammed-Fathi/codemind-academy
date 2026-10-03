@@ -61,7 +61,7 @@ import {
   StatusBadge,
   TrackScopeBadge,
 } from "@/components/admin/session-workflow-shared";
-import { useT, useLocale } from "@/lib/i18n";
+import { useT, useLocale, localeDirection } from "@/lib/i18n";
 import {
   AcademicLevelBadge,
   OptionalAcademicLevelFilter,
@@ -732,6 +732,7 @@ export function HomeworkDialog({
   fixedLessonId?: string;
 }) {
   const tr = useT();
+  const direction = localeDirection(useLocale());
   const queryClient = useQueryClient();
   const editing = !!homework;
 
@@ -800,9 +801,9 @@ export function HomeworkDialog({
       const form = new FormData(); form.set("file", file);
       const r = await fetch(`/api/teacher/homework/${encodeURIComponent(homeworkId)}/attachment`, { method: "POST", body: form });
       const data = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(data.error || "تعذر رفع المرفق");
-      setAttachmentMessage(`تم رفع ${data.attachment?.name || file.name}`);
-    } catch (e) { setAttachmentMessage(e instanceof Error ? e.message : "تعذر رفع المرفق"); }
+      if (!r.ok) throw new Error(data.error || tr("teacher.homework.uploadAttachmentError"));
+      setAttachmentMessage(tr("teacher.homework.attachmentUploaded", { p1: data.attachment?.name || file.name }));
+    } catch (e) { setAttachmentMessage(e instanceof Error ? e.message : tr("teacher.homework.uploadAttachmentError")); }
     finally { setAttachmentBusy(false); }
   };
 
@@ -811,9 +812,9 @@ export function HomeworkDialog({
     setAttachmentBusy(true); setAttachmentMessage(null);
     try {
       const r = await fetch(`/api/teacher/homework/${encodeURIComponent(homework.id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ attachmentId: null }) });
-      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "تعذر إزالة المرفق");
-      setAttachmentMessage("تمت إزالة المرفق"); onChanged?.();
-    } catch (e) { setAttachmentMessage(e instanceof Error ? e.message : "تعذر إزالة المرفق"); }
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || tr("teacher.homework.removeAttachmentError"));
+      setAttachmentMessage(tr("teacher.homework.attachmentRemoved")); onChanged?.();
+    } catch (e) { setAttachmentMessage(e instanceof Error ? e.message : tr("teacher.homework.removeAttachmentError")); }
     finally { setAttachmentBusy(false); }
   };
 
@@ -827,7 +828,7 @@ export function HomeworkDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto" dir={direction}>
         <DialogHeader>
           <DialogTitle>{editing ? tr("teacher.183") : tr("teacher.182")}</DialogTitle>
           <DialogDescription>
@@ -855,7 +856,7 @@ export function HomeworkDialog({
           <div className="grid sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Title (EN)</Label>
-              <Input value={title} onChange={(e) => setTitle(e.target.value)} />
+              <Input value={title} onChange={(e) => setTitle(e.target.value)} dir="ltr" />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">{tr("teacher.082")}</Label>
@@ -873,6 +874,7 @@ export function HomeworkDialog({
               value={instructions}
               onChange={(e) => setInstructions(e.target.value)}
               rows={3}
+              dir="auto"
             />
           </div>
 
@@ -884,9 +886,9 @@ export function HomeworkDialog({
           </div>
 
           <div className="rounded-lg border border-dashed p-3 space-y-2">
-            <Label className="text-xs text-muted-foreground">مرفق الواجب (PDF، DOCX، PPTX، ZIP — حتى 25MB)</Label>
+            <Label className="text-xs text-muted-foreground">{tr("teacher.homework.attachmentLabel")}</Label>
             <Input type="file" accept=".pdf,.docx,.pptx,.zip" onChange={(e) => setAttachmentFile(e.target.files?.[0] ?? null)} disabled={attachmentBusy || (editing && homework?.status === "CLOSED")} />
-            {homework?.attachment && <div className="flex items-center gap-2 text-xs"><a className="underline text-primary truncate" href={`/api/media/${homework.attachment.id}`} target="_blank" rel="noreferrer">{homework.attachment.originalName || "تحميل المرفق"}</a><span className="text-muted-foreground">{homework.attachment.mimeType || ""} · {homework.attachment.sizeBytes ? `${(homework.attachment.sizeBytes / 1024 / 1024).toFixed(2)} MB` : ""}</span><Button type="button" variant="ghost" size="sm" disabled={attachmentBusy || homework.status === "CLOSED"} onClick={removeAttachment}>إزالة المرفق</Button></div>}
+            {homework?.attachment && <div className="flex items-center gap-2 text-xs"><a className="underline text-primary truncate" href={`/api/media/${homework.attachment.id}`} target="_blank" rel="noreferrer">{homework.attachment.originalName || tr("teacher.homework.downloadAttachment")}</a><span className="text-muted-foreground">{homework.attachment.mimeType || ""} · {homework.attachment.sizeBytes ? `${(homework.attachment.sizeBytes / 1024 / 1024).toFixed(2)} MB` : ""}</span><Button type="button" variant="ghost" size="sm" disabled={attachmentBusy || homework.status === "CLOSED"} onClick={removeAttachment}>{tr("teacher.homework.removeAttachment")}</Button></div>}
             {attachmentFile && <p className="text-xs text-muted-foreground truncate">{attachmentFile.name} · {(attachmentFile.size / 1024 / 1024).toFixed(2)} MB</p>}
             {attachmentMessage && <p className="text-xs text-emerald-700">{attachmentMessage}</p>}
           </div>
@@ -992,6 +994,7 @@ export function QuestionManagerDialog({
 }) {
   const tr = useT();
   const locale = useLocale();
+  const direction = localeDirection(locale);
   const queryClient = useQueryClient();
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [adding, setAdding] = React.useState(false);
@@ -1037,7 +1040,7 @@ export function QuestionManagerDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto" dir={direction}>
         <DialogHeader>
           <DialogTitle>{tr("teacher.192")}</DialogTitle>
           <DialogDescription className="flex items-center gap-2 flex-wrap">
@@ -1199,6 +1202,7 @@ export function TeacherQuizAttemptReviewDialog({
 }) {
   const tr = useT();
   const locale = useLocale();
+  const direction = localeDirection(locale);
   const review = useQuery<TeacherQuizAttemptReviewData>({
     queryKey: ["teacher-quiz-attempt-review", quizId, attemptId],
     enabled: open && !!quizId && !!attemptId,
@@ -1228,6 +1232,7 @@ export function TeacherQuizAttemptReviewDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className="max-w-3xl max-h-[88vh] overflow-y-auto"
+        dir={direction}
         data-testid="teacher-attempt-review"
         data-quiz-id={data?.quiz.id ?? quizId}
         data-attempt-id={data?.attempt.id ?? attemptId}
@@ -1404,7 +1409,7 @@ function QuestionRow({
               </Badge>
             )}
           </div>
-          <p className="mt-1 text-sm font-medium truncate">{question.prompt}</p>
+          <p className="mt-1 text-sm font-medium truncate" dir="ltr">{question.prompt}</p>
           {question.promptAr && (
             <p className="text-xs text-muted-foreground truncate" dir="rtl">
               {question.promptAr}
@@ -1580,6 +1585,7 @@ export function QuestionForm({
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           rows={2}
+          dir="ltr"
           className="text-sm"
         />
       </div>
@@ -1659,6 +1665,7 @@ export function QuestionForm({
           value={explanation}
           onChange={(e) => setExplanation(e.target.value)}
           rows={2}
+          dir="auto"
           className="text-sm"
         />
       </div>

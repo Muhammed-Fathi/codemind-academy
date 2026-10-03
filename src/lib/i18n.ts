@@ -24,6 +24,7 @@ export {
   looksLikeDictKey,
   hasDictKey,
   dictSize,
+  localeDirection,
 } from "@/lib/i18n-core";
 export type { Locale } from "@/lib/i18n-core";
 

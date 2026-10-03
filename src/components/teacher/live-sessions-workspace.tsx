@@ -25,7 +25,7 @@
 "use client";
 
 import * as React from "react";
-import { useT } from "@/lib/i18n";
+import { useT, useLocale, localeDirection } from "@/lib/i18n";
 import { useApp } from "@/lib/store";
 import { fmtDateTime as formatDateTime, type Locale } from "@/lib/i18n-core";
 import { EntitySelect, type EntityOption } from "@/components/shared/entity-select";
@@ -448,7 +448,8 @@ function SessionDetail({
   onChanged: () => void;
 }) {
   const t = useT();
-  const locale = useApp((s) => (s.locale === "en" ? "en" : "ar")) as Locale;
+  const locale = useLocale();
+  const direction = localeDirection(locale);
   const fmt = (value: string | null) => (value ? formatDateTime(value, locale) : "");
 
   const ws = useJson<WorkspaceResponse>(`/api/live-sessions/${sessionId}/attendance`);
@@ -1028,7 +1029,7 @@ function SessionDetail({
       {/* Finalize — the confirmation states the counter and, when students are
           unmarked, exactly what will happen (flagged for review, NOT absent). */}
       <Dialog open={finalizeOpen} onOpenChange={setFinalizeOpen}>
-        <DialogContent className="sm:max-w-lg max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col">
+        <DialogContent className="sm:max-w-lg max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col" dir={direction}>
           <DialogHeader>
             <DialogTitle>{t("teacher.live.finalize")}</DialogTitle>
             <DialogDescription>
@@ -1089,7 +1090,7 @@ function SessionDetail({
       />
 
       <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
-        <DialogContent className="sm:max-w-md max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col">
+        <DialogContent className="sm:max-w-md max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col" dir={direction}>
           <DialogHeader>
             <DialogTitle>{t("teacher.live.cancel")}</DialogTitle>
             <DialogDescription>{t("teacher.live.cancelConfirm")}</DialogDescription>
@@ -1185,7 +1186,7 @@ function CancelForm({
     <>
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain space-y-2 py-2">
         <Label htmlFor="cancel-reason">{t("teacher.live.cancelReason")}</Label>
-        <Textarea id="cancel-reason" rows={3} maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} />
+        <Textarea id="cancel-reason" rows={3} maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} dir="auto" />
       </div>
       <DialogFooter className="gap-2">
         <Button variant="outline" onClick={onClose}>
@@ -1211,6 +1212,7 @@ function RescheduleDialog({
   onDone: () => void;
 }) {
   const t = useT();
+  const direction = localeDirection(useLocale());
   const [startAt, setStartAt] = React.useState(toLocalInput(session.startAt));
   const [duration, setDuration] = React.useState(String(session.duration));
   const [reason, setReason] = React.useState("");
@@ -1243,7 +1245,7 @@ function RescheduleDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col">
+      <DialogContent className="sm:max-w-md max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col" dir={direction}>
         <DialogHeader>
           <DialogTitle>{t("teacher.live.reschedule")}</DialogTitle>
           <DialogDescription>{t("teacher.live.rescheduleNewStart")}</DialogDescription>
@@ -1271,7 +1273,7 @@ function RescheduleDialog({
           </div>
           <div>
             <Label htmlFor="reschedule-reason">{t("teacher.live.rescheduleReason")}</Label>
-            <Textarea id="reschedule-reason" rows={3} maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} />
+            <Textarea id="reschedule-reason" rows={3} maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} dir="auto" />
           </div>
         </div>
         <DialogFooter className="gap-2">
@@ -1299,6 +1301,8 @@ export function ScheduleDialog({
   onCreated: () => void;
 }) {
   const t = useT();
+  const locale = useLocale();
+  const direction = localeDirection(locale);
   const [groupId, setGroupId] = React.useState("");
   const [lessonId, setLessonId] = React.useState("");
   const [titleAr, setTitleAr] = React.useState("");
@@ -1312,7 +1316,6 @@ export function ScheduleDialog({
   // new request effect starts.
   const [lessonsRequestGroupId, setLessonsRequestGroupId] = React.useState("");
 
-  const locale = useApp((s) => (s.locale === "en" ? "en" : "ar")) as Locale;
   const lessons = useJson<{
     lessons: Array<{
       id: string;
@@ -1412,7 +1415,7 @@ export function ScheduleDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col">
+      <DialogContent className="sm:max-w-lg max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col" dir={direction}>
         <DialogHeader>
           <DialogTitle>{t("teacher.live.schedule")}</DialogTitle>
           <DialogDescription>{t("teacher.live.subtitle")}</DialogDescription>
