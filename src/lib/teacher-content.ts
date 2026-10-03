@@ -127,6 +127,8 @@ export type LessonPlacement = {
 /** The minimal lesson shape every ownership check needs. */
 export type ChainLesson = {
   id: string;
+  title?: string;
+  titleAr?: string | null;
   officialCode: string | null;
   trackScope: unknown;
   status: string;
@@ -195,6 +197,8 @@ export function lessonPlacement(lesson: ChainLesson | null | undefined): LessonP
 /** Prisma `select` for everything `lessonPlacement` reads, both chains. */
 export const LESSON_PLACEMENT_SELECT = {
   id: true,
+  title: true,
+  titleAr: true,
   officialCode: true,
   trackScope: true,
   status: true,
@@ -231,7 +235,7 @@ export const LESSON_PLACEMENT_SELECT = {
               title: true,
               titleAr: true,
               courseId: true,
-              course: { select: { name: true, nameAr: true } },
+              course: { select: { name: true, nameAr: true, academicLevel: true } },
             },
           },
         },

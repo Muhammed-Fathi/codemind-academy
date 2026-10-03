@@ -234,7 +234,14 @@ export async function GET(req: NextRequest) {
                 take: 5,
                 include: {
                   student: { include: { user: { select: { name: true } } } },
-                  homework: { select: { id: true, title: true, titleAr: true } },
+                  homework: {
+                    select: {
+                      id: true,
+                      title: true,
+                      titleAr: true,
+                      lesson: { select: { id: true, title: true, titleAr: true, officialCode: true } },
+                    },
+                  },
                 },
               })
             : Promise.resolve([]),
@@ -249,7 +256,14 @@ export async function GET(req: NextRequest) {
                 take: 5,
                 include: {
                   student: { include: { user: { select: { name: true } } } },
-                  quiz: { select: { id: true, title: true, titleAr: true } },
+                  quiz: {
+                    select: {
+                      id: true,
+                      title: true,
+                      titleAr: true,
+                      lesson: { select: { id: true, title: true, titleAr: true, officialCode: true } },
+                    },
+                  },
                 },
               })
             : Promise.resolve([]),
@@ -267,10 +281,16 @@ export async function GET(req: NextRequest) {
           submissions: submissions.map((submission: any) => ({
             ...submission,
             ...activityContext,
+            lesson: submission.homework.lesson
+              ? { ...submission.homework.lesson, courseId: g.courseId }
+              : null,
           })),
           attempts: attempts.map((attempt: any) => ({
             ...attempt,
             ...activityContext,
+            lesson: attempt.quiz.lesson
+              ? { ...attempt.quiz.lesson, courseId: g.courseId }
+              : null,
           })),
         };
       })
@@ -328,6 +348,13 @@ export async function GET(req: NextRequest) {
       nameAr: string;
       academicLevel: string | null;
     };
+    lesson: {
+      id: string;
+      title: string;
+      titleAr: string | null;
+      officialCode: string | null;
+      courseId: string;
+    } | null;
     attemptId?: string;
     quizId?: string;
   };
@@ -342,6 +369,7 @@ export async function GET(req: NextRequest) {
       kind: "good",
       group: s.group,
       course: s.course,
+      lesson: s.lesson,
     });
   }
   for (const a of recentAttempts) {
@@ -356,6 +384,7 @@ export async function GET(req: NextRequest) {
       quizId: a.quiz.id,
       group: a.group,
       course: a.course,
+      lesson: a.lesson,
     });
   }
   activities.sort((a, b) => b.time.getTime() - a.time.getTime());

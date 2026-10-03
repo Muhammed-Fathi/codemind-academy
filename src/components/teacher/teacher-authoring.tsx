@@ -950,6 +950,19 @@ type QuizDetail = {
     timeLimit: number | null;
     passMark: number;
   };
+  lesson: {
+    id: string;
+    title: string;
+    titleRaw: string;
+    titleAr: string | null;
+    officialCode: string | null;
+    course: {
+      id: string;
+      name: string;
+      nameAr: string | null;
+      academicLevel: string | null;
+    } | null;
+  } | null;
   questions: ManagedQuestion[];
   attempts: { total: number; open: number; finished: number };
 };
@@ -978,6 +991,7 @@ export function QuestionManagerDialog({
   onChanged?: () => void;
 }) {
   const tr = useT();
+  const locale = useLocale();
   const queryClient = useQueryClient();
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [adding, setAdding] = React.useState(false);
@@ -1027,7 +1041,11 @@ export function QuestionManagerDialog({
         <DialogHeader>
           <DialogTitle>{tr("teacher.192")}</DialogTitle>
           <DialogDescription className="flex items-center gap-2 flex-wrap">
-            {quizTitle}
+            {detail.data
+              ? locale === "en"
+                ? detail.data.quiz.title
+                : detail.data.quiz.titleAr || detail.data.quiz.title
+              : quizTitle}
             {detail.data && <TrackScopeBadge scope={detail.data.quiz.trackScope} />}
             {detail.data && detail.data.quiz.timeLimit ? (
               <Badge variant="outline" dir="ltr">
@@ -1035,6 +1053,36 @@ export function QuestionManagerDialog({
               </Badge>
             ) : null}
           </DialogDescription>
+          {detail.data?.lesson && (
+            <div
+              className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"
+              data-testid="question-manager-context"
+              data-quiz-id={detail.data.quiz.id}
+              data-course-id={detail.data.lesson.course?.id}
+              data-lesson-id={detail.data.lesson.id}
+            >
+              {detail.data.lesson.course ? (
+                <AcademicLevelBadge level={detail.data.lesson.course.academicLevel} />
+              ) : null}
+              {detail.data.lesson.course && (
+                <span>
+                  {locale === "en"
+                    ? detail.data.lesson.course.name
+                    : detail.data.lesson.course.nameAr || detail.data.lesson.course.name}
+                </span>
+              )}
+              {detail.data.lesson.officialCode && (
+                <Badge variant="outline" className="font-mono" dir="ltr">
+                  {detail.data.lesson.officialCode}
+                </Badge>
+              )}
+              <span>
+                {locale === "en"
+                  ? detail.data.lesson.titleRaw
+                  : detail.data.lesson.titleAr || detail.data.lesson.title}
+              </span>
+            </div>
+          )}
         </DialogHeader>
 
         {detail.isLoading ? (
@@ -1089,6 +1137,218 @@ export function QuestionManagerDialog({
             }}
           />
         )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+type TeacherQuizAttemptReviewData = {
+  quiz: {
+    id: string;
+    title: string;
+    titleAr: string;
+    passMark: number;
+    quizMode: string;
+    questionCount: number | null;
+    maxAttempts: number;
+    course: { id: string; name: string; nameAr: string | null; academicLevel: string | null };
+    lesson: { id: string; officialCode: string | null; title: string; titleAr: string | null; courseId: string } | null;
+  };
+  attempt: {
+    id: string;
+    quizId: string;
+    studentId: string;
+    attemptNumber: number;
+    status: string;
+    startedAt: string;
+    finishedAt: string | null;
+    score: number;
+    totalMarks: number;
+    percentage: number;
+    passed: boolean;
+    answerKeyRevealed: boolean;
+    questions: Array<{
+      questionId: string;
+      prompt: string;
+      promptAr: string | null;
+      options: string[];
+      selected: string;
+      isCorrect: boolean;
+      marks: number;
+      difficulty: string;
+      correctAnswer?: string;
+      explanation: string | null;
+      snapshotted: boolean;
+    }>;
+    student: { id: string; name: string; email: string };
+  };
+  canGrantRetry: false;
+};
+
+/** Read-only Teacher inspection of one attempt, scoped by canonical quiz + attempt IDs. */
+export function TeacherQuizAttemptReviewDialog({
+  quizId,
+  attemptId,
+  open,
+  onOpenChange,
+}: {
+  quizId: string;
+  attemptId: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const tr = useT();
+  const locale = useLocale();
+  const review = useQuery<TeacherQuizAttemptReviewData>({
+    queryKey: ["teacher-quiz-attempt-review", quizId, attemptId],
+    enabled: open && !!quizId && !!attemptId,
+    queryFn: async () => {
+      const response = await fetch(
+        `/api/teacher/quizzes/${encodeURIComponent(quizId)}/attempts/${encodeURIComponent(attemptId)}`
+      );
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body?.error || tr("teacher.324"));
+      return body as TeacherQuizAttemptReviewData;
+    },
+  });
+
+  const localized = (english: string | null | undefined, arabic: string | null | undefined) =>
+    locale === "en" ? english || arabic || "" : arabic || english || "";
+  const answerText = (value: string, options: string[]) => {
+    if (!value) return "";
+    const index = Number(value);
+    return Number.isInteger(index) && index >= 0 && options[index] !== undefined
+      ? options[index]
+      : value;
+  };
+  const data = review.data;
+  const terminal = !!data?.attempt.finishedAt;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className="max-w-3xl max-h-[88vh] overflow-y-auto"
+        data-testid="teacher-attempt-review"
+        data-quiz-id={data?.quiz.id ?? quizId}
+        data-attempt-id={data?.attempt.id ?? attemptId}
+        data-course-id={data?.quiz.course.id}
+        data-lesson-id={data?.quiz.lesson?.id}
+      >
+        <DialogHeader>
+          <DialogTitle>{tr("teacher.315")}</DialogTitle>
+          {data && (
+            <DialogDescription asChild>
+              <div className="space-y-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <AcademicLevelBadge level={data.quiz.course.academicLevel ?? undefined} />
+                  <span>{localized(data.quiz.course.name, data.quiz.course.nameAr)}</span>
+                  {data.quiz.lesson?.officialCode && (
+                    <Badge variant="outline" className="font-mono" dir="ltr">
+                      {data.quiz.lesson.officialCode}
+                    </Badge>
+                  )}
+                  <span>{localized(data.quiz.lesson?.title, data.quiz.lesson?.titleAr)}</span>
+                  <span className="font-semibold">
+                    {localized(data.quiz.title, data.quiz.titleAr)}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                  <span>
+                    {tr("teacher.316")}: {data.attempt.student.name}
+                    {data.attempt.student.email ? ` · ${data.attempt.student.email}` : ""}
+                  </span>
+                  <span dir="ltr" title={data.attempt.id}>
+                    {tr("teacher.317")} #{data.attempt.attemptNumber} · {data.attempt.id.slice(0, 8)}
+                  </span>
+                  <Badge variant="outline">
+                    {data.attempt.status === "EXPIRED"
+                      ? tr("teacher.320")
+                      : terminal
+                        ? tr("teacher.319")
+                        : tr("teacher.318")}
+                  </Badge>
+                  {terminal && (
+                    <>
+                      <span dir="ltr">
+                        {data.attempt.score}/{data.attempt.totalMarks} · {data.attempt.percentage}%
+                      </span>
+                      <Badge variant={data.attempt.passed ? "default" : "destructive"}>
+                        {data.attempt.passed ? tr("teacher.325") : tr("teacher.326")}
+                      </Badge>
+                    </>
+                  )}
+                </div>
+              </div>
+            </DialogDescription>
+          )}
+        </DialogHeader>
+
+        {review.isLoading ? (
+          <div className="h-28 rounded-lg border bg-muted/30 animate-pulse" role="status" />
+        ) : review.isError ? (
+          <div className="rounded-lg border border-destructive/30 p-4 text-sm text-destructive" role="alert">
+            {(review.error as Error).message || tr("teacher.324")}
+          </div>
+        ) : data ? (
+          <div className="space-y-3">
+            {data.attempt.questions.map((question, index) => (
+              <article key={question.questionId} className="rounded-lg border p-3 space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="secondary">{tr("teacher.090")} {index + 1}</Badge>
+                  <span className="text-xs text-muted-foreground" dir="ltr">
+                    {question.marks} {tr("teacher.070")} · {question.difficulty}
+                  </span>
+                  {data.attempt.answerKeyRevealed && (
+                    <Badge variant={question.isCorrect ? "default" : "destructive"}>
+                      {question.isCorrect ? tr("teacher.325") : tr("teacher.326")}
+                    </Badge>
+                  )}
+                </div>
+                <p className="font-medium text-sm">
+                  {localized(question.prompt, question.promptAr)}
+                </p>
+                {question.options.length > 0 && (
+                  <ol className="list-decimal ps-5 space-y-1 text-sm">
+                    {question.options.map((option, optionIndex) => (
+                      <li key={optionIndex} className="break-words">
+                        {option}
+                      </li>
+                    ))}
+                  </ol>
+                )}
+                <div className="grid gap-1.5 text-xs sm:grid-cols-2">
+                  <p>
+                    <span className="font-semibold">{tr("teacher.321")}: </span>
+                    {question.selected
+                      ? answerText(question.selected, question.options)
+                      : tr("teacher.322")}
+                  </p>
+                  {data.attempt.answerKeyRevealed && question.correctAnswer !== undefined && (
+                    <p>
+                      <span className="font-semibold">{tr("teacher.195")}: </span>
+                      {answerText(question.correctAnswer, question.options)}
+                    </p>
+                  )}
+                </div>
+                {data.attempt.answerKeyRevealed && question.explanation && (
+                  <p className="rounded bg-muted/40 p-2 text-xs">
+                    <span className="font-semibold">{tr("teacher.323")}: </span>
+                    {question.explanation}
+                  </p>
+                )}
+              </article>
+            ))}
+            {data.attempt.questions.length === 0 && (
+              <p className="py-6 text-center text-sm text-muted-foreground">{tr("teacher.193")}</p>
+            )}
+          </div>
+        ) : null}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            {tr("teacher.168")}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

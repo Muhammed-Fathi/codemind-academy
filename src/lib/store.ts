@@ -3,6 +3,8 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+export type TeacherQuizAttemptTarget = { quizId: string; attemptId: string };
+
 export type ViewKey =
   | "landing"
   | "login"
@@ -70,6 +72,10 @@ type AppState = {
   setView: (v: ViewKey) => void;
   navParam: string | null;
   setNavParam: (p: string | null) => void;
+  /** Role-specific Teacher review target; never routed through Student quiz execution. */
+  teacherQuizAttempt: TeacherQuizAttemptTarget | null;
+  openTeacherQuizAttempt: (quizId: string, attemptId: string) => void;
+  clearTeacherQuizAttempt: () => void;
   courseSlug: string | null;
   lessonId: string | null;
   quizId: string | null;
@@ -107,9 +113,17 @@ export const useApp = create<AppState>()(
   persist(
     (set, get) => ({
       view: "landing",
-      setView: (view) => set({ view, navParam: null }),
+      setView: (view) => set({ view, navParam: null, teacherQuizAttempt: null }),
       navParam: null,
       setNavParam: (navParam) => set({ navParam }),
+      teacherQuizAttempt: null,
+      openTeacherQuizAttempt: (quizId, attemptId) =>
+        set({
+          view: "teacher-quizzes",
+          navParam: null,
+          teacherQuizAttempt: { quizId, attemptId },
+        }),
+      clearTeacherQuizAttempt: () => set({ teacherQuizAttempt: null }),
       courseSlug: null,
       lessonId: null,
       quizId: null,
@@ -125,7 +139,7 @@ export const useApp = create<AppState>()(
       setUser: (user) => set({ user }),
       logout: async () => {
         await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
-        set({ user: null, view: "landing" });
+        set({ user: null, view: "landing", teacherQuizAttempt: null });
       },
 
       sidebarOpen: true,

@@ -84,6 +84,7 @@ import {
   LessonMeta,
   LessonPicker,
   QuestionManagerDialog,
+  TeacherQuizAttemptReviewDialog,
   TrackSplitRow,
   TRACK_INHERIT,
   useTeacherLessons,
@@ -247,6 +248,13 @@ type ActivityItem = {
     nameAr: string;
     academicLevel: string | null;
   };
+  lesson: {
+    id: string;
+    title: string;
+    titleAr: string | null;
+    officialCode: string | null;
+    courseId: string;
+  } | null;
   attemptId?: string;
   quizId?: string;
 };
@@ -328,7 +336,13 @@ type QuizListItem = {
     chain?: string | null;
     part?: { id: string; title: string } | null;
     unit?: { id: string; title: string } | null;
-    course: { id: string; name: string; academicLevel?: string | null } | null;
+    course: {
+      id: string;
+      name: string;
+      nameRaw?: string;
+      nameAr?: string | null;
+      academicLevel?: string | null;
+    } | null;
   } | null;
   questionCount: number;
   totalMarks: number;
@@ -999,6 +1013,7 @@ function GroupCard({ group }: { group: GroupInfo }) {
 }
 
 function ActivityRow({ item }: { item: ActivityItem }) {
+  const openTeacherQuizAttempt = useApp((state) => state.openTeacherQuizAttempt);
   const colorMap = {
     good: "bg-primary/10 text-primary",
     neutral: "bg-muted text-muted-foreground",
@@ -1009,9 +1024,10 @@ function ActivityRow({ item }: { item: ActivityItem }) {
     "quiz-attempt": Trophy,
   } as const;
   const Icon = IconMap[item.type];
+  const canReviewAttempt =
+    item.type === "quiz-attempt" && !!item.quizId && !!item.attemptId;
   const content = (
     <div className="flex items-start gap-3 p-2.5 rounded-lg hover:bg-muted/40 transition-colors">
-
       <div
         className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${colorMap[item.kind]}`}
       >
@@ -1022,15 +1038,41 @@ function ActivityRow({ item }: { item: ActivityItem }) {
         <div className="text-[11px] text-muted-foreground truncate">
           {item.studentName} · {item.description}
         </div>
+        <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground">
+          <AcademicLevelBadge level={item.course.academicLevel} />
+          <span>{pickAuto(item.course.nameAr, item.course.name)}</span>
+          {item.lesson?.officialCode && (
+            <Badge variant="outline" className="h-5 px-1 font-mono" dir="ltr">
+              {item.lesson.officialCode}
+            </Badge>
+          )}
+          {item.lesson && (
+            <span className="truncate">{pickAuto(item.lesson.titleAr, item.lesson.title)}</span>
+          )}
+        </div>
       </div>
       <div className="text-[10px] text-muted-foreground shrink-0 mt-1">
         {timeAgo(item.time)}
       </div>
     </div>
   );
-  return item.type === "quiz-attempt" && item.quizId ? (
-    <a href={`/teacher/sessions?quizId=${encodeURIComponent(item.quizId)}&attemptId=${encodeURIComponent(item.attemptId || "")}`} className="block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">{content}</a>
-  ) : content;
+  return canReviewAttempt ? (
+    <button
+      type="button"
+      className="block w-full rounded-lg text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+      data-testid="dashboard-attempt-review-button"
+      data-quiz-id={item.quizId}
+      data-attempt-id={item.attemptId}
+      data-course-id={item.course.id}
+      data-lesson-id={item.lesson?.id}
+      onClick={() => openTeacherQuizAttempt(item.quizId!, item.attemptId!)}
+      aria-label={`${item.title} — ${item.studentName}`}
+    >
+      {content}
+    </button>
+  ) : (
+    content
+  );
 }
 
 function OverviewSkeleton() {
@@ -1717,6 +1759,8 @@ function AttendanceSkeleton() {
 function QuizzesView() {
   const tr = useT();
   const queryClient = useQueryClient();
+  const reviewTarget = useApp((state) => state.teacherQuizAttempt);
+  const clearTeacherQuizAttempt = useApp((state) => state.clearTeacherQuizAttempt);
   const [dialogOpen, setDialogOpen] = React.useState(false);
   const [filterGroupId, setFilterGroupId] = React.useState<string>("");
   // Phase L manual-QA fix #4 — level separator for the quiz list. Passed to the
@@ -1899,6 +1943,16 @@ function QuizzesView() {
           />
         </DialogContent>
       </Dialog>
+      {reviewTarget && (
+        <TeacherQuizAttemptReviewDialog
+          quizId={reviewTarget.quizId}
+          attemptId={reviewTarget.attemptId}
+          open={true}
+          onOpenChange={(open) => {
+            if (!open) clearTeacherQuizAttempt();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -1908,7 +1962,13 @@ function QuizCard({ quiz }: { quiz: QuizListItem }) {
   const [expanded, setExpanded] = React.useState(false);
   const [questionsOpen, setQuestionsOpen] = React.useState(false);
   return (
-    <Card className="card-hover p-5">
+    <Card
+      className="card-hover p-5"
+      data-testid="teacher-quiz-card"
+      data-quiz-id={quiz.id}
+      data-lesson-id={quiz.lesson?.id}
+      data-course-id={quiz.lesson?.course?.id}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
@@ -1919,8 +1979,13 @@ function QuizCard({ quiz }: { quiz: QuizListItem }) {
             {quiz.lesson?.officialCode ? `${quiz.lesson.officialCode} · ` : ""}
             {quiz.lesson?.unit?.title ? `${quiz.lesson.unit.title} · ` : ""}
             {quiz.lesson?.title || "Lesson"}
-            {quiz.lesson?.course ? ` · ${quiz.lesson.course.name}` : ""}
           </p>
+          {quiz.lesson?.course && (
+            <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground">
+              <AcademicLevelBadge level={quiz.lesson.course.academicLevel} />
+              <span>{pickAuto(quiz.lesson.course.nameAr, quiz.lesson.course.nameRaw || quiz.lesson.course.name)}</span>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
           <TrackScopeBadge scope={quiz.trackScope || "SHARED"} />
