@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { getServerT, serverPick, serverLocale } from "@/lib/i18n-server";
 import { db } from "@/lib/db";
+import { normalizeAcademicLevel } from "@/lib/academic-level";
 import { LESSON_STUDENT_STATUS_FILTER } from "@/lib/session-lifecycle";
 import { ok, err, requireUser, getParentProfile } from "@/lib/api";
 import type { ParentSubscriptionPayload } from "@/lib/parent-subscription";
@@ -11,6 +12,7 @@ import { attemptsInCurriculumUniverse } from "@/lib/parent-access";
 // the query string only (never from a body), so a spoofed body field stays
 // inert.
 import {
+  childAcademicLevel,
   loadCanonicalCourseProgress,
   readStudentIdParam,
   resolveLinkedChild,
@@ -616,6 +618,14 @@ export async function GET(req: NextRequest) {
         name: student.user.name,
         email: student.user.email,
         avatarUrl: student.user.avatarUrl,
+        /**
+         * Phase M4.3 — the child's canonical Academic Level (course chain
+         * first, else the student's own assignment). This is what every Parent
+         * surface RENDERS; `grade` below stays for compatibility and is never
+         * the level display. Two children in the two levels who share the
+         * printed course name stay distinguishable.
+         */
+        academicLevel: childAcademicLevel(student),
         grade: student.grade,
         schoolName: (student as any).schoolName ?? null,
         schoolType: (student as any).schoolType ?? null,
@@ -639,6 +649,11 @@ export async function GET(req: NextRequest) {
                     nameAr: student.group.course.nameAr,
                     color: student.group.course.color,
                     iconUrl: student.group.course.iconUrl,
+                    // Phase M4.3 — the COURSE's own level authority, exposed
+                    // separately from the child's resolved level above.
+                    academicLevel: normalizeAcademicLevel(
+                      (student.group.course as { academicLevel?: unknown }).academicLevel
+                    ),
                   }
                 : null,
             }

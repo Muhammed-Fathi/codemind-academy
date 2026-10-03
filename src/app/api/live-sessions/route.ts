@@ -36,6 +36,8 @@ import {
   upcomingForStudent,
 } from "@/lib/live-sessions";
 import { parentChildIds } from "@/lib/absence-review";
+import { listLinkedChildRefs } from "@/lib/parent-academics";
+import { serverLocale } from "@/lib/i18n-server";
 import type { TeacherScope } from "@/lib/live-sessions";
 
 export async function GET(req: NextRequest) {
@@ -96,9 +98,9 @@ export async function GET(req: NextRequest) {
     }
 
     if (user.role === "PARENT") {
-      const children = await parentChildIds(user.id);
+      const childIds = await parentChildIds(user.id);
       const childId = url.searchParams.get("childId");
-      const target = childId && children.includes(childId) ? [childId] : children;
+      const target = childId && childIds.includes(childId) ? [childId] : childIds;
       if (target.length === 0) return ok({ sessions: [], children: [], scope: "parent" });
       const grouped = await Promise.all(
         target.map(async (id) => ({
@@ -108,12 +110,15 @@ export async function GET(req: NextRequest) {
             : await upcomingForStudent(id, { limit, now }),
         }))
       );
-      const links = await db.parentStudentLink.findMany({
-        where: { parentId: user.id },
-        select: { studentId: true, student: { select: { user: { select: { name: true } } } } },
-      });
+      // Phase M4.3 — the child references use the SHARED canonical shape
+      // (canonical `studentId` + resolved Academic Level + localized course),
+      // exactly like the absences payload, so a child-selection surface built
+      // on this branch can never fall back to identifying a child by name.
+      // Authorization is unchanged: `parentChildIds`/`listLinkedChildRefs` are
+      // both derived from THIS parent's ParentStudentLink rows.
+      const children = await listLinkedChildRefs(user.id, await serverLocale());
       return ok({
-        children: links.map((l) => ({ id: l.studentId, name: l.student?.user?.name ?? "" })),
+        children,
         groups: grouped,
         scope: "parent",
       });

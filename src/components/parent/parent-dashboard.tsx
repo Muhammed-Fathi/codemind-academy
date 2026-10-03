@@ -31,6 +31,7 @@ import {
   type AcademicsPayload,
 } from "@/components/parent/academic-followup";
 import { ChildSwitcher, useSelectedChildId } from "@/components/parent/child-switcher";
+import { academicLevelLabelFor } from "@/lib/academic-level-labels";
 
 import {
   Card,
@@ -100,6 +101,14 @@ type Child = {
   name: string;
   email: string;
   avatarUrl: string | null;
+  /**
+   * Phase M4.3 — the child's canonical Academic Level, resolved server-side
+   * (`Course.academicLevel` through the group chain, else
+   * `Student.academicLevel`). This is what the card renders; `grade` below is
+   * the compatibility mirror and is no longer a level display.
+   */
+  academicLevel?: string | null;
+  /** Compatibility mirror (`Student.grade`) — never a level source. */
   grade: string;
   schoolName: string | null;
   schoolType?: string | null;
@@ -118,6 +127,8 @@ type Child = {
       nameAr: string;
       color: string;
       iconUrl: string | null;
+      /** Phase M4.3 — `Course.academicLevel`, the course's own authority. */
+      academicLevel?: string | null;
     } | null;
   } | null;
   courseProgress: { completed: number; total: number; pct: number };
@@ -507,6 +518,9 @@ export function ParentDashboard() {
           items={data.children.map((c) => ({
             id: c.id,
             name: c.name,
+            // Name · Academic Level · Course — the level is the canonical
+            // value from the payload, never inferred from the course name.
+            academicLevel: c.academicLevel ?? c.group?.course?.academicLevel ?? null,
             courseName: c.group?.course ? (curLocale() === "en" ? c.group.course.name : c.group.course.nameAr) : null,
             avatarUrl: c.avatarUrl,
           }))}
@@ -627,8 +641,13 @@ function ChildSummaryCard({ child }: { child: Child }) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <h2 className="text-xl font-bold">{child.name}</h2>
-            <Badge variant="secondary" className="text-[11px]">
-              {child.grade}
+            {/* Phase M4.3 — the CARD prints the canonical Academic Level (the
+                shared label vocabulary), not the `Student.grade` mirror: the
+                two levels share one course display name, so the level is what
+                makes the card unambiguous. */}
+            <Badge variant="secondary" className="text-[11px] gap-1">
+              <GraduationCap className="h-3 w-3" />
+              {academicLevelLabelFor(tr, child.academicLevel ?? child.group?.course?.academicLevel)}
             </Badge>
             {child.studentCode && (
               <Badge variant="outline" className="text-[11px] font-mono font-bold text-primary border-primary/30" dir="ltr">

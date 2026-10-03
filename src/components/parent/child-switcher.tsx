@@ -10,20 +10,37 @@
 //     a stale/unauthorized id simply comes back 404 and the view says so.
 //   * It stays usable at normal laptop widths: the row scrolls horizontally
 //     instead of wrapping into a wall of chips, and each chip keeps its avatar
-//     + name + course on one line.
+//     + name + level + course readable on two lines.
+//   * Phase M4.3 — every chip prints the child's CANONICAL Academic Level
+//     (composed through src/lib/academic-level-labels.ts) beside the course
+//     name, because the two levels ship a course with the SAME display name:
+//     without the level two children look identical. The level arrives in the
+//     server payload (`ChildSwitcher` props) — nothing is inferred from a
+//     course name here, and `id` stays the canonical identity.
+//   * Direction follows the ACTIVE LOCALE (the app sets `dir` on <html>): the
+//     container no longer forces `dir="rtl"`, so an English (LTR) parent sees
+//     the chips in reading order.
 //   * The id is lifted into the shared app store so navigating to the weekly
 //     report, analytics or the monthly report and back keeps the same child.
 
 import * as React from "react";
 import { useT } from "@/lib/i18n";
 import { useApp } from "@/lib/store";
+import { academicLevelLabelFor } from "@/lib/academic-level-labels";
 import { GraduationCap } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 export type SwitcherChild = {
+  /** Canonical student id — the ONLY identity this control has. */
   id: string;
   name: string;
   courseName: string | null;
+  /**
+   * Phase M4.3 — the child's canonical Academic Level (string enum or null),
+   * exactly as the server resolved it (`Course.academicLevel` through the
+   * group chain, else `Student.academicLevel`). Never a display mirror.
+   */
+  academicLevel?: string | null;
   avatarUrl: string | null;
 };
 
@@ -56,7 +73,6 @@ export function ChildSwitcher({
       role="tablist"
       aria-label={t("parent.switcher.label")}
       className="flex w-full gap-2 overflow-x-auto pb-1 -mb-1 snap-x"
-      dir="rtl"
     >
       {items.map((child) => {
         const active = child.id === value;
@@ -84,11 +100,14 @@ export function ChildSwitcher({
             </Avatar>
             <span className="flex min-w-0 flex-col leading-tight">
               <span className="truncate">{child.name}</span>
-              {child.courseName ? (
-                <span className="truncate text-[11px] font-normal opacity-70">
-                  <GraduationCap className="inline h-3 w-3 ms-0.5 align-[-1px]" /> {child.courseName}
-                </span>
-              ) : null}
+              {/* Phase M4.3 — name · Academic Level · course: the level is the
+                  canonical value composed by the shared vocabulary, so two
+                  children with the same course display name stay distinct. */}
+              <span className="truncate text-[11px] font-normal opacity-70">
+                <GraduationCap className="inline h-3 w-3 ms-0.5 align-[-1px]" />{" "}
+                {academicLevelLabelFor(t, child.academicLevel)}
+                {child.courseName ? ` · ${child.courseName}` : ""}
+              </span>
             </span>
           </button>
         );

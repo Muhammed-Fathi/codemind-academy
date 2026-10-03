@@ -13,6 +13,7 @@ import {
 // the id is read from the QUERY STRING only and re-checked against this
 // parent's own ParentStudentLink rows on every request.
 import {
+  childAcademicLevel,
   loadCanonicalCourseProgress,
   readStudentIdParam,
 } from "@/lib/parent-academics";
@@ -251,6 +252,13 @@ export async function GET(req: NextRequest) {
        */
       academicContext: canonical.state,
       hasAcademicContext,
+      /**
+       * Phase M4.3 — the child's canonical Academic Level (course chain first,
+       * then the assignment). The child TAB is labelled with it so two children
+       * in the two levels stay distinguishable even when their course display
+       * name is identical. `s.id` above remains the identity.
+       */
+      academicLevel: childAcademicLevel(s),
       name: s.user.name,
       email: s.user.email,
       course: s.group?.course?.nameAr || s.group?.course?.name || "",

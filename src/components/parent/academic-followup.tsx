@@ -26,6 +26,7 @@
 
 import * as React from "react";
 import { useT } from "@/lib/i18n";
+import { academicLevelLabelFor } from "@/lib/academic-level-labels";
 import { motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -155,12 +156,23 @@ export type AcademicsSnapshot = {
   student: {
     id: string;
     name: string;
+    /**
+     * Phase M4.3 — the child's canonical Academic Level (course chain first,
+     * then `Student.academicLevel`). `grade` stays the compatibility mirror and
+     * is never used as the level display.
+     */
+    academicLevel?: string | null;
     grade: string | null;
     schoolType: string | null;
     studentCode: string | null;
     avatarUrl: string | null;
   };
-  course: { name: string; track: string | null } | null;
+  course: {
+    name: string;
+    /** Phase M4.3 — `Course.academicLevel`, the course's own authority. */
+    academicLevel?: string | null;
+    track: string | null;
+  } | null;
   group: { name: string; schedule: string | null } | null;
   progress: {
     completedLessons: number;
@@ -307,6 +319,15 @@ function SituationHeader({ snapshot }: { snapshot: AcademicsSnapshot }) {
                 <>
                   {t("parent.followup.subtitle")} ·{" "}
                   <GraduationCap className="inline h-3.5 w-3.5 ms-1 align-[-2px]" />
+                  {/* Phase M4.3 — the canonical Academic Level comes FIRST:
+                      the two levels ship ONE course display name, so the level
+                      is what makes the header unambiguous. It is the shared
+                      label vocabulary, never the `grade` mirror. */}
+                  {academicLevelLabelFor(
+                    t,
+                    snapshot.student.academicLevel ?? course.academicLevel
+                  )}
+                  {" · "}
                   {course.name}
                   {group?.name ? ` · ${group.name}` : ""}
                 </>

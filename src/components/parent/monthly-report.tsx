@@ -1,5 +1,7 @@
 "use client";
 import { useT, useLocale , pickAuto } from "@/lib/i18n";
+import { academicLevelLabelFor } from "@/lib/academic-level-labels";
+import { normalizeAcademicLevel } from "@/lib/academic-level";
 
 import * as React from "react";
 import { createPortal } from "react-dom";
@@ -32,7 +34,13 @@ import {
 type ReportData = {
   studentName: string;
   studentEmail: string;
-  grade: string;
+  /**
+   * Phase M4.3 — the child's CANONICAL Academic Level (course chain first, then
+   * `Student.academicLevel`), or null when the payload carries none. The
+   * hard-coded "2nd Secondary" fallback is gone: a report never invents a
+   * level, and `Student.grade` is not consulted at all.
+   */
+  academicLevel: string | null;
   courseName: string;
   groupName: string;
   reportMonth: string;
@@ -70,15 +78,23 @@ export function buildReportData(child: any, locale: "ar" | "en" = "ar"): ReportD
     year: "numeric",
   });
   const course = child.group?.course;
+  // The course name comes from the payload; a child with no active course gets
+  // an explicit dash rather than an invented (or hard-coded) course name.
   const courseName = course
     ? locale === "en"
       ? course.name || course.nameAr
       : pickAuto(course.nameAr, course.name)
-    : "Programming & AI";
+    : "—";
   return {
     studentName: child.name,
     studentEmail: child.email,
-    grade: child.grade || "2nd Secondary",
+    // Phase M4.3 — canonical level only. `child.academicLevel` is resolved
+    // server-side (course chain → assignment); `child.group.course.academicLevel`
+    // is the same authority read from the course itself. `child.grade` is
+    // deliberately NOT a fallback: a mirror must never become the level.
+    academicLevel:
+      normalizeAcademicLevel(child.academicLevel) ??
+      normalizeAcademicLevel(child.group?.course?.academicLevel),
     courseName,
     groupName: child.group?.name || "—",
     reportMonth: monthName,
@@ -139,8 +155,22 @@ export function MonthlyReportView({
   const locale = useLocale();
   const localeRef = React.useRef(locale);
   localeRef.current = locale;
-  const [data, setData] = React.useState<ReportData | null>(null);
-  const [loading, setLoading] = React.useState(true);
+  /**
+   * Phase M4.3 — the report is STAMPED with the child it was fetched for and
+   * only the stamp matching the CURRENT selection may render. A switch
+   * therefore clears the previous child's report by construction (its stamp no
+   * longer matches), the in-flight request is aborted and a late response is
+   * dropped by the sequence guard, so child A's report can never be printed
+   * under child B's name.
+   */
+  const requestKey = studentId ?? "__all__";
+  const [loaded, setLoaded] = React.useState<{
+    key: string;
+    data: ReportData | null;
+  } | null>(null);
+  // Phase M4.3 — monotonic sequence: a late response for a previous child is
+  // ignored (see the effect below).
+  const requestSeq = React.useRef(0);
 
   React.useEffect(() => {
     // Phase I — `?studentId=` keeps the report on the dashboard's selected
@@ -150,18 +180,33 @@ export function MonthlyReportView({
     const url = studentId
       ? `/api/parents/me/dashboard?studentId=${encodeURIComponent(studentId)}`
       : "/api/parents/me/dashboard";
-    fetch(url)
+    const controller = new AbortController();
+    const seq = ++requestSeq.current;
+    fetch(url, { cache: "no-store", signal: controller.signal })
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
+        if (seq !== requestSeq.current) return; // superseded by a newer child
         const child = selectReportChild(d?.children, studentId);
-        if (child) {
-          setData(buildReportData(child, localeRef.current));
-        }
+        setLoaded({
+          key: requestKey,
+          data: child ? buildReportData(child, localeRef.current) : null,
+        });
       })
-      .catch(() => toast.error(tr("parent.009")))
-      .finally(() => setLoading(false));
+      .catch(() => {
+        if (seq === requestSeq.current && !controller.signal.aborted) {
+          toast.error(tr("parent.009"));
+          // The fetch failed for THIS child: settle on "no report" instead of a
+          // spinner that would never resolve.
+          setLoaded({ key: requestKey, data: null });
+        }
+      });
+    return () => controller.abort();
     // Re-resolves when the selected child changes (same fetch, no new API).
-  }, [studentId]);
+  }, [requestKey, studentId, tr]);
+
+  const isCurrent = loaded !== null && loaded.key === requestKey;
+  const data = isCurrent ? loaded.data : null;
+  const loading = !isCurrent;
 
   if (loading) {
     return (
@@ -364,7 +409,10 @@ function ReportBody({
             <div className="p-8 border-b border-gray-200">
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <InfoField label={tr("parent.015")} value={data.studentName} />
-                <InfoField label={tr("parent.016")} value={data.grade} />
+                <InfoField
+                  label={tr("parent.016")}
+                  value={academicLevelLabelFor(tr, data.academicLevel)}
+                />
                 <InfoField label={tr("parent.017")} value={data.courseName} />
                 <InfoField label={tr("parent.018")} value={data.groupName} />
               </div>

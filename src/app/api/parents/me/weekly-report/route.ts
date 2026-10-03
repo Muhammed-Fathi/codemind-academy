@@ -16,6 +16,7 @@ import {
 } from "@/lib/parent-access";
 // Phase I — the verified `?studentId=` contract (see the dashboard route).
 import {
+  childAcademicLevel,
   loadCanonicalCourseProgress,
   readStudentIdParam,
 } from "@/lib/parent-academics";
@@ -267,6 +268,13 @@ export async function GET(req?: NextRequest) {
        */
       academicContext: canonical.state,
       hasAcademicContext,
+      /**
+       * Phase M4.3 — the canonical Academic Level of THIS child (course chain
+       * first, then the assignment), so every weekly card can print
+       * name · level · course without the client guessing. `studentId` right
+       * above stays the identity. No metric is re-scoped here (M4.4).
+       */
+      academicLevel: childAcademicLevel(s),
       name: s.user.name,
       course: s.group?.course?.nameAr || s.group?.course?.name || "",
       groupName: s.group?.name || "",

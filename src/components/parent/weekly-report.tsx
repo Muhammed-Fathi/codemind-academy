@@ -1,5 +1,6 @@
 "use client";
 import { useT , pickAuto } from "@/lib/i18n";
+import { academicLevelLabelFor } from "@/lib/academic-level-labels";
 
 import * as React from "react";
 import { motion } from "framer-motion";
@@ -20,10 +21,18 @@ import {
 } from "lucide-react";
 
 type WeeklyReport = {
+  /** Canonical identity of the child this card belongs to. */
   studentId: string;
   name: string;
   course: string;
   groupName: string;
+  /**
+   * Phase M4.3 — the canonical Academic Level (course chain first, then the
+   * assignment), so every card identifies its child even when two children
+   * share the course display name. Still ALL-CHILDREN by default (owner
+   * decision D5); no metric is re-scoped here.
+   */
+  academicLevel?: string | null;
   weekRange: { from: string; to: string };
   summary: {
     lessonsViewed: number;
@@ -61,19 +70,46 @@ export function WeeklyReportView({
   studentId?: string | null;
 }) {
   const t = useT();
-  const [data, setData] = React.useState<{ reports: WeeklyReport[] } | null>(null);
-  const [loading, setLoading] = React.useState(true);
+  /**
+   * Phase M4.3 — the payload is STAMPED with the child it was fetched for and
+   * only the stamp matching the CURRENT selection renders. Switching the child
+   * therefore drops the previous cards by construction, the in-flight request
+   * is aborted and a late response/error from the child we just left is
+   * dropped by the sequence guard.
+   */
+  const requestKey = studentId ?? "__all__";
+  const [loaded, setLoaded] = React.useState<{
+    key: string;
+    data: { reports: WeeklyReport[] } | null;
+  } | null>(null);
+  const requestSeq = React.useRef(0);
 
   React.useEffect(() => {
+    const controller = new AbortController();
+    const seq = ++requestSeq.current;
     const url = studentId
       ? `/api/parents/me/weekly-report?studentId=${encodeURIComponent(studentId)}`
       : "/api/parents/me/weekly-report";
-    fetch(url)
+    fetch(url, { cache: "no-store", signal: controller.signal })
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => setData(d))
-      .catch(() => toast.error(t("parent.117")))
-      .finally(() => setLoading(false));
-  }, [studentId]);
+      .then((d) => {
+        if (seq !== requestSeq.current) return; // superseded by a newer child
+        setLoaded({ key: requestKey, data: d ?? null });
+      })
+      .catch(() => {
+        if (seq === requestSeq.current && !controller.signal.aborted) {
+          toast.error(t("parent.117"));
+          // The fetch failed for THIS child: settle on the empty state instead
+          // of a skeleton that would never resolve.
+          setLoaded({ key: requestKey, data: null });
+        }
+      });
+    return () => controller.abort();
+  }, [requestKey, studentId, t]);
+
+  const isCurrent = loaded !== null && loaded.key === requestKey;
+  const data = isCurrent ? loaded.data : null;
+  const loading = !isCurrent;
 
   if (loading) {
     return (
@@ -120,9 +156,18 @@ export function WeeklyReportView({
                 <div className="grid place-items-center w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-lg">
                   <CalendarDays className="w-6 h-6" />
                 </div>
-                <div>
+                <div className="min-w-0">
+                  {/* Phase M4.3 — every card names its child by canonical id
+                      (the key above) and prints name · Academic Level ·
+                      course, so two children who share a course display name
+                      are still unambiguous. */}
                   <h2 className="text-lg font-bold">Weekly Report — {report.name}</h2>
                   <p className="text-xs text-muted-foreground">
+                    {academicLevelLabelFor(t, report.academicLevel)}
+                    {report.course ? ` · ${report.course}` : ""}
+                    {report.groupName ? ` · ${report.groupName}` : ""}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground/80">
                     {report.weekRange.from} ← {report.weekRange.to}
                   </p>
                 </div>

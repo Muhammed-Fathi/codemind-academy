@@ -24,6 +24,8 @@ import {
   listAbsencesForStudent,
   parentChildIds,
 } from "@/lib/absence-review";
+import { listLinkedChildRefs } from "@/lib/parent-academics";
+import { serverLocale } from "@/lib/i18n-server";
 
 export async function GET(req: NextRequest) {
   const user = await requireUser();
@@ -60,16 +62,24 @@ export async function GET(req: NextRequest) {
       const parent = await db.parent.findUnique({ where: { userId: user.id }, select: { id: true } });
       if (!parent) throw new ApiFailure(404, "PARENT_NOT_FOUND", "Parent profile not found");
       const childId = url.searchParams.get("childId");
-      const children = await parentChildIds(parent.id);
+      // Authorization is unchanged and link-scoped: the case list is read
+      // through `listAbsencesForParent`, which intersects the requested child
+      // with THIS parent's own ParentStudentLink rows, and `childIds` below is
+      // the same link-derived set the cursor is validated against.
+      const childIds = await parentChildIds(parent.id);
       const cases = await listAbsencesForParent(parent.id, { now, limit, childId });
-      const links = await db.parentStudentLink.findMany({
-        where: { parentId: parent.id },
-        select: { studentId: true, student: { select: { user: { select: { name: true } } } } },
-      });
+      // Phase M4.3 — the child references are the SHARED canonical shape
+      // (`listLinkedChildRefs`): canonical `studentId`, name, the resolved
+      // Academic Level and the localized course name. The selector and the
+      // case headers render level + course from this, so two same-named
+      // children (or two children in courses with one display name) can never
+      // be confused. It replaces the previous `{ id, name }` shorthand; no id
+      // beyond `studentId` is introduced.
+      const children = await listLinkedChildRefs(user.id, await serverLocale());
       return ok({
         cases,
-        children: links.map((l) => ({ id: l.studentId, name: l.student?.user?.name ?? "" })),
-        childId: childId && children.includes(childId) ? childId : null,
+        children,
+        childId: childId && childIds.includes(childId) ? childId : null,
         scope: "parent",
       });
     }

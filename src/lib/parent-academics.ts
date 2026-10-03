@@ -44,6 +44,8 @@ import {
 } from "@/lib/session-progress";
 import { trackScopeWhere } from "@/lib/track-scope";
 import { STUDENT_HOMEWORK_LIST_FILTER } from "@/lib/student-visibility";
+import { studentAcademicContext } from "@/lib/student-universe";
+import { normalizeAcademicLevel, type AcademicLevel } from "@/lib/academic-level";
 import { listAbsencesForParent } from "@/lib/absence-review";
 import {
   evaluateStudentCatchup,
@@ -68,6 +70,12 @@ import {
 
 export type LinkedChildRow = {
   id: string;
+  /**
+   * Phase M4.3 — `Student.academicLevel`, the canonical ASSIGNMENT authority
+   * (read as a scalar by the `include` below). `grade` stays only for
+   * compatibility and is never used as a level source.
+   */
+  academicLevel?: string | null;
   grade: string | null;
   schoolType: string | null;
   studentCode: string | null;
@@ -82,6 +90,8 @@ export type LinkedChildRow = {
       name: string;
       nameAr: string;
       color: string | null;
+      /** Phase M4.3 — `Course.academicLevel`, the course authority. */
+      academicLevel?: string | null;
     } | null;
   } | null;
 };
@@ -124,6 +134,9 @@ export async function resolveLinkedChild(
                       name: true,
                       nameAr: true,
                       color: true,
+                      // Phase M4.3 — the level authority rides on the child
+                      // reference so no caller has to re-query it.
+                      academicLevel: true,
                     },
                   },
                 },
@@ -181,13 +194,67 @@ export function readStudentIdParam(req: unknown): string | null {
   return null;
 }
 
-/** The child switcher: names only, no academics, no ids beyond the contract. */
+/**
+ * Phase M4.3 — the ONE Parent-side child Academic Level rule.
+ *
+ * ORDER (and why): the child's CURRENT curriculum is the course their group
+ * points at, so `Course.academicLevel` — the course authority — is answered
+ * first. Only a child with no active course has nothing but their own
+ * canonical assignment, and then `Student.academicLevel` — the student
+ * authority — answers.
+ *
+ * It is NEVER derived from `Student.grade` (the compatibility display mirror),
+ * from a course NAME, from a group NAME or from anything the client sends: the
+ * two levels ship a course with the same display name, so a name is not
+ * evidence, and a mirror can be stale. Both inputs are canonical columns read
+ * straight off the row; a missing/unknown value fails to `null`, never to a
+ * guess.
+ */
+export function childAcademicLevel(student: {
+  /** Optional: only the caller's own payload identity, unused by the rule. */
+  id?: string;
+  academicLevel?: unknown;
+  group?:
+    | {
+        courseId?: string | null;
+        course?: { id?: string | null; academicLevel?: unknown } | null;
+      }
+    | null;
+}): AcademicLevel | null {
+  const context = studentAcademicContext({
+    id: student.id ?? "",
+    academicLevel: student.academicLevel,
+    group: student.group,
+  });
+  return context.courseAcademicLevel ?? context.studentAcademicLevel ?? null;
+}
+
+/**
+ * The child switcher / child-reference payload: identity (`studentId`) plus the
+ * read-only context a parent needs to tell two children apart.
+ *
+ * Phase M4.3 — `academicLevel` (the canonical rule above) joins the reference,
+ * so a chip can print "Child Name · Academic Level · Course": two children in
+ * the two levels who share the printed course name are still distinguishable,
+ * and the level is never inferred client-side. `courseName` stays the
+ * LOCALIZED display name (the switcher renders it as-is); the level is the
+ * canonical enum, composed for display by the shared label vocabulary.
+ */
+export type ParentChildRef = {
+  /** Canonical identity — the only id on this payload. */
+  id: string;
+  name: string;
+  avatarUrl: string | null;
+  /** Localized course display name, or null when the child has no group. */
+  courseName: string | null;
+  /** Canonical Academic Level: course chain first, then the assignment. */
+  academicLevel: AcademicLevel | null;
+};
+
 export async function listLinkedChildRefs(
   parentUserId: string,
   locale: Locale
-): Promise<
-  Array<{ id: string; name: string; courseName: string | null; avatarUrl: string | null }>
-> {
+): Promise<ParentChildRef[]> {
   const parent = await db.parent.findUnique({
     where: { userId: parentUserId },
     select: {
@@ -198,7 +265,11 @@ export async function listLinkedChildRefs(
             include: {
               user: { select: { name: true, avatarUrl: true } },
               group: {
-                include: { course: { select: { name: true, nameAr: true } } },
+                include: {
+                  course: {
+                    select: { name: true, nameAr: true, academicLevel: true },
+                  },
+                },
               },
             },
           },
@@ -209,6 +280,12 @@ export async function listLinkedChildRefs(
   return (parent?.children ?? []).map((link) => ({
     id: link.student.id,
     name: link.student.user?.name ?? "",
+    // `academicLevel` on the student row is the canonical assignment; the
+    // course's own level rides on the group relation above.
+    academicLevel: childAcademicLevel({
+      academicLevel: (link.student as { academicLevel?: unknown }).academicLevel,
+      group: link.student.group,
+    }),
     courseName: link.student.group?.course
       ? pickL10n(locale, link.student.group.course.nameAr, link.student.group.course.name)
       : null,
@@ -355,6 +432,14 @@ export type ParentChildSnapshot = {
   student: {
     id: string;
     name: string;
+    /**
+     * Phase M4.3 — the child's canonical Academic Level (`Course.academicLevel`
+     * through the group chain first, else `Student.academicLevel`). This is the
+     * level a Parent surface RENDERS. `grade` below stays for compatibility
+     * only: it is a display mirror and is never the level authority.
+     */
+    academicLevel: AcademicLevel | null;
+    /** Compatibility display mirror (`Student.grade`) — never a level source. */
     grade: string | null;
     schoolType: string | null;
     studentCode: string | null;
@@ -362,6 +447,8 @@ export type ParentChildSnapshot = {
   };
   course: {
     name: string;
+    /** Phase M4.3 — `Course.academicLevel`, the course's own authority. */
+    academicLevel: AcademicLevel | null;
     track: string | null;
   } | null;
   group: { name: string; schedule: string | null } | null;
@@ -1071,10 +1158,19 @@ export async function loadChildAcademicSnapshot(params: {
   const pct =
     totalLessons > 0 ? Math.min(100, Math.round((completedLessons / totalLessons) * 100)) : 0;
 
+  // Phase M4.3 — the canonical level of THIS child, resolved once by the shared
+  // parent-side rule (course chain → assignment). `student.grade` is carried
+  // for compatibility but never substitutes for it.
+  const academicLevel = childAcademicLevel({
+    academicLevel: (student as { academicLevel?: unknown }).academicLevel,
+    group: student.group,
+  });
+
   return {
     student: {
       id: studentId,
       name: student.user?.name ?? "",
+      academicLevel,
       grade: student.grade ?? null,
       schoolType: student.schoolType ?? null,
       studentCode: student.studentCode ?? null,
@@ -1086,6 +1182,11 @@ export async function loadChildAcademicSnapshot(params: {
             locale,
             student.group.course.nameAr,
             student.group.course.name
+          ),
+          // The course's OWN level (`Course.academicLevel`), separate from the
+          // student's assignment above — the two authorities are never mixed.
+          academicLevel: normalizeAcademicLevel(
+            (student.group.course as { academicLevel?: unknown }).academicLevel
           ),
           track: schoolType ?? null,
         }

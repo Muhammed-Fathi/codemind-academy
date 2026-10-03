@@ -800,7 +800,9 @@ export const DICT: Record<string, DictEntry> = {
   "parent.013": { ar: "رجوع للوحة التحكم", en: "Back to dashboard" },
   "parent.014": { ar: "حفظ كـ PDF", en: "Save as PDF" },
   "parent.015": { ar: "الطالب", en: "Student" },
-  "parent.016": { ar: "الصف", en: "Grade" },
+  // Phase M4.3 — the monthly report's field now shows the child's CANONICAL
+  // Academic Level (never the `Student.grade` mirror), so the caption says so.
+  "parent.016": { ar: "الصف الدراسي", en: "Academic level" },
   "parent.017": { ar: "الكورس", en: "Course" },
   "parent.018": { ar: "المجموعة", en: "Group" },
   "parent.019": { ar: "نظرة عامة على الأداء", en: "Performance overview" },

@@ -23,6 +23,8 @@ import { useT } from "@/lib/i18n";
 import { useApp } from "@/lib/store";
 import { fmtDateTime as formatDateTime, type Locale } from "@/lib/i18n-core";
 import { useJson, sendJson } from "@/lib/use-json";
+import { ChildSwitcher } from "@/components/parent/child-switcher";
+import { academicLevelLabelFor } from "@/lib/academic-level-labels";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -569,14 +571,82 @@ export function StudentAbsencesView() {
 
 export function ParentAbsencesView() {
   const t = useT();
-  const { data, loading, error, reload } = useJson<{
+  /**
+   * Phase M4.3 — the absence screen shares the ONE Parent child context
+   * (`parentChildId`, set by the dashboard/analytics switcher) instead of
+   * keeping a private selection: arriving here keeps the child the parent was
+   * already looking at, and switching here changes it everywhere.
+   *
+   * Requests are keyed by the CANONICAL child id (`?childId=`), which the
+   * server re-verifies against the ParentStudentLink on every call. A child is
+   * identified by that id alone — never by name, course name or position — and
+   * the previous child's cases are cleared while the new ones load, with the
+   * in-flight request aborted and late responses dropped.
+   */
+  type ChildRef = {
+    id: string;
+    name: string;
+    courseName: string | null;
+    academicLevel: string | null;
+    avatarUrl: string | null;
+  };
+  const storedChildId = useApp((st) => st.parentChildId);
+  const setStoredChildId = useApp((st) => st.setParentChildId);
+  // The child REGISTRY (the switcher's items) is context, not payload: it is
+  // kept across switches so the parent can always switch again. The CASES, on
+  // the other hand, are STAMPED with the child they were fetched for, so the
+  // previous child's cases disappear the moment the selection changes.
+  const [children, setChildren] = React.useState<ChildRef[]>([]);
+  const [loaded, setLoaded] = React.useState<{
+    key: string;
     cases: AbsenceCase[];
-    children: Array<{ id: string; name: string }>;
-  }>("/api/absence-reviews");
-  const [childId, setChildId] = React.useState<string>("");
+    error: boolean;
+  } | null>(null);
+  // The retry bump is part of the key, so a retry goes back to the skeleton.
+  const [nonce, setNonce] = React.useState(0);
+  const requestSeq = React.useRef(0);
+  const requestKey = `${storedChildId ?? "__all__"}#${nonce}`;
 
-  const cases = (data?.cases ?? []).filter((c) => !childId || c.student.id === childId);
-  const children = data?.children ?? [];
+  React.useEffect(() => {
+    const controller = new AbortController();
+    const seq = ++requestSeq.current;
+    // The request is keyed by the canonical selected child (when one is
+    // selected); the server intersects it with this parent's own links.
+    const url = storedChildId
+      ? `/api/absence-reviews?childId=${encodeURIComponent(storedChildId)}`
+      : "/api/absence-reviews";
+    fetch(url, { cache: "no-store", signal: controller.signal })
+      .then(async (r) => ({ ok: r.ok, body: await r.json().catch(() => null) }))
+      .then(({ ok, body }) => {
+        if (seq !== requestSeq.current) return; // a newer selection won
+        if (!ok || !body) {
+          setLoaded({ key: requestKey, cases: [], error: true });
+          return;
+        }
+        const list: ChildRef[] = body.children ?? [];
+        setChildren(list);
+        setLoaded({ key: requestKey, cases: body.cases ?? [], error: false });
+        // The server echoes the child it actually scoped to. If the id we asked
+        // for is not linked (or nothing was stored), fall back to the first
+        // linked child — an id from the payload, never a name or an index.
+        const resolved: string | null = body.childId ?? (list[0]?.id ?? null);
+        if (resolved !== storedChildId) setStoredChildId(resolved);
+      })
+      .catch(() => {
+        if (seq === requestSeq.current && !controller.signal.aborted) {
+          setLoaded({ key: requestKey, cases: [], error: true });
+        }
+      });
+    return () => controller.abort();
+  }, [requestKey, storedChildId, setStoredChildId]);
+
+  const current = loaded !== null && loaded.key === requestKey ? loaded : null;
+  const loading = current === null;
+  const error = current?.error ? "network" : null;
+  const effectiveChildId = storedChildId ?? children[0]?.id ?? null;
+  const childContext = (studentId: string): ChildRef | null =>
+    children.find((c) => c.id === studentId) ?? null;
+  const rows = current?.cases ?? [];
 
   return (
     <div className="space-y-4">
@@ -585,23 +655,21 @@ export function ParentAbsencesView() {
           <h1 className="text-lg font-bold">{t("parent.absences.title")}</h1>
           <p className="text-xs text-muted-foreground">{t("parent.absences.subtitle")}</p>
         </div>
-        {children.length > 1 && (
-          <div className="flex gap-1 rounded-lg border p-1">
-            <Button size="sm" variant={!childId ? "default" : "ghost"} onClick={() => setChildId("")}>
-              {t("admin.live.filterAll")}
-            </Button>
-            {children.map((c) => (
-              <Button
-                key={c.id}
-                size="sm"
-                variant={childId === c.id ? "default" : "ghost"}
-                onClick={() => setChildId(c.id)}
-              >
-                {c.name}
-              </Button>
-            ))}
-          </div>
-        )}
+        {/* The SHARED switcher: name · Academic Level · course per chip, keyed
+            by canonical student id. */}
+        <div className="min-w-[16rem] flex-1 sm:max-w-md">
+          <ChildSwitcher
+            items={children.map((c) => ({
+              id: c.id,
+              name: c.name,
+              courseName: c.courseName,
+              academicLevel: c.academicLevel,
+              avatarUrl: c.avatarUrl,
+            }))}
+            value={effectiveChildId}
+            onChange={setStoredChildId}
+          />
+        </div>
       </div>
 
       <div className="rounded-lg border border-dashed bg-muted/20 p-3 text-xs text-muted-foreground">
@@ -619,12 +687,12 @@ export function ParentAbsencesView() {
           <CardContent className="py-10 flex flex-col items-center gap-3">
             <AlertTriangle className="w-6 h-6 text-destructive" />
             <p className="text-sm">{t("live.loadError")}</p>
-            <Button size="sm" variant="outline" onClick={reload}>
+            <Button size="sm" variant="outline" onClick={() => setNonce((n) => n + 1)}>
               {t("live.retry")}
             </Button>
           </CardContent>
         </Card>
-      ) : cases.length === 0 ? (
+      ) : rows.length === 0 ? (
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
             {t("student.absences.empty")}
@@ -632,19 +700,33 @@ export function ParentAbsencesView() {
         </Card>
       ) : (
         <div className="space-y-3">
-          {cases.map((item) => (
-            <div key={item.id} className="space-y-1">
-              <p className="text-xs font-semibold px-1">
-                {t("parent.absences.child")}: {item.student.name}
-              </p>
-              {/* Phase I — READ-ONLY. No submit handler is passed and the
-                  affordance is off: a parent follows the case, the submitted
-                  reason, the administrative decision and the hold, and cannot
-                  write any of them (the server refuses with 403
-                  PARENT_READ_ONLY even if this prop were flipped). */}
-              <AbsenceCaseCard item={item} canSubmit={false} />
-            </div>
-          ))}
+          {rows.map((item) => {
+            // Phase M4.3 — the case header carries the SAME canonical context as
+            // the selector (level + course, resolved by the child's id from the
+            // payload), so a case can never be mis-attributed between two
+            // same-named children.
+            const ctx = childContext(item.student.id);
+            return (
+              <div key={item.id} className="space-y-1">
+                <p className="text-xs font-semibold px-1">
+                  {t("parent.absences.child")}: {item.student.name}
+                  {ctx ? (
+                    <span className="font-normal text-muted-foreground">
+                      {" · "}
+                      {academicLevelLabelFor(t, ctx.academicLevel)}
+                      {ctx.courseName ? ` · ${ctx.courseName}` : ""}
+                    </span>
+                  ) : null}
+                </p>
+                {/* Phase I — READ-ONLY. No submit handler is passed and the
+                    affordance is off: a parent follows the case, the submitted
+                    reason, the administrative decision and the hold, and cannot
+                    write any of them (the server refuses with 403
+                    PARENT_READ_ONLY even if this prop were flipped). */}
+                <AbsenceCaseCard item={item} canSubmit={false} />
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
