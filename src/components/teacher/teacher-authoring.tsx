@@ -175,18 +175,24 @@ export type HomeworkRecord = {
  *
  * Phase L manual-QA fix — an optional canonical AcademicLevel narrows the
  * QUERY (`?academicLevel=`), so a level switch genuinely reduces the rows the
- * server returns instead of hiding them in the browser. Passing nothing keeps
- * the original unfiltered query and cache key.
+ * server returns instead of hiding them in the browser. Optional group scope
+ * is included in both the request and cache identity when a caller has one.
  */
-export function useTeacherLessons(academicLevel?: string) {
+export function useTeacherLessons(academicLevel?: string, groupId?: string) {
   const level = academicLevel && academicLevel !== "all" ? academicLevel : "";
+  const group = groupId?.trim() ?? "";
   return useQuery<{ lessons: TeacherLesson[]; grouped: LessonGroupNode[] }>({
-    queryKey: ["teacher-lessons", level || "ALL"],
+    // Both narrowing dimensions are part of cache identity. A late response for
+    // an older level/group can only populate its own cache entry, never the
+    // currently selected scope.
+    queryKey: ["teacher-lessons", level || "ALL", group || "ALL"],
     queryFn: async () => {
-      const r = await fetch(
-        level ? `/api/teacher/lessons?academicLevel=${encodeURIComponent(level)}` : "/api/teacher/lessons"
-      );
-      if (!r.ok) throw new Error("fail");
+      const params = new URLSearchParams();
+      if (group) params.set("groupId", group);
+      if (level) params.set("academicLevel", level);
+      const query = params.toString();
+      const r = await fetch(`/api/teacher/lessons${query ? `?${query}` : ""}`);
+      if (!r.ok) throw new Error("Could not load lessons");
       return (await r.json()) as { lessons: TeacherLesson[]; grouped: LessonGroupNode[] };
     },
   });
@@ -247,6 +253,7 @@ export function LessonPicker({
   levelFilter,
   onLevelFilterChange,
   levelScope = null,
+  groupId,
 }: {
   /** The lessons this teacher may author under (already authorization-scoped). */
   lessons: TeacherLesson[];
@@ -261,6 +268,8 @@ export function LessonPicker({
       The control is rendered ONLY when the teacher really owns both levels, so
       a single-level teacher never sees a meaningless separator. */
   levelScope?: { spansBothLevels?: boolean } | null;
+  /** Optional teacher-owned group scope; the server resolves its course. */
+  groupId?: string;
 }) {
   const tr = useT();
   // Uncontrolled fallback so every existing call site gains the control
@@ -268,13 +277,19 @@ export function LessonPicker({
   const [ownLevel, setOwnLevel] = React.useState("");
   const level = levelFilter !== undefined ? levelFilter : ownLevel;
   const setLevel = onLevelFilterChange || setOwnLevel;
-  // Phase L fix #4 (correction) — the level narrows the list IN THE QUERY. The
-  // prop the parent passes is the teacher's whole catalogue; the moment a level
-  // is chosen the picker fetches that level from the server (the same hook, a
-  // different cache key) instead of hiding rows in the browser. The local pass
-  // below is then a no-op safety net.
-  const scopedQuery = useTeacherLessons(level || undefined);
-  const lessonsSource = level ? scopedQuery.data?.lessons ?? [] : lessonsAll;
+  const group = groupId?.trim() ?? "";
+  const scoped = !!level || !!group;
+  // A level and/or group narrows the QUERY. The server is the scope authority;
+  // client filtering below is only a defensive display pass, never a substitute
+  // for the group/course authorization check.
+  const scopedQuery = useTeacherLessons(level || undefined, group || undefined);
+  const scopedLoading = scoped && scopedQuery.isFetching;
+  const scopedError = scoped && scopedQuery.isError && !scopedLoading;
+  const lessonsSource = scoped
+    ? scopedError
+      ? []
+      : scopedQuery.data?.lessons ?? []
+    : lessonsAll;
   const lessons = React.useMemo(
     () => filterLessonsByLevel(lessonsSource, level || null),
     [lessonsSource, level]
@@ -283,11 +298,22 @@ export function LessonPicker({
     () => new Map(lessons.map((l) => [l.id, l])),
     [lessons]
   );
-  // A lesson that the level switch just hid must not stay selected.
-  React.useEffect(() => {
-    if (value && !byId.has(value)) onChange("");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [level]);
+
+  // Clear a selected canonical lesson before a new external group scope paints.
+  // The in-control level callback below clears synchronously; this also covers
+  // parent-driven changes to a groupId prop.
+  const scopeKey = `${level || "ALL"}\u0000${group || "ALL"}`;
+  const previousScope = React.useRef(scopeKey);
+  React.useLayoutEffect(() => {
+    if (previousScope.current === scopeKey) return;
+    previousScope.current = scopeKey;
+    if (value) onChange("");
+  }, [scopeKey, value, onChange]);
+
+  const changeLevel = (nextLevel: string) => {
+    if (nextLevel !== level && value) onChange("");
+    setLevel(nextLevel);
+  };
   const groups = React.useMemo(() => {
     const byCourse = new Map<
       string,
@@ -308,12 +334,14 @@ export function LessonPicker({
   }, [lessons]);
 
   const selected = value ? byId.get(value) ?? null : null;
+  const pickerLoading = scoped ? scopedLoading : loading;
 
-  if (loading) {
-    return (
-      <div className="h-9 rounded-md border bg-muted/30 animate-pulse" />
-    );
-  }
+  // A seeded/external value is only valid if it appears in the completed result
+  // for the current scope. This also covers a picker first mounted with a group
+  // scope, where there is no prior scope transition to trigger the reset.
+  React.useLayoutEffect(() => {
+    if (value && !pickerLoading && (scopedError || !byId.has(value))) onChange("");
+  }, [pickerLoading, scopedError, byId, value, onChange]);
 
   return (
     <div className="space-y-1.5">
@@ -324,68 +352,87 @@ export function LessonPicker({
           indistinguishable in the list below — but a single-level teacher has
           nothing to separate and gets no control at all. */}
       <div className="flex flex-wrap items-center gap-2">
-        <OptionalAcademicLevelFilter scope={levelScope} value={level} onChange={setLevel} />
+        <OptionalAcademicLevelFilter scope={levelScope} value={level} onChange={changeLevel} />
         {levelScope?.spansBothLevels ? (
           <span className="text-[11px] text-muted-foreground basis-full">{tr("teacher.312")}</span>
         ) : null}
       </div>
-      <Select value={value} onValueChange={onChange}>
-        <SelectTrigger className="w-full">
-          <SelectValue placeholder={tr("teacher.081")} />
-        </SelectTrigger>
-        <SelectContent>
-          {Array.from(groups.entries()).map(([courseId, parts]) => {
-            const head = lessons.find((l) => l.course.id === courseId);
-            const courseName = head?.course.name;
-            return (
-              <SelectGroup key={courseId}>
-                {/* Phase L manual-QA fix — the LEVEL leads the course header.
-                    Both official courses carry the same display name, so
-                    without it two groups are indistinguishable and their
-                    lessons collide on officialCode. */}
-                <SelectLabel className="font-bold text-primary">
-                  {academicLevelLabel(tr, head?.course.academicLevel)} · {courseName}
-                </SelectLabel>
-                {Array.from(parts.entries()).map(([partId, units]) => {
-                  const part = lessons.find((l) => l.part.id === partId)?.part;
-                  return (
-                    <SelectGroup key={partId}>
-                      <SelectLabel className="text-xs ps-3 opacity-80">
-                        {tr("teacher.178")}: {part?.title}
-                      </SelectLabel>
-                      {Array.from(units.entries()).map(([unitId, buckets]) => {
-                        const unit = lessons.find((l) => l.unit.id === unitId)?.unit;
-                        return (
-                          <SelectGroup key={unitId}>
-                            <SelectLabel className="text-xs ps-6 opacity-70">
-                              {tr("teacher.179")}: {unit?.title}
-                            </SelectLabel>
-                            {Array.from(buckets.entries()).map(([key, items]) =>
-                              items.map((l) => (
-                                <SelectItem key={l.id} value={l.id} className="text-xs">
-                                  {lessonLabel(l, tr)}
-                                  {" · "}
-                                  {l.archived
-                                    ? tr("admin.321")
-                                    : l.status === "PUBLISHED"
-                                      ? tr("admin.345")
-                                      : l.status === "READY"
-                                        ? tr("admin.344")
-                                        : tr("admin.343")}
-                                </SelectItem>
-                              ))
-                            )}
-                          </SelectGroup>
-                        );
-                      })}
-                    </SelectGroup>
-                  );
-                })}
-              </SelectGroup>
-            );
-          })}
-        </SelectContent>
-      </Select>
+      {pickerLoading ? (
+        <div
+          className="h-9 rounded-md border bg-muted/30 animate-pulse"
+          role="status"
+          aria-label={tr("live.loading")}
+        />
+      ) : scopedError ? (
+        <div className="flex items-center justify-between gap-2 rounded-md border border-destructive/30 p-2 text-sm text-destructive" role="alert">
+          <span>{tr("teacher.313")}</span>
+          <Button size="sm" variant="outline" onClick={() => void scopedQuery.refetch()}>
+            {tr("live.retry")}
+          </Button>
+        </div>
+      ) : (
+        <Select
+          value={selected ? value : ""}
+          onValueChange={(id) => onChange(byId.has(id) ? id : "")}
+          disabled={scoped && scopedQuery.isFetching}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder={tr("teacher.081")} />
+          </SelectTrigger>
+          <SelectContent>
+            {Array.from(groups.entries()).map(([courseId, parts]) => {
+              const head = lessons.find((l) => l.course.id === courseId);
+              const courseName = head?.course.name;
+              return (
+                <SelectGroup key={courseId}>
+                  {/* Phase L manual-QA fix — the LEVEL leads the course header.
+                      Both official courses carry the same display name, so
+                      without it two groups are indistinguishable and their
+                      lessons collide on officialCode. */}
+                  <SelectLabel className="font-bold text-primary">
+                    {academicLevelLabel(tr, head?.course.academicLevel)} · {courseName}
+                  </SelectLabel>
+                  {Array.from(parts.entries()).map(([partId, units]) => {
+                    const part = lessons.find((l) => l.part.id === partId)?.part;
+                    return (
+                      <SelectGroup key={partId}>
+                        <SelectLabel className="text-xs ps-3 opacity-80">
+                          {tr("teacher.178")}: {part?.title}
+                        </SelectLabel>
+                        {Array.from(units.entries()).map(([unitId, buckets]) => {
+                          const unit = lessons.find((l) => l.unit.id === unitId)?.unit;
+                          return (
+                            <SelectGroup key={unitId}>
+                              <SelectLabel className="text-xs ps-6 opacity-70">
+                                {tr("teacher.179")}: {unit?.title}
+                              </SelectLabel>
+                              {Array.from(buckets.entries()).map(([, items]) =>
+                                items.map((l) => (
+                                  <SelectItem key={l.id} value={l.id} className="text-xs">
+                                    {lessonLabel(l, tr)}
+                                    {" · "}
+                                    {l.archived
+                                      ? tr("admin.321")
+                                      : l.status === "PUBLISHED"
+                                        ? tr("admin.345")
+                                        : l.status === "READY"
+                                          ? tr("admin.344")
+                                          : tr("admin.343")}
+                                  </SelectItem>
+                                ))
+                              )}
+                            </SelectGroup>
+                          );
+                        })}
+                      </SelectGroup>
+                    );
+                  })}
+                </SelectGroup>
+              );
+            })}
+          </SelectContent>
+        </Select>
+      )}
 
       {selected && <LessonMeta lesson={selected} />}
     </div>
@@ -662,6 +709,7 @@ export function HomeworkDialog({
   onChanged,
   fixedLessonId,
   levelScope = null,
+  groupId,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -670,6 +718,8 @@ export function HomeworkDialog({
   /** Phase L fix #4 — the caller's level scope, so the lesson picker offers the
       separator only when both levels are actually in play. */
   levelScope?: { spansBothLevels?: boolean } | null;
+  /** Optional group filter; the lesson API resolves its course server-side. */
+  groupId?: string;
   homework?: HomeworkRecord | null;
   /** Phase E — an embedder (the session workspace) that must refresh its own
       aggregate query after a successful create/edit. Optional and additive:
@@ -797,6 +847,7 @@ export function HomeworkDialog({
                 value={lessonId}
                 onChange={setLessonId}
                 levelScope={levelScope}
+                groupId={groupId}
               />
             </div>
           )}

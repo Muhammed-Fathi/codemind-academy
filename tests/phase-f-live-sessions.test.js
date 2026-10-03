@@ -1155,7 +1155,7 @@ section("G. Manual-QA fix round: lifecycle authority, canonical Lesson, i18n (49
   ok(admin.includes('t("live.lesson.pick")'), "54c. the admin surface states that a lesson must be chosen");
   ok(!/titleAr\s*\}\s*,\s*startAt/.test(admin) || admin.includes("lessonId"), "54d. the free-text title is no longer the identity the dialog sends alone");
 
-  ok(/teacher\/lessons\?groupId=\$\{groupId\}/.test(teacher), "54e. the teacher lesson list is scoped to the selected group (server-scoped by scope)");
+  ok(/teacher\/lessons\?groupId=\$\{encodeURIComponent\(groupId\)\}/.test(teacher), "54e. the teacher lesson list is scoped to the selected group (server-scoped by scope)");
   ok(/lessonId,\n\s*title:/.test(teacher), "54f. the teacher payload sends lessonId");
   ok(!/lessonId:\s*lessonId\s*\|\|\s*null/.test(teacher), "54g. the teacher can no longer schedule a session with a null lessonId");
 }

@@ -1287,7 +1287,7 @@ function RescheduleDialog({
   );
 }
 
-function ScheduleDialog({
+export function ScheduleDialog({
   open,
   onOpenChange,
   groups,
@@ -1306,6 +1306,11 @@ function ScheduleDialog({
   const [duration, setDuration] = React.useState("120");
   const [meetingUrl, setMeetingUrl] = React.useState("");
   const [busy, setBusy] = React.useState(false);
+  // `useJson` intentionally retains its last successful value during a reload.
+  // Track the group whose request is current so a just-changed group can never
+  // render that previous group's lesson options, even for the render before the
+  // new request effect starts.
+  const [lessonsRequestGroupId, setLessonsRequestGroupId] = React.useState("");
 
   const locale = useApp((s) => (s.locale === "en" ? "en" : "ar")) as Locale;
   const lessons = useJson<{
@@ -1318,8 +1323,19 @@ function ScheduleDialog({
       course?: { id: string; name: string; academicLevel?: string | null } | null;
     }>;
   }>(
-    open && groupId ? `/api/teacher/lessons?groupId=${groupId}` : null
+    open && groupId
+      ? `/api/teacher/lessons?groupId=${encodeURIComponent(groupId)}`
+      : null
   );
+  React.useEffect(() => {
+    setLessonsRequestGroupId(groupId);
+  }, [groupId]);
+
+  const lessonRequestIsCurrent = lessonsRequestGroupId === groupId;
+  const scopedLessonsLoading =
+    open && !!groupId && (!lessonRequestIsCurrent || lessons.loading);
+  const scopedLessonsError =
+    lessonRequestIsCurrent && !lessons.loading ? lessons.error : null;
   // Finding 2 — only a Lesson belonging to the SELECTED GROUP's course may be
   // scheduled (the teacher API scopes them; the server re-validates anyway).
   /** The group currently chosen in the dialog (display context only). */
@@ -1330,7 +1346,10 @@ function ScheduleDialog({
 
   const lessonOptions: EntityOption[] = React.useMemo(
     () =>
-      (lessons.data?.lessons ?? []).map((l) => {
+      (!lessonRequestIsCurrent || scopedLessonsLoading || scopedLessonsError
+        ? []
+        : lessons.data?.lessons ?? []
+      ).map((l) => {
         // Phase L manual-QA fix — the lesson's canonical level leads the label
         // (the level is the ONLY thing distinguishing two official courses that
         // share one display name, and their lessons share printed codes).
@@ -1342,7 +1361,7 @@ function ScheduleDialog({
           ) ?? l.id;
         return { value: l.id, label: level ? `${level} · ${identity}` : identity };
       }),
-    [lessons.data, locale, t]
+    [lessonRequestIsCurrent, scopedLessonsLoading, scopedLessonsError, lessons.data, locale, t]
   );
   const selectedLessonLabel = lessonOptions.find((o) => o.value === lessonId)?.label ?? "";
 
@@ -1400,9 +1419,15 @@ function ScheduleDialog({
         </DialogHeader>
         <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain space-y-3 py-2">
           <div>
-            <Label>{t("live.group")}</Label>
-            <Select value={groupId} onValueChange={setGroupId}>
-              <SelectTrigger className="w-full">
+            <Label htmlFor="schedule-group">{t("live.group")}</Label>
+            <Select
+              value={groupId}
+              onValueChange={(nextGroupId) => {
+                if (nextGroupId !== groupId) setLessonId("");
+                setGroupId(nextGroupId);
+              }}
+            >
+              <SelectTrigger id="schedule-group" className="w-full">
                 <SelectValue placeholder={t("live.group")} />
               </SelectTrigger>
               <SelectContent>
@@ -1436,10 +1461,10 @@ function ScheduleDialog({
               searchPlaceholder={t("live.filter.searchGroups")}
               allLabel={t("live.lesson.pick")}
               emptyLabel={t("live.lesson.none")}
-              loading={lessons.loading}
-              error={lessons.error ? t("live.lesson.loadError") : null}
+              loading={scopedLessonsLoading}
+              error={scopedLessonsError ? t("live.lesson.loadError") : null}
               onRetry={lessons.reload}
-              disabled={!groupId}
+              disabled={!groupId || scopedLessonsLoading || !!scopedLessonsError}
             />
             {lessonId ? (
               <div className="text-[11px] text-emerald-600 mt-1 truncate">{selectedLessonLabel}</div>

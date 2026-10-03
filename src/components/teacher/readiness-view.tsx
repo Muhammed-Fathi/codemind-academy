@@ -55,7 +55,10 @@ type ReadinessVideoItem = {
 type ReadinessRow = {
   studentId: string;
   studentName: string;
+  groupId: string;
   groupName: string | null;
+  groupCourseName: string | null;
+  groupAcademicLevel: string | null;
   ready: boolean;
   overridden: boolean;
   video: {
@@ -87,13 +90,24 @@ type LessonOption = {
   course?: { id: string; name: string; academicLevel?: string | null } | null;
 };
 
+type LessonOptionsState = {
+  scope: string;
+  status: "loading" | "ready" | "error";
+  lessons: LessonOption[];
+};
+
+type ReadinessGroupOption = {
+  id: string;
+  name: string | null;
+  courseName: string | null;
+  academicLevel: string | null;
+};
+
 /**
  * Sentinel item values: Radix Select items need non-empty values, while the
- * lesson/group filters legitimately clear to "" — the sentinel round-trips
- * through onValueChange so the state shape never changes.
+ * readiness lesson filter can clear to ""; the sentinel keeps that state shape.
  */
 const READINESS_NO_LESSON = "__no_lesson__";
-const READINESS_NO_GROUP = "__no_group__";
 
 /**
  * Teacher lesson-readiness (view `teacher-readiness`): pick one of MY lessons,
@@ -112,11 +126,17 @@ const READINESS_NO_GROUP = "__no_group__";
  */
 export function TeacherReadinessView() {
   const tr = useT();
-  const [lessons, setLessons] = React.useState<LessonOption[]>([]);
-  const [lessonsLoading, setLessonsLoading] = React.useState(true);
+  const [lessonOptionsState, setLessonOptionsState] = React.useState<LessonOptionsState>({
+    scope: "",
+    status: "loading",
+    lessons: [],
+  });
+  const [lessonOptionsRetry, setLessonOptionsRetry] = React.useState(0);
   const [lessonId, setLessonId] = React.useState("");
   const [data, setData] = React.useState<ReadinessPayload | null>(null);
   const [loading, setLoading] = React.useState(false);
+  const [readinessError, setReadinessError] = React.useState(false);
+  const [readinessRetry, setReadinessRetry] = React.useState(0);
   const [filter, setFilter] = React.useState<"ALL" | "READY" | "NOT_READY">("ALL");
   const [groupFilter, setGroupFilter] = React.useState("ALL");
   // Phase L manual-QA fix #4 — level separator for the readiness lesson picker.
@@ -133,30 +153,55 @@ export function TeacherReadinessView() {
   const [scope, setScope] = React.useState<{ spansBothLevels?: boolean } | null>(null);
 
   React.useEffect(() => {
+    const requestedScope = level;
     let cancelled = false;
+    // Clear old-level options as soon as this request starts. The render-time
+    // scope check below also blocks them on the first render after a level
+    // change, before this effect is allowed to run.
+    setLessonOptionsState({ scope: requestedScope, status: "loading", lessons: [] });
     fetch(
-      level
-        ? `/api/teacher/lessons?academicLevel=${encodeURIComponent(level)}`
+      requestedScope
+        ? `/api/teacher/lessons?academicLevel=${encodeURIComponent(requestedScope)}`
         : "/api/teacher/lessons"
     )
-      .then((r) => (r.ok ? r.json() : null))
+      .then((r) => {
+        if (!r.ok) throw new Error(`Lesson list request failed (${r.status})`);
+        return r.json();
+      })
       .then((d) => {
         if (cancelled) return;
-        setLessons(Array.isArray(d?.lessons) ? d.lessons : []);
+        setLessonOptionsState({
+          scope: requestedScope,
+          status: "ready",
+          lessons: Array.isArray(d?.lessons) ? d.lessons : [],
+        });
         // The scope describes the teacher's FULL group set (never the filtered
         // list), so the separator does not disappear once a level is chosen.
         if (d?.scope) setScope(d.scope);
-        setLessonsLoading(false);
       })
       .catch(() => {
         if (cancelled) return;
-        setLessons([]);
-        setLessonsLoading(false);
+        setLessonOptionsState({ scope: requestedScope, status: "error", lessons: [] });
       });
     return () => {
       cancelled = true;
     };
-  }, [level]);
+  }, [level, lessonOptionsRetry]);
+
+  const lessonOptionsMatchScope = lessonOptionsState.scope === level;
+  const lessonsLoading =
+    !lessonOptionsMatchScope || lessonOptionsState.status === "loading";
+  const lessonsError =
+    lessonOptionsMatchScope && lessonOptionsState.status === "error";
+  const lessons =
+    lessonOptionsMatchScope && lessonOptionsState.status === "ready"
+      ? lessonOptionsState.lessons
+      : [];
+
+  const retryLessonOptions = () => {
+    setLessonOptionsState({ scope: level, status: "loading", lessons: [] });
+    setLessonOptionsRetry((attempt) => attempt + 1);
+  };
 
   // Lesson switch, adjusted during render (never as a sync effect write):
   // clearing the lesson clears the payload; picking one reloads with the
@@ -164,45 +209,85 @@ export function TeacherReadinessView() {
   const [readinessKey, setReadinessKey] = React.useState(lessonId);
   if (readinessKey !== lessonId) {
     setReadinessKey(lessonId);
-    if (!lessonId) {
-      setData(null);
-    } else {
-      setLoading(true);
-      setGroupFilter("ALL");
-    }
+    // Never leave a previous lesson's roster or group filter visible while the
+    // new lesson-ID-authorized readiness request is in flight.
+    setData(null);
+    setReadinessError(false);
+    setLoading(!!lessonId);
+    setGroupFilter("ALL");
   }
 
   React.useEffect(() => {
-    if (!lessonId) return;
+    if (!lessonId) {
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
+    setLoading(true);
+    setReadinessError(false);
     fetch(`/api/teacher/lessons/${encodeURIComponent(lessonId)}/readiness`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then((d) => {
         if (cancelled) return;
         setData(d);
         setLoading(false);
+        setReadinessError(false);
       })
       .catch(() => {
         if (cancelled) return;
         setData(null);
         setLoading(false);
+        setReadinessError(true);
       });
     return () => {
       cancelled = true;
     };
-  }, [lessonId]);
+  }, [lessonId, readinessRetry]);
 
   const groups = React.useMemo(() => {
-    const names = new Set<string>();
-    for (const s of data?.students ?? []) names.add(s.groupName ?? "");
-    return [...names].sort();
+    const byId = new Map<string, ReadinessGroupOption>();
+    for (const row of data?.students ?? []) {
+      byId.set(row.groupId, {
+        id: row.groupId,
+        name: row.groupName,
+        courseName: row.groupCourseName,
+        academicLevel: row.groupAcademicLevel,
+      });
+    }
+    return [...byId.values()].sort((a, b) => {
+      const nameOrder = (a.name ?? "").localeCompare(b.name ?? "");
+      return nameOrder || a.id.localeCompare(b.id);
+    });
   }, [data]);
+  const groupLabelById = React.useMemo(() => {
+    const byBaseLabel = new Map<string, ReadinessGroupOption[]>();
+    for (const group of groups) {
+      const context = [
+        group.academicLevel ? academicLevelLabel(tr, group.academicLevel) : "",
+        group.courseName ?? "",
+      ].filter(Boolean);
+      const baseLabel = [group.name || tr("teacher.readiness.filterAll"), ...context].join(" · ");
+      const sameLabel = byBaseLabel.get(baseLabel) ?? [];
+      sameLabel.push(group);
+      byBaseLabel.set(baseLabel, sameLabel);
+    }
+    const labels = new Map<string, string>();
+    for (const [baseLabel, matching] of byBaseLabel) {
+      for (const group of matching) {
+        labels.set(
+          group.id,
+          matching.length > 1 ? `${baseLabel} · ${group.id}` : baseLabel
+        );
+      }
+    }
+    return labels;
+  }, [groups, tr]);
 
   const rows = (data?.students ?? []).filter(
     (s) =>
       (filter === "ALL" ||
         (filter === "READY" ? s.ready : !s.ready)) &&
-      (groupFilter === "ALL" || (s.groupName ?? "") === groupFilter)
+      (groupFilter === "ALL" || s.groupId === groupFilter)
   );
 
   const openRemind = (studentId: string, studentName: string) => {
@@ -287,8 +372,10 @@ export function TeacherReadinessView() {
             scope={scope}
             value={level}
             onChange={(v) => {
+              if (v === level) return;
               setLevel(v);
               setLessonId("");
+              setLessonOptionsState({ scope: v, status: "loading", lessons: [] });
             }}
           />
           <div>
@@ -300,11 +387,21 @@ export function TeacherReadinessView() {
                 leading JSX comment there parses as an object literal and
                 breaks the following element.) */}
             {lessonsLoading ? (
-              <Skeleton className="mt-1 h-9 w-full" />
+              <Skeleton className="mt-1 h-9 w-full" role="status" aria-label={tr("live.loading")} />
+            ) : lessonsError ? (
+              <div className="mt-1 flex items-center justify-between gap-2 rounded-md border border-destructive/30 p-2 text-sm text-destructive" role="alert">
+                <span>{tr("teacher.313")}</span>
+                <Button size="sm" variant="outline" onClick={retryLessonOptions}>
+                  {tr("live.retry")}
+                </Button>
+              </div>
             ) : (
               <Select
-                value={lessonId || READINESS_NO_LESSON}
-                onValueChange={(v) => setLessonId(v === READINESS_NO_LESSON ? "" : v)}
+                value={lessons.some((lesson) => lesson.id === lessonId) ? lessonId : READINESS_NO_LESSON}
+                onValueChange={(v) =>
+                  setLessonId(v === READINESS_NO_LESSON || !lessons.some((lesson) => lesson.id === v) ? "" : v)
+                }
+                disabled={lessonsLoading}
               >
                 <SelectTrigger id="readiness-lesson" className="mt-1 w-full min-w-0">
                   <SelectValue placeholder={tr("teacher.readiness.pickLesson")} />
@@ -328,11 +425,11 @@ export function TeacherReadinessView() {
             <div className="flex flex-wrap items-end gap-3">
               <div>
                 <Label htmlFor="readiness-group">{tr("teacher.readiness.pickGroup")}</Label>
-                {/* Themed Select; an unnamed group ("") rides a sentinel so the
-                    empty value keeps filtering exactly as before. */}
+                {/* Filter values are canonical group IDs, not display names;
+                    two groups with the same name remain independently selectable. */}
                 <Select
-                  value={groupFilter || READINESS_NO_GROUP}
-                  onValueChange={(v) => setGroupFilter(v === READINESS_NO_GROUP ? "" : v)}
+                  value={groupFilter}
+                  onValueChange={setGroupFilter}
                 >
                   <SelectTrigger id="readiness-group" className="mt-1 w-full min-w-0">
                     <SelectValue />
@@ -340,8 +437,8 @@ export function TeacherReadinessView() {
                   <SelectContent>
                     <SelectItem value="ALL">{tr("teacher.readiness.filterAll")}</SelectItem>
                     {groups.map((g) => (
-                      <SelectItem key={g} value={g || READINESS_NO_GROUP}>
-                        {g || tr("teacher.readiness.filterAll")}
+                      <SelectItem key={g.id} value={g.id}>
+                        {groupLabelById.get(g.id) ?? g.name ?? g.id}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -379,6 +476,26 @@ export function TeacherReadinessView() {
         </Card>
       )}
 
+      {lessonId && !loading && readinessError && (
+        <Card role="alert">
+          <CardContent className="flex items-center justify-between gap-3 py-4 text-sm text-destructive">
+            <span>{tr("teacher.314")}</span>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setData(null);
+                setLoading(true);
+                setReadinessError(false);
+                setReadinessRetry((attempt) => attempt + 1);
+              }}
+            >
+              {tr("live.retry")}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       {data && !loading && (
         <div className="space-y-2">
           {rows.length === 0 && (
@@ -393,9 +510,13 @@ export function TeacherReadinessView() {
               <CardContent className="space-y-2 py-3">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-sm font-semibold">{s.studentName}</span>
-                  {s.groupName && (
+                  {(s.groupName || s.groupId) && (
                     <Badge variant="outline" className="text-[10px] text-muted-foreground">
-                      {s.groupName}
+                      {s.groupName || s.groupId}
+                      {s.groupAcademicLevel
+                        ? ` · ${academicLevelLabel(tr, s.groupAcademicLevel)}`
+                        : ""}
+                      {s.groupCourseName ? ` · ${s.groupCourseName}` : ""}
                     </Badge>
                   )}
                   {s.ready ? (

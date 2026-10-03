@@ -2925,4 +2925,6 @@ export const DICT_2026: Record<string, DictEntry> = {
     ar: "مدرّس واحد ممكن يكون له مجموعات في الصفين، والمنهجين الرسميين ليهم نفس الاسم — فلازم تعرف كل درس بانتمائه لصفه.",
     en: "One teacher can own groups in both levels, and both official courses share one name — so every lesson is labelled with its level.",
   },
+  "teacher.313": { ar: "تعذّر تحميل الدروس", en: "Could not load lessons" },
+  "teacher.314": { ar: "تعذّر تحميل بيانات الجاهزية", en: "Could not load readiness data" },
 };

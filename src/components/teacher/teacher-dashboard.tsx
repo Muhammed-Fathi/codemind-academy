@@ -2707,6 +2707,7 @@ function HomeworkView() {
         lessons={lessonsQuery.data?.lessons ?? []}
         lessonsLoading={lessonsQuery.isLoading}
         levelScope={homeworkQuery.data?.scope ?? dashQuery.data?.scope}
+        groupId={filterGroupId || undefined}
         homework={
           authoring?.homework
             ? {
