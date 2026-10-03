@@ -256,7 +256,14 @@ export type LiveSessionPayload = {
    * `Group.course.academicLevel` (Course owns the level); nothing is stored on
    * the teacher or on the session.
    */
-  group: { id: string; name: string; courseId: string; academicLevel: string | null } | null;
+  group: {
+    id: string;
+    name: string;
+    courseId: string;
+    courseName: string | null;
+    courseNameEn: string | null;
+    academicLevel: string | null;
+  } | null;
   lesson: { id: string; title: string; titleAr: string; officialCode?: string | null } | null;
   teacher: { id: string; name: string } | null;
   substituteTeacher: { id: string; name: string } | null;
@@ -322,6 +329,8 @@ export function toLiveSessionPayload(params: {
           id: session.group.id,
           name: session.group.name,
           courseId: session.group.courseId,
+          courseName: session.group.course?.nameAr ?? session.group.course?.name ?? null,
+          courseNameEn: session.group.course?.name ?? session.group.course?.nameAr ?? null,
           // Tolerant by design: the level is display context, never a decision
           // input, so a caller that selects the group without its course simply
           // yields `null` instead of failing.
@@ -360,7 +369,7 @@ const SESSION_WITH_CONTEXT = {
       // Derived level (display context only): the two official courses share a
       // display name, so a surface that lists sessions of both levels needs the
       // level to tell them apart.
-      course: { select: { academicLevel: true } },
+      course: { select: { name: true, nameAr: true, academicLevel: true } },
     },
   },
   // Finding 2 — `officialCode` is the canonical curriculum identity of the
@@ -1760,6 +1769,7 @@ export async function listSessionsForAdmin(options: {
   teacherId?: string | null;
   status?: string | null;
   q?: string | null;
+  academicLevel?: string | null;
   limit?: number;
   now?: Date;
   client?: Client;
@@ -1769,6 +1779,11 @@ export async function listSessionsForAdmin(options: {
   const where: Record<string, unknown> = {};
   if (options.groupId) where.groupId = options.groupId;
   if (options.teacherId) where.teacherId = options.teacherId;
+  if (options.academicLevel) {
+    // Level is derived through the selected session Group → Course. This
+    // narrows the already-admin-authorized session set in SQL.
+    where.group = { course: { academicLevel: options.academicLevel } };
+  }
   if (options.status) {
     const status = normalizeSessionStatus(options.status);
     if (!status) throw new LiveSessionError("INVALID_STATUS", "Unknown status filter", 400);
@@ -1882,6 +1897,7 @@ export type AdminOpsOverview = {
  */
 export async function buildAdminOpsOverview(options: {
   now?: Date;
+  academicLevel?: string | null;
   client?: Client;
 } = {}): Promise<AdminOpsOverview> {
   const client = options.client ?? db;
@@ -1892,7 +1908,12 @@ export async function buildAdminOpsOverview(options: {
   const horizon = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
   const sessions = (await (client as any).liveSession.findMany({
-    where: { startAt: { gte: startOfDay, lte: horizon } },
+    where: {
+      startAt: { gte: startOfDay, lte: horizon },
+      ...(options.academicLevel
+        ? { group: { course: { academicLevel: options.academicLevel } } }
+        : {}),
+    },
     orderBy: { startAt: "asc" },
     take: 500,
     select: SESSION_WITH_CONTEXT,
@@ -1932,8 +1953,8 @@ export async function buildAdminOpsOverview(options: {
   }
 
   const { countPendingAbsences, repeatedAbsenceFlags } = await import("@/lib/absence-review");
-  const absencesPending = await countPendingAbsences({ client });
-  const flags = await repeatedAbsenceFlags({ now, client });
+  const absencesPending = await countPendingAbsences({ academicLevel: options.academicLevel, client });
+  const flags = await repeatedAbsenceFlags({ academicLevel: options.academicLevel, now, client });
 
   return {
     today: { total: todayTotal, live: todayLive, upcoming: Math.max(0, todayTotal - todayLive) },
@@ -1951,6 +1972,7 @@ export async function buildAdminOpsOverview(options: {
 /** A review-queue listing of sessions the admin must look at. */
 export async function listSessionsNeedingReview(options: {
   now?: Date;
+  academicLevel?: string | null;
   limit?: number;
   client?: Client;
 } = {}): Promise<Array<LiveSessionPayload & { counts: AttendanceCounts }>> {
@@ -1958,7 +1980,13 @@ export async function listSessionsNeedingReview(options: {
   const now = options.now ?? new Date();
   const windowStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   const sessions = (await (client as any).liveSession.findMany({
-    where: { startAt: { gte: windowStart, lte: now }, status: { not: "CANCELLED" } },
+    where: {
+      startAt: { gte: windowStart, lte: now },
+      status: { not: "CANCELLED" },
+      ...(options.academicLevel
+        ? { group: { course: { academicLevel: options.academicLevel } } }
+        : {}),
+    },
     orderBy: { startAt: "desc" },
     take: options.limit ?? 100,
     select: SESSION_WITH_CONTEXT,

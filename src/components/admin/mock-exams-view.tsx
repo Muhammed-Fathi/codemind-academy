@@ -14,7 +14,11 @@ import * as React from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { useT, pickAuto } from "@/lib/i18n";
-import { AcademicLevelBadge, courseWithLevelLabel } from "@/components/admin/academic-level-ui";
+import {
+  AcademicLevelBadge,
+  AcademicLevelFilterSelect,
+  courseWithLevelLabel,
+} from "@/components/admin/academic-level-ui";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -70,6 +74,7 @@ const TYPE_TABS = [
 export function MockExamsView() {
   const tr = useT();
   const [schoolType, setSchoolType] = React.useState<"ARABIC" | "LANGUAGE">("ARABIC");
+  const [academicLevel, setAcademicLevel] = React.useState("");
   const [exams, setExams] = React.useState<MockExam[]>([]);
   const [pools, setPools] = React.useState<{ ARABIC: number; LANGUAGE: number }>({
     ARABIC: 0,
@@ -81,7 +86,9 @@ export function MockExamsView() {
   const load = React.useCallback(async () => {
     setLoading(true);
     try {
-      const r = await fetch(`/api/admin/mock-exams?schoolType=${schoolType}`);
+      const params = new URLSearchParams({ schoolType });
+      if (academicLevel) params.set("academicLevel", academicLevel);
+      const r = await fetch(`/api/admin/mock-exams?${params.toString()}`);
       const d = await r.json();
       setExams(d.exams || []);
       setPools(d.pools || { ARABIC: 0, LANGUAGE: 0 });
@@ -90,7 +97,7 @@ export function MockExamsView() {
     } finally {
       setLoading(false);
     }
-  }, [schoolType, tr]);
+  }, [schoolType, academicLevel, tr]);
 
   React.useEffect(() => {
     load();
@@ -148,10 +155,18 @@ export function MockExamsView() {
           })}
         </div>
 
-        <p className="mb-3 flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Library className="w-3.5 h-3.5 shrink-0" />
-          {tr("admin.244")}: {pools[schoolType]}
-        </p>
+        <div className="mb-3 flex flex-wrap items-end gap-3">
+          <div className="flex min-w-0 flex-col gap-1">
+            <span className="text-xs font-medium text-muted-foreground">{tr("admin.642")}</span>
+            <AcademicLevelFilterSelect value={academicLevel} onChange={setAcademicLevel} />
+          </div>
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Library className="w-3.5 h-3.5 shrink-0" />
+            {tr("admin.244")}: {pools[schoolType]}
+          </p>
+        </div>
+
+        {/* The list is server-filtered by Course.academicLevel; each row keeps its course badge. */}
 
         {loading ? (
           <div className="space-y-2">

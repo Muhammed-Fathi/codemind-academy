@@ -13,7 +13,7 @@
 // through /api/teacher/live-sessions; students and parents never see any of it.
 
 import { NextRequest } from "next/server";
-import { ok, requireRole } from "@/lib/api";
+import { ok, err, requireRole } from "@/lib/api";
 import { ApiFailure, failureResponse, dateParam, intParam } from "@/lib/live-session-api";
 import {
   buildAdminOpsOverview,
@@ -22,6 +22,7 @@ import {
 } from "@/lib/live-sessions";
 import { listAbsenceQueue } from "@/lib/absence-review";
 import type { AbsenceQueueFilter } from "@/lib/absence-policy";
+import { parseAcademicLevelParam } from "@/lib/academic-level-query";
 
 export async function GET(req: NextRequest) {
   // The canonical admin guard (`requireRole("ADMIN")`) — the same one every
@@ -33,9 +34,11 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const now = new Date();
   const limit = intParam(url.searchParams.get("limit"), 50, 1, 200);
+  const level = parseAcademicLevelParam(url.searchParams);
+  if (!level.ok) return err("INVALID_ACADEMIC_LEVEL:academicLevel", 400);
 
   try {
-    const overview = await buildAdminOpsOverview({ now });
+    const overview = await buildAdminOpsOverview({ now, academicLevel: level.level });
     const [sessions, needsReview, pendingAbsences] = await Promise.all([
       listSessionsForAdmin({
         from: dateParam(url.searchParams.get("from")) ?? new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000),
@@ -44,12 +47,13 @@ export async function GET(req: NextRequest) {
         teacherId: url.searchParams.get("teacherId"),
         status: url.searchParams.get("status"),
         q: url.searchParams.get("q"),
+        academicLevel: level.level,
         limit,
         now,
       }),
-      listSessionsNeedingReview({ now, limit }),
+      listSessionsNeedingReview({ now, academicLevel: level.level, limit }),
       listAbsenceQueue(
-        { status: (url.searchParams.get("absenceStatus") as AbsenceQueueFilter | null) ?? "PENDING_REVIEW", limit },
+        { status: (url.searchParams.get("absenceStatus") as AbsenceQueueFilter | null) ?? "PENDING_REVIEW", academicLevel: level.level, limit },
         { now }
       ),
     ]);

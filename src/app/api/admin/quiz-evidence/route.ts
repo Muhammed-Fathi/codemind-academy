@@ -6,8 +6,9 @@
 
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { ok, requireRole } from "@/lib/api";
+import { ok, err, requireRole } from "@/lib/api";
 import { logSecurityEvent } from "@/lib/security";
+import { parseAcademicLevelParam } from "@/lib/academic-level-query";
 
 export async function GET(req: NextRequest) {
   const { user, error } = await requireRole("ADMIN");
@@ -16,6 +17,8 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const quizId = url.searchParams.get("quizId");
   const studentId = url.searchParams.get("studentId");
+  const level = parseAcademicLevelParam(url.searchParams);
+  if (!level.ok) return err("Invalid academicLevel", 400);
   const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
   const pageSize = Math.min(
     50,
@@ -25,6 +28,7 @@ export async function GET(req: NextRequest) {
   const where: any = { evidence: { some: {} } };
   if (quizId) where.quizId = quizId;
   if (studentId) where.studentId = studentId;
+  if (level.level) where.quiz = { lesson: { academicLevel: level.level } };
 
   const [total, attempts] = await Promise.all([
     db.quizAttempt.count({ where }),
@@ -35,7 +39,14 @@ export async function GET(req: NextRequest) {
       take: pageSize,
       include: {
         student: { select: { id: true, studentCode: true, user: { select: { name: true, email: true } } } },
-        quiz: { select: { id: true, title: true, titleAr: true } },
+        quiz: {
+          select: {
+            id: true,
+            title: true,
+            titleAr: true,
+            lesson: { select: { academicLevel: true, officialCode: true, title: true, titleAr: true } },
+          },
+        },
         evidence: {
           orderBy: { capturedAt: "asc" },
           select: {

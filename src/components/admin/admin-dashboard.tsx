@@ -135,6 +135,7 @@ import { MockExamsView } from "@/components/admin/mock-exams-view";
 import { QuizReviewView } from "@/components/admin/quiz-review-view";
 import { SessionWorkflowView } from "@/components/admin/session-workflow-view";
 import { ProgressionOverrideSection } from "@/components/admin/progression-override-section";
+import { AdminIntegrityCard } from "@/components/admin/admin-integrity-card";
 
 const BRAND_COLORS = ["#10b981", "#14b8a6", "#f59e0b", "#0d9488", "#84cc16"];
 
@@ -319,12 +320,14 @@ type OverviewData = {
     avgQuizScore: number;
   };
   revenueTrend: { month: string; revenue: number }[];
-  groupDistribution: { name: string; value: number }[];
+  groupDistribution: { name: string; nameAr: string; academicLevel: string | null; value: number }[];
   upcomingSessions: {
     id: string;
     title: string;
     startAt: string;
     groupName: string | null;
+    groupCourseName: string | null;
+    groupAcademicLevel: string | null;
     teacherName: string | null;
   }[];
 };
@@ -351,6 +354,12 @@ function OverviewView() {
   }
 
   const t = data.totals;
+  // Distinguish identical course names by the canonical level before the
+  // chart receives its labels. The API already keeps separate buckets by id.
+  const groupDistribution = data.groupDistribution.map((row) => ({
+    ...row,
+    name: `${academicLevelLabel(tr, row.academicLevel)} · ${pickAuto(row.nameAr, row.name)}`,
+  }));
   const cards = [
     { label: "Total Students", value: t.totalStudents, icon: GraduationCap, color: "text-emerald-500" },
     { label: "Active Students", value: t.activeStudents, icon: UserCheck, color: "text-teal-500" },
@@ -466,7 +475,7 @@ function OverviewView() {
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
-                      data={data.groupDistribution}
+                      data={groupDistribution}
                       dataKey="value"
                       nameKey="name"
                       innerRadius={50}
@@ -491,6 +500,10 @@ function OverviewView() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Read-only academic-level diagnostics. The card owns its fetch and
+          keeps the Overview view maintainable without changing its view key. */}
+      <AdminIntegrityCard />
 
       {/* Revenue Analytics Section */}
       <RevenueAnalyticsSection />
@@ -524,7 +537,11 @@ function OverviewView() {
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-semibold truncate">{s.title}</div>
                       <div className="text-xs text-muted-foreground truncate">
-                        {s.groupName || "—"} · {s.teacherName || "—"}
+                        {s.groupAcademicLevel
+                          ? `${academicLevelLabel(tr, s.groupAcademicLevel)} · `
+                          : ""}
+                        {s.groupName || "—"}
+                        {s.groupCourseName ? ` · ${s.groupCourseName}` : ""} · {s.teacherName || "—"}
                       </div>
                     </div>
                     <div className="text-xs text-muted-foreground shrink-0">
@@ -564,7 +581,12 @@ type StudentRow = {
   parentPhone?: string | null;
   studentCode?: string | null;
   enrolledAt: string;
-  group: { id: string; name: string; course: { nameAr: string; name?: string } } | null;
+  group: {
+    id: string;
+    name: string;
+    trackScope?: string | null;
+    course: { nameAr: string; name?: string; academicLevel?: string | null };
+  } | null;
   subscription: {
     status: string;
     endDate: string | null;
@@ -1024,18 +1046,39 @@ function StudentProfileDrawer({
   // from the left, so mirror the prop here. Width/max-width constraints
   // ([dir]-agnostic w-3/4 + sm:max-w-sm) stay identical for both sides.
   const locale = useLocale();
-  const [groups, setGroups] = React.useState<{ id: string; name: string }[]>([]);
+  const [groups, setGroups] = React.useState<Array<{
+    id: string;
+    name: string;
+    courseName?: string | null;
+    courseNameEn?: string | null;
+    academicLevel?: string | null;
+    trackScope?: string | null;
+  }>>([]);
   const [groupId, setGroupId] = React.useState<string | undefined>(undefined);
   const [saving, setSaving] = React.useState(false);
 
   React.useEffect(() => {
-    if (student) {
-      setGroupId(student.group?.id || undefined);
-      fetch("/api/admin/groups")
-        .then((r) => r.json())
-        .then((d) => setGroups(d.groups || []))
-        .catch(() => {});
+    if (!student) return;
+    setGroupId(student.group?.id || undefined);
+    // A student without both canonical dimensions has no compatible group:
+    // do not widen an unknown level/track into an unfiltered admin list.
+    if (!student.academicLevel || !student.schoolType) {
+      setGroups([]);
+      return;
     }
+    // This is a compatibility selector, not the catalogue. The explicit
+    // `all=1` contract is safe here because both dimensions already narrow it
+    // to the student's exact Course level and Track; it avoids silently
+    // dropping a compatible group after the catalogue pagination cap.
+    const params = new URLSearchParams({
+      academicLevel: student.academicLevel,
+      trackScope: student.schoolType,
+      all: "1",
+    });
+    fetch(`/api/admin/groups?${params.toString()}`)
+      .then((r) => r.json())
+      .then((d) => setGroups(d.groups || []))
+      .catch(() => setGroups([]));
   }, [student]);
 
   const toggleActive = async () => {
@@ -1341,7 +1384,7 @@ function StudentProfileDrawer({
                   <SelectContent>
                     {groups.map((g) => (
                       <SelectItem key={g.id} value={g.id}>
-                        {g.name}
+                        {g.name} · {pickAuto(g.courseName, g.courseNameEn) || "—"} · {academicLevelLabel(tr, g.academicLevel)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1919,6 +1962,7 @@ type GroupRow = {
   name: string;
   courseId: string;
   courseName: string | null;
+  courseNameEn?: string | null;
   courseColor: string | null;
   /** Phase K2 — DERIVED from the group's course (Group has no level column). */
   academicLevel?: string | null;
@@ -1938,7 +1982,24 @@ function GroupsView() {
   const tr = useT();
   const [openAdd, setOpenAdd] = React.useState(false);
   const [selected, setSelected] = React.useState<GroupRow | null>(null);
-  const { data, loading, error, reload } = useApi<{ groups: GroupRow[] }>("/api/admin/groups");
+  const [search, setSearch] = React.useState("");
+  const [academicLevel, setAcademicLevel] = React.useState("");
+  const [trackScope, setTrackScope] = React.useState("");
+  const [active, setActive] = React.useState("all");
+  const [page, setPage] = React.useState(1);
+  const pageSize = 24;
+  const groupsQuery = React.useMemo(() => {
+    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+    if (search) params.set("search", search);
+    if (academicLevel) params.set("academicLevel", academicLevel);
+    if (trackScope) params.set("trackScope", trackScope);
+    if (active !== "all") params.set("active", active);
+    return `/api/admin/groups?${params.toString()}`;
+  }, [search, academicLevel, trackScope, active, page]);
+  const { data, loading, error, reload } = useApi<{
+    groups: GroupRow[];
+    pagination?: { page: number; totalPages: number; total: number; hasMore: boolean };
+  }>(groupsQuery, [groupsQuery]);
 
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
@@ -1952,6 +2013,36 @@ function GroupsView() {
           Create Group
         </Button>
       </div>
+
+      <Card className="p-3">
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="relative min-w-[12rem] flex-1">
+            <Label className="sr-only">{tr("admin.015")}</Label>
+            <Search className="absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder={tr("admin.015")} className="ps-9" />
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-muted-foreground">{tr("admin.642")}</span>
+            <AcademicLevelFilterSelect value={academicLevel} onChange={(value) => { setAcademicLevel(value); setPage(1); }} />
+          </div>
+          <Select value={trackScope || "all"} onValueChange={(v) => { setTrackScope(v === "all" ? "" : v); setPage(1); }}>
+            <SelectTrigger className="w-40" aria-label={tr("admin.318")}><SelectValue placeholder={tr("admin.318")} /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{tr("admin.648")}</SelectItem>
+              <SelectItem value="ARABIC">{tr("admin.350")}</SelectItem>
+              <SelectItem value="LANGUAGE">{tr("admin.351")}</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={active} onValueChange={(value) => { setActive(value); setPage(1); }}>
+            <SelectTrigger className="w-32" aria-label={tr("admin.298")}><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{tr("admin.648")}</SelectItem>
+              <SelectItem value="true">{tr("admin.299")}</SelectItem>
+              <SelectItem value="false">{tr("admin.298")}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </Card>
 
       {loading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1979,7 +2070,7 @@ function GroupsView() {
                   <div className="min-w-0">
                     <div className="text-sm font-bold truncate">{g.name}</div>
                     <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                      <span className="truncate">{g.courseName || "—"}</span>
+                      <span className="truncate">{pickAuto(g.courseName, g.courseNameEn) || "—"}</span>
                       {/* Level is the COURSE's (derived), shown so two groups of
                           the same course name across levels can't be confused. */}
                       <AcademicLevelBadge level={g.academicLevel} />
@@ -2039,6 +2130,21 @@ function GroupsView() {
               </Card>
             );
           })}
+        </div>
+      )}
+      {!loading && !error && data?.pagination && data.pagination.totalPages > 1 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-card p-3 text-xs">
+          <span className="text-muted-foreground">
+            {data.pagination.total} · {page} / {data.pagination.totalPages}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>
+              {tr("admin.232")}
+            </Button>
+            <Button size="sm" variant="outline" disabled={!data.pagination.hasMore} onClick={() => setPage((value) => value + 1)}>
+              {tr("admin.233")}
+            </Button>
+          </div>
         </div>
       )}
 
@@ -2221,23 +2327,68 @@ function ManageGroupDialog({
   const [confirmDelete, setConfirmDelete] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [students, setStudents] = React.useState<StudentRow[]>([]);
+  const [memberPage, setMemberPage] = React.useState(1);
+  const [memberTotalPages, setMemberTotalPages] = React.useState(1);
+  const [memberTotal, setMemberTotal] = React.useState(0);
+  const [memberSearch, setMemberSearch] = React.useState("");
+  const [eligible, setEligible] = React.useState<StudentRow[]>([]);
+  const [eligiblePage, setEligiblePage] = React.useState(1);
+  const [eligibleTotalPages, setEligibleTotalPages] = React.useState(1);
+  const [eligibleSearch, setEligibleSearch] = React.useState("");
+  const [membershipVersion, setMembershipVersion] = React.useState(0);
 
   React.useEffect(() => {
-    if (group) {
-      setTeacherId(group.teacherId || undefined);
-      setName(group.name || "");
-      setCapacity(group.capacity);
-      setSchedule(group.schedule);
-      setTrackScope(group.trackScope || "");
-      setIsActive(group.isActive);
-      setConfirmDelete(false);
-      fetch("/api/admin/teachers").then((r) => r.json()).then((d) => setTeachers(d.teachers || [])).catch(() => {});
-      fetch("/api/admin/students").then((r) => r.json()).then((d) => {
-        const all: StudentRow[] = d.students || [];
-        setStudents(all.filter((s) => s.group?.id === group.id));
-      }).catch(() => {});
-    }
+    if (!group) return;
+    setTeacherId(group.teacherId || undefined);
+    setName(group.name || "");
+    setCapacity(group.capacity);
+    setSchedule(group.schedule);
+    setTrackScope(group.trackScope || "");
+    setIsActive(group.isActive);
+    setConfirmDelete(false);
+    setMemberPage(1);
+    setEligiblePage(1);
+    setMemberSearch("");
+    setEligibleSearch("");
+    fetch("/api/admin/teachers").then((r) => r.json()).then((d) => setTeachers(d.teachers || [])).catch(() => {});
   }, [group]);
+
+  // Server-side member and eligible-student queries. No client-side slice of
+  // the first 20 rows: search and pagination are part of the API contract.
+  React.useEffect(() => {
+    if (!group) return;
+    const params = new URLSearchParams({
+      groupId: group.id,
+      page: String(memberPage),
+      pageSize: "20",
+    });
+    if (memberSearch) params.set("search", memberSearch);
+    fetch(`/api/admin/students?${params.toString()}`)
+      .then((r) => r.json())
+      .then((d) => {
+        setStudents((d.students || []) as StudentRow[]);
+        setMemberTotal(d.pagination?.total || 0);
+        setMemberTotalPages(d.pagination?.totalPages || 1);
+      })
+      .catch(() => setStudents([]));
+  }, [group, memberPage, memberSearch, membershipVersion]);
+
+  React.useEffect(() => {
+    if (!group) return;
+    const params = new URLSearchParams({
+      eligibleForGroupId: group.id,
+      page: String(eligiblePage),
+      pageSize: "20",
+    });
+    if (eligibleSearch) params.set("search", eligibleSearch);
+    fetch(`/api/admin/students?${params.toString()}`)
+      .then((r) => r.json())
+      .then((d) => {
+        setEligible((d.students || []) as StudentRow[]);
+        setEligibleTotalPages(d.pagination?.totalPages || 1);
+      })
+      .catch(() => setEligible([]));
+  }, [group, eligiblePage, eligibleSearch, membershipVersion]);
 
   const save = async () => {
     if (!group) return;
@@ -2297,6 +2448,30 @@ function ManageGroupDialog({
     }
   };
 
+  const updateMembership = async (studentId: string, action: "add" | "remove") => {
+    if (!group) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/admin/groups/${group.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(action === "add" ? { addStudentIds: [studentId] } : { removeStudentIds: [studentId] }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || tr("admin.001"));
+      if (action === "add") setEligible((rows) => rows.filter((row) => row.id !== studentId));
+      setMemberPage(1);
+      setEligiblePage(1);
+      // Refresh both server-backed lists after the authoritative mutation.
+      setMembershipVersion((value) => value + 1);
+      onUpdated();
+    } catch (e: any) {
+      toast.error(e.message || tr("admin.001"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <Dialog open={!!group} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="sm:max-w-lg">
@@ -2352,20 +2527,68 @@ function ManageGroupDialog({
                 <Input value={schedule} onChange={(e) => setSchedule(e.target.value)} />
               </div>
             </div>
-            <div>
-              <Label>{tr("admin.115")}{students.length})</Label>
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Label>{tr("admin.115")} ({memberTotal})</Label>
+                <Input
+                  value={memberSearch}
+                  onChange={(e) => { setMemberSearch(e.target.value); setMemberPage(1); }}
+                  placeholder={tr("admin.015")}
+                  className="h-8 w-44 text-xs"
+                  aria-label={tr("admin.015")}
+                />
+              </div>
               <div className="max-h-40 overflow-y-auto rounded-lg border p-2 space-y-1">
                 {students.length === 0 ? (
                   <div className="text-xs text-muted-foreground text-center py-3">{tr("admin.116")}</div>
                 ) : (
                   students.map((s) => (
-                    <div key={s.id} className="flex items-center justify-between text-xs px-2 py-1.5 rounded hover:bg-muted">
-                      <span className="font-medium">{s.name}</span>
-                      <span className="text-muted-foreground">{s.email}</span>
+                    <div key={s.id} className="flex items-center justify-between gap-2 text-xs px-2 py-1.5 rounded hover:bg-muted">
+                      <span className="min-w-0 truncate font-medium">{s.name}</span>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span className="hidden text-muted-foreground sm:inline">{s.email}</span>
+                        <Button size="sm" variant="ghost" className="h-6 px-1.5 text-destructive" onClick={() => updateMembership(s.id, "remove")} disabled={saving}>×</Button>
+                      </div>
                     </div>
                   ))
                 )}
               </div>
+              {memberTotalPages > 1 && (
+                <div className="flex items-center justify-between text-xs">
+                  <Button size="sm" variant="outline" disabled={memberPage <= 1} onClick={() => setMemberPage((p) => p - 1)}>{tr("admin.232")}</Button>
+                  <span className="text-muted-foreground">{memberPage} / {memberTotalPages}</span>
+                  <Button size="sm" variant="outline" disabled={memberPage >= memberTotalPages} onClick={() => setMemberPage((p) => p + 1)}>{tr("admin.233")}</Button>
+                </div>
+              )}
+            </div>
+            <div className="space-y-2 rounded-lg border border-primary/20 bg-primary/5 p-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Label>{tr("admin.115")} — {tr("admin.642")}</Label>
+                <Input
+                  value={eligibleSearch}
+                  onChange={(e) => { setEligibleSearch(e.target.value); setEligiblePage(1); }}
+                  placeholder={tr("admin.015")}
+                  className="h-8 w-44 text-xs"
+                  aria-label={tr("admin.015")}
+                />
+              </div>
+              <p className="text-[11px] text-muted-foreground">{tr("admin.678")}</p>
+              <div className="max-h-36 overflow-y-auto space-y-1">
+                {eligible.map((s) => (
+                  <div key={s.id} className="flex items-center justify-between gap-2 rounded px-2 py-1.5 text-xs hover:bg-muted">
+                    <span className="min-w-0 truncate">{s.name}</span>
+                    <Button size="sm" className="h-6 px-2" onClick={() => updateMembership(s.id, "add")} disabled={saving}>{tr("admin.679")}</Button>
+                  </div>
+                ))}
+                {eligible.length === 0 && <div className="py-2 text-center text-xs text-muted-foreground">{tr("admin.116")}</div>}
+              </div>
+              {eligibleTotalPages > 1 && (
+                <div className="flex items-center justify-between text-xs">
+                  <Button size="sm" variant="outline" disabled={eligiblePage <= 1} onClick={() => setEligiblePage((p) => p - 1)}>{tr("admin.232")}</Button>
+                  <span className="text-muted-foreground">{eligiblePage} / {eligibleTotalPages}</span>
+                  <Button size="sm" variant="outline" disabled={eligiblePage >= eligibleTotalPages} onClick={() => setEligiblePage((p) => p + 1)}>{tr("admin.233")}</Button>
+                </div>
+              )}
             </div>
 
             {/* Lifecycle: deactivate keeps history, delete removes an unused
@@ -2475,7 +2698,15 @@ type CourseTree = {
 
 function CoursesView() {
   const tr = useT();
-  const { data, loading, error, reload } = useApi<{ courses: CourseRow[] }>("/api/admin/courses");
+  // The filter is part of the catalogue request. The UI never downloads both
+  // curricula and hides one client-side; this keeps counts and tree identity
+  // aligned with the selected level on large installations.
+  const [levelFilter, setLevelFilter] = React.useState<string>("");
+  const coursesQuery = React.useMemo(
+    () => `/api/admin/courses${levelFilter ? `?academicLevel=${encodeURIComponent(levelFilter)}` : ""}`,
+    [levelFilter]
+  );
+  const { data, loading, error, reload } = useApi<{ courses: CourseRow[] }>(coursesQuery, [levelFilter]);
   const [tree, setTree] = React.useState<CourseTree | null>(null);
   const [treeLoading, setTreeLoading] = React.useState(false);
   const [reconciling, setReconciling] = React.useState(false);
@@ -2484,14 +2715,9 @@ function CoursesView() {
   // (the server refuses while groups/parts/enrollments/exams reference it).
   const [editingCourse, setEditingCourse] = React.useState<CourseRow | null>(null);
   const [deletingCourse, setDeletingCourse] = React.useState<CourseRow | null>(null);
-  // Level VIEW filter ("" = all levels). The list is small and already
-  // loaded in full, so narrowing it here is exact (no pagination to fight);
-  // the badge on every card comes from the canonical Course.academicLevel.
-  const [levelFilter, setLevelFilter] = React.useState<string>("");
-  const visibleCourses = React.useMemo(
-    () => (data?.courses || []).filter((c) => !levelFilter || c.academicLevel === levelFilter),
-    [data, levelFilter]
-  );
+  // The API already narrowed the rows. Keep this alias for the existing card
+  // rendering contract and to make it explicit that no cosmetic hide occurs.
+  const visibleCourses = data?.courses || [];
 
   const deleteCourse = async (c: CourseRow) => {
     try {
@@ -2605,7 +2831,7 @@ function CoursesView() {
         <LoadingBlock rows={3} />
       ) : error ? (
         <ErrorBlock message={error} onRetry={reload} />
-      ) : !data || data.courses.length === 0 ? (
+      ) : !data ? (
         <Card className="p-6 text-center">
           <EmptyBlock message={tr("admin.129")} />
           <Button className="mt-4" onClick={reconcileNow} disabled={reconciling}>
@@ -2620,7 +2846,15 @@ function CoursesView() {
           <AcademicLevelFilterSelect value={levelFilter} onChange={setLevelFilter} />
         </div>
         {visibleCourses.length === 0 ? (
-          <EmptyBlock message={tr("admin.129")} />
+          <div className="space-y-3">
+            <EmptyBlock message={tr("admin.129")} />
+            <div className="flex justify-center">
+              <Button variant="outline" onClick={reconcileNow} disabled={reconciling}>
+                {reconciling ? <Loader2 className="w-4 h-4 me-2 animate-spin" /> : <Download className="w-4 h-4 me-2" />}
+                {reconciling ? tr("admin.653") : tr("admin.652")}
+              </Button>
+            </div>
+          </div>
         ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 stagger-in">
           {visibleCourses.map((c) => (
@@ -4827,7 +5061,9 @@ function NotificationsView() {
   const [sending, setSending] = React.useState(false);
 
   React.useEffect(() => {
-    fetch("/api/admin/groups").then((r) => r.json()).then((d) => setGroups(d.groups || [])).catch(() => {});
+    // The notification target is a complete selector, so opt into the API's
+    // explicit all-groups contract rather than losing groups after page 100.
+    fetch("/api/admin/groups?all=1").then((r) => r.json()).then((d) => setGroups(d.groups || [])).catch(() => {});
   }, []);
 
   const submit = async () => {

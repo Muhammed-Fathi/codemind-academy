@@ -5,7 +5,7 @@ import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, err, requireRole } from "@/lib/api";
 import { normalizeSchoolType } from "@/lib/school-type";
-import { normalizeAcademicLevel } from "@/lib/academic-level";
+import { parseAcademicLevelParam } from "@/lib/academic-level-query";
 import {
   parseQuestionSchoolTypeInput,
   resolveQuestionSchoolType,
@@ -48,10 +48,10 @@ export async function GET(req: NextRequest) {
   // cache of the course chain). Free-bank questions (no quiz) therefore have
   // no single level and are excluded by any level filter — that is the
   // truth, not a default. Independent of the track (schoolType) selector.
-  const levelParam = (url.searchParams.get("academicLevel") || "").trim();
-  if (levelParam && levelParam !== "all") {
-    const level = normalizeAcademicLevel(levelParam);
-    if (!level) return err("Invalid academicLevel", 400);
+  const levelParam = parseAcademicLevelParam(url.searchParams);
+  if (!levelParam.ok) return err("Invalid academicLevel", 400);
+  const level = levelParam.level;
+  if (level) {
     where.quiz = { lesson: { academicLevel: level } };
   }
   if (search) {
