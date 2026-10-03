@@ -20,7 +20,7 @@
 // Run: node tests/quiz-analytics.test.js
 
 /* eslint-disable @typescript-eslint/no-require-imports -- plain-node test runner, same as the other suites */
-const { execSync } = require("child_process");
+const { execFileSync } = require("child_process");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
@@ -61,6 +61,9 @@ fs.writeFileSync(
       strict: true,
       skipLibCheck: true,
       types: ["node"],
+      typeRoots: [path.join(REPO, "node_modules", "@types")],
+      baseUrl: REPO,
+      paths: { "@/*": ["src/*"] },
       outDir: OUT,
     },
     files: [
@@ -72,16 +75,36 @@ fs.writeFileSync(
     ],
   })
 );
+const TSC_BIN = path.join(REPO, "node_modules", "typescript", "lib", "tsc.js");
+const TSC_CONFIG = path.join(OUT, "tsconfig.json");
 try {
-  execSync(
-    `${process.execPath} ${path.join(REPO, "node_modules/typescript/lib/tsc.js")} -p ${path.join(OUT, "tsconfig.json")}`,
-    { cwd: REPO, stdio: "pipe" }
+  execFileSync(process.execPath, [TSC_BIN, "-p", TSC_CONFIG], {
+    cwd: REPO,
+    encoding: "utf8",
+    stdio: "pipe",
+  });
+} catch (error) {
+  const outputText = (value) =>
+    Buffer.isBuffer(value) ? value.toString("utf8") : String(value || "");
+  const stdout = outputText(error.stdout);
+  const stderr = outputText(error.stderr);
+  throw new Error(
+    [
+      `TypeScript compilation failed (exit ${error.status ?? "unknown"}).`,
+      error.message && `Spawn error: ${error.message}`,
+      `Command: ${process.execPath} ${TSC_BIN} -p ${TSC_CONFIG}`,
+      stdout && `--- stdout ---\n${stdout}`,
+      stderr && `--- stderr ---\n${stderr}`,
+    ]
+      .filter(Boolean)
+      .join("\n")
   );
-} catch {
-  /* fall through: check the emitted file instead */
 }
-if (!fs.existsSync(path.join(OUT, "quiz-analytics.js"))) {
-  throw new Error("tsc did not emit quiz-analytics.js");
+const emittedAnalytics = path.join(OUT, "quiz-analytics.js");
+if (!fs.existsSync(emittedAnalytics)) {
+  throw new Error(
+    `TypeScript exited successfully but did not emit the expected file: ${emittedAnalytics}`
+  );
 }
 // Phase 12: quiz-analytics now imports `@/lib/track-scope`. tsc keeps the path
 // alias in the emitted require(), so resolve it to the sibling compiled output
