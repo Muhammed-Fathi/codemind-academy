@@ -36,35 +36,6 @@ export async function GET(req: NextRequest) {
           students: {
             include: {
               user: { select: { name: true, email: true } },
-              attendances: { select: { status: true } },
-              // Phase 6: quiz analytics must reflect FINISHED attempts only —
-              // an open attempt is ungraded (its stored percentage is still
-              // the pre-submit default) and would deflate averages.
-              quizAttempts: {
-                where: { finishedAt: { not: null } },
-                select: {
-                  percentage: true,
-                  passed: true,
-                  finishedAt: true,
-                  quizId: true,
-                  // Phase 18 — read so the track split can reuse the Phase 6
-                  // summary verbatim (it reports avgScore and participantCount,
-                  // which need these). No existing number changes: these fields
-                  // were previously projected away, never aggregated.
-                  studentId: true,
-                  score: true,
-                  totalMarks: true,
-                },
-              },
-              homeworkSubmits: {
-                select: { status: true, grade: true },
-              },
-              lessonProgress: {
-                // Phase 19: lessonId travels so completion can be measured
-                // against the student's official curriculum universe instead
-                // of raw history rows.
-                select: { isCompleted: true, lessonId: true },
-              },
             },
           },
         },
@@ -81,35 +52,87 @@ export async function GET(req: NextRequest) {
   if (!levelParam.ok) return err("Unknown academic level", 400);
   const scopedGroups = await scopedTeacherGroups(teacher, levelParam.level);
 
-  // Phase 6 authorization scope: a teacher may only ever see quiz attempts
-  // that belong to quizzes on courses they actually teach. A student in the
-  // teacher's group may carry historical attempts from a course taught by a
-  // DIFFERENT teacher (e.g. after a group/course change); those must not leak
-  // into this teacher's analytics. Resolve the quizzes of the teacher's
-  // courses through BOTH curriculum chains (canonical unitId + legacy
-  // topicId), the same universe rule the rest of the app uses.
-  const courseIds = scopedGroups.map((g) => g.courseId);
-  const authorizedQuizRows = await db.quiz.findMany({
-    where: {
-      lesson: {
-        OR: [
-          { unit: { part: { courseId: { in: courseIds } } } },
-          { topic: { unit: { part: { courseId: { in: courseIds } } } } },
-        ],
-      },
-    },
-    // Phase 18 — the quiz's OWN trackScope travels with its id, so the same
-    // authorized finished attempts can be SLICED by track without a second
-    // authorization decision and without a second query.
-    select: { id: true, trackScope: true },
-  });
-  const authorizedQuizIds = new Set<string>(authorizedQuizRows.map((q: { id: string }) => q.id));
-  const quizTrackById = new Map(
-    authorizedQuizRows.map((q) => [q.id, String(q.trackScope)])
+  // Resolve selected teacher-owned groups to their own course content and
+  // sessions. Each group's KPIs intersect its current roster with its own
+  // Group → Course → (Unit or legacy Topic) lesson ids and group sessions;
+  // student lifetime history is not a substitute for that context.
+  const courseIds: string[] = Array.from(
+    new Set<string>(scopedGroups.map((g) => g.courseId as string))
   );
-  // Every authorized, finished attempt the teacher may see, collected once so
-  // the track split is computed over exactly the rows the rest of this handler
-  // aggregates — no second filter, no chance of the split disagreeing.
+  const groupIds: string[] = scopedGroups.map((g) => g.id as string);
+  const [courseLessonRows, groupSessionRows] = await Promise.all([
+    courseIds.length
+      ? db.lesson.findMany({
+          where: { OR: lessonCoursesChainOr(courseIds) },
+          select: {
+            id: true,
+            unit: { select: { part: { select: { courseId: true } } } },
+            topic: {
+              select: {
+                unit: { select: { part: { select: { courseId: true } } } },
+              },
+            },
+          },
+        })
+      : Promise.resolve([]),
+    groupIds.length
+      ? db.liveSession.findMany({
+          where: { groupId: { in: groupIds } },
+          select: { id: true, groupId: true },
+        })
+      : Promise.resolve([]),
+  ]);
+
+  const lessonCourseById = new Map<string, string>();
+  for (const lesson of courseLessonRows) {
+    const courseId = lesson.unit?.part.courseId ?? lesson.topic?.unit.part.courseId;
+    if (courseId) lessonCourseById.set(lesson.id, courseId);
+  }
+
+  const selectedLessonIds = Array.from(lessonCourseById.keys());
+  const [authorizedQuizRows, authorizedHomeworkRows] = selectedLessonIds.length
+    ? await Promise.all([
+        db.quiz.findMany({
+          where: { lessonId: { in: selectedLessonIds } },
+          // The quiz's own Track scope travels with its id; track aggregation
+          // below remains the same, over the authorized finished population.
+          select: { id: true, trackScope: true, lessonId: true },
+        }),
+        db.homework.findMany({
+          where: { lessonId: { in: selectedLessonIds } },
+          select: { id: true, lessonId: true },
+        }),
+      ])
+    : [[], []];
+
+  const quizIdsByCourse = new Map<string, Set<string>>();
+  const homeworkIdsByCourse = new Map<string, Set<string>>();
+  const quizTrackById = new Map<string, string>();
+  for (const quiz of authorizedQuizRows) {
+    const courseId = lessonCourseById.get(quiz.lessonId);
+    if (!courseId) continue;
+    const ids = quizIdsByCourse.get(courseId) || new Set<string>();
+    ids.add(quiz.id);
+    quizIdsByCourse.set(courseId, ids);
+    quizTrackById.set(quiz.id, String(quiz.trackScope));
+  }
+  for (const homework of authorizedHomeworkRows) {
+    const courseId = lessonCourseById.get(homework.lessonId);
+    if (!courseId) continue;
+    const ids = homeworkIdsByCourse.get(courseId) || new Set<string>();
+    ids.add(homework.id);
+    homeworkIdsByCourse.set(courseId, ids);
+  }
+
+  const sessionIdsByGroup = new Map<string, Set<string>>();
+  for (const session of groupSessionRows) {
+    const ids = sessionIdsByGroup.get(session.groupId) || new Set<string>();
+    ids.add(session.id);
+    sessionIdsByGroup.set(session.groupId, ids);
+  }
+
+  // Every scoped, finished attempt is collected once so the Track split is
+  // computed over exactly the rows the per-group KPI aggregation admits.
   const allAuthorizedAttempts: Array<{
     quizId: string;
     studentId: string;
@@ -159,8 +182,94 @@ export async function GET(req: NextRequest) {
     universeLessonsByCourse.set(cid, arr);
   }
 
+  // Load history only after its teacher-owned group/course/session boundary is
+  // known. This prevents the analytics route from even aggregating a student's
+  // lifetime relations and keeps unrelated records out of the returned data.
+  const groupHistory = await Promise.all(
+    scopedGroups.map(async (g) => {
+      const studentIds = g.students.map((student) => student.id);
+      const sessionIds = Array.from(sessionIdsByGroup.get(g.id) || []);
+      const quizIds = Array.from(quizIdsByCourse.get(g.courseId) || []);
+      const homeworkIds = Array.from(homeworkIdsByCourse.get(g.courseId) || []);
+      const lessonIds = (universeLessonsByCourse.get(g.courseId) || []).map(
+        (lesson) => lesson.id
+      );
+
+      const [attendanceRows, quizAttempts, homeworkSubmits, lessonProgressRows] =
+        await Promise.all([
+          studentIds.length && sessionIds.length
+            ? db.attendance.findMany({
+                where: {
+                  studentId: { in: studentIds },
+                  sessionId: { in: sessionIds },
+                },
+                select: { studentId: true, status: true },
+              })
+            : Promise.resolve([]),
+          studentIds.length && quizIds.length
+            ? db.quizAttempt.findMany({
+                where: {
+                  studentId: { in: studentIds },
+                  quizId: { in: quizIds },
+                  finishedAt: { not: null },
+                },
+                select: {
+                  percentage: true,
+                  passed: true,
+                  finishedAt: true,
+                  quizId: true,
+                  studentId: true,
+                  score: true,
+                  totalMarks: true,
+                },
+              })
+            : Promise.resolve([]),
+          studentIds.length && homeworkIds.length
+            ? db.homeworkSubmission.findMany({
+                where: {
+                  studentId: { in: studentIds },
+                  homeworkId: { in: homeworkIds },
+                },
+                select: {
+                  studentId: true,
+                  homeworkId: true,
+                  status: true,
+                  grade: true,
+                },
+              })
+            : Promise.resolve([]),
+          studentIds.length && lessonIds.length
+            ? db.lessonProgress.findMany({
+                where: {
+                  studentId: { in: studentIds },
+                  lessonId: { in: lessonIds },
+                },
+                select: { studentId: true, isCompleted: true, lessonId: true },
+              })
+            : Promise.resolve([]),
+        ]);
+
+      const byStudent = <T extends { studentId: string }>(rows: T[]) => {
+        const grouped = new Map<string, T[]>();
+        for (const row of rows) {
+          const list = grouped.get(row.studentId) || [];
+          list.push(row);
+          grouped.set(row.studentId, list);
+        }
+        return grouped;
+      };
+
+      return {
+        attendanceByStudent: byStudent(attendanceRows),
+        quizAttemptsByStudent: byStudent(quizAttempts),
+        homeworkByStudent: byStudent(homeworkSubmits),
+        lessonProgressByStudent: byStudent(lessonProgressRows),
+      };
+    })
+  );
+
   // Compute per-group stats
-  const groups = scopedGroups.map((g) => {
+  const groups = scopedGroups.map((g, groupIndex) => {
     const totalStudents = g.students.length;
     let totalAttendance = 0;
     let presentAttendance = 0;
@@ -172,24 +281,33 @@ export async function GET(req: NextRequest) {
     let totalLessons = 0;
     let completedLessons = 0;
 
+    const groupQuizIds = quizIdsByCourse.get(g.courseId) || new Set<string>();
+    const groupHomeworkIds = homeworkIdsByCourse.get(g.courseId) || new Set<string>();
+    const history = groupHistory[groupIndex];
+
     const studentStats = g.students.map((s) => {
-      for (const a of s.quizAttempts) {
-        if (attemptInQuizScope(a, authorizedQuizIds)) allAuthorizedAttempts.push(a);
+      const studentAttempts = history.quizAttemptsByStudent.get(s.id) || [];
+      for (const a of studentAttempts) {
+        if (attemptInQuizScope(a, groupQuizIds)) allAuthorizedAttempts.push(a);
       }
-      const attendanceCount = s.attendances.length;
-      const presentCount = s.attendances.filter((a) => a.status === "PRESENT").length;
-      // Quiz rows are finished (SQL filter above); restrict further to the
-      // teacher's own courses so cross-course history cannot be aggregated in.
-      const quizAttempts = s.quizAttempts.filter((q) =>
-        attemptInQuizScope(q, authorizedQuizIds)
+      const groupAttendance = history.attendanceByStudent.get(s.id) || [];
+      const attendanceCount = groupAttendance.length;
+      const presentCount = groupAttendance.filter((a) => a.status === "PRESENT").length;
+      // Finished attempts from this group's own course only. Same-level or
+      // other teacher-owned course history is still a different KPI context.
+      const quizAttempts = studentAttempts.filter((q) =>
+        attemptInQuizScope(q, groupQuizIds)
       );
       const quizCount = quizAttempts.length;
       const quizPassed = quizAttempts.filter((q) => q.passed).length;
       const avgPct = quizCount > 0
         ? Math.round(quizAttempts.reduce((sum, q) => sum + q.percentage, 0) / quizCount)
         : 0;
-      const hwTotal = s.homeworkSubmits.length;
-      const hwGraded = s.homeworkSubmits.filter((h) => h.status === "GRADED").length;
+      const homeworkSubmits = (history.homeworkByStudent.get(s.id) || []).filter(
+        (submission) => groupHomeworkIds.has(submission.homeworkId)
+      );
+      const hwTotal = homeworkSubmits.length;
+      const hwGraded = homeworkSubmits.filter((h) => h.status === "GRADED").length;
       // Phase 19: completion runs over the student's OWN curriculum universe
       // (their group's course, their track), never over raw progress rows —
       // archived legacy and out-of-track history can no longer move the
@@ -200,7 +318,7 @@ export async function GET(req: NextRequest) {
           .map((l: { id: string }) => l.id)
       );
       const lessonTotal = studentUniverseIds.size;
-      const lessonCompleted = s.lessonProgress.filter(
+      const lessonCompleted = (history.lessonProgressByStudent.get(s.id) || []).filter(
         (l) => l.isCompleted && studentUniverseIds.has(l.lessonId)
       ).length;
 
@@ -241,7 +359,9 @@ export async function GET(req: NextRequest) {
     // attempt belongs to. Buckets keep their deterministic SHARED → ARABIC →
     // LANGUAGE order and always exist, so the shape never changes shape.
     const groupAttempts = g.students.flatMap((s) =>
-      s.quizAttempts.filter((a) => attemptInQuizScope(a, authorizedQuizIds))
+      (history.quizAttemptsByStudent.get(s.id) || []).filter((a) =>
+        attemptInQuizScope(a, groupQuizIds)
+      )
     );
     const trackSummary = summarizeFinishedAttemptsByTrack(
       groupAttempts,

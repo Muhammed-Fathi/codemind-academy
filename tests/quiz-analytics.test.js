@@ -268,8 +268,8 @@ section("C. Route source invariants");
 
   const analytics = read("src/app/api/teacher/analytics/route.ts");
   ok(
-    /quizAttempts\s*:\s*\{\s*where:\s*\{\s*finishedAt:\s*\{\s*not:\s*null\s*\}\s*\}/.test(analytics),
-    "teacher/analytics GET restricts quizAttempts to finishedAt != null"
+    /db\.quizAttempt\.findMany\(\{[\s\S]{0,500}finishedAt:\s*\{\s*not:\s*null\s*\}/.test(analytics),
+    "teacher/analytics GET queries finishedAt != null attempts inside the selected group/course scope"
   );
 }
 
@@ -280,10 +280,11 @@ section("C. Route source invariants");
     /attemptInQuizScope/.test(analytics),
     "teacher/analytics GET filters attempts through attemptInQuizScope"
   );
+  const progression = read("src/lib/progression.ts");
   ok(
-    /unit:\s*\{\s*part:\s*\{\s*courseId:\s*\{\s*in:\s*courseIds\s*\}\s*\}\s*\}/.test(analytics) &&
-      /topic:\s*\{\s*unit:\s*\{\s*part:\s*\{\s*courseId:\s*\{\s*in:\s*courseIds\s*\}\s*\}\s*\}\s*\}/.test(analytics),
-    "teacher/analytics resolves authorised quizzes through BOTH curriculum chains"
+    /lessonCoursesChainOr\(courseIds\)/.test(analytics) &&
+      /export function lessonCoursesChainOr\(courseIds: string\[\]\)[\s\S]{0,260}unit: \{ part: \{ courseId: \{ in: courseIds \} \} \}[\s\S]{0,120}topic: \{ unit: \{ part: \{ courseId: \{ in: courseIds \} \} \} \}/.test(progression),
+    "teacher/analytics resolves group/course content through BOTH canonical curriculum chains"
   );
   ok(
     !/teacher\.groups\.flatMap\(g => g\.students\)/.test(analytics),

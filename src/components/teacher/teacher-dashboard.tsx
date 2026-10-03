@@ -239,6 +239,14 @@ type ActivityItem = {
   studentName: string;
   time: string;
   kind: "good" | "neutral" | "warn";
+  /** Canonical authorization/display context from the selected group. */
+  group: { id: string; name: string };
+  course: {
+    id: string;
+    name: string;
+    nameAr: string;
+    academicLevel: string | null;
+  };
   attemptId?: string;
   quizId?: string;
 };
