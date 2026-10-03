@@ -29,7 +29,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const Module = require("module");
-const { execSync } = require("child_process");
+const { execFileSync } = require("child_process");
 
 const REPO = path.join(__dirname, "..");
 const OUT = fs.mkdtempSync(path.join(os.tmpdir(), "cm-phase17-"));
@@ -90,8 +90,12 @@ fs.writeFileSync(
     files: FILES.map((f) => path.join(REPO, f)),
   })
 );
+const TSC = path.join(REPO, "node_modules", "typescript", "lib", "tsc.js");
 try {
-  execSync(`npx tsc -p ${path.join(OUT, "tsconfig.json")}`, { cwd: REPO, stdio: "pipe" });
+  execFileSync(process.execPath, [TSC, "-p", path.join(OUT, "tsconfig.json")], {
+    cwd: REPO,
+    stdio: "pipe",
+  });
 } catch {
   /* type noise elsewhere in the graph is tolerated; the emitted files matter */
 }
@@ -705,12 +709,24 @@ async function main() {
     const script = path.join(REPO, "scripts", "verify-phase17-notifications.mjs");
     ok(fs.existsSync(script), "K: scripts/verify-phase17-notifications.mjs exists");
     let outStr = "";
+    let errStr = "";
+    let processError = "";
     let code = 0;
     try {
-      outStr = execSync(`${process.execPath} ${JSON.stringify(script)}`, { cwd: REPO, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 600_000, maxBuffer: 64 * 1024 * 1024 });
+      outStr = execFileSync(process.execPath, [script], {
+        cwd: REPO,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+        timeout: 600_000,
+        maxBuffer: 64 * 1024 * 1024,
+      });
     } catch (e) {
-      code = e.status ?? 1;
-      outStr = `${e.stdout ?? ""}\n${e.stderr ?? ""}`;
+      code = Number.isInteger(e.status) ? e.status : 1;
+      const toText = (value) =>
+        value == null ? "" : Buffer.isBuffer(value) ? value.toString("utf8") : String(value);
+      outStr = toText(e.stdout);
+      errStr = toText(e.stderr);
+      processError = e.message ?? String(e);
     }
     eq(code, 0, "K: real-DB verifier exits 0");
     const m = /phase17 notifications e2e: (\d+) passed, (\d+) failed/.exec(outStr);
@@ -718,6 +734,12 @@ async function main() {
     if (m) {
       eq(Number(m[2]), 0, `K: verifier failures == 0 (${m[1]} assertions)`);
       ok(Number(m[1]) >= 160, `K: verifier coverage is load-bearing (${m[1]} ≥ 160)`);
+    }
+    if (code !== 0 || !m || (m && (Number(m[2]) !== 0 || Number(m[1]) < 160))) {
+      console.error(`K: verifier child diagnostics (exit ${code})`);
+      if (processError) console.error(processError);
+      if (outStr.trim()) console.error(`stdout:\n${outStr.trimEnd()}`);
+      if (errStr.trim()) console.error(`stderr:\n${errStr.trimEnd()}`);
     }
   }
 
