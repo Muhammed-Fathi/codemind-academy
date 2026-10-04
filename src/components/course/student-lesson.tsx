@@ -15,7 +15,6 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useApp } from "@/lib/store";
-import { openStudentLesson } from "@/lib/student-navigation";
 import { academicLevelLabelFor } from "@/lib/academic-level-labels";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
