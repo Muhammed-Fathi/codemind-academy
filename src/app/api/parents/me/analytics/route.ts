@@ -58,8 +58,9 @@ export async function GET(req: NextRequest) {
                       // lives outside the universe is not current progress).
                       lessonId: true,
                       // Phase 19: strong/weak grouping reads the canonical
-                      // curriculum container (topic for legacy, unit for
-                      // official) instead of the quiz title.
+                      // curriculum container instead of the quiz title; the
+                      // Unit is primary and the legacy Topic is the fallback
+                      // (M4.4 — see `curriculumContainerOf`).
                       // Phase M4.4 — the container's ID travels with its
                       // titles: strong/weak rows are keyed by canonical
                       // curriculum identity, never by the display title (the
@@ -213,14 +214,14 @@ export async function GET(req: NextRequest) {
     }
 
     // Subject strengths/weaknesses — Phase 19: grouped by the quiz's
-    // CURRICULUM CONTAINER, canonical chain first (topic for legacy rows,
-    // unit for official unit-linked lessons). The old code grouped by the
-    // quiz TITLE, so a child with two quizzes on the same unit appeared to
-    // have two unrelated "topics", and the result could never line up with
-    // the curriculum the rest of the report measures.
+    // CURRICULUM CONTAINER. The old code grouped by the quiz TITLE, so a child
+    // with two quizzes on the same unit appeared to have two unrelated
+    // "topics", and the result could never line up with the curriculum the rest
+    // of the report measures.
     // Phase M4.4 — grouped by the container's CANONICAL ID through the shared
-    // resolver (canonical `topic` first, then `unit`), exactly like the
-    // dashboard. The old code keyed this map by the display TITLE and dropped
+    // resolver (`curriculumContainerOf`: canonical `Unit` first, legacy `Topic`
+    // only when no Unit exists), exactly like the dashboard. The old code keyed
+    // this map by the display TITLE and dropped
     // the id from the payload, so two containers with the same title collapsed
     // into one row — and a container that had no title fell back to the QUIZ
     // title, inventing a third identity (M4-F9). Aggregation math is unchanged:

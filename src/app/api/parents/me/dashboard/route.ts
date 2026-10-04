@@ -511,14 +511,15 @@ export async function GET(req: NextRequest) {
       }
 
       // --- Strong / weak topics (based on FINISHED quiz attempts grouped by
-      // topic — an ungraded open attempt must not move a topic average).
-      // Phase 19: the grouping container is CANONICAL-first — an official
-      // lesson is unit-linked (`topicId = null`), so `lesson.topic` alone
-      // silently dropped every official attempt from strong/weak lists. The
-      // topic is used when present (legacy rows), otherwise the UNIT — the
-      // canonical sibling layer topics used to subdivide. The payload keys
-      // stay `strongTopics` / `weakTopics`; only the resolution chain moved
-      // from legacy-only to the real curriculum.
+      // their curriculum container — an ungraded open attempt must not move a
+      // container average).
+      // Phase 19: `lesson.topic` alone silently dropped every OFFICIAL
+      // attempt, because an official lesson is unit-linked (`topicId = null`);
+      // the container therefore had to travel the canonical curriculum. M4.4
+      // pins the PRECEDENCE: the UNIT is primary and the legacy TOPIC is only
+      // the fallback (`curriculumContainerOf` = `unit ?? topic`), matching
+      // `resolveLessonCourseId`/`lessonCourseChainOr` in `progression.ts`. The
+      // payload keys stay `strongTopics` / `weakTopics`.
       //
       // Phase 26E: the universe restriction is pushed into SQL as well as
       // applied in memory, because this query is capped (`take: 50`) — without
@@ -549,10 +550,11 @@ export async function GET(req: NextRequest) {
               orderBy: { startedAt: "desc" },
             });
       // Phase M4.4 — the container is resolved by the SHARED rule
-      // (`curriculumContainerOf`: canonical `topic` first, then `unit`) and the
-      // map is keyed by the container's canonical ID. Two containers that share
-      // a display title — the two curricula reuse unit titles — stay two
-      // distinct rows; nothing is ever merged or matched by title.
+      // (`curriculumContainerOf`: canonical `Unit` FIRST, legacy `Topic` only
+      // as the fallback) and the map is keyed by the container's canonical ID.
+      // Two containers that share a display title — the two curricula reuse
+      // unit titles — stay two distinct rows; nothing is ever merged or matched
+      // by title, and a lesson carrying both links groups under its Unit.
       const topicMap = new Map<
         string,
         { title: string; titleAr: string; sumPct: number; count: number }

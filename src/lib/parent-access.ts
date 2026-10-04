@@ -299,9 +299,9 @@ export function attemptsInCurriculumUniverse<
 //   * mock exams      : `ExamAttempt → MockExam → Course` (`MockExam.courseId`
 //     is the authority; an attempt with no linked exam has no course at all and
 //     therefore fails closed);
-//   * curriculum unit : `Lesson.topic ?? Lesson.unit` — the same Phase 19
-//     container chain the parent screens group by, now keyed by the container's
-//     canonical ID instead of its title.
+//   * curriculum unit : `Lesson.unit ?? Lesson.topic` — the canonical container
+//     chain (Unit primary, legacy Topic fallback) the parent screens group by,
+//     now keyed by the container's canonical ID instead of its title.
 //
 // Every helper fails closed: a child with no active course (no group) has an
 // empty metric set, never a lifetime fallback and never an invented course.
@@ -369,7 +369,7 @@ export function currentCourseMockExamWhere(
   return { mockExam: { courseId: courseId ?? "" } };
 }
 
-/** The canonical curriculum container of a lesson: `topic` first (legacy), then `unit`. */
+/** The canonical curriculum container of a lesson: the `Unit`, else the legacy `Topic`. */
 export type CurriculumContainer = {
   id: string;
   title: string;
@@ -379,9 +379,17 @@ export type CurriculumContainer = {
 /**
  * Resolve the canonical curriculum container a lesson belongs to.
  *
- * Phase 19 established the chain (an OFFICIAL lesson is unit-linked and has no
- * `topicId`, so `unit` must be the fallback rather than the other way round);
- * M4.4 adds the missing IDENTITY rule: the caller GROUPS BY `id`, never by the
+ * PRECEDENCE — `Unit` is PRIMARY, `Topic` is the LEGACY FALLBACK:
+ *   `lesson.unit ?? lesson.topic ?? null`
+ * The official curriculum is unit-linked, and the repository's canonical chain
+ * resolves the same way (`resolveLessonCourseId` in `progression.ts`:
+ * `lesson.unit?.part.courseId ?? lesson.topic?.unit.part.courseId`, established
+ * by M4.2 and used by `lessonCourseChainOr`). A lesson that still carries BOTH
+ * links therefore groups under its Unit — the Topic chain is consulted only when
+ * no Unit exists, so a stale legacy `topicId` on an official lesson can never
+ * re-name or re-key its container.
+ *
+ * M4.4 adds the IDENTITY rule on top: the caller GROUPS BY `id`, never by the
  * title. The two live curricula reuse container titles, so two units with the
  * same title are two different rows and must never merge.
  *
@@ -397,7 +405,7 @@ export function curriculumContainerOf(
     | null
     | undefined
 ): CurriculumContainer | null {
-  const container = lesson?.topic ?? lesson?.unit ?? null;
+  const container = lesson?.unit ?? lesson?.topic ?? null;
   if (!container?.id) return null;
   return {
     id: container.id,

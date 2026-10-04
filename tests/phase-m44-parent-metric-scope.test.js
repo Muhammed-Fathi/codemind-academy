@@ -380,6 +380,63 @@ for (const u of UNITS) {
     updatedAt: NOW,
   });
 }
+// Two ADVERSARIAL curriculum shapes inside the CURRENT course:
+//   * `u-cur-hybrid` — a Unit that ALSO has a legacy Topic under it, attached to
+//     a lesson that carries BOTH links (with DIFFERENT ids and titles). The
+//     canonical precedence must pick the Unit.
+//   * `u-cur-legacy` — a unit that exists only to host a legacy topic for a
+//     lesson with NO Unit at all: the Topic fallback must still work.
+ins("Part", { id: "p-cur-hybrid", courseId: "c-cur", title: "Part H", titleAr: "الجزء H", order: 3 });
+ins("Unit", {
+  id: "u-cur-hybrid",
+  partId: "p-cur-hybrid",
+  title: "Unit Hybrid",
+  titleAr: "UNIT-WINS-TITLE",
+  order: 3,
+});
+ins("Topic", { id: "t-cur-hybrid", unitId: "u-cur-hybrid", title: "Topic Hybrid", titleAr: "LEGACY-TOPIC-TITLE", order: 1 });
+ins("Part", { id: "p-cur-legacy", courseId: "c-cur", title: "Part L", titleAr: "الجزء L", order: 4 });
+ins("Unit", {
+  id: "u-cur-legacy",
+  partId: "p-cur-legacy",
+  title: "Unit Legacy",
+  titleAr: "UNIT-LEGACY-HOST",
+  order: 4,
+});
+ins("Topic", { id: "t-cur-legacy", unitId: "u-cur-legacy", title: "Topic Legacy", titleAr: "LEGACY-ONLY-TITLE", order: 1 });
+// The hybrid lesson: Unit AND legacy Topic, different ids AND different titles.
+ins("Lesson", {
+  id: "l-cur-hybrid",
+  unitId: "u-cur-hybrid",
+  topicId: "t-cur-hybrid",
+  officialCode: "3-1",
+  academicLevel: "SECOND_SECONDARY",
+  curriculumStatus: "OFFICIAL",
+  trackScope: "SHARED",
+  status: "PUBLISHED",
+  title: "Session 3-1",
+  titleAr: "الحصة ٣-١",
+  order: 3,
+  createdAt: NOW,
+  updatedAt: NOW,
+});
+// The legacy-only lesson: no Unit at all.
+ins("Lesson", {
+  id: "l-cur-legacy",
+  unitId: null,
+  topicId: "t-cur-legacy",
+  officialCode: "3-2",
+  academicLevel: "SECOND_SECONDARY",
+  curriculumStatus: "LEGACY",
+  trackScope: "SHARED",
+  status: "PUBLISHED",
+  title: "Session 3-2",
+  titleAr: "الحصة ٣-٢",
+  order: 4,
+  createdAt: NOW,
+  updatedAt: NOW,
+});
+
 // Groups: the child's CURRENT group, the previous-level group, the sibling's
 // group (which IS the previous-level course) and the other same-level course.
 const GROUPS = [
@@ -515,6 +572,8 @@ const QUIZZES = [
   { id: "q-cur", lessonId: "l-cur-1", title: "Current Quiz 1" },
   { id: "q-cur-2", lessonId: "l-cur-2", title: "Current Quiz 2" },
   { id: "q-other", lessonId: "l-other-1", title: OTHER_QUIZ },
+  { id: "q-hybrid", lessonId: "l-cur-hybrid", title: "Hybrid Quiz" },
+  { id: "q-legacy-cur", lessonId: "l-cur-legacy", title: "Legacy-only Quiz" },
 ];
 for (const q of QUIZZES) {
   ins("Quiz", {
@@ -541,6 +600,11 @@ const ATTEMPTS = [
   // A — current course: 90% (strong) and 40% (weak), each in its own container.
   { id: "qa-cur-1", quizId: "q-cur", studentId: "s-a", percentage: 90, passed: true, finishedAt: daysAgo(2), startedAt: daysAgo(2), attemptNumber: 1 },
   { id: "qa-cur-2", quizId: "q-cur-2", studentId: "s-a", percentage: 40, passed: false, finishedAt: daysAgo(1), startedAt: daysAgo(1) },
+  // BOTH links present (Unit + legacy Topic, different ids/titles): the row must
+  // group under the UNIT (u-cur-hybrid), never under t-cur-hybrid.
+  { id: "qa-hybrid", quizId: "q-hybrid", studentId: "s-a", percentage: 80, passed: true, finishedAt: daysAgo(1.5), startedAt: daysAgo(1.5) },
+  // NO Unit at all: the legacy Topic fallback is the only container (t-cur-legacy).
+  { id: "qa-legacy-cur", quizId: "q-legacy-cur", studentId: "s-a", percentage: 70, passed: true, finishedAt: daysAgo(2.5), startedAt: daysAgo(2.5) },
   // A — an OPEN attempt in the current course: ungraded, never counted.
   { id: "qa-cur-open", quizId: "q-cur", studentId: "s-a", percentage: 0, passed: false, finishedAt: null, startedAt: at(30), attemptNumber: 2 },
   // N — legacy attempts that must never be counted (no active course).
@@ -667,6 +731,28 @@ eq(
   1,
   "…and one child really carries the identity fields the payload must withhold"
 );
+eq(
+  rawDb
+    .prepare(`SELECT unitId, topicId FROM "Lesson" WHERE id = 'l-cur-hybrid'`)
+    .get(),
+  { unitId: "u-cur-hybrid", topicId: "t-cur-hybrid" },
+  "the hybrid lesson carries BOTH a Unit and a legacy Topic (different ids)"
+);
+eq(
+  rawDb.prepare(`SELECT titleAr FROM "Unit" WHERE id = 'u-cur-hybrid'`).get().titleAr,
+  "UNIT-WINS-TITLE",
+  "…whose Unit and Topic titles differ (the wrong choice would be visible)"
+);
+eq(
+  rawDb.prepare(`SELECT titleAr FROM "Topic" WHERE id = 't-cur-hybrid'`).get().titleAr,
+  "LEGACY-TOPIC-TITLE",
+  "…and the legacy topic has a different display title"
+);
+eq(
+  rawDb.prepare(`SELECT unitId, topicId FROM "Lesson" WHERE id = 'l-cur-legacy'`).get(),
+  { unitId: null, topicId: "t-cur-legacy" },
+  "the legacy-only lesson has NO Unit (the Topic fallback is its only container)"
+);
 
 // ---------------------------------------------------------------------------
 // B. Dashboard attendance
@@ -749,8 +835,16 @@ ok(
 // ---------------------------------------------------------------------------
 section("E. Quiz metrics — current course, finished attempts only");
 
-eq([A.quizzes.attempts, A.quizzes.average, A.quizzes.passed, A.quizzes.failed], [2, 65, 1, 1], "E1: dashboard = the two in-course finished attempts (90 + 40)");
-eq(A.quizzes.recent.map((q) => q.percentage), [40, 90], "E2: newest first, the OPEN attempt excluded");
+eq(
+  [A.quizzes.attempts, A.quizzes.average, A.quizzes.passed, A.quizzes.failed],
+  [4, 70, 3, 1],
+  "E1: dashboard = the four in-course finished attempts (90/40 current + 80 hybrid + 70 legacy-only)"
+);
+eq(
+  A.quizzes.recent.map((q) => q.percentage),
+  [40, 80, 90, 70],
+  "E2: newest first, the OPEN attempt excluded"
+);
 ok(
   !JSON.stringify(A.quizzes.recent).includes(OLD_QUIZ) &&
     !JSON.stringify(A.quizzes.recent).includes(OTHER_QUIZ),
@@ -793,16 +887,24 @@ ok(
 section("G. Strong/weak rows — canonical container ID, never the title");
 
 const dashTopics = [...A.strongTopics, ...A.weakTopics];
-eq(dashTopics.length, 2, "G1: both in-course containers are reported (the other course's is excluded)");
 eq(
-  dashTopics.map((t) => t.title),
-  [UNIT_TITLE, UNIT_TITLE],
-  "G2: …and they share ONE display title"
+  dashTopics.length,
+  4,
+  "G1: the four in-course containers are reported (the other course's is excluded)"
 );
-eq(new Set(dashTopics.map((t) => t.id)).size, 2, "G3: …while their canonical ids stay distinct");
+eq(
+  dashTopics.filter((t) => t.title === UNIT_TITLE).length,
+  2,
+  "G2: two containers share ONE display title"
+);
+eq(
+  new Set(dashTopics.map((t) => t.id)).size,
+  4,
+  "G3: …while every canonical id stays distinct"
+);
 eq(
   dashTopics.map((t) => t.academicLevel),
-  ["SECOND_SECONDARY", "SECOND_SECONDARY"],
+  Array(4).fill("SECOND_SECONDARY"),
   "G4: each row carries the level context of the course it was measured in"
 );
 ok(
@@ -810,23 +912,50 @@ ok(
     dashTopics.some((t) => t.id === "u-cur-2" && t.avgPct === 40),
   "G5: the ids are the canonical Unit ids and the averages are per container"
 );
+// THE PRECEDENCE PROOF (real flow): the lesson carrying BOTH links groups under
+// its Unit — with the Unit's id AND the Unit's title — and the legacy Topic that
+// hangs off it is never used as a container. The legacy-only lesson still
+// resolves through its Topic.
+ok(
+  dashTopics.some((t) => t.id === "u-cur-hybrid" && t.avgPct === 80),
+  "G5a: a Unit+Topic lesson groups under its UNIT id (Unit wins)"
+);
+ok(
+  !dashTopics.some((t) => t.id === "t-cur-hybrid") &&
+    !dashTopics.some((t) => t.title === "LEGACY-TOPIC-TITLE"),
+  "G5b: …the legacy Topic is neither a key nor a title for that lesson"
+);
+ok(
+  dashTopics.some((t) => t.id === "t-cur-legacy" && t.title === "LEGACY-ONLY-TITLE" && t.avgPct === 70),
+  "G5c: a lesson with NO Unit still resolves through its legacy Topic"
+);
 
 const anaTopics = [...AA.strongTopics, ...AA.weakTopics];
-eq(anaTopics.length, 2, "G6: analytics reports the same two containers");
+eq(anaTopics.length, 4, "G6: analytics reports the same four containers");
 eq(
   anaTopics.map((t) => t.id).sort(),
   dashTopics.map((t) => t.id).sort(),
   "G7: analytics container ids === dashboard container ids (one identity rule)"
 );
 eq(
-  anaTopics.map((t) => t.title),
-  [UNIT_TITLE, UNIT_TITLE],
+  anaTopics.filter((t) => t.title === UNIT_TITLE).length,
+  2,
   "G8: analytics keeps the same titles too"
 );
 eq(
   new Set(anaTopics.map((t) => t.id)).size,
-  2,
+  4,
   "G9: …and does NOT merge them by title (the pre-M4.4 bug)"
+);
+ok(
+  anaTopics.some((t) => t.id === "u-cur-hybrid" && t.avgPct === 80) &&
+    !anaTopics.some((t) => t.id === "t-cur-hybrid") &&
+    !anaTopics.some((t) => t.title === "LEGACY-TOPIC-TITLE"),
+  "G9a: analytics resolves Unit+Topic the same way (Unit wins, Topic unused)"
+);
+ok(
+  anaTopics.some((t) => t.id === "t-cur-legacy" && t.title === "LEGACY-ONLY-TITLE"),
+  "G9b: analytics keeps the legacy-only Topic fallback"
 );
 ok(
   anaTopics.every((t) => typeof t.id === "string" && t.id.length > 0),
@@ -858,7 +987,7 @@ eq(
   [2, 100],
   "H4: sibling B counts ITS course instead (same rows, different attribution)"
 );
-eq(wkA.summary.quizzesTaken, 2, "H5: child A's weekly quizzes = the two in-course ones");
+eq(wkA.summary.quizzesTaken, 4, "H5: child A's weekly quizzes = the four in-course ones");
 eq(wkA.summary.lessonsViewed, 1, "H6: child A's weekly lessons = the in-course progress row only");
 eq(wkA.summary.homeworkSubmitted, 1, "H7: child A's weekly homework = the in-course submission only");
 ok(
@@ -964,9 +1093,58 @@ ok(
     !PA.isCurrentCourseAttendance({ session: null }, "c-x"),
   "K12: the in-memory twin agrees with the SQL predicate (own course, fail closed)"
 );
-eq(PA.curriculumContainerOf({ unit: { id: "u1", title: "T", titleAr: "ت" } }).id, "u1", "K13: the container resolver prefers a canonical id");
-eq(PA.curriculumContainerOf({ topic: { id: "t1" }, unit: { id: "u1" } }).id, "t1", "K14: …with the legacy Topic chain winning when present");
-eq(PA.curriculumContainerOf({ unit: { title: "no id" } }), null, "K15: a container without an id is dropped, never keyed by title");
+eq(
+  PA.curriculumContainerOf({ unit: { id: "u1", title: "Unit T", titleAr: "عنوان الوحدة" } }).id,
+  "u1",
+  "K13: a unit-only lesson resolves to its Unit"
+);
+eq(
+  PA.curriculumContainerOf({
+    unit: { id: "u1", title: "Unit T", titleAr: "عنوان الوحدة" },
+    topic: { id: "t1", title: "Topic T", titleAr: "عنوان الموضوع" },
+  }).id,
+  "u1",
+  "K14: when BOTH links are present the canonical UNIT wins (Topic is legacy fallback only)"
+);
+eq(
+  PA.curriculumContainerOf({
+    unit: { id: "u1", title: "Unit T", titleAr: "عنوان الوحدة" },
+    topic: { id: "t1", title: "Topic T", titleAr: "عنوان الموضوع" },
+  }).titleAr,
+  "عنوان الوحدة",
+  "K14a: …and the Unit supplies the display title (never the legacy Topic's)"
+);
+eq(
+  PA.curriculumContainerOf({ unit: null, topic: { id: "t1", title: "Topic T", titleAr: "عنوان الموضوع" } }).id,
+  "t1",
+  "K14b: the Topic is used ONLY when no Unit exists"
+);
+eq(
+  PA.curriculumContainerOf({ topic: { id: "t1", title: "Topic T", titleAr: "عنوان الموضوع" } }).id,
+  "t1",
+  "K14c: a legacy-only lesson (no unit field at all) still resolves"
+);
+eq(
+  PA.curriculumContainerOf({ unit: { id: "u1", title: "Unit T" }, topic: null }).id,
+  "u1",
+  "K14d: a lesson with no Topic uses its Unit"
+);
+eq(
+  PA.curriculumContainerOf({ unit: { title: "no id" } }),
+  null,
+  "K15: a container without an id is dropped, never keyed by title"
+);
+{
+  const resolverSrc = stripComments(read("src/lib/parent-access.ts"));
+  ok(
+    /lesson\?\.unit \?\? lesson\?\.topic \?\? null/.test(resolverSrc),
+    "K15a: the resolver implements the documented Unit-first precedence"
+  );
+  ok(
+    !/lesson\?\.topic \?\? lesson\?\.unit/.test(resolverSrc),
+    "K15b: …and the inverted (Topic-first) precedence is gone"
+  );
+}
 
 const dashboardSrc = read("src/app/api/parents/me/dashboard/route.ts");
 const analyticsSrc = read("src/app/api/parents/me/analytics/route.ts");
