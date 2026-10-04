@@ -366,6 +366,28 @@ export function SessionVideoPlayer({
   // e.g. pressing play while metadata loads) is DEFERRED, not dropped —
   // dropping it loses the anchor the final flush needs to be creditable.
   const pendingAnchorRef = React.useRef(false);
+  // Phase M4.6b — watch-window arming. The server can only credit wall-clock
+  // time it has actually seen, and it starts that window when the FIRST beat
+  // reaches it. A cold first request (measured in the field at ~2.3s) used to
+  // swallow the beginning of a short recording: a genuinely watched 10s video
+  // landed at 80% and never satisfied a 95% requirement. The fix is NOT to
+  // trust the client's playhead — it is to make sure the trusted window exists
+  // BEFORE playback is allowed to consume meaningful time:
+  //   * `armedRef` — the window is established (or was never needed);
+  //   * `armingRef` — the in-flight arming request, so it is sent once;
+  //   * `resumePlayRef` — a play attempt that arrived while arming.
+  // Metadata is the first moment the media is measurable, so that is where the
+  // arm is requested; in a normal flow the anchor lands while the student is
+  // still reaching for the play button and nothing is ever held.
+  const armedRef = React.useRef(!video.trackable);
+  const armingRef = React.useRef<Promise<void> | null>(null);
+  const resumePlayRef = React.useRef(false);
+  const holdingRef = React.useRef(false);
+  const completedRef = React.useRef(completed);
+  React.useEffect(() => {
+    completedRef.current = completed;
+  }, [completed]);
+  const [preparing, setPreparing] = React.useState(false);
 
   // Decide HOW to render before rendering anything.
   //   * Uploaded / managed media → `/api/media/<id>`, always a <video>.
@@ -416,6 +438,37 @@ export function SessionVideoPlayer({
     // an extra beat, which is how the loop above started.
   }, [video.id, video.trackable]);
 
+  /**
+   * Phase M4.6b — send the anchor that opens the server's watch window, once,
+   * as early as the media is measurable. Resolves when the window is open (or
+   * when the attempt failed — a network failure must never lock the student
+   * out of their own video; the play beat then anchors as before).
+   */
+  const armWindow = React.useCallback((): Promise<void> => {
+    if (armedRef.current) return Promise.resolve();
+    if (armingRef.current) return armingRef.current;
+    const el = ref.current;
+    // Not measurable yet: `handleLoaded` re-runs this the moment it is.
+    if (!el || !el.duration || Number.isNaN(el.duration)) return Promise.resolve();
+    const flight = beat().then(() => {
+      armedRef.current = true;
+      const media = ref.current;
+      if (resumePlayRef.current && media) {
+        // Honor the held play attempt now that the window is trusted.
+        resumePlayRef.current = false;
+        holdingRef.current = false;
+        setPreparing(false);
+        try {
+          void media.play();
+        } catch {
+          /* the browser's autoplay rules decide; the student can press play */
+        }
+      }
+    });
+    armingRef.current = flight;
+    return flight;
+  }, [beat]);
+
   // Heartbeat design (server-verified, tamper-resistant):
   //   * a beat on PLAY anchors the server clock (the row's lastHeartbeatAt),
   //     so the elapsed-time credit of every LATER beat has a start point —
@@ -444,10 +497,14 @@ export function SessionVideoPlayer({
     if (!el) return;
     const resume = video.progress.watchedSec;
     if (resume > 5 && resume < el.duration - 5) el.currentTime = resume;
-    // Phase M4.6 — metadata is known now, so the server clock can be anchored:
-    // flush a beat that `onPlay` had to defer (or the anchor of a playback
-    // that is already running). Without it, a recording shorter than the 15s
-    // interval could be watched in one pass with NO credit at all.
+    // Phase M4.6b — metadata is the first moment the media is measurable, so
+    // this is where the trusted watch window is armed. The arm beat doubles as
+    // the anchor for a playback that is already waiting (or for a beat that
+    // `onPlay` had to defer while `duration` was still unknown).
+    if (video.trackable && !completedRef.current) {
+      void armWindow();
+      return;
+    }
     if (playingRef.current || pendingAnchorRef.current) beat();
   };
 
@@ -478,12 +535,26 @@ export function SessionVideoPlayer({
             className="aspect-video w-full"
             onLoadedMetadata={handleLoaded}
             onPlay={() => {
+              // Phase M4.6b — never let playback run inside an unarmed window:
+              // hold the attempt (pause) until the anchor lands, then resume it.
+              // The seek/credit rule is untouched — this only guarantees that
+              // the seconds the student really watches are inside the window.
+              if (video.trackable && !armedRef.current && !completedRef.current) {
+                holdingRef.current = true;
+                resumePlayRef.current = true;
+                setPreparing(true);
+                ref.current?.pause();
+                void armWindow();
+                return;
+              }
               playingRef.current = true;
               // Anchor the server clock at playback start (see above).
               beat();
             }}
             onPause={() => {
               playingRef.current = false;
+              // The hold's own pause is not a watch event — no beat for it.
+              if (holdingRef.current) return;
               beat();
             }}
             onEnded={() => {
@@ -525,6 +596,9 @@ export function SessionVideoPlayer({
         </div>
         {video.trackable ? (
           <>
+            {preparing && (
+              <p className="text-[11px] text-muted-foreground">{tr("app.001")}</p>
+            )}
             <Progress value={percent} className="h-2" />
             <p className="text-[11px] text-muted-foreground">
               {tr("course.206")} ({video.requiredPercent}%)

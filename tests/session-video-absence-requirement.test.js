@@ -890,7 +890,13 @@ test("SessionVideo requirement modes + attendance-aware gating (T1–T31)", asyn
   // Ctrl+F5 (source pins — the route half is T18's l95 read-after-beats).
   // ===========================================================================
   const playerSrc = read("src/components/course/session-videos-view.tsx");
-  ok(/onPlay=\{\(\) => \{\s+playingRef\.current = true;\s+[^}]*beat\(\);/.test(playerSrc), "T20: the player anchors the server clock on PLAY (source pin)");
+  // M4.6b — `onPlay` now first HOLDS a play attempt that arrives before the
+  // watch window is armed (Phase M4.6b); the pinned contract is unchanged: the
+  // play handler still marks playback and anchors the server clock with a beat.
+  ok(
+    /onPlay=\{\(\) => \{[\s\S]{0,1000}?playingRef\.current = true;[\s\S]{0,200}?beat\(\);/.test(playerSrc),
+    "T20: the player anchors the server clock on PLAY (source pin)"
+  );
   ok(/onWatchProgress=\{refreshCanonical\}/.test(lessonSrc), "T20: the section feeds beats into the lesson refresh (source pin)");
   ok(/refreshCanonical[\s\S]{0,400}fetch\(`\/api\/lessons\//.test(lessonSrc), "T20: the refresh re-reads the canonical payload (source pin)");
   ok(!/refreshCanonical[\s\S]{0,600}setLoading\(true\)/.test(lessonSrc.split("refreshCanonical")[1].split("React.useEffect")[0]), "T20: the refresh is silent (no skeleton flash)");

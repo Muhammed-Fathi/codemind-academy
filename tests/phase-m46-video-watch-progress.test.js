@@ -665,12 +665,71 @@ const React = require(path.join(REPO, "node_modules/react"));
 const { createRoot } = require(path.join(REPO, "node_modules/react-dom/client"));
 const { SessionVideoPlayer } = require(path.join(EMIT, "components/course/session-videos-view.js"));
 
+// ---------------------------------------------------------------------------
+// The browser model: a fake server clock that follows REAL time, and a media
+// element whose playhead follows that clock while it is actually playing. A
+// delayed request therefore behaves exactly like the field case: the payload
+// leaves the client now and the server receives it `delay` later.
+// ---------------------------------------------------------------------------
+let mediaState = null;
+let lastPumpTs = RealDate.now();
+function pumpClock() {
+  const now = RealDate.now();
+  const step = now - lastPumpTs;
+  if (step <= 0) return;
+  lastPumpTs = now;
+  advanceClock(step); // wall-clock time always flows
+  if (mediaState?.playing) {
+    mediaState.position = Math.min(mediaState.duration, mediaState.position + step / 1000);
+  }
+}
+/** Let `ms` of REAL time flow through the model (browser-faithful pacing). */
+async function flowRealTime(ms) {
+  const t0 = RealDate.now();
+  while (RealDate.now() - t0 < ms) {
+    pumpClock();
+    await new Promise((r) => setTimeout(r, 5));
+  }
+  pumpClock();
+}
+/** Deterministic playback: the wall clock and the playhead advance together. */
+function compressPlayback(seconds) {
+  pumpClock();
+  advanceClock(seconds * 1000);
+  if (mediaState) {
+    mediaState.position = Math.min(mediaState.duration, mediaState.position + seconds);
+  }
+}
+const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+
 // The player's fetch goes through the REAL route handler (same DB, same auth).
 let beatPosts = [];
 let lastResponse = null;
+let requestStarts = [];
+let requestDelays = [];
+let nextRequestDelayMs = 0;
+let failNextRequest = false;
 global.fetch = async (url, init) => {
   const body = JSON.parse(init?.body || "{}");
   const id = /\/session-videos\/([^/]+)\/progress$/.exec(String(url))?.[1];
+  requestStarts.push(body);
+  const delay = nextRequestDelayMs;
+  nextRequestDelayMs = 0;
+  if (failNextRequest) {
+    failNextRequest = false;
+    throw new Error("simulated network failure");
+  }
+  if (delay > 0) {
+    const t0 = RealDate.now();
+    await flowRealTime(delay); // the cold request is in flight for `delay` ms
+    requestDelays.push({
+      delay: RealDate.now() - t0,
+      positionAtDelivery: mediaState ? mediaState.position : 0,
+      playingAtDelivery: Boolean(mediaState?.playing),
+    });
+  } else {
+    requestDelays.push({ delay: 0, positionAtDelivery: mediaState ? mediaState.position : 0, playingAtDelivery: Boolean(mediaState?.playing) });
+  }
   asUser(s1.user);
   const res = await R.videoProgress.POST(jsonReq(String(url), body), { params: Promise.resolve({ id }) });
   const json = await res.json();
@@ -678,6 +737,52 @@ global.fetch = async (url, init) => {
   lastResponse = json;
   return { ok: res.status < 300, status: res.status, json: async () => json };
 };
+
+/**
+ * jsdom implements no media playback at all, so the test supplies the browser
+ * behaviour the component is written against: `play()`/`pause()` fire their
+ * events, the playhead is a real property, and metadata can arrive later than
+ * the first `play()` click (exactly the race the field hit).
+ */
+function wireMedia(el, duration) {
+  const state = { playing: false, position: 0, duration: Number.NaN, fullDuration: duration };
+  Object.defineProperty(el, "duration", { configurable: true, get: () => state.duration });
+  Object.defineProperty(el, "currentTime", {
+    configurable: true,
+    get: () => state.position,
+    set: (v) => {
+      state.position = Math.min(Math.max(0, Number(v) || 0), state.fullDuration);
+    },
+  });
+  el.play = () => {
+    if (!state.playing) {
+      state.playing = true;
+      el.dispatchEvent(new dom.window.Event("play"));
+    }
+    return Promise.resolve();
+  };
+  el.pause = () => {
+    if (state.playing) {
+      state.playing = false;
+      el.dispatchEvent(new dom.window.Event("pause"));
+    }
+  };
+  mediaState = state;
+  return {
+    state,
+    knowMetadata() {
+      state.duration = state.fullDuration;
+    },
+    async end() {
+      if (state.playing) {
+        state.playing = false;
+        el.dispatchEvent(new dom.window.Event("pause"));
+      }
+      state.position = state.fullDuration;
+      el.dispatchEvent(new dom.window.Event("ended"));
+    },
+  };
+}
 
 const playerVideo = (video) => ({
   id: video.id,
@@ -717,54 +822,62 @@ async function mountPlayer(video) {
   }
   await React.act(async () => {
     root.render(React.createElement(Host));
-    await new Promise((r) => setTimeout(r, 50));
+    await tick(50);
   });
   const el = container.querySelector("video");
-  return { container, el, setDuration: (v) => Object.defineProperty(el, "duration", { configurable: true, value: v }), setPosition: (v) => Object.defineProperty(el, "currentTime", { configurable: true, value: v, writable: true }) };
+  return { container, el };
 }
+const mountMedia = async (video, { withMetadata = true } = {}) => {
+  const { container, el } = await mountPlayer(video);
+  const media = wireMedia(el, 10);
+  if (withMetadata) media.knowMetadata();
+  return { container, el, media };
+};
+const fire = async (el, type, ms = 60) => {
+  await React.act(async () => {
+    el.dispatchEvent(new dom.window.Event(type));
+    await tick(ms);
+  });
+};
 
+// ---------------------------------------------------------------------------
 // B1/B2/B3/B5 — the reported flow: a fresh 10s recording, played and ended.
+// ---------------------------------------------------------------------------
 {
   const vShort = await mkVideo({ title: "Reported case" });
-  const { el, setDuration, setPosition } = await mountPlayer(vShort);
-  ok(!!el, "B1: the shipped player renders a <video> for managed media");
-  // jsdom reports NaN duration until metadata arrives — exactly the state the
-  // real player is in when a student clicks play immediately.
-  setDuration(10);
-  setPosition(0);
+  const { el, media } = await mountMedia(vShort);
   beatPosts = [];
-  await React.act(async () => {
-    el.dispatchEvent(new dom.window.Event("play"));
-    await new Promise((r) => setTimeout(r, 60));
-  });
-  eq(beatPosts.length, 1, "B1: playback anchors the server clock with exactly one beat");
+  requestStarts = [];
+  requestDelays = [];
+  // Metadata = the player is measurable → the trusted window is armed BEFORE
+  // the student can press play (Phase M4.6b).
+  await fire(el, "loadedmetadata");
+  eq(beatPosts.length, 1, "B1: metadata arms the watch window with exactly one anchor beat");
   eq(beatPosts[0], { positionSec: 0, durationSec: 10 }, "B1: the anchor carries the real playhead/duration");
   ok(!!(await viewOf(vShort, s1.student)), "B1: the anchor created the progress row");
+
+  await React.act(async () => {
+    media.state.playing = false;
+    el.play();
+    await tick(60);
+  });
+  ok(media.state.playing, "B1: an armed player is NOT held — playback runs");
+  eq(beatPosts.length, 2, "B1: the play beat follows the anchor");
 
   // 1.2s of continuous playback (well inside the 15s interval) must stay quiet:
   // the old render→beat loop sent hundreds of beats here and reset the server
   // anchor every few milliseconds.
-  const t0 = RealDate.now();
-  while (RealDate.now() - t0 < 1200) {
-    setPosition(Math.min(10, (RealDate.now() - t0) / 1000));
-    await React.act(async () => {
-      await new Promise((r) => setTimeout(r, 100));
-    });
-  }
-  ok(beatPosts.length <= 3, `B3: playing does not storm the heartbeat route (got ${beatPosts.length} beats in 1.2s)`);
+  await flowRealTime(1200);
+  ok(beatPosts.length <= 4, `B3: playing does not storm the heartbeat route (got ${beatPosts.length} beats in 1.2s)`);
 
-  // Watch it to the end: 10 real seconds pass (the fake clock), position 10.
-  advanceClock(10000);
-  setPosition(10);
+  // Watch it to the end: the playhead reaches 10s and the window is 10s wide.
+  compressPlayback(10 - media.state.position);
   beatPosts = [];
-  await React.act(async () => {
-    el.dispatchEvent(new dom.window.Event("pause")); // browsers pause before ended
-    el.dispatchEvent(new dom.window.Event("ended"));
-    await new Promise((r) => setTimeout(r, 80));
-  });
+  await fire(el, "ended", 80);
   eq(beatPosts[beatPosts.length - 1], { positionSec: 10, durationSec: 10 }, "B5: the ended flush carries the final playhead/duration");
   ok(beatPosts.length <= 2, `B5: the end flush is bounded (got ${beatPosts.length} beats)`);
   const row = await viewOf(vShort, s1.student);
+  eq(row.watchedSec, 10, "B2: the full 10s is credited");
   eq(row.percent, 100, "B2: a 10s recording watched normally reaches 100% (>= 95%)");
   eq(row.isCompleted, true, "B2: the ended flush persisted the completion");
   eq(lastResponse.percent, row.percent, "B2: the player received the freshly persisted percent");
@@ -772,32 +885,215 @@ async function mountPlayer(video) {
   const lastCall = progressCalls[progressCalls.length - 1];
   eq([lastCall.percent, lastCall.satisfied], [100, true], "B2: the parent's onProgress saw the completion (no stale UI state)");
 
-  // No further beats after the flush (the interval is 15s away).
   const after = beatPosts.length;
   await React.act(async () => {
-    await new Promise((r) => setTimeout(r, 250));
+    await tick(250);
   });
   eq(beatPosts.length, after, "B5: no beats fire after the ended flush");
+
+  // C9 (completion) — completion is monotonic and idempotent.
+  media.state.position = 5;
+  await fire(el, "play", 40);
+  await fire(el, "pause", 40);
+  const repeat = await beat(vShort, s1.user, { positionSec: 10, durationSec: 10 });
+  const done = await viewOf(vShort, s1.student);
+  eq(repeat.json.percent, 100, "C9: repeating the completion beat keeps 100%");
+  eq([done.watchedSec, done.percent, done.isCompleted], [10, 100, true], "C9: completion is monotonic and idempotent after re-watching");
 }
 
-// B4 — a beat requested before metadata is measurable is deferred, not lost.
+// ---------------------------------------------------------------------------
+// B4 — a play attempt before metadata is measurable: held, deferred, resumed.
+// ---------------------------------------------------------------------------
 {
   const vDefer = await mkVideo({ title: "Deferred anchor" });
-  const { el, setDuration } = await mountPlayer(vDefer);
+  const { el, media } = await mountMedia(vDefer, { withMetadata: false });
   beatPosts = [];
   await React.act(async () => {
-    el.dispatchEvent(new dom.window.Event("play")); // duration still NaN
-    await new Promise((r) => setTimeout(r, 60));
+    el.play(); // duration still NaN — the student clicked immediately
+    await tick(60);
   });
-  eq(beatPosts.length, 0, "B4: a beat with no measurable duration is deferred (no bogus request)");
-  setDuration(10);
+  eq(beatPosts.length, 0, "B4: an unmeasurable play attempt sends no bogus request");
+  ok(!media.state.playing, "B4: the attempt is held until the window can be armed");
+  media.knowMetadata();
+  await fire(el, "loadedmetadata");
+  eq(beatPosts.length, 2, "B4: metadata arms the window and flushes the held play beat");
+  eq(beatPosts[0], { positionSec: 0, durationSec: 10 }, "B4: the arm beat is the anchor");
+  ok(!!(await viewOf(vDefer, s1.student)), "B4: the anchor row exists, so the final flush has an elapsed window");
+  ok(media.state.playing, "B4: the held play attempt resumes automatically");
+}
+
+// ---------------------------------------------------------------------------
+// C. Cold start — the first request takes ~2.3s (the field timing)
+// ---------------------------------------------------------------------------
+section("C. Cold start — first request delayed ~2.3s, playback must not lose its start");
+
+{
+  const vCold = await mkVideo({ title: "Cold start" });
+  const { el, media } = await mountMedia(vCold);
+  beatPosts = [];
+  requestStarts = [];
+  requestDelays = [];
+  nextRequestDelayMs = 2300; // the exact browser-like cold request
+
+  // The player is measurable and arms immediately; the student presses play
+  // ~30ms later, while that first request is still in flight.
   await React.act(async () => {
     el.dispatchEvent(new dom.window.Event("loadedmetadata"));
-    await new Promise((r) => setTimeout(r, 60));
+    await tick(30);
   });
-  eq(beatPosts.length, 1, "B4: the deferred anchor is flushed once metadata arrives");
-  eq(beatPosts[0], { positionSec: 0, durationSec: 10 }, "B4: the flushed anchor carries the measurable playhead");
-  ok(!!(await viewOf(vDefer, s1.student)), "B4: the anchor row exists, so the final flush has an elapsed window");
+  await React.act(async () => {
+    el.play();
+    await tick(30);
+  });
+  ok(!media.state.playing, "C1/C4: the play attempt is held while the window is unarmed");
+  eq(requestStarts.length, 1, "C1: the hold fires no extra beat — the anchor is the only request in flight");
+  eq(requestStarts[0], { positionSec: 0, durationSec: 10 }, "C1: the in-flight request is the anchor");
+
+  await flowRealTime(2500); // the cold request finally lands (server clock follows)
+  ok(requestDelays[0].delay >= 2200, `C1: the first request really took ~2.3s (${requestDelays[0].delay}ms)`);
+  eq(requestDelays[0].positionAtDelivery, 0, "C4: no playback happened inside the unarmed window");
+  eq(requestDelays[0].playingAtDelivery, false, "C4: playback was still held when the anchor was received");
+  ok(media.state.playing, "C4: playback resumes automatically once the anchor lands");
+
+  // Playback proceeds for the complete real duration: 10s of wall clock and 10s
+  // of playhead, then the recording ends.
+  const startedAt = media.state.position;
+  compressPlayback(10 - startedAt);
+  await fire(el, "ended", 80);
+  const row = await viewOf(vCold, s1.student);
+  eq(row.durationSec, 10, "C2: the recording's real duration is the credited denominator");
+  eq(row.watchedSec, 10, "C2/C3: the whole recording is credited (nothing lost to the cold start)");
+  eq(row.percent, 100, "C3: a genuinely watched 10s recording reaches 100% (>= 95%) despite the 2.3s cold start");
+  eq(row.isCompleted, true, "C3: the delayed-start flow still persists completion");
+  eq(lastResponse.satisfied, true, "C3: the player is told the requirement is satisfied");
+  ok(beatPosts.length <= 5, `C10: no heartbeat storm in the cold-start flow (got ${beatPosts.length} beats)`);
+}
+
+// C5/C6 — a cold anchor followed by a seek still cannot bank fake watch time.
+{
+  const vColdSeek = await mkVideo({ title: "Cold seek" });
+  const { el, media } = await mountMedia(vColdSeek);
+  beatPosts = [];
+  requestStarts = [];
+  requestDelays = [];
+  nextRequestDelayMs = 2300;
+  await React.act(async () => {
+    el.dispatchEvent(new dom.window.Event("loadedmetadata"));
+    await tick(20);
+  });
+  await React.act(async () => {
+    el.play();
+    await tick(20);
+  });
+  media.state.position = 10; // the student drags the bar to the very end
+  await flowRealTime(2500); // the anchor lands; the held play is honored at 10s
+  ok(requestDelays[0].delay >= 2200, "C5: the seek happens under a cold anchor too");
+  await fire(el, "ended", 80);
+  const row = await viewOf(vColdSeek, s1.student);
+  ok(row.percent < 95, `C5: seeking to the end under a cold anchor never completes (got ${row.percent}%)`);
+  eq(row.isCompleted, false, "C5: no completion flag is granted");
+  ok(row.watchedSec <= 1, `C6: the seek banks at most the real seconds that passed (watched ${row.watchedSec}s)`);
+  eq(lastResponse.satisfied, false, "C6: the live verdict stays unsatisfied");
+}
+
+// C7 — paused time and playback rate do not buy wall-clock credit.
+{
+  const vPaused = await mkVideo({ title: "Paused time" });
+  const { el, media } = await mountMedia(vPaused);
+  await fire(el, "loadedmetadata");
+  await React.act(async () => {
+    el.play();
+    await tick(40);
+  });
+  compressPlayback(3);
+  await fire(el, "pause", 60);
+  const paused = await viewOf(vPaused, s1.student);
+  eq([paused.watchedSec, paused.percent], [3, 30], "C7: three watched seconds credit three seconds");
+
+  // 60s of REAL time with the recording paused (a break): the playhead does not
+  // move, so the wall clock must not inflate the credited watch time.
+  advanceClock(60000);
+  await React.act(async () => {
+    media.state.playing = false;
+    el.play();
+    await tick(60);
+  });
+  const resumed = await viewOf(vPaused, s1.student);
+  eq([resumed.watchedSec, resumed.percent], [3, 30], "C7: idle time cannot earn watch credit beyond the playhead");
+  media.state.playing = false;
+}
+
+// C7b — playback rate: 2x playhead, 1x credit (wall-clock rule intact).
+{
+  const vRate = await mkVideo({ title: "Double rate" });
+  const { el, media } = await mountMedia(vRate);
+  await fire(el, "loadedmetadata");
+  await React.act(async () => {
+    el.play();
+    await tick(40);
+  });
+  advanceClock(2000); // 2 real seconds pass …
+  media.state.position = 4; // … while the playhead ran at 2x
+  await fire(el, "pause", 60);
+  const row = await viewOf(vRate, s1.student);
+  eq([row.watchedSec, row.percent], [2, 20], "C7b: credit follows the wall clock, not a fast playhead");
+  media.state.playing = false;
+}
+
+// C8 — repeated play/pause cycles do not duplicate credit.
+{
+  const vCycles = await mkVideo({ title: "Cycles" });
+  const { el, media } = await mountMedia(vCycles);
+  await fire(el, "loadedmetadata");
+  for (let i = 0; i < 5; i++) {
+    await React.act(async () => {
+      el.play();
+      await tick(15);
+      el.pause();
+      await tick(15);
+    });
+  }
+  const none = await viewOf(vCycles, s1.student);
+  eq([none.watchedSec, none.percent], [0, 0], "C8: five instant play/pause cycles credit nothing");
+  await React.act(async () => {
+    media.state.playing = false;
+    el.play();
+    await tick(20);
+  });
+  compressPlayback(1); // one real second of playback: clock and playhead together
+  await fire(el, "pause", 60);
+  const one = await viewOf(vCycles, s1.student);
+  eq([one.watchedSec, one.percent], [1, 10], "C8: one real second credits exactly one second, once");
+  await React.act(async () => {
+    el.play();
+    await tick(20);
+    el.pause();
+    await tick(20);
+    el.play();
+    await tick(20);
+    el.pause();
+    await tick(20);
+  });
+  const still = await viewOf(vCycles, s1.student);
+  eq([still.watchedSec, still.percent], [1, 10], "C8: the extra cycles add no credit");
+  media.state.playing = false;
+}
+
+// C11 — a failing anchor request must never lock the student out of playback.
+{
+  const vOffline = await mkVideo({ title: "Offline anchor" });
+  const { el, media } = await mountMedia(vOffline);
+  beatPosts = [];
+  requestStarts = [];
+  requestDelays = [];
+  failNextRequest = true;
+  await fire(el, "loadedmetadata"); // the anchor attempt fails
+  await React.act(async () => {
+    el.play();
+    await tick(60);
+  });
+  ok(media.state.playing, "C11: a failed anchor never locks the student out of their own recording");
+  media.state.playing = false;
 }
 
 for (const root of roots) {
