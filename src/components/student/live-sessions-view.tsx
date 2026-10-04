@@ -47,6 +47,26 @@ import {
 import { toast } from "sonner";
 import { AlertTriangle, CalendarClock, CheckCircle2, Clock, MessageSquarePlus } from "lucide-react";
 
+/**
+ * Phase M4.5 — the absence-review history prints the reviewer's name, falling
+ * back to the reviewer's role when the server has no name on file. That role
+ * is a stored enum (PARENT/TEACHER/ADMIN/...): map it through the ONE
+ * dictionary so it never leaks as raw English chrome. An unknown enum value is
+ * passed through untouched, because it is then genuine server data.
+ */
+const ROLE_KEYS: Record<string, string> = {
+  PARENT: "role.parent",
+  TEACHER: "role.teacher",
+  ADMIN: "role.admin",
+  STUDENT: "role.student",
+  SYSTEM: "role.system",
+};
+
+function roleLabel(role: string, t: (key: string, params?: Record<string, unknown>) => string): string {
+  const key = ROLE_KEYS[String(role).toUpperCase()];
+  return key ? t(key) : role;
+}
+
 // ---------------------------------------------------------------------------
 // Shared vocabulary
 // ---------------------------------------------------------------------------
@@ -399,7 +419,7 @@ function AbsenceCaseCard({
         </div>
 
         {item.lesson && (
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-muted-foreground break-words">
             {t("live.lesson")}: {item.lesson.titleAr || item.lesson.title}
           </p>
         )}
@@ -411,7 +431,9 @@ function AbsenceCaseCard({
           </p>
           {item.reasonSubmittedAt && (
             <p className="text-[11px] text-muted-foreground/80">
-              {t("admin.live.submittedBy")}: {item.reasonSubmittedByRole ?? ""} — {fmtDateTime(item.reasonSubmittedAt)}
+              {t("admin.live.submittedBy")}:{" "}
+              {item.reasonSubmittedByRole ? roleLabel(item.reasonSubmittedByRole, t) : ""} —{" "}
+              {fmtDateTime(item.reasonSubmittedAt)}
             </p>
           )}
         </div>
@@ -426,7 +448,9 @@ function AbsenceCaseCard({
               )}
               {t("student.absences.decision")}: {t(absenceStatusKey(item.status))}
             </p>
-            {item.decisionNote && <p className="text-xs text-muted-foreground">{item.decisionNote}</p>}
+            {item.decisionNote && (
+              <p className="text-xs text-muted-foreground break-words">{item.decisionNote}</p>
+            )}
             {item.decidedAt && (
               <p className="text-[11px] text-muted-foreground/80">{fmtDateTime(item.decidedAt)}</p>
             )}
@@ -446,7 +470,7 @@ function AbsenceCaseCard({
             <ul className="mt-2 space-y-1">
               {item.submissions.map((s) => (
                 <li key={s.id} className="text-muted-foreground">
-                  {fmtDateTime(s.at)} — {s.byName ?? s.role}: {s.reason}
+                  {fmtDateTime(s.at)} — {s.byName ?? roleLabel(s.role, t)}: {s.reason}
                 </li>
               ))}
             </ul>
@@ -656,8 +680,13 @@ export function ParentAbsencesView() {
           <p className="text-xs text-muted-foreground">{t("parent.absences.subtitle")}</p>
         </div>
         {/* The SHARED switcher: name · Academic Level · course per chip, keyed
-            by canonical student id. */}
-        <div className="min-w-[16rem] flex-1 sm:max-w-md">
+            by canonical student id.
+
+            Phase M4.5 — full width on a phone (`w-full sm:w-auto`), so the
+            header no longer asks for a 16rem minimum next to the title; the
+            switcher itself keeps scrolling horizontally inside whatever it
+            gets. Student mode does not render this branch. */}
+        <div className="w-full sm:w-auto sm:min-w-[16rem] sm:flex-1 sm:max-w-md">
           <ChildSwitcher
             items={children.map((c) => ({
               id: c.id,
@@ -708,7 +737,7 @@ export function ParentAbsencesView() {
             const ctx = childContext(item.student.id);
             return (
               <div key={item.id} className="space-y-1">
-                <p className="text-xs font-semibold px-1">
+                <p className="text-xs font-semibold px-1 break-words">
                   {t("parent.absences.child")}: {item.student.name}
                   {ctx ? (
                     <span className="font-normal text-muted-foreground">

@@ -17,9 +17,10 @@
 //     without the level two children look identical. The level arrives in the
 //     server payload (`ChildSwitcher` props) — nothing is inferred from a
 //     course name here, and `id` stays the canonical identity.
-//   * Direction follows the ACTIVE LOCALE (the app sets `dir` on <html>): the
-//     container no longer forces `dir="rtl"`, so an English (LTR) parent sees
-//     the chips in reading order.
+//   * Direction follows the ACTIVE LOCALE (the app sets the direction on
+//     <html>): nothing here forces RTL, so an English (LTR) parent sees the
+//     chips in reading order and an Arabic parent sees them mirrored by the
+//     document — the same rule every other Parent surface follows.
 //   * The id is lifted into the shared app store so navigating to the weekly
 //     report, analytics or the monthly report and back keeps the same child.
 

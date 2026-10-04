@@ -237,9 +237,15 @@ export function ParentAnalyticsView({
           apart). */}
       {registry.length > 1 && (
         <div
-          className="flex gap-2 overflow-x-auto pb-1"
+          /* Phase M4.5 — the strip SCROLLS instead of overflowing the viewport
+             (audit M4-F7: it used to be a plain `flex gap-2`, so three or more
+             children pushed the page sideways at phone widths). `snap-x` +
+             `shrink-0` keep every tab reachable and legible with long names;
+             the label is capped and truncated so one long child cannot stretch
+             the row. Identity stays the CANONICAL studentId (key + state). */
+          className="flex gap-2 overflow-x-auto pb-1 -mb-1 snap-x"
           role="tablist"
-          aria-label={tr("parent.003")}
+          aria-label={tr("parent.switcher.label")}
         >
           {registry.map((c) => (
             <button
@@ -248,14 +254,14 @@ export function ParentAnalyticsView({
               role="tab"
               onClick={() => setSelectedId(c.studentId)}
               aria-selected={selectedId === c.studentId}
-              className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all shrink-0 ${
+              className={`snap-start shrink-0 max-w-[15rem] text-start px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
                 selectedId === c.studentId
                   ? "bg-primary text-primary-foreground shadow-sm"
                   : "bg-muted/50 text-muted-foreground hover:bg-primary/10 hover:text-primary"
               }`}
             >
-              {c.name}
-              <span className="block text-[10px] font-normal opacity-80">
+              <span className="block truncate">{c.name}</span>
+              <span className="block truncate text-[10px] font-normal opacity-80">
                 {academicLevelLabelFor(tr, c.academicLevel)}
                 {c.course ? ` · ${c.course}` : ""}
               </span>
@@ -266,32 +272,37 @@ export function ParentAnalyticsView({
 
       {/* Overview stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* Phase M4.5 — every label comes from the dictionary (they were
+            hard-coded English on an Arabic-first screen: audit M4-F7). */}
         <AnalyticsStat
           icon={CheckCircle2}
-          label="Course Progress"
+          label={tr("parent.report.courseProgress")}
           value={`${child.completionPct}%`}
-          sub={`${child.completedLessons}/${child.totalLessons} Lessons`}
+          sub={tr("parent.report.lessonsCount", {
+            p1: child.completedLessons,
+            p2: child.totalLessons,
+          })}
           color="from-emerald-400 to-teal-500"
         />
         <AnalyticsStat
           icon={CalendarDays}
-          label="Attendance"
+          label={tr("parent.report.attendance")}
           value={`${child.attendancePct}%`}
           sub={tr("parent.004")}
           color="from-teal-400 to-cyan-500"
         />
         <AnalyticsStat
           icon={Trophy}
-          label="Avg Quiz Score"
+          label={tr("parent.report.quizAverage")}
           value={`${child.avgQuizPct}%`}
-          sub={`${child.totalQuizzes} quizzes`}
+          sub={tr("parent.analytics.quizzesCount", { p1: child.totalQuizzes })}
           color="from-amber-400 to-orange-500"
         />
         <AnalyticsStat
           icon={BookOpen}
-          label="Homework"
+          label={tr("parent.report.homework")}
           value={`${child.homeworkGraded}`}
-          sub={`avg ${child.homeworkAvgGrade}/10`}
+          sub={tr("parent.analytics.avgGrade", { p1: child.homeworkAvgGrade })}
           color="from-orange-400 to-rose-500"
         />
       </div>
@@ -303,12 +314,12 @@ export function ParentAnalyticsView({
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <TrendingUp className="w-5 h-5 text-primary" />
-              Quiz Performance Trend
+              {tr("parent.analytics.quizTrend")}
             </CardTitle>
             <CardDescription className="text-xs">{tr("parent.005")}</CardDescription>
           </CardHeader>
           <CardContent>
-            <div dir="ltr" className="w-full h-56">
+            <div dir="ltr" data-dir="chart" className="w-full h-56">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={child.quizTrend.map((q, i) => ({ name: `Q${i + 1}`, pct: q.percentage }))}>
                   <defs>
@@ -322,7 +333,7 @@ export function ParentAnalyticsView({
                   <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} />
                   <ReTooltip
                     contentStyle={{ borderRadius: 8, border: "1px solid oklch(0.91 0.01 165)", fontSize: 12 }}
-                    formatter={(v: any) => [`${v}%`, "Score"]}
+                    formatter={(v: any) => [`${v}%`, tr("parent.028")]}
                   />
                   <Line type="monotone" dataKey="pct" stroke="url(#quizLineGrad)" strokeWidth={2.5} dot={{ fill: "#10b981", r: 3 }} activeDot={{ r: 5 }} />
                 </LineChart>
@@ -336,12 +347,12 @@ export function ParentAnalyticsView({
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <CalendarDays className="w-5 h-5 text-teal-500" />
-              Attendance by Month
+              {tr("parent.analytics.attendanceByMonth")}
             </CardTitle>
             <CardDescription className="text-xs">{tr("parent.004")}</CardDescription>
           </CardHeader>
           <CardContent>
-            <div dir="ltr" className="w-full h-56">
+            <div dir="ltr" data-dir="chart" className="w-full h-56">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={child.attendanceByMonth}>
                   <defs>
@@ -355,7 +366,7 @@ export function ParentAnalyticsView({
                   <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} />
                   <ReTooltip
                     contentStyle={{ borderRadius: 8, border: "1px solid oklch(0.91 0.01 165)", fontSize: 12 }}
-                    formatter={(v: any) => [`${v}%`, "Attendance"]}
+                    formatter={(v: any) => [`${v}%`, tr("parent.report.attendance")]}
                   />
                   <Bar dataKey="pct" fill="url(#attBarGrad)" radius={[6, 6, 0, 0]} />
                 </BarChart>
@@ -371,7 +382,7 @@ export function ParentAnalyticsView({
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2 text-emerald-600">
               <TrendingUp className="w-5 h-5" />
-              Strong Topics
+              {tr("parent.dashboard.strongTopics")}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -401,7 +412,7 @@ export function ParentAnalyticsView({
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2 text-amber-600">
               <AlertTriangle className="w-5 h-5" />
-              Weak Topics
+              {tr("parent.dashboard.weakTopics")}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -429,10 +440,10 @@ export function ParentAnalyticsView({
       {/* Progress ring */}
       <Card className="glass">
         <CardHeader>
-          <CardTitle className="text-base">Course Completion</CardTitle>
+          <CardTitle className="text-base">{tr("parent.analytics.courseCompletion")}</CardTitle>
         </CardHeader>
         <CardContent className="flex items-center justify-center">
-          <div dir="ltr" className="w-48 h-48">
+          <div dir="ltr" data-dir="chart" className="w-48 h-48">
             <ResponsiveContainer width="100%" height="100%">
               <RadialBarChart
                 innerRadius="70%"
@@ -447,7 +458,12 @@ export function ParentAnalyticsView({
           </div>
           <div className="absolute text-center">
             <div className="text-3xl font-extrabold text-gradient">{child.completionPct}%</div>
-            <div className="text-xs text-muted-foreground">{child.completedLessons}/{child.totalLessons} Lessons</div>
+            <div className="text-xs text-muted-foreground">
+              {tr("parent.report.lessonsCount", {
+                p1: child.completedLessons,
+                p2: child.totalLessons,
+              })}
+            </div>
           </div>
         </CardContent>
       </Card>

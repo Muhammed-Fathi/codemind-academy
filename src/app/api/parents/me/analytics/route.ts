@@ -1,4 +1,5 @@
-import { getServerT } from "@/lib/i18n-server";
+import { getServerT, serverLocale } from "@/lib/i18n-server";
+import { fmtDate } from "@/lib/i18n-core";
 // CodeMind Academy — Parent Analytics API
 // Returns detailed analytics for parent's children with date-range support.
 import { NextRequest, NextResponse } from "next/server";
@@ -23,6 +24,8 @@ import {
 
 export async function GET(req: NextRequest) {
   const tApi = await getServerT();
+  // Phase M4.5 — one locale-aware formatter for the month labels below.
+  const loc = await serverLocale();
   const user = await requireUser();
   if (!user) return err("Unauthorized", 401);
   if (user.role !== "PARENT") return err(tApi("api.098"), 403);
@@ -186,7 +189,8 @@ export async function GET(req: NextRequest) {
       .slice(0, 10)
       .reverse()
       .map((qa) => ({
-        title: qa.quiz?.titleAr || qa.quiz?.title || "Quiz",
+        title:
+          qa.quiz?.titleAr || qa.quiz?.title || tApi("api.quizFallback"),
         percentage: qa.percentage,
         passed: qa.passed,
         date: qa.finishedAt || qa.startedAt,
@@ -206,7 +210,10 @@ export async function GET(req: NextRequest) {
       const present = monthAttendances.filter((a) => attended(a.status)).length;
       const total = monthAttendances.length;
       attendanceByMonth.push({
-        month: d.toLocaleDateString("ar-EG", { month: "short" }),
+        // Phase M4.5 — the SAME locale-aware formatter as the dashboard route
+        // (one implementation, `fmtDate` in `i18n-core`), so the two parent
+        // screens can no longer disagree about a month name in either language.
+        month: fmtDate(d, loc, { month: "short" }),
         pct: total > 0 ? Math.round((present / total) * 100) : 0,
         present,
         total,

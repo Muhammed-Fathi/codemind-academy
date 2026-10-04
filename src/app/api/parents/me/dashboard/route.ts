@@ -6,6 +6,7 @@ import { LESSON_STUDENT_STATUS_FILTER } from "@/lib/session-lifecycle";
 import { ok, err, requireUser, getParentProfile } from "@/lib/api";
 import type { ParentSubscriptionPayload } from "@/lib/parent-subscription";
 import { getVideoProgressForStudents } from "@/lib/progress";
+import { fmtDate } from "@/lib/i18n-core";
 import {
   attemptsInCurriculumUniverse,
   currentCourseAttendanceWhere,
@@ -54,6 +55,9 @@ import { STUDENT_HOMEWORK_LIST_FILTER } from "@/lib/student-visibility";
 //   * Read-only: this handler performs no create/update/upsert/delete.
 export async function GET(req: NextRequest) {
   const tApi = await getServerT();
+  // Phase M4.5 — the request locale (the same cookie `tApi` reads) drives the
+  // shared date formatter below, so every server-built label follows the app
+  // language instead of one baked-in locale.
   const __loc = await serverLocale();
   const sp = (ar: string | null | undefined, en: string | null | undefined) => serverPick(__loc, ar, en);
   const user = await requireUser();
@@ -203,7 +207,12 @@ export async function GET(req: NextRequest) {
       const monthBuckets: { key: string; label: string; total: number; present: number }[] = [];
       for (let i = 5; i >= 0; i--) {
         const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-        const label = d.toLocaleString("en-US", { month: "short" });
+        // Phase M4.5 — ONE locale-aware month label: the request locale (the
+        // same `cm-locale` cookie `tApi` reads) drives `fmtDate`/`Intl`, so an
+        // Arabic parent and an English parent each get their own month names
+        // instead of a label baked to one fixed locale (audit M4-F7). The keys,
+        // the bucket math and the 6-month window are unchanged.
+        const label = fmtDate(d, __loc, { month: "short" });
         monthBuckets.push({ key: `${d.getFullYear()}-${d.getMonth()}`, label, total: 0, present: 0 });
       }
       for (const a of attendances) {
@@ -254,7 +263,9 @@ export async function GET(req: NextRequest) {
       const recentQuizAttempts = quizAttempts.slice(0, 6).map((a) => ({
         id: a.id,
         quizId: a.quizId,
-        quizTitle: sp(a.quiz?.titleAr, a.quiz?.title) || "Quiz",
+        // Phase M4.5 — a missing title falls back to a LOCALIZED noun instead
+        // of an English literal (the rest of the payload is already localized).
+        quizTitle: sp(a.quiz?.titleAr, a.quiz?.title) || tApi("api.quizFallback"),
         score: a.score,
         totalMarks: a.totalMarks,
         percentage: a.percentage,
@@ -304,7 +315,8 @@ export async function GET(req: NextRequest) {
         // requires a resolved `MockExam.courseId`), so the ad-hoc "Practice
         // Exam" fallback is unreachable: only the exam title, or the generic
         // label when that exam carries no title.
-        mockExamTitle: sp(a.mockExam?.titleAr, a.mockExam?.title) || "Mock Exam",
+        mockExamTitle:
+          sp(a.mockExam?.titleAr, a.mockExam?.title) || tApi("api.mockExamFallback"),
         questionCount: a.questionCount,
         score: a.score,
         totalMarks: a.totalMarks,
@@ -621,7 +633,9 @@ export async function GET(req: NextRequest) {
       for (const a of quizAttempts.slice(0, 5)) {
         activities.push({
           type: "quiz",
-          title: `Quiz: ${a.quiz?.titleAr || a.quiz?.title || "Quiz"}`,
+          title: tApi("api.activityQuiz", {
+            p1: sp(a.quiz?.titleAr, a.quiz?.title) || tApi("api.quizFallback"),
+          }),
           description: `${a.percentage}% — ${a.passed ? tApi("api.100") : tApi("api.101")}`,
           time: a.finishedAt || a.startedAt,
           kind: a.passed ? "good" : "warn",
@@ -630,7 +644,9 @@ export async function GET(req: NextRequest) {
       for (const s of submissions.slice(0, 5)) {
         activities.push({
           type: "homework",
-          title: `Homework: ${s.homework?.titleAr || s.homework?.title || ""}`,
+          title: tApi("api.activityHomework", {
+            p1: sp(s.homework?.titleAr, s.homework?.title) || tApi("api.homeworkFallback"),
+          }),
           description:
             s.status === "GRADED"
               ? tApi("api.102", { p1: s.grade ?? 0 })
@@ -654,7 +670,9 @@ export async function GET(req: NextRequest) {
             : tApi("api.109");
         activities.push({
           type: "attendance",
-          title: `Live Session: ${a.session?.titleAr || a.session?.title || ""}`,
+          title: tApi("api.activitySession", {
+            p1: sp(a.session?.titleAr, a.session?.title) || "",
+          }),
           description: label,
           time: a.session?.startAt || a.createdAt,
           kind: a.status === "PRESENT" ? "good" : a.status === "LATE" ? "warn" : "warn",

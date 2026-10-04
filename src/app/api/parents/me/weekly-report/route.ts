@@ -23,7 +23,7 @@ import {
   readStudentIdParam,
 } from "@/lib/parent-academics";
 import type { NextRequest } from "next/server";
-import { fmtDate } from "@/lib/i18n-core";
+import { fmtDate, translate } from "@/lib/i18n-core";
 
 /** When an attendance record happened: its session, else its creation. */
 function attendanceAt(a: { createdAt: Date; session?: { startAt: Date | null } | null }): Date {
@@ -328,13 +328,14 @@ export async function GET(req?: NextRequest) {
       },
       dailyActivity,
       recentQuizzes: weeklyQuizAttempts.slice(0, 5).map((qa) => ({
-        title: qa.quiz?.titleAr || qa.quiz?.title || "Quiz",
+        title: qa.quiz?.titleAr || qa.quiz?.title || translate(loc, "api.quizFallback"),
         percentage: qa.percentage,
         passed: qa.passed,
         date: qa.finishedAt ? fmtDate(qa.finishedAt, loc) : "",
       })),
       recentHomework: weeklyHomework.slice(0, 5).map((hw) => ({
-        title: hw.homework?.titleAr || hw.homework?.title || "Homework",
+        title:
+          hw.homework?.titleAr || hw.homework?.title || translate(loc, "api.homeworkFallback"),
         status: hw.status,
         grade: hw.grade,
         date: hw.submittedAt ? fmtDate(hw.submittedAt, loc) : "",

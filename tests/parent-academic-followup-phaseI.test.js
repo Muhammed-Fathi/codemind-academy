@@ -1675,8 +1675,13 @@ async function seed() {
         !html.includes("MISSING_OVERDUE") && !html.includes("UNEXCUSED"),
       "no raw enum / status codes are rendered as user-facing text"
     );
-    // RTL: the surface is Arabic-first and right-to-left.
-    ok(/dir="rtl"/.test(html), "the component renders RTL");
+    // Direction: Phase M4.3/M4.5 moved direction onto the document element —
+    // `applyLocale` sets <html dir> from the active locale, so an English/LTR
+    // Parent reads left-to-right. A Parent surface must therefore NOT force a
+    // direction of its own (the old M4.3-era pin here asserted dir="rtl" on the
+    // markup and went stale when the attribute was removed).
+    ok(!/dir="rtl"/.test(html), "the component does not force RTL (direction comes from the document)");
+    ok(!/\btext-right\b/.test(html), "…and it forces no physical right-alignment either");
     // The switcher.
     const sw = render(
       React.createElement(ChildSwitcher, { items: A.body.children, value: "sa", onChange: () => {} })

@@ -555,7 +555,10 @@ export function ParentDashboard() {
       >
         <ProgressRingCard
           pct={child.courseProgress.pct}
-          sub={`${child.courseProgress.completed}/${child.courseProgress.total} Lessons`}
+          sub={tr("parent.report.lessonsCount", {
+            p1: child.courseProgress.completed,
+            p2: child.courseProgress.total,
+          })}
           session={child.sessionProgress}
         />
         <AttendanceCard attendance={child.attendance} />
@@ -589,7 +592,7 @@ export function ParentDashboard() {
               <div>
                 <CardTitle className="flex items-center gap-2">
                   <TrendingUp className="w-4 h-4 text-primary" />
-                  Performance Trend
+                  {tr("parent.dashboard.performanceTrend")}
                 </CardTitle>
                 <CardDescription className="mt-1">
                   {tr("parent.054")}</CardDescription>
@@ -650,7 +653,7 @@ function ChildSummaryCard({ child }: { child: Child }) {
               {academicLevelLabelFor(tr, child.academicLevel ?? child.group?.course?.academicLevel)}
             </Badge>
             {child.studentCode && (
-              <Badge variant="outline" className="text-[11px] font-mono font-bold text-primary border-primary/30" dir="ltr">
+              <Badge variant="outline" className="text-[11px] font-mono font-bold text-primary border-primary/30" dir="ltr" data-dir="numeric">
                 {child.studentCode}
               </Badge>
             )}
@@ -666,13 +669,13 @@ function ChildSummaryCard({ child }: { child: Child }) {
             <span className="font-bold text-lg text-primary">
               {child.attendance.pct}%
             </span>
-            <span className="text-muted-foreground text-[10px]">Attendance</span>
+            <span className="text-muted-foreground text-[10px]">{tr("parent.report.attendance")}</span>
           </div>
           <div className="flex flex-col items-center px-3 py-1.5 rounded-lg bg-amber-400/5">
             <span className="font-bold text-lg text-amber-600 dark:text-amber-400">
               {child.quizzes.average}%
             </span>
-            <span className="text-muted-foreground text-[10px]">Quiz Avg</span>
+            <span className="text-muted-foreground text-[10px]">{tr("parent.dashboard.quizAvg")}</span>
           </div>
         </div>
       </div>
@@ -701,13 +704,13 @@ function ProgressRingCard({
       <CardHeader className="px-0 pt-0">
         <CardTitle className="text-sm flex items-center gap-2 text-muted-foreground">
           <BookOpen className="w-4 h-4 text-primary" />
-          Course Progress
+          {tr("parent.report.courseProgress")}
         </CardTitle>
       </CardHeader>
       <CardContent className="px-0 flex items-center justify-between gap-3">
         {/* The progress ring is a geometric figure, so it must not mirror in
             RTL. `dir` is applied to the wrapper, not the <svg> element. */}
-        <div className="relative w-[120px] h-[120px]" dir="ltr">
+        <div className="relative w-[120px] h-[120px]" dir="ltr" data-dir="chart">
           <svg width="120" height="120" viewBox="0 0 120 120">
             <circle
               cx="60"
@@ -760,8 +763,10 @@ function ProgressRingCard({
               : tr("parent.060")}
           </div>
           {session?.currentLessonTitle ? (
-            <div className="text-[11px] mt-2 leading-snug">
-              <span className="text-muted-foreground">Current: </span>
+            <div className="text-[11px] mt-2 leading-snug break-words">
+              <span className="text-muted-foreground">
+                {tr("parent.dashboard.currentLesson")}
+              </span>
               <span className="font-semibold">{session.currentLessonTitle}</span>
             </div>
           ) : null}
@@ -788,7 +793,7 @@ function AttendanceCard({ attendance }: { attendance: Child["attendance"] }) {
       <CardHeader className="px-0 pt-0">
         <CardTitle className="text-sm flex items-center gap-2 text-muted-foreground">
           <CalendarDays className="w-4 h-4 text-primary" />
-          Attendance
+          {tr("parent.report.attendance")}
         </CardTitle>
       </CardHeader>
       <CardContent className="px-0">
@@ -802,7 +807,7 @@ function AttendanceCard({ attendance }: { attendance: Child["attendance"] }) {
           </div>
           <div className="text-[10px] text-muted-foreground">{tr("parent.063")}</div>
         </div>
-        <div dir="ltr" className="h-16 w-full">
+        <div dir="ltr" data-dir="chart" className="h-16 w-full">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
               <XAxis
@@ -859,7 +864,7 @@ function QuizAverageCard({
       <CardHeader className="px-0 pt-0">
         <CardTitle className="text-sm flex items-center gap-2 text-muted-foreground">
           <Trophy className="w-4 h-4 text-amber-500" />
-          Latest Quiz Average
+          {tr("parent.dashboard.latestQuizAvg")}
         </CardTitle>
       </CardHeader>
       <CardContent className="px-0">
@@ -893,7 +898,7 @@ function HomeworkCard({ homework }: { homework: Child["homework"] }) {
       <CardHeader className="px-0 pt-0">
         <CardTitle className="text-sm flex items-center gap-2 text-muted-foreground">
           <FileText className="w-4 h-4 text-primary" />
-          Homework
+          {tr("parent.hw.title")}
         </CardTitle>
       </CardHeader>
       <CardContent className="px-0 space-y-3">
@@ -940,7 +945,7 @@ function MonthlyExamCard({
         <CardHeader className="px-0 pt-0">
           <CardTitle className="text-sm flex items-center gap-2 text-muted-foreground">
             <Award className="w-4 h-4 text-amber-500" />
-            Monthly Exam
+            {tr("parent.dashboard.monthlyExam")}
           </CardTitle>
         </CardHeader>
         <CardContent className="px-0">
@@ -965,7 +970,7 @@ function MonthlyExamCard({
       <CardHeader className="px-0 pt-0">
         <CardTitle className="text-sm flex items-center gap-2 text-muted-foreground">
           <Award className="w-4 h-4 text-amber-500" />
-          Mock Exams
+          {tr("parent.dashboard.mockExams")}
         </CardTitle>
       </CardHeader>
       <CardContent className="px-0">
@@ -975,8 +980,13 @@ function MonthlyExamCard({
               {mockExams.average}%
             </div>
             <div className="text-xs text-muted-foreground mt-1">
-              {mockExams.passed}/{mockExams.attempts} passed
-              {mockExams.best !== null ? ` · best ${mockExams.best}%` : ""}
+              {tr("parent.dashboard.mocksSummary", {
+                p1: mockExams.passed,
+                p2: mockExams.attempts,
+              })}
+              {mockExams.best !== null
+                ? tr("parent.dashboard.mocksBest", { p1: mockExams.best })
+                : ""}
             </div>
           </div>
           <Badge
@@ -987,12 +997,15 @@ function MonthlyExamCard({
                 : "border-amber-400/30 text-amber-600"
             }
           >
-            {mockExams.attempts} exams
+            {tr("parent.dashboard.mocksCount", { p1: mockExams.attempts })}
           </Badge>
         </div>
         {latest ? (
           <div className="text-[11px] text-muted-foreground mt-3 truncate">
-            Latest: {latest.mockExamTitle} — {latest.percentage}%
+            {tr("parent.dashboard.mocksLatest", {
+              p1: latest.mockExamTitle,
+              p2: latest.percentage,
+            })}
           </div>
         ) : null}
       </CardContent>
@@ -1015,7 +1028,7 @@ function SubscriptionCard({
         <CardHeader className="px-0 pt-0">
           <CardTitle className="text-sm flex items-center gap-2 text-muted-foreground">
             <CreditCard className="w-4 h-4 text-primary" />
-            Subscription
+            {tr("parent.dashboard.subscription")}
           </CardTitle>
         </CardHeader>
         <CardContent className="px-0">
@@ -1057,7 +1070,7 @@ function SubscriptionCard({
       <CardHeader className="px-0 pt-0">
         <CardTitle className="text-sm flex items-center gap-2 text-muted-foreground">
           <CreditCard className="w-4 h-4 text-primary" />
-          Subscription
+          {tr("parent.dashboard.subscription")}
         </CardTitle>
       </CardHeader>
       <CardContent className="px-0">
@@ -1069,7 +1082,8 @@ function SubscriptionCard({
         </div>
         <div className={`text-xl font-bold ${tone}`}>{helper}</div>
         <div className="text-[11px] text-muted-foreground mt-1">
-          {subscription.price} EGP · {subscription.durationMonths} {tr("parent.079")}</div>
+          {tr("parent.dashboard.price", { p1: subscription.price })} ·{" "}
+          {subscription.durationMonths} {tr("parent.079")}</div>
       </CardContent>
     </Card>
   );
@@ -1100,7 +1114,9 @@ function TopicsCard({
           ) : (
             <AlertTriangle className="w-4 h-4 text-amber-500" />
           )}
-          {isStrong ? "Strong Topics" : "Weak Topics"}
+          {isStrong
+            ? tr("parent.dashboard.strongTopics")
+            : tr("parent.dashboard.weakTopics")}
           <span className="text-muted-foreground text-[11px] font-normal">
             {tr("parent.080")}</span>
         </CardTitle>
@@ -1160,7 +1176,7 @@ function PerformanceTrendChart({
     title: d.title,
   }));
   return (
-    <div dir="ltr" className="h-56 w-full">
+    <div dir="ltr" data-dir="chart" className="h-56 w-full">
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={chartData} margin={{ top: 8, right: 12, bottom: 4, left: -8 }}>
           <defs>
@@ -1224,7 +1240,7 @@ function NextSessionCard({
       <CardHeader className="px-0 pt-0">
         <CardTitle className="text-sm flex items-center gap-2 text-muted-foreground">
           <Video className="w-4 h-4 text-primary" />
-          Next Live Session
+          {tr("parent.dashboard.nextSession")}
         </CardTitle>
       </CardHeader>
       <CardContent className="px-0 flex-1">
@@ -1237,8 +1253,9 @@ function NextSessionCard({
                 {session.title}
               </div>
               {session.lessonTitle && (
-                <div className="text-[11px] text-muted-foreground mt-0.5">
-                  Lesson: {session.lessonTitle}
+                <div className="text-[11px] text-muted-foreground mt-0.5 break-words">
+                  {tr("parent.session.lessonLabel")}
+                  {session.lessonTitle}
                 </div>
               )}
             </div>
@@ -1281,7 +1298,7 @@ function TeacherNotesCard({
       <CardHeader className="px-0 pt-0">
         <CardTitle className="text-sm flex items-center gap-2">
           <MessageSquare className="w-4 h-4 text-primary" />
-          Teacher Notes
+          {tr("parent.dashboard.teacherNotes")}
         </CardTitle>
         <CardDescription>{tr("parent.089")}</CardDescription>
       </CardHeader>
@@ -1349,7 +1366,7 @@ function RecentActivityCard({
       <CardHeader className="px-0 pt-0">
         <CardTitle className="text-sm flex items-center gap-2">
           <TrendingUp className="w-4 h-4 text-primary" />
-          Recent Activity
+          {tr("parent.dashboard.recentActivity")}
         </CardTitle>
         <CardDescription>{tr("parent.091")}</CardDescription>
       </CardHeader>
@@ -1452,6 +1469,7 @@ function LinkStudentButton() {
             <label className="text-xs font-semibold">{tr("parent.099")}</label>
             <Input
               dir="ltr"
+              data-dir="numeric"
               placeholder={tr("parent.100")}
               value={nationalId}
               onChange={(e) => setNationalId(e.target.value)}
@@ -1463,7 +1481,8 @@ function LinkStudentButton() {
             <label className="text-xs font-semibold">{tr("parent.101")}</label>
             <Input
               dir="ltr"
-              placeholder="01147422177"
+              data-dir="numeric"
+              placeholder={tr("parent.link.phonePlaceholder")}
               value={parentPhone}
               onChange={(e) => setParentPhone(e.target.value)}
               disabled={mutation.isPending}
@@ -1474,7 +1493,8 @@ function LinkStudentButton() {
             <label className="text-xs font-semibold">{tr("parent.102")}</label>
             <Input
               dir="ltr"
-              placeholder="CM-XXXXXX"
+              data-dir="numeric"
+              placeholder={tr("parent.link.codePlaceholder")}
               value={studentCode}
               onChange={(e) => setStudentCode(e.target.value.toUpperCase())}
               disabled={mutation.isPending}
@@ -1550,6 +1570,7 @@ function EmptyParentState({ parentName }: { parentName: string }) {
       <div className="w-full space-y-2">
         <Input
           dir="ltr"
+          data-dir="numeric"
           placeholder={tr("parent.112")}
           value={nationalId}
           onChange={(e) => setNationalId(e.target.value)}
@@ -1558,6 +1579,7 @@ function EmptyParentState({ parentName }: { parentName: string }) {
         />
         <Input
           dir="ltr"
+          data-dir="numeric"
           placeholder={tr("parent.113")}
           value={parentPhone}
           onChange={(e) => setParentPhone(e.target.value)}
@@ -1566,6 +1588,7 @@ function EmptyParentState({ parentName }: { parentName: string }) {
         />
         <Input
           dir="ltr"
+          data-dir="numeric"
           placeholder={tr("parent.114")}
           value={studentCode}
           onChange={(e) => setStudentCode(e.target.value.toUpperCase())}

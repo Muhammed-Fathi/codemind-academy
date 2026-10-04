@@ -2852,6 +2852,60 @@ export const DICT_2026: Record<string, DictEntry> = {
   "parent.feedback.fromTeacher": { ar: "ملاحظة من المعلم", en: "Note from the teacher" },
   "parent.feedback.empty": { ar: "مفيش ملاحظات", en: "No feedback yet" },
 
+  // ---- Phase M4.5: parent i18n/RTL/responsive cleanup ----
+  // The labels below were hard-coded English inside Arabic-first Parent
+  // screens (audit M4-F7). They are ADDITIVE keys on the SAME hand-maintained
+  // catalogue — no second translation system, no duplicated academic-level
+  // vocabulary (levels keep flowing through `academic-level-labels.ts`).
+  "parent.dashboard.performanceTrend": { ar: "تطوّر الأداء", en: "Performance Trend" },
+  "parent.dashboard.quizAvg": { ar: "متوسط الاختبارات", en: "Quiz Avg" },
+  "parent.dashboard.latestQuizAvg": { ar: "متوسط آخر الاختبارات", en: "Latest Quiz Average" },
+  "parent.dashboard.currentLesson": { ar: "الحالي: ", en: "Current: " },
+  "parent.dashboard.monthlyExam": { ar: "الامتحان الشهري", en: "Monthly Exam" },
+  "parent.dashboard.mockExams": { ar: "الامتحانات التجريبية", en: "Mock Exams" },
+  "parent.dashboard.mocksSummary": { ar: "{p1}/{p2} ناجح", en: "{p1}/{p2} passed" },
+  "parent.dashboard.mocksBest": { ar: " · الأفضل {p1}%", en: " · best {p1}%" },
+  "parent.dashboard.mocksCount": { ar: "{p1} امتحان", en: "{p1} exams" },
+  "parent.dashboard.mocksLatest": { ar: "الأحدث: {p1} — {p2}%", en: "Latest: {p1} — {p2}%" },
+  "parent.dashboard.subscription": { ar: "الاشتراك", en: "Subscription" },
+  "parent.dashboard.price": { ar: "{p1} ج.م", en: "{p1} EGP" },
+  "parent.dashboard.nextSession": { ar: "الحصة المباشرة الجاية", en: "Next Live Session" },
+  "parent.dashboard.teacherNotes": { ar: "ملاحظات المعلمين", en: "Teacher Notes" },
+  "parent.dashboard.recentActivity": { ar: "آخر الأنشطة", en: "Recent Activity" },
+  "parent.dashboard.strongTopics": { ar: "المواضيع القوية", en: "Strong Topics" },
+  "parent.dashboard.weakTopics": { ar: "المواضيع المحتاجة تركيز", en: "Weak Topics" },
+  "parent.analytics.quizTrend": { ar: "تطوّر نتائج الاختبارات", en: "Quiz Performance Trend" },
+  "parent.analytics.attendanceByMonth": { ar: "الحضور على مدار الشهور", en: "Attendance by Month" },
+  "parent.analytics.courseCompletion": { ar: "اكتمال المنهج", en: "Course Completion" },
+  "parent.analytics.quizzesCount": { ar: "{p1} اختبار", en: "{p1} quizzes" },
+  "parent.analytics.avgGrade": { ar: "متوسط {p1}/10", en: "avg {p1}/10" },
+  "parent.weekly.titleFor": { ar: "التقرير الأسبوعي — {p1}", en: "Weekly Report — {p1}" },
+  "parent.weekly.range": { ar: "من {p1} إلى {p2}", en: "{p1} – {p2}" },
+  "parent.weekly.lessonsViewed": { ar: "دروس اتذاكرت", en: "Lessons Viewed" },
+  "parent.weekly.quizzesTaken": { ar: "اختبارات اتعملت", en: "Quizzes Taken" },
+  "parent.weekly.homeworkSubmitted": { ar: "واجبات اتسلّمت", en: "Homework Submitted" },
+  "parent.weekly.activeDays": { ar: "أيام نشطة", en: "Active Days" },
+  "parent.weekly.avgScore": { ar: "متوسط {p1}%", en: "avg {p1}%" },
+  "parent.weekly.dailyActivity": { ar: "النشاط اليومي (آخر 7 أيام)", en: "Daily Activity (Last 7 Days)" },
+  "parent.weekly.quizzesWeek": { ar: "اختبارات الأسبوع", en: "Quizzes this week" },
+  "parent.weekly.homeworkWeek": { ar: "واجبات الأسبوع", en: "Homework this week" },
+  "parent.session.lessonLabel": { ar: "الدرس: ", en: "Lesson: " },
+  "parent.link.phonePlaceholder": { ar: "01xxxxxxxxx", en: "01147422177" },
+  "parent.link.codePlaceholder": { ar: "CM-XXXXXX", en: "CM-XXXXXX" },
+  "api.activityQuiz": { ar: "اختبار: {p1}", en: "Quiz: {p1}" },
+  "api.activityHomework": { ar: "واجب: {p1}", en: "Homework: {p1}" },
+  "api.activitySession": { ar: "حصة مباشرة: {p1}", en: "Live Session: {p1}" },
+  "api.quizFallback": { ar: "اختبار", en: "Quiz" },
+  "api.homeworkFallback": { ar: "واجب", en: "Homework" },
+  "api.mockExamFallback": { ar: "امتحان تجريبي", en: "Mock Exam" },
+  // Audit-trail actor role — shown only when the server has no display name
+  // for the reviewer (absence-review history line).
+  "role.parent": { ar: "ولي الأمر", en: "Parent" },
+  "role.teacher": { ar: "المعلم", en: "Teacher" },
+  "role.admin": { ar: "الإدارة", en: "Admin" },
+  "role.student": { ar: "الطالب", en: "Student" },
+  "role.system": { ar: "النظام", en: "System" },
+
   // ---- Phase K2: academic level (First / Second Secondary) ----
   "api.371": { ar: "الصف الدراسي مطلوب (أولى ثانوي أو ثانية ثانوي)", en: "Academic level is required (First or Second Secondary)" },
   "api.372": {

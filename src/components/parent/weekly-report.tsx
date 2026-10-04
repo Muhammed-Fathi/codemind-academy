@@ -161,14 +161,25 @@ export function WeeklyReportView({
                       (the key above) and prints name · Academic Level ·
                       course, so two children who share a course display name
                       are still unambiguous. */}
-                  <h2 className="text-lg font-bold">Weekly Report — {report.name}</h2>
-                  <p className="text-xs text-muted-foreground">
+                  {/* Phase M4.5 — the heading is localized (audit M4-F13:
+                      it was the last hard-coded English heading on a Parent
+                      surface) and long child/course names WRAP instead of
+                      stretching the card. */}
+                  <h2 className="text-lg font-bold break-words">
+                    {t("parent.weekly.titleFor", { p1: report.name })}
+                  </h2>
+                  <p className="text-xs text-muted-foreground break-words">
                     {academicLevelLabelFor(t, report.academicLevel)}
                     {report.course ? ` · ${report.course}` : ""}
                     {report.groupName ? ` · ${report.groupName}` : ""}
                   </p>
+                  {/* The range reads in the locale's own order; both bounds are
+                      server-formatted with the request locale already. */}
                   <p className="text-[11px] text-muted-foreground/80">
-                    {report.weekRange.from} ← {report.weekRange.to}
+                    {t("parent.weekly.range", {
+                      p1: report.weekRange.from,
+                      p2: report.weekRange.to,
+                    })}
                   </p>
                 </div>
               </div>
@@ -179,26 +190,26 @@ export function WeeklyReportView({
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <WeekStat
               icon={BookOpen}
-              label="Lessons Viewed"
+              label={t("parent.weekly.lessonsViewed")}
               value={report.summary.lessonsViewed}
               color="from-emerald-400 to-teal-500"
             />
             <WeekStat
               icon={Trophy}
-              label="Quizzes Taken"
+              label={t("parent.weekly.quizzesTaken")}
               value={report.summary.quizzesTaken}
-              sub={`avg ${report.summary.avgQuizScore}%`}
+              sub={t("parent.weekly.avgScore", { p1: report.summary.avgQuizScore })}
               color="from-amber-400 to-orange-500"
             />
             <WeekStat
               icon={ClipboardList}
-              label="Homework Submitted"
+              label={t("parent.weekly.homeworkSubmitted")}
               value={report.summary.homeworkSubmitted}
               color="from-teal-400 to-cyan-500"
             />
             <WeekStat
               icon={Activity}
-              label="Active Days"
+              label={t("parent.weekly.activeDays")}
               value={`${report.summary.activeDays}/7`}
               color="from-orange-400 to-rose-500"
             />
@@ -207,11 +218,14 @@ export function WeeklyReportView({
           {/* Daily activity heatmap */}
           <Card className="glass">
             <CardHeader>
-              <CardTitle className="text-base">Daily Activity (Last 7 Days)</CardTitle>
+              <CardTitle className="text-base">{t("parent.weekly.dailyActivity")}</CardTitle>
               <CardDescription className="text-xs">{t("parent.120")}</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-7 gap-2">
+              {/* Phase M4.5 — 7 bounded columns (minmax(0,1fr)) with a
+                  phone-sized gap, so the Arabic short weekday labels never
+                  widen the card at 360px. */}
+              <div className="grid grid-cols-7 gap-1 sm:gap-2">
                 {report.dailyActivity.map((day, i) => {
                   const hasActivity = day.lessons > 0 || day.quizzes > 0 || day.homework > 0;
                   const totalActivity = day.lessons + day.quizzes + day.homework;
@@ -222,9 +236,9 @@ export function WeeklyReportView({
                       initial={{ opacity: 0, scale: 0.8 }}
                       animate={{ opacity: 1, scale: 1 }}
                       transition={{ delay: i * 0.05 }}
-                      className="text-center"
+                      className="text-center min-w-0"
                     >
-                      <div className="text-[10px] font-bold text-muted-foreground mb-1">
+                      <div className="text-[10px] font-bold text-muted-foreground mb-1 min-w-0 leading-tight">
                         {day.day}
                       </div>
                       <div
@@ -264,7 +278,7 @@ export function WeeklyReportView({
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
                   <Trophy className="w-4 h-4 text-amber-500" />
-                  Quizzes this week
+                  {t("parent.weekly.quizzesWeek")}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -280,7 +294,7 @@ export function WeeklyReportView({
                           {q.passed ? <CheckCircle2 className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="text-xs font-semibold truncate">{q.title}</div>
+                          <div className="text-xs font-semibold truncate" title={q.title}>{q.title}</div>
                           <div className="text-[10px] text-muted-foreground">{q.date}</div>
                         </div>
                         <Badge variant="outline" className={`text-[10px] ${
@@ -299,7 +313,7 @@ export function WeeklyReportView({
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
                   <ClipboardList className="w-4 h-4 text-teal-500" />
-                  Homework this week
+                  {t("parent.weekly.homeworkWeek")}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -313,7 +327,7 @@ export function WeeklyReportView({
                           <ClipboardList className="w-4 h-4" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="text-xs font-semibold truncate">{h.title}</div>
+                          <div className="text-xs font-semibold truncate" title={h.title}>{h.title}</div>
                           <div className="text-[10px] text-muted-foreground">{h.date}</div>
                         </div>
                         <Badge variant="outline" className={`text-[10px] ${
@@ -321,7 +335,7 @@ export function WeeklyReportView({
                           h.status === "SUBMITTED" ? "border-amber-400/30 text-amber-600" :
                           "border-muted text-muted-foreground"
                         }`}>
-                          {h.status === "GRADED" ? `${h.grade}/10` : h.status}
+                          {hwStatusLabel(t, h.status, h.grade)}
                         </Badge>
                       </div>
                     ))}
@@ -334,6 +348,31 @@ export function WeeklyReportView({
       ))}
     </div>
   );
+}
+
+/**
+ * Phase M4.5 — a homework status is UI chrome, not data: the raw enum
+ * ("SUBMITTED"/"LATE"/"PENDING") no longer leaks into the card. A graded row
+ * keeps its mark exactly as before; every other status maps to the SAME
+ * dictionary vocabulary the academic follow-up card already uses.
+ */
+function hwStatusLabel(
+  t: (key: string, params?: Record<string, unknown>) => string,
+  status: string,
+  grade: number | null | undefined
+): string {
+  switch (status) {
+    case "GRADED":
+      return `${grade ?? 0}/10`;
+    case "SUBMITTED":
+      return t("parent.hw.submitted");
+    case "LATE":
+      return t("parent.hw.submittedLate");
+    case "PENDING":
+      return t("parent.hw.notSubmittedYet");
+    default:
+      return status;
+  }
 }
 
 function WeekStat({

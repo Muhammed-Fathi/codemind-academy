@@ -358,9 +358,13 @@ export function MonthlyReportContent({
       {/* Toolbar (not printed) */}
       <div className="no-print fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-start justify-center p-4 sm:p-6 overflow-y-auto">
         <div className="w-full max-w-4xl my-8">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold">{tr("parent.report.titleFor", { p1: data.studentName })}</h2>
-            <div className="flex items-center gap-2">
+          {/* Phase M4.5 — the toolbar WRAPS: a long child name plus the two
+              action buttons used to be a single no-wrap row at 360 px. */}
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+            <h2 className="min-w-0 text-lg font-bold break-words">
+              {tr("parent.report.titleFor", { p1: data.studentName })}
+            </h2>
+            <div className="flex items-center gap-2 shrink-0">
               <Button onClick={handlePrint} className="font-bold">
                 <Printer className="w-4 h-4 ms-2" />
                 {tr("parent.014")}</Button>
@@ -394,14 +398,19 @@ function ReportBody({
   subscriptionInfo: ReturnType<typeof describeParentSubscription>;
   tr: (key: string, params?: Record<string, unknown>) => string;
 }) {
+  // Phase M4.5 — the brand tagline ships in both languages; print the one that
+  // matches the active locale instead of always the English line.
+  const locale = useLocale();
   return (
     <>
             {/* Header */}
-            <div className="bg-gradient-to-br from-emerald-600 via-teal-600 to-amber-500 text-white p-8">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-2xl font-extrabold">{brand.name}</div>
-                  <div className="text-sm opacity-90">{brand.tagline}</div>
+            <div className="bg-gradient-to-br from-emerald-600 via-teal-600 to-amber-500 text-white p-5 sm:p-8">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-2xl font-extrabold break-words">{brand.name}</div>
+                  <div className="text-sm opacity-90 break-words">
+                    {locale === "ar" ? brand.taglineAr : brand.tagline}
+                  </div>
                 </div>
                 <CodeMindLogo size={48} />
               </div>
@@ -412,7 +421,7 @@ function ReportBody({
             </div>
 
             {/* Student info */}
-            <div className="p-8 border-b border-gray-200">
+            <div className="p-5 sm:p-8 border-b border-gray-200">
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <InfoField label={tr("parent.015")} value={data.studentName} />
                 <InfoField
@@ -425,7 +434,7 @@ function ReportBody({
             </div>
 
             {/* Performance overview */}
-            <div className="p-8">
+            <div className="p-5 sm:p-8">
               <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
                 <TrendingUp className="w-5 h-5 text-emerald-600" />
                 {tr("parent.019")}</h3>
@@ -440,7 +449,7 @@ function ReportBody({
             {/* Subscription status */}
             <div className="px-8 pb-6">
               <div
-                className="bg-gray-50 rounded-xl p-4 flex items-center justify-between gap-4"
+                className="bg-gray-50 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4"
                 data-testid="monthly-report-subscription"
               >
                 <div>
@@ -465,7 +474,7 @@ function ReportBody({
             </div>
 
             {/* Strong / Weak topics */}
-            <div className="p-8 border-t border-gray-200">
+            <div className="p-5 sm:p-8 border-t border-gray-200">
               <div className="grid sm:grid-cols-2 gap-6">
                 <div>
                   <h4 className="text-sm font-bold mb-3 flex items-center gap-2 text-emerald-700">
@@ -477,9 +486,9 @@ function ReportBody({
                   ) : (
                     <ul className="space-y-2">
                       {data.strongTopics.map((t) => (
-                        <li key={t.id} className="flex items-center justify-between text-sm">
-                          <span>{t.title}</span>
-                          <span className="font-bold text-emerald-600">{t.avgPct}%</span>
+                        <li key={t.id} className="flex items-center justify-between gap-3 text-sm">
+                          <span className="min-w-0 break-words">{t.title}</span>
+                          <span className="shrink-0 font-bold text-emerald-600">{t.avgPct}%</span>
                         </li>
                       ))}
                     </ul>
@@ -494,9 +503,9 @@ function ReportBody({
                   ) : (
                     <ul className="space-y-2">
                       {data.weakTopics.map((t) => (
-                        <li key={t.id} className="flex items-center justify-between text-sm">
-                          <span>{t.title}</span>
-                          <span className="font-bold text-amber-600">{t.avgPct}%</span>
+                        <li key={t.id} className="flex items-center justify-between gap-3 text-sm">
+                          <span className="min-w-0 break-words">{t.title}</span>
+                          <span className="shrink-0 font-bold text-amber-600">{t.avgPct}%</span>
                         </li>
                       ))}
                     </ul>
@@ -507,8 +516,11 @@ function ReportBody({
 
             {/* Recent quizzes */}
             {data.recentQuizzes.length > 0 && (
-              <div className="p-8 border-t border-gray-200">
+              <div className="p-5 sm:p-8 border-t border-gray-200">
                 <h4 className="text-sm font-bold mb-3">{tr("parent.025")}</h4>
+                {/* A 4-column table at 360 px would otherwise force the
+                    viewport sideways; it scrolls inside its own card instead. */}
+                <div className="-mx-1 overflow-x-auto px-1">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-start text-xs text-gray-500 border-b border-gray-200">
@@ -521,7 +533,7 @@ function ReportBody({
                   <tbody>
                     {data.recentQuizzes.map((q, i) => (
                       <tr key={i} className="border-b border-gray-100">
-                        <td className="py-2">{q.title}</td>
+                        <td className="py-2 break-words">{q.title}</td>
                         <td className="py-2 text-center font-bold">{q.percentage}%</td>
                         <td className="py-2 text-center">
                           {q.passed ? (
@@ -535,20 +547,21 @@ function ReportBody({
                     ))}
                   </tbody>
                 </table>
+                </div>
               </div>
             )}
 
             {/* Teacher notes */}
             {data.teacherNotes.length > 0 && (
-              <div className="p-8 border-t border-gray-200">
+              <div className="p-5 sm:p-8 border-t border-gray-200">
                 <h4 className="text-sm font-bold mb-3 flex items-center gap-2">
                   <User className="w-4 h-4" />
                   {tr("parent.032")}</h4>
                 <ul className="space-y-3">
                   {data.teacherNotes.map((n, i) => (
                     <li key={i} className="text-sm bg-gray-50 rounded-lg p-3">
-                      <div className="text-xs text-gray-500 mb-1">{n.teacherName} · {n.date}</div>
-                      <div>{n.note}</div>
+                      <div className="text-xs text-gray-500 mb-1 break-words">{n.teacherName} · {n.date}</div>
+                      <div className="break-words">{n.note}</div>
                     </li>
                   ))}
                 </ul>
@@ -556,14 +569,14 @@ function ReportBody({
             )}
 
             {/* Recommendations */}
-            <div className="p-8 border-t border-gray-200 bg-gradient-to-br from-emerald-50 to-amber-50">
+            <div className="p-5 sm:p-8 border-t border-gray-200 bg-gradient-to-br from-emerald-50 to-amber-50">
               <h4 className="text-sm font-bold mb-3 flex items-center gap-2">
                 <Award className="w-4 h-4 text-amber-600" />
                 {tr("parent.033")}</h4>
               <ul className="space-y-2">
                 {data.recommendations.map((r, i) => (
                   <li key={i} className="text-sm flex items-start gap-2">
-                    <span className="text-emerald-600 font-bold mt-0.5">{i + 1}.</span>
+                    <span className="text-emerald-600 font-bold mt-0.5 shrink-0">{i + 1}.</span>
                     {/* Finding 9 — `generateRecommendations` yields dictionary
                         KEYS ("parent.035"…): resolve them HERE, at the render
                         site. The i18n core never returns a dotted key, so an
@@ -577,11 +590,11 @@ function ReportBody({
             {/* Footer */}
             <div className="p-6 bg-gray-900 text-white text-center text-xs">
               <div className="font-bold mb-1">{brand.name}</div>
-              <div className="opacity-75">
+              <div className="opacity-75 break-words">
                 {tr("parent.034")}{data.generatedAt} · {brand.academicYear}
               </div>
               <div className="opacity-50 mt-2">
-                CodeMind Academy · Learn. Build. Think.
+                {brand.name} · {locale === "ar" ? brand.taglineAr : brand.tagline}
               </div>
             </div>
     </>

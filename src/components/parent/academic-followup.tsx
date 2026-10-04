@@ -602,7 +602,7 @@ function AbsencesCard({
                   <ShieldAlert className="h-4 w-4 shrink-0 text-destructive" />
                   {t("parent.hold.title")}
                 </p>
-                <p className="mt-1 text-xs text-muted-foreground">
+                <p className="mt-1 text-xs text-muted-foreground break-words">
                   {hold.lessonTitle ? `${t("parent.progress.currentLesson")}: ${hold.lessonTitle}` : null}
                 </p>
                 <p className="mt-1 text-xs">{t("parent.hold.subtitle")}</p>
@@ -611,16 +611,16 @@ function AbsencesCard({
                     {t("parent.action.catchupNow")}
                   </p>
                 ) : hold.inUniverse && hold.reason ? (
-                  <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+                  <p className="mt-1 text-xs text-amber-700 dark:text-amber-400 break-words">
                     {hold.reason}
                   </p>
                 ) : null}
                 {hold.unmet.length > 0 ? (
                   <ul className="mt-1.5 space-y-1">
                     {hold.unmet.map((entry) => (
-                      <li key={entry.kind} className="flex items-center gap-1.5 text-xs">
-                        <CircleDashed className="h-3 w-3 shrink-0 text-amber-600" />
-                        {entry.label}
+                      <li key={entry.kind} className="flex items-start gap-1.5 text-xs">
+                        <CircleDashed className="mt-0.5 h-3 w-3 shrink-0 text-amber-600" />
+                        <span className="min-w-0 break-words">{entry.label}</span>
                       </li>
                     ))}
                   </ul>
@@ -637,7 +637,7 @@ function AbsencesCard({
             {absences.recent.map((item, index) => (
               <div key={`absence-${index}`} className="rounded-lg border p-3">
                 <div className="flex flex-wrap items-start justify-between gap-2">
-                  <p className="text-sm font-semibold">{item.sessionTitle}</p>
+                  <p className="min-w-0 text-sm font-semibold break-words">{item.sessionTitle}</p>
                   <Badge
                     variant={
                       item.status === "UNEXCUSED"
@@ -735,9 +735,9 @@ function HomeworkCard({
               <div key={`hw-${index}`} className={`rounded-lg border p-3 ${homeworkTone(item.status)}`}>
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold">{item.title}</p>
+                    <p className="text-sm font-semibold break-words">{item.title}</p>
                     {item.lessonTitle ? (
-                      <p className="text-[11px] text-muted-foreground">{item.lessonTitle}</p>
+                      <p className="text-[11px] text-muted-foreground break-words">{item.lessonTitle}</p>
                     ) : null}
                   </div>
                   <Badge
@@ -769,7 +769,7 @@ function HomeworkCard({
                   ) : null}
                 </div>
                 {item.feedback ? (
-                  <p className="mt-2 rounded bg-muted/60 p-2 text-xs">
+                  <p className="mt-2 rounded bg-muted/60 p-2 text-xs break-words">
                     <MessageSquareQuote className="inline h-3 w-3 ms-1 align-[-2px]" />
                     <span className="font-semibold">{t("parent.hw.feedback")}: </span>
                     {item.feedback}
@@ -815,9 +815,9 @@ function QuizCard({ quizzes }: { quizzes: AcademicsSnapshot["quizzes"] }) {
               >
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold">{item.title}</p>
+                    <p className="text-sm font-semibold break-words">{item.title}</p>
                     {item.lessonTitle ? (
-                      <p className="text-[11px] text-muted-foreground">{item.lessonTitle}</p>
+                      <p className="text-[11px] text-muted-foreground break-words">{item.lessonTitle}</p>
                     ) : null}
                   </div>
                   <Badge
@@ -1006,7 +1006,7 @@ function FeedbackCard({
                   <span className="text-[11px] text-muted-foreground">{fmtDate(item.at)}</span>
                 </div>
                 {item.title ? (
-                  <p className="mt-1 text-xs font-semibold">{item.title}</p>
+                  <p className="mt-1 text-xs font-semibold break-words">{item.title}</p>
                 ) : null}
                 <p className="mt-1 text-sm">{item.note}</p>
                 {item.authorName ? (
@@ -1045,8 +1045,14 @@ export function AcademicFollowup({ payload }: { payload: AcademicsPayload }) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
       className="space-y-4"
-      dir="rtl"
     >
+      {/* Phase M4.5 — DIRECTION COMES FROM THE LOCALE, not from this card.
+          A hard-coded RTL attribute used to sit here (audit M4-F7), so an
+          English/LTR parent saw this one card mirrored while the rest of the
+          app was LTR. The layout uses logical utilities only (`ms/me`, `ps/pe`,
+          `border-s`, `text-start`), so it mirrors correctly under the
+          document's direction without forcing one. */}
+
       {/* The three questions, in the parent's reading order:
             1. "إيه اللي حصل؟"                    → the situation header
             2. "هل فيه حاجة محتاجة تدخل؟"         → Action Needed
