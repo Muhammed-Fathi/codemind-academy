@@ -11,8 +11,10 @@ import { db } from "@/lib/db";
 import { getVideoProgressForStudents, getVideoProgressInRange } from "@/lib/progress";
 import {
   attemptsInCurriculumUniverse,
+  currentCourseIdOf,
   getStudentCurriculumHomeworkIds,
   getStudentCurriculumLessonIds,
+  isCurrentCourseAttendance,
 } from "@/lib/parent-access";
 // Phase I — the verified `?studentId=` contract (see the dashboard route).
 import {
@@ -45,7 +47,20 @@ export async function GET(req?: NextRequest) {
               user: { select: { name: true, email: true } },
               group: { include: { course: true } },
               attendances: {
-                include: { session: { select: { startAt: true, titleAr: true } } },
+                // Phase M4.4 — the session's GROUP (hence its course) rides
+                // along so each row can be judged against the child's current
+                // course. The window is judged on the session time exactly as
+                // before; the course is an ADDITIONAL clause, never a
+                // replacement (see `weeklyAttendance` below).
+                include: {
+                  session: {
+                    select: {
+                      startAt: true,
+                      titleAr: true,
+                      group: { select: { courseId: true } },
+                    },
+                  },
+                },
                 orderBy: { createdAt: "desc" },
               },
               quizAttempts: {
@@ -176,8 +191,15 @@ export async function GET(req?: NextRequest) {
     // daily breakdown below use) — never on the row's insertion time, which
     // can predate or postdate the session and would make the weekly total
     // disagree with the daily activity it summarises.
+    //
+    // Phase M4.4 — and the week is the week OF THE CHILD'S CURRENT COURSE:
+    // `window ∩ current course` (`Attendance → LiveSession → Group → Course`).
+    // A session of a previous course (or of another course at the same level)
+    // is not this week's work for this course, however recent it is; the
+    // shared in-memory twin of the dashboard/analytics predicate decides it.
+    const currentCourseId = currentCourseIdOf(s);
     const weeklyAttendance = s.attendances.filter(
-      (a) => attendanceAt(a) >= weekAgo
+      (a) => attendanceAt(a) >= weekAgo && isCurrentCourseAttendance(a, currentCourseId)
     );
 
     // Daily activity breakdown (last 7 days)
@@ -196,7 +218,9 @@ export async function GET(req?: NextRequest) {
       const dayHomework = weeklyHomework.filter(
         (hw) => hw.submittedAt && hw.submittedAt >= dayStart && hw.submittedAt <= dayEnd
       ).length;
-      const dayAttendance = s.attendances.find(
+      // The SAME course-scoped, in-window set the summary counts (the day is
+      // inside the week, so the two can never disagree).
+      const dayAttendance = weeklyAttendance.find(
         (a) => {
           const attDate = attendanceAt(a);
           return attDate >= dayStart && attDate <= dayEnd;

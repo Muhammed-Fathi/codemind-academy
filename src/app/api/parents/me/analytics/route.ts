@@ -6,6 +6,9 @@ import { requireUser, ok, err } from "@/lib/api";
 import { db } from "@/lib/db";
 import {
   attemptsInCurriculumUniverse,
+  currentCourseAttendanceWhere,
+  currentCourseIdOf,
+  curriculumContainerOf,
   getStudentCurriculumHomeworkIds,
   getStudentCurriculumLessonIds,
 } from "@/lib/parent-access";
@@ -33,9 +36,13 @@ export async function GET(req: NextRequest) {
             include: {
               user: { select: { name: true, email: true } },
               group: { include: { course: true } },
-              attendances: {
-                include: { session: { select: { startAt: true, titleAr: true } } },
-              },
+              // Phase M4.4 — `attendances` is deliberately NOT included here:
+              // an `include` cannot be narrowed per child (its `where` cannot
+              // read `student.group.courseId`), and this route must count the
+              // sessions of the child's CURRENT course only. Each child's rows
+              // are read in the per-child block below with the SHARED
+              // `currentCourseAttendanceWhere` predicate — the exact rule the
+              // dashboard uses, so the two screens cannot disagree (M4-F2).
               // Finished only (Phase 6 rule), newest first — the trend below
               // takes the last 10 and re-orders them chronologically.
               quizAttempts: {
@@ -53,10 +60,18 @@ export async function GET(req: NextRequest) {
                       // Phase 19: strong/weak grouping reads the canonical
                       // curriculum container (topic for legacy, unit for
                       // official) instead of the quiz title.
+                      // Phase M4.4 — the container's ID travels with its
+                      // titles: strong/weak rows are keyed by canonical
+                      // curriculum identity, never by the display title (the
+                      // two curricula reuse unit titles) — M4-F9.
                       lesson: {
                         select: {
-                          topic: { select: { titleAr: true, title: true } },
-                          unit: { select: { titleAr: true, title: true } },
+                          topic: {
+                            select: { id: true, titleAr: true, title: true },
+                          },
+                          unit: {
+                            select: { id: true, titleAr: true, title: true },
+                          },
                         },
                       },
                     },
@@ -154,6 +169,17 @@ export async function GET(req: NextRequest) {
       )
     );
 
+    // Phase M4.4 — the child's canonical current course and the attendance of
+    // THAT course only (`Attendance → LiveSession → Group → Course`). Read with
+    // the same shared predicate the dashboard uses; a child with no active
+    // course matches nothing, so nothing is carried over from a previous one.
+    const currentCourseId = currentCourseIdOf(s);
+    const attendances = await db.attendance.findMany({
+      where: { studentId: s.id, ...currentCourseAttendanceWhere(currentCourseId) },
+      include: { session: { select: { startAt: true, titleAr: true } } },
+      orderBy: { createdAt: "desc" },
+    });
+
     // Quiz performance trend (last 10 FINISHED attempts, chronological).
     const quizTrend = quizAttempts
       .slice(0, 10)
@@ -172,7 +198,7 @@ export async function GET(req: NextRequest) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const monthStart = new Date(d.getFullYear(), d.getMonth(), 1);
       const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59);
-      const monthAttendances = s.attendances.filter((a) => {
+      const monthAttendances = attendances.filter((a) => {
         const attDate = a.session?.startAt || a.createdAt;
         return attDate >= monthStart && attDate <= monthEnd;
       });
@@ -192,19 +218,38 @@ export async function GET(req: NextRequest) {
     // quiz TITLE, so a child with two quizzes on the same unit appeared to
     // have two unrelated "topics", and the result could never line up with
     // the curriculum the rest of the report measures.
-    const topicMap = new Map<string, { title: string; sumPct: number; count: number }>();
+    // Phase M4.4 — grouped by the container's CANONICAL ID through the shared
+    // resolver (canonical `topic` first, then `unit`), exactly like the
+    // dashboard. The old code keyed this map by the display TITLE and dropped
+    // the id from the payload, so two containers with the same title collapsed
+    // into one row — and a container that had no title fell back to the QUIZ
+    // title, inventing a third identity (M4-F9). Aggregation math is unchanged:
+    // every finished in-universe attempt is still one data point.
+    const topicMap = new Map<
+      string,
+      { title: string; titleAr: string; sumPct: number; count: number }
+    >();
     quizAttempts.forEach((qa) => {
-      const container = qa.quiz?.lesson?.topic ?? qa.quiz?.lesson?.unit;
-      const topicTitle =
-        container?.titleAr || container?.title || qa.quiz?.titleAr || qa.quiz?.title || "Unknown";
-      const existing = topicMap.get(topicTitle) || { title: topicTitle, sumPct: 0, count: 0 };
+      const container = curriculumContainerOf(qa.quiz?.lesson);
+      if (!container) return;
+      const existing = topicMap.get(container.id) || {
+        title: container.title,
+        titleAr: container.titleAr,
+        sumPct: 0,
+        count: 0,
+      };
       existing.sumPct += qa.percentage;
       existing.count += 1;
-      topicMap.set(topicTitle, existing);
+      topicMap.set(container.id, existing);
     });
-    const topicStats = Array.from(topicMap.entries()).map(([_, v]) => ({
-      title: v.title,
+    const topicStats = Array.from(topicMap.entries()).map(([id, v]) => ({
+      // The canonical container id is the identity of the row; the level
+      // context is the course the containers were measured in — this child's
+      // current one, because the attempt set above is already course-scoped.
+      id,
+      title: v.titleAr || v.title,
       avgPct: v.count > 0 ? Math.round(v.sumPct / v.count) : 0,
+      academicLevel: childAcademicLevel(s),
     }));
     topicStats.sort((a, b) => b.avgPct - a.avgPct);
     const strongTopics = topicStats.filter((t) => t.avgPct >= 60).slice(0, 3);
@@ -277,8 +322,11 @@ export async function GET(req: NextRequest) {
       avgQuizPct: quizAttempts.length > 0
         ? Math.round(quizAttempts.reduce((sum, q) => sum + q.percentage, 0) / quizAttempts.length)
         : 0,
-      attendancePct: s.attendances.length > 0
-        ? Math.round((s.attendances.filter((a) => attended(a.status)).length / s.attendances.length) * 100)
+      // Phase M4.4 — the SAME current-course attendance rows the dashboard
+      // reports for this child (one shared predicate, one shared definition of
+      // "attended": PRESENT + LATE).
+      attendancePct: attendances.length > 0
+        ? Math.round((attendances.filter((a) => attended(a.status)).length / attendances.length) * 100)
         : 0,
     };
   }));

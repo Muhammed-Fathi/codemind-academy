@@ -58,8 +58,14 @@ type ReportData = {
   homework: { submitted: number; graded: number; completionPct: number };
   // null when the student registered but never enrolled in a plan.
   subscription: ParentSubscriptionPayload | null;
-  strongTopics: { title: string; avgPct: number }[];
-  weakTopics: { title: string; avgPct: number }[];
+  /**
+   * Phase M4.4 — the canonical curriculum-container ID is the identity of a
+   * strong/weak row. The container titles are reused across the two curricula,
+   * so the report keys the list by this id (never by the title, and never by
+   * the array index).
+   */
+  strongTopics: { id: string; title: string; avgPct: number }[];
+  weakTopics: { id: string; title: string; avgPct: number }[];
   recentQuizzes: { title: string; percentage: number; passed: boolean; date: string }[];
   teacherNotes: { teacherName: string; note: string; date: string }[];
   recommendations: string[];
@@ -470,8 +476,8 @@ function ReportBody({
                     <p className="text-xs text-gray-400">{tr("parent.022")}</p>
                   ) : (
                     <ul className="space-y-2">
-                      {data.strongTopics.map((t, i) => (
-                        <li key={i} className="flex items-center justify-between text-sm">
+                      {data.strongTopics.map((t) => (
+                        <li key={t.id} className="flex items-center justify-between text-sm">
                           <span>{t.title}</span>
                           <span className="font-bold text-emerald-600">{t.avgPct}%</span>
                         </li>
@@ -487,8 +493,8 @@ function ReportBody({
                     <p className="text-xs text-gray-400">{tr("parent.022")}</p>
                   ) : (
                     <ul className="space-y-2">
-                      {data.weakTopics.map((t, i) => (
-                        <li key={i} className="flex items-center justify-between text-sm">
+                      {data.weakTopics.map((t) => (
+                        <li key={t.id} className="flex items-center justify-between text-sm">
                           <span>{t.title}</span>
                           <span className="font-bold text-amber-600">{t.avgPct}%</span>
                         </li>

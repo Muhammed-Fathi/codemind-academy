@@ -6,7 +6,13 @@ import { LESSON_STUDENT_STATUS_FILTER } from "@/lib/session-lifecycle";
 import { ok, err, requireUser, getParentProfile } from "@/lib/api";
 import type { ParentSubscriptionPayload } from "@/lib/parent-subscription";
 import { getVideoProgressForStudents } from "@/lib/progress";
-import { attemptsInCurriculumUniverse } from "@/lib/parent-access";
+import {
+  attemptsInCurriculumUniverse,
+  currentCourseAttendanceWhere,
+  currentCourseIdOf,
+  currentCourseMockExamWhere,
+  curriculumContainerOf,
+} from "@/lib/parent-access";
 // Phase I — the verified `?studentId=` contract. `resolveLinkedChild` re-checks
 // the ParentStudentLink on EVERY request; `readStudentIdParam` reads the id from
 // the query string only (never from a body), so a spoofed body field stays
@@ -84,6 +90,22 @@ export async function GET(req: NextRequest) {
       // and every content list below is sliced to THAT child's track — the same
       // slice the child's own dashboard applies.
       const childTrack = trackScopeWhere(student.schoolType);
+      /**
+       * Phase M4.4 — the child's canonical CURRENT course: `Student.groupId →
+       * Group.courseId`. It is the identity boundary for every metric below
+       * (never a course/group name, a lesson code, a lesson title or the
+       * Academic Level alone). `null` means the child has no active course, and
+       * each scope predicate then matches NOTHING — the numbers stay empty
+       * rather than falling back to another course's history.
+       */
+      const currentCourseId = currentCourseIdOf(student);
+      /**
+       * The child's canonical Academic Level (course chain first, then the
+       * assignment) — the level context every curriculum container below is
+       * measured in, because the quiz universe is already cut to this child's
+       * own course.
+       */
+      const childLevel = childAcademicLevel(student);
 
       // --- Course progress: avg of LessonProgress.progress across all lessons in the
       // course (or 0 if no progress). Also count completed lessons.
@@ -154,8 +176,18 @@ export async function GET(req: NextRequest) {
           : 0;
 
       // --- Attendance: percentage + monthly breakdown (last 6 months)
+      // Phase M4.4 — the rows are the sessions of the child's CURRENT course:
+      // `Attendance → LiveSession → Group → Course` against `Group.courseId`.
+      // A child who changed course (or Academic Level) no longer carries the
+      // previous course's sessions, another level's sessions or a same-level
+      // sibling course's sessions into this percentage. PRESENT/LATE semantics,
+      // the monthly buckets and the read-only behaviour are unchanged; the
+      // course-less child matches nothing and reports an explicit 0.
       const attendances = await db.attendance.findMany({
-        where: { studentId: student.id },
+        where: {
+          studentId: student.id,
+          ...currentCourseAttendanceWhere(currentCourseId),
+        },
         include: { session: { select: { startAt: true, titleAr: true, title: true } } },
       });
       const presentCount = attendances.filter(
@@ -235,8 +267,19 @@ export async function GET(req: NextRequest) {
       // --- Mock Exam results (finished ExamAttempts, kept STRICTLY separate
       // from the session-quiz stats above — a mock exam must never move the
       // quiz average, and a session quiz must never move the mock average).
+      // Phase M4.4 — `MockExam.courseId` is the identity boundary, so the
+      // current-course mock numbers are the attempts whose exam belongs to the
+      // child's current course. An attempt with NO linked exam (free practice)
+      // or whose exam row was deleted has no course to belong to and fails
+      // closed — the student's own mock-exam list already refuses to count
+      // those rows, so the two portals can no longer disagree. finished-only,
+      // pass/fail semantics, ordering and grading are untouched.
       const mockAttempts = await db.examAttempt.findMany({
-        where: { studentId: student.id, finishedAt: { not: null } },
+        where: {
+          studentId: student.id,
+          finishedAt: { not: null },
+          ...currentCourseMockExamWhere(currentCourseId),
+        },
         orderBy: { finishedAt: "desc" },
         include: {
           mockExam: { select: { id: true, title: true, titleAr: true } },
@@ -257,9 +300,11 @@ export async function GET(req: NextRequest) {
       const recentMockAttempts = mockAttempts.slice(0, 6).map((a) => ({
         id: a.id,
         examType: a.examType,
-        mockExamTitle:
-          sp(a.mockExam?.titleAr, a.mockExam?.title) ||
-          (a.mockExamId ? "Mock Exam" : "Practice Exam"),
+        // Every included attempt is course-bound (the scope predicate above
+        // requires a resolved `MockExam.courseId`), so the ad-hoc "Practice
+        // Exam" fallback is unreachable: only the exam title, or the generic
+        // label when that exam carries no title.
+        mockExamTitle: sp(a.mockExam?.titleAr, a.mockExam?.title) || "Mock Exam",
         questionCount: a.questionCount,
         score: a.score,
         totalMarks: a.totalMarks,
@@ -503,15 +548,19 @@ export async function GET(req: NextRequest) {
               take: 50,
               orderBy: { startedAt: "desc" },
             });
+      // Phase M4.4 — the container is resolved by the SHARED rule
+      // (`curriculumContainerOf`: canonical `topic` first, then `unit`) and the
+      // map is keyed by the container's canonical ID. Two containers that share
+      // a display title — the two curricula reuse unit titles — stay two
+      // distinct rows; nothing is ever merged or matched by title.
       const topicMap = new Map<
         string,
         { title: string; titleAr: string; sumPct: number; count: number }
       >();
       for (const a of attemptsWithTopic) {
-        const container = a.quiz?.lesson?.topic ?? a.quiz?.lesson?.unit;
+        const container = curriculumContainerOf(a.quiz?.lesson);
         if (!container) continue;
-        const key = container.id;
-        const existing = topicMap.get(key) || {
+        const existing = topicMap.get(container.id) || {
           title: container.title,
           titleAr: container.titleAr,
           sumPct: 0,
@@ -519,12 +568,16 @@ export async function GET(req: NextRequest) {
         };
         existing.sumPct += a.percentage;
         existing.count += 1;
-        topicMap.set(key, existing);
+        topicMap.set(container.id, existing);
       }
       const topicStats = Array.from(topicMap.entries()).map(([id, v]) => ({
+        // The canonical container id IS the identity of the row (never the
+        // title), and the level context is the course the containers were
+        // measured in — the child's current one.
         id,
         title: v.titleAr || v.title,
         avgPct: v.count > 0 ? Math.round(v.sumPct / v.count) : 0,
+        academicLevel: childLevel,
       }));
       // Strong = highest avg% (top 3). Weak = lowest avg% (bottom 3).
       // When the list is small the same topic could legitimately appear in both
@@ -625,7 +678,7 @@ export async function GET(req: NextRequest) {
          * the level display. Two children in the two levels who share the
          * printed course name stay distinguishable.
          */
-        academicLevel: childAcademicLevel(student),
+        academicLevel: childLevel,
         grade: student.grade,
         schoolName: (student as any).schoolName ?? null,
         schoolType: (student as any).schoolType ?? null,

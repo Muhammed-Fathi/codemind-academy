@@ -278,3 +278,130 @@ export function attemptsInCurriculumUniverse<
     (a) => !!a.quiz?.lessonId && universeLessonIds.has(a.quiz.lessonId)
   );
 }
+
+// ---------------------------------------------------------------------------
+// M4.4 — the CURRENT-COURSE metric scope (ONE rule for every Parent number)
+// ---------------------------------------------------------------------------
+//
+// Phase 26E cut quizzes and homework to the child's own curriculum universe
+// (`getStudentCurriculumLessonIds` / `attemptsInCurriculumUniverse`). Attendance
+// and mock exams were still filtered by `studentId` alone, so a child who
+// changed course — including an Academic Level change — kept the PREVIOUS
+// course's rows inside the numbers a screen presents as the CURRENT course
+// (M4-F2). These helpers close that gap with the canonical relations only:
+//
+//   * course identity : `Student.groupId → Group.courseId` (a course ID is the
+//     boundary — never a course/group NAME, a lesson `officialCode`, a lesson
+//     title or the Academic Level alone);
+//   * attendance      : `Attendance → LiveSession → Group → Course` (the
+//     session's group is what binds a session to a course; the attached lesson
+//     is optional and is deliberately NOT used);
+//   * mock exams      : `ExamAttempt → MockExam → Course` (`MockExam.courseId`
+//     is the authority; an attempt with no linked exam has no course at all and
+//     therefore fails closed);
+//   * curriculum unit : `Lesson.topic ?? Lesson.unit` — the same Phase 19
+//     container chain the parent screens group by, now keyed by the container's
+//     canonical ID instead of its title.
+//
+// Every helper fails closed: a child with no active course (no group) has an
+// empty metric set, never a lifetime fallback and never an invented course.
+
+/**
+ * The canonical CURRENT course id of a child: `Student.groupId → Group.courseId`.
+ * Pure — the caller passes the already-authorized student row. `null` means the
+ * child has no active course, which every predicate below turns into "matches
+ * nothing".
+ */
+export function currentCourseIdOf(
+  student: { group?: { courseId?: string | null } | null } | null | undefined
+): string | null {
+  return student?.group?.courseId ?? null;
+}
+
+/**
+ * SQL row filter for the attendance of ONE course:
+ * `Attendance → LiveSession → Group → Course`. The empty-string sentinel is the
+ * established parent-side convention for "no active course" (`lessonCourseChainOr`
+ * uses it too): no row carries it, so the filter matches nothing.
+ */
+export function currentCourseAttendanceWhere(
+  courseId: string | null
+): Record<string, unknown> {
+  return { session: { group: { courseId: courseId ?? "" } } };
+}
+
+/**
+ * The course an attendance row belongs to (`Attendance → LiveSession → Group →
+ * Course`), or `null` when the chain does not resolve. In-memory twin of
+ * `currentCourseAttendanceWhere`, for callers whose rows arrive through an
+ * `include` that cannot be narrowed per child.
+ */
+export function attendanceCourseIdOf(row: {
+  session?: { group?: { courseId?: string | null } | null } | null;
+}): string | null {
+  return row.session?.group?.courseId ?? null;
+}
+
+/**
+ * The in-memory twin of `currentCourseAttendanceWhere`: TRUE only when the row's
+ * session really belongs to the child's CURRENT course. A child without an
+ * active course never matches (fail closed), and neither does a row whose
+ * session/group chain is gone.
+ */
+export function isCurrentCourseAttendance(
+  row: { session?: { group?: { courseId?: string | null } | null } | null },
+  courseId: string | null
+): boolean {
+  return !!courseId && attendanceCourseIdOf(row) === courseId;
+}
+
+/**
+ * SQL row filter for the mock-exam attempts of ONE course:
+ * `ExamAttempt → MockExam → Course`. `MockExam.courseId` is the identity
+ * boundary (Phase K3 made it NOT NULL), so an attempt whose exam row is gone
+ * (`mockExamId = null`, `onDelete: SetNull`) or which was never linked to an
+ * exam (free practice / an API client) cannot match — exactly the rows the
+ * student's own mock-exam list already refuses to count.
+ */
+export function currentCourseMockExamWhere(
+  courseId: string | null
+): Record<string, unknown> {
+  return { mockExam: { courseId: courseId ?? "" } };
+}
+
+/** The canonical curriculum container of a lesson: `topic` first (legacy), then `unit`. */
+export type CurriculumContainer = {
+  id: string;
+  title: string;
+  titleAr: string;
+};
+
+/**
+ * Resolve the canonical curriculum container a lesson belongs to.
+ *
+ * Phase 19 established the chain (an OFFICIAL lesson is unit-linked and has no
+ * `topicId`, so `unit` must be the fallback rather than the other way round);
+ * M4.4 adds the missing IDENTITY rule: the caller GROUPS BY `id`, never by the
+ * title. The two live curricula reuse container titles, so two units with the
+ * same title are two different rows and must never merge.
+ *
+ * Pure: the caller has already loaded `lesson.topic` / `lesson.unit` (id +
+ * titles) inside its own universe-scoped query, so nothing here can widen scope.
+ */
+export function curriculumContainerOf(
+  lesson:
+    | {
+        topic?: { id?: string | null; title?: string | null; titleAr?: string | null } | null;
+        unit?: { id?: string | null; title?: string | null; titleAr?: string | null } | null;
+      }
+    | null
+    | undefined
+): CurriculumContainer | null {
+  const container = lesson?.topic ?? lesson?.unit ?? null;
+  if (!container?.id) return null;
+  return {
+    id: container.id,
+    title: container.title ?? "",
+    titleAr: container.titleAr ?? container.title ?? "",
+  };
+}

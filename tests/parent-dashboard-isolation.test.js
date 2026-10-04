@@ -658,12 +658,25 @@ async function seed() {
     { id: "a4", quizId: "q3", studentId: "sc", score: 9, totalMarks: 10, percentage: 90, passed: true, startedAt: D(4), finishedAt: D(4), cameraStatus: "NOT_REQUESTED" },
   );
 
-  // Mock exams — ChildA: 2 finished (70 pass / 50 fail) + 1 unfinished.
-  T.mockExam.push({ id: "me1", title: "Monthly Mock", titleAr: "امتحان تجريبي شهري", description: null, schoolType: "LANGUAGE", courseId: "c1", questionCount: 10, durationMin: 30, passMark: 60, difficulty: "MIXED", selectionMode: "RANDOM", isPublished: true, createdAt: D(30), updatedAt: D(30) });
+  // Mock exams — ChildA: 2 finished IN-COURSE (70 pass / 50 fail) + 1 unfinished
+  // + the M4.4 traps: a finished FREE-PRACTICE row (no exam ⇒ no course) and a
+  // finished attempt on an exam of ANOTHER course. Both must stay out of the
+  // current-course numbers (M4-F2), exactly as the student's own mock-exam list
+  // already refuses to count a row with no `mockExamId`.
+  T.mockExam.push(
+    { id: "me1", title: "Monthly Mock", titleAr: "امتحان تجريبي شهري", description: null, schoolType: "LANGUAGE", courseId: "c1", questionCount: 10, durationMin: 30, passMark: 60, difficulty: "MIXED", selectionMode: "RANDOM", isPublished: true, createdAt: D(30), updatedAt: D(30) },
+    { id: "me2", title: "Unit Mock", titleAr: "امتحان وحدة", description: null, schoolType: "LANGUAGE", courseId: "c1", questionCount: 10, durationMin: 30, passMark: 60, difficulty: "MIXED", selectionMode: "RANDOM", isPublished: true, createdAt: D(30), updatedAt: D(30) },
+    { id: "me3-other-course", title: "Decoy Mock", titleAr: "امتحان كورس آخر", description: null, schoolType: "LANGUAGE", courseId: "c2", questionCount: 10, durationMin: 30, passMark: 60, difficulty: "MIXED", selectionMode: "RANDOM", isPublished: true, createdAt: D(30), updatedAt: D(30) },
+  );
   T.examAttempt.push(
-    { id: "m1", studentId: "sa", mockExamId: null, schoolType: "LANGUAGE", examType: "MOCK", questionCount: 10, durationMin: 15, score: 7, totalMarks: 10, percentage: 70, passed: true, answers: "[]", startedAt: D(4), finishedAt: D(3) },
+    { id: "m1", studentId: "sa", mockExamId: "me2", schoolType: "LANGUAGE", examType: "MOCK", questionCount: 10, durationMin: 15, score: 7, totalMarks: 10, percentage: 70, passed: true, answers: "[]", startedAt: D(4), finishedAt: D(3) },
     { id: "m2-open", studentId: "sa", mockExamId: null, schoolType: "LANGUAGE", examType: "MOCK", questionCount: 10, durationMin: 0, score: 0, totalMarks: 0, percentage: 0, passed: false, answers: "[]", startedAt: D(1), finishedAt: null },
     { id: "m3", studentId: "sa", mockExamId: "me1", schoolType: "LANGUAGE", examType: "MONTHLY", questionCount: 10, durationMin: 20, score: 5, totalMarks: 10, percentage: 50, passed: false, answers: "[]", startedAt: D(2), finishedAt: D(1) },
+    // Free practice: a finished row with NO exam — no course to belong to.
+    { id: "m4-practice", studentId: "sa", mockExamId: null, schoolType: "LANGUAGE", examType: "MOCK", questionCount: 10, durationMin: 15, score: 10, totalMarks: 10, percentage: 100, passed: true, answers: "[]", startedAt: D(0), finishedAt: D(0) },
+    // Another course's exam (same course family is irrelevant: the COURSE id is
+    // the boundary).
+    { id: "m5-other-course", studentId: "sa", mockExamId: "me3-other-course", schoolType: "LANGUAGE", examType: "MOCK", questionCount: 10, durationMin: 15, score: 10, totalMarks: 10, percentage: 100, passed: true, answers: "[]", startedAt: D(0), finishedAt: D(0) },
   );
 
   // Lesson progress — ChildA partial; ChildB/C blank.
@@ -903,7 +916,7 @@ async function seed() {
   );
 
   // =========================================================================
-  section("H. Mock exams: finished-only and separate from session quizzes");
+  section("H. Mock exams: finished-only, current-course, separate from session quizzes");
   // =========================================================================
   ok(childA.mockExams.attempts === 2, `mock attempts = 2 (got ${childA.mockExams.attempts})`);
   ok(childA.mockExams.average === 60, `mock average = 60 (got ${childA.mockExams.average})`);
@@ -921,8 +934,18 @@ async function seed() {
     `mock keeps its exam title (got "${childA.mockExams.recent[0].mockExamTitle}")`
   );
   ok(
-    childA.mockExams.recent[1].mockExamTitle === "Practice Exam",
-    `ad-hoc exam falls back to "Practice Exam" (got "${childA.mockExams.recent[1].mockExamTitle}")`
+    childA.mockExams.recent[1].mockExamTitle === "امتحان وحدة",
+    `the second in-course exam keeps its own title (got "${childA.mockExams.recent[1].mockExamTitle}")`
+  );
+  // M4.4 — the two traps above are EXCLUDED: a finished row with no exam (free
+  // practice) has no course to be attributed to, and another course's exam is
+  // not this course's academic record. Both fail closed.
+  ok(
+    !childA.mockExams.recent.some((m) => m.percentage === 100) &&
+      childA.mockExams.average === 60 &&
+      childA.mockExams.best === 70 &&
+      childA.mockExams.attempts === 2,
+    "current-course mock numbers exclude the free-practice and other-course rows"
   );
   ok(
     childA.quizzes.average === 97 && childA.mockExams.average === 60,

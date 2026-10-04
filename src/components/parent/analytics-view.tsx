@@ -50,8 +50,15 @@ type ChildAnalytics = {
   academicLevel?: string | null;
   quizTrend: { title: string; percentage: number; passed: boolean; date: string }[];
   attendanceByMonth: { month: string; pct: number; present: number; total: number }[];
-  strongTopics: { title: string; avgPct: number }[];
-  weakTopics: { title: string; avgPct: number }[];
+  /**
+   * Phase M4.4 — the canonical curriculum-container ID is the identity of a
+   * strong/weak row (the container titles are reused across curricula, so a
+   * title is not a key), and `academicLevel` is the level context of the course
+   * these rows were measured in. Both are ADDITIVE: the titles and the average
+   * math are unchanged.
+   */
+  strongTopics: { id: string; title: string; avgPct: number; academicLevel?: string | null }[];
+  weakTopics: { id: string; title: string; avgPct: number; academicLevel?: string | null }[];
   completionPct: number;
   completedLessons: number;
   totalLessons: number;
@@ -372,11 +379,18 @@ export function ParentAnalyticsView({
               <p className="text-xs text-muted-foreground">{tr("parent.007")}</p>
             ) : (
               child.strongTopics.map((t) => (
-                <div key={t.title} className="flex items-center gap-3 p-2 rounded-lg bg-emerald-500/5 border border-emerald-400/20">
+                <div key={t.id} className="flex items-center gap-3 p-2 rounded-lg bg-emerald-500/5 border border-emerald-400/20">
                   <div className="grid place-items-center w-7 h-7 rounded-md bg-emerald-500/10 text-emerald-600 text-xs font-bold">
                     {t.avgPct}%
                   </div>
-                  <span className="flex-1 text-sm truncate">{t.title}</span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm truncate">{t.title}</span>
+                    {/* Canonical level context of the course these rows belong
+                        to — the vocabulary shared with every other surface. */}
+                    <span className="block text-[10px] text-muted-foreground">
+                      {academicLevelLabelFor(tr, t.academicLevel)}
+                    </span>
+                  </span>
                 </div>
               ))
             )}
@@ -395,11 +409,16 @@ export function ParentAnalyticsView({
               <p className="text-xs text-muted-foreground">{tr("parent.007")}</p>
             ) : (
               child.weakTopics.map((t) => (
-                <div key={t.title} className="flex items-center gap-3 p-2 rounded-lg bg-amber-500/5 border border-amber-400/20">
+                <div key={t.id} className="flex items-center gap-3 p-2 rounded-lg bg-amber-500/5 border border-amber-400/20">
                   <div className="grid place-items-center w-7 h-7 rounded-md bg-amber-500/10 text-amber-600 text-xs font-bold">
                     {t.avgPct}%
                   </div>
-                  <span className="flex-1 text-sm truncate">{t.title}</span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm truncate">{t.title}</span>
+                    <span className="block text-[10px] text-muted-foreground">
+                      {academicLevelLabelFor(tr, t.academicLevel)}
+                    </span>
+                  </span>
                 </div>
               ))
             )}
