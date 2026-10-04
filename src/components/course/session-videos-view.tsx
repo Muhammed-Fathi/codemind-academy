@@ -345,6 +345,27 @@ export function SessionVideoPlayer({
     requiredForStudent ? video.progress.satisfied : video.progress.isCompleted
   );
   const playingRef = React.useRef(false);
+  // Phase M4.6 — the parent's `onProgress` is an INLINE callback in both hosts
+  // (the library and the lesson playlist), so it is a new function on every
+  // render. Keeping it in a ref (instead of in `beat`'s dependency list) is
+  // what keeps `beat` — and therefore the heartbeat effect — stable. Before
+  // this, every response re-rendered the parent, rebuilt `beat`, re-ran the
+  // interval effect, and fired ANOTHER beat from its cleanup: an unbounded
+  // request loop whose sub-second beats reset the server's elapsed-time anchor
+  // faster than a second could pass, so a genuinely watched short recording
+  // accrued 0.
+  const onProgressRef = React.useRef(onProgress);
+  React.useEffect(() => {
+    onProgressRef.current = onProgress;
+  }, [onProgress]);
+  const requiredRef = React.useRef(requiredForStudent);
+  React.useEffect(() => {
+    requiredRef.current = requiredForStudent;
+  }, [requiredForStudent]);
+  // A beat requested before the media is measurable (`duration` still unknown,
+  // e.g. pressing play while metadata loads) is DEFERRED, not dropped —
+  // dropping it loses the anchor the final flush needs to be creditable.
+  const pendingAnchorRef = React.useRef(false);
 
   // Decide HOW to render before rendering anything.
   //   * Uploaded / managed media → `/api/media/<id>`, always a <video>.
@@ -362,7 +383,12 @@ export function SessionVideoPlayer({
     // even sent — the player stays a pure player for those rows.
     if (!video.trackable) return;
     const el = ref.current;
-    if (!el || !el.duration || Number.isNaN(el.duration)) return;
+    if (!el || !el.duration || Number.isNaN(el.duration)) {
+      // Not measurable yet — remember it and flush once metadata arrives.
+      pendingAnchorRef.current = true;
+      return;
+    }
+    pendingAnchorRef.current = false;
     try {
       const r = await fetch(`/api/students/me/session-videos/${video.id}/progress`, {
         method: "POST",
@@ -376,16 +402,19 @@ export function SessionVideoPlayer({
       const d = await r.json().catch(() => ({}));
       if (typeof d.percent === "number") {
         setPercent(d.percent);
-        const done = requiredForStudent
+        const done = requiredRef.current
           ? Boolean(d.satisfied)
           : Boolean(d.isCompleted);
         setCompleted(done);
-        onProgress(d.percent, Boolean(d.isCompleted), Boolean(d.satisfied));
+        onProgressRef.current(d.percent, Boolean(d.isCompleted), Boolean(d.satisfied));
       }
     } catch {
       /* transient network issues must not interrupt playback */
     }
-  }, [video.id, requiredForStudent, onProgress]);
+    // Stable identity on purpose (deps are the per-mount id/flags only): a
+    // rebuilt `beat` re-runs the heartbeat effect below and its cleanup fires
+    // an extra beat, which is how the loop above started.
+  }, [video.id, video.trackable]);
 
   // Heartbeat design (server-verified, tamper-resistant):
   //   * a beat on PLAY anchors the server clock (the row's lastHeartbeatAt),
@@ -415,6 +444,11 @@ export function SessionVideoPlayer({
     if (!el) return;
     const resume = video.progress.watchedSec;
     if (resume > 5 && resume < el.duration - 5) el.currentTime = resume;
+    // Phase M4.6 — metadata is known now, so the server clock can be anchored:
+    // flush a beat that `onPlay` had to defer (or the anchor of a playback
+    // that is already running). Without it, a recording shorter than the 15s
+    // interval could be watched in one pass with NO credit at all.
+    if (playingRef.current || pendingAnchorRef.current) beat();
   };
 
   return (

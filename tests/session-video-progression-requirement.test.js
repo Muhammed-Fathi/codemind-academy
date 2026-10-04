@@ -1008,7 +1008,13 @@ test("SessionVideo progression requirement (REQUIRED-vs-OPTIONAL)", async () => 
   ok(studentView.includes('tr("course.243")'), "N5: the untrackable note is localised");
   ok(studentView.includes('tr("course.244")') && studentView.includes('tr("course.245")'), "N5: the required/optional badges are localised");
   ok(studentView.includes("if (!video.trackable) return;"), "N5: the player sends NO beats for untrackable sources");
-  ok(studentView.includes("onProgress(d.percent, Boolean(d.isCompleted), Boolean(d.satisfied));"), "N5: the player reports percent + sticky + live verdict");
+  // M4.6 — the callback is reached through a ref (the stable-`beat` fix that
+  // stops the render→beat storm); the REPORTED contract is unchanged, so the
+  // pin matches the call, not the reference's name.
+  ok(
+    /onProgress\w*\.current\(d\.percent, Boolean\(d\.isCompleted\), Boolean\(d\.satisfied\)\)/.test(studentView),
+    "N5: the player reports percent + sticky + live verdict"
+  );
   const lessonView = read("src/components/course/student-lesson.tsx");
   ok(lessonView.includes("videoRequirementDetail"), "N6: the VIDEO row derives its detail canonically");
   ok(lessonView.includes("detail={videoRequirementDetail(data.requirements.video, t)}"), "N6: the VIDEO card row wires the canonical detail");

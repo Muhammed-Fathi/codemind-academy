@@ -108,10 +108,34 @@ export async function POST(
     where: { sessionVideoId_studentId: { sessionVideoId: id, studentId: student.id } },
   });
 
-  const elapsedSec = existing?.lastHeartbeatAt
-    ? Math.max(0, Math.floor((now.getTime() - existing.lastHeartbeatAt.getTime()) / 1000))
+  // Phase M4.6 — the anchor advances by exactly what was CREDITED, not to
+  // `now` on every beat.
+  //
+  // The old shape reset `lastHeartbeatAt` to the request clock on every beat,
+  // so the credit of the NEXT beat was `floor(now - last)`. Any beat cadence
+  // faster than one beat per second therefore rounded every gap down to zero:
+  // a burst of beats forfeited the whole gap instead of the sub-second sliver,
+  // and a short recording (shorter than the client's 15s interval — see
+  // `session-videos-view.tsx`) could be watched end-to-end while every beat
+  // paid 0 seconds, leaving `watchedSec = 0` and `percent = 0` at the final
+  // "ended" flush. The watch-integrity rule itself is unchanged: credit is
+  // still bounded by REAL elapsed wall-clock time and by the playhead, so a
+  // seek to the end still earns only the seconds that actually passed.
+  //
+  // Carrying the remainder is safe and cannot be banked: the anchor only ever
+  // moves forward by the integer seconds that were credited (so the carried
+  // remainder stays below 1s), and when the 60s cap clipped the window the
+  // anchor jumps to `now` exactly as before — the clipped excess is dropped,
+  // never deferred.
+  const lastAt = existing?.lastHeartbeatAt ?? null;
+  const elapsedSec = lastAt
+    ? Math.max(0, Math.floor((now.getTime() - lastAt.getTime()) / 1000))
     : 0;
   const credit = Math.min(elapsedSec, MAX_CREDIT_PER_BEAT_SEC);
+  const anchorAt =
+    credit >= MAX_CREDIT_PER_BEAT_SEC
+      ? now
+      : new Date((lastAt ?? now).getTime() + credit * 1000);
   const previous = existing?.watchedSec ?? 0;
   const watchedSec = Math.min(
     durationSec,
@@ -131,7 +155,8 @@ export async function POST(
       percent,
       isCompleted,
       completedAt: isCompleted ? now : null,
-      lastHeartbeatAt: now,
+      // First beat: there is no prior anchor to carry, so the clock starts now.
+      lastHeartbeatAt: anchorAt,
     },
     update: {
       watchedSec,
@@ -139,7 +164,8 @@ export async function POST(
       percent,
       isCompleted,
       ...(isCompleted && !wasCompleted ? { completedAt: now } : {}),
-      lastHeartbeatAt: now,
+      // Advances by the credited seconds only — see the anchor note above.
+      lastHeartbeatAt: anchorAt,
     },
   });
 
