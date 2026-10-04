@@ -305,11 +305,21 @@ export function StudentLessonView() {
   // Canonical refresh: verified watch beats re-read the lesson payload so
   // the requirement card + header advance WITHOUT a manual reload. Silent
   // (no skeleton flash) and debounced (a beat storm never spams the API).
+  //
+  // Phase M4.6c — the debounce must never swallow the ONE beat that matters:
+  // the transition to satisfied/completed. The first beat of a watch opens the
+  // window at playback start, so the completion beat arrives ~10s later — i.e.
+  // exactly inside the debounce — and the header badge, the overall progress
+  // bar, the "0 of 1" requirements row and the unmet action text all live in
+  // this payload (that was the stale-page bug the manual QA caught). A verdict
+  // transition therefore refreshes IMMEDIATELY; routine beats stay debounced.
+  // Nothing is computed here: the beat's verdict is the server's own, and this
+  // only re-reads the server's canonical payload.
   const lastCanonicalRefreshRef = React.useRef(0);
-  const refreshCanonical = React.useCallback(() => {
+  const refreshCanonical = React.useCallback((immediate = false) => {
     if (!activeLessonId) return;
     const now = Date.now();
-    if (now - lastCanonicalRefreshRef.current < 10000) return;
+    if (!immediate && now - lastCanonicalRefreshRef.current < 10000) return;
     lastCanonicalRefreshRef.current = now;
     fetch(`/api/lessons/${encodeURIComponent(activeLessonId)}`)
       .then((r) => (r.ok ? r.json() : null))
@@ -1185,14 +1195,23 @@ function LessonVideoSection({
   lessonId: string;
   legacyVideoUrl: string | null;
   lessonTitle: string;
-  /** Fired on every verified watch beat (the parent refreshes, debounced). */
-  onWatchProgress: () => void;
+  /**
+   * Fired on every verified watch beat. `immediate` marks the beat whose
+   * server verdict just turned satisfied/completed — the parent must re-read
+   * the canonical lesson payload for that one, never debounce it away.
+   */
+  onWatchProgress: (immediate?: boolean) => void;
 }) {
   const t = useT();
   // null = still loading; [] = loaded, none eligible; list = loaded.
   // The PARENT keys this component by lesson id, so a lesson change remounts
   // the section with fresh state (no stale player from the previous lesson).
   const [videos, setVideos] = React.useState<LessonVideoItem[] | null>(null);
+  // Phase M4.6c — the last verdict the server reported for the active
+  // recording. Used ONLY to notice the transition into satisfied/completed so
+  // the canonical refresh is not debounced away; no progression is computed
+  // here (the flags come straight from the heartbeat response).
+  const lastVerdictRef = React.useRef(false);
   const [failed, setFailed] = React.useState(false);
   // true while a (re)fetch is in flight — set from the retry click, cleared
   // by the fetch outcome; drives the loading state without synchronous
@@ -1285,8 +1304,14 @@ function LessonVideoSection({
                   ) ?? prev
                 );
                 // The requirement card + header read the CANONICAL payload,
-                // not this playlist state — refresh it (debounced upstream).
-                onWatchProgress();
+                // not this playlist state — refresh it. Routine beats stay
+                // debounced upstream; the beat that reports the transition into
+                // satisfied/completed refreshes immediately, because that is
+                // the one the page must not show stale.
+                const nowSatisfied = Boolean(satisfied || isCompleted);
+                const transitioned = nowSatisfied && !lastVerdictRef.current;
+                lastVerdictRef.current = nowSatisfied;
+                onWatchProgress(transitioned);
               }}
             />
             {videos.length > 1 && (

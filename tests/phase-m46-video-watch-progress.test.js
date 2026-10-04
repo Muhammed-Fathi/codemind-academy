@@ -75,6 +75,8 @@ process.env.SECURITY_HASH_SECRET = "s".repeat(64);
   });
 }
 
+const read = (rel) => fs.readFileSync(path.join(REPO, rel), "utf8");
+
 let pass = 0;
 let fail = 0;
 const failures = [];
@@ -174,10 +176,14 @@ const REAL_CODE_MODULES = [
   "src/components/ui/progress.tsx",
   "src/components/ui/skeleton.tsx",
   "src/components/ui/button.tsx",
+  "src/components/ui/textarea.tsx",
   "src/components/course/session-videos-view.tsx",
-  // route handlers under test
+  // the Student Lesson page under test (section D) and the routes it reads
+  "src/components/course/student-lesson.tsx",
   "src/app/api/students/me/session-videos/route.ts",
   "src/app/api/students/me/session-videos/[id]/progress/route.ts",
+  "src/app/api/students/me/bookmarks/route.ts",
+  "src/app/api/students/me/notes/route.ts",
   "src/app/api/lessons/[id]/route.ts",
   "src/app/api/lessons/[id]/progress/route.ts",
 ];
@@ -303,6 +309,8 @@ const route = (p) => require(path.join(OUT, "src/app/api", p));
 const R = {
   videos: route("students/me/session-videos/route.js"),
   videoProgress: route("students/me/session-videos/[id]/progress/route.js"),
+  bookmarks: route("students/me/bookmarks/route.js"),
+  notes: route("students/me/notes/route.js"),
   lesson: route("lessons/[id]/route.js"),
   lessonProgress: route("lessons/[id]/progress/route.js"),
 };
@@ -382,6 +390,159 @@ async function mkStudent(tag) {
 const s1 = await mkStudent("m46-one");
 const s2 = await mkStudent("m46-two");
 const s3 = await mkStudent("m46-three");
+// Section D needs its own FIRST-in-chain lesson (unlocked immediately) with
+// exactly one required + one optional recording, so the requirement counts the
+// page shows are deterministic: 0 of 1 → 1 of 1.
+const coursePage = await client.course.create({
+  data: {
+    slug: "m46-page",
+    name: "M4.6 Page Course",
+    nameAr: "كورس الصفحة",
+    description: "m46-page",
+    academicLevel: "SECOND_SECONDARY",
+  },
+});
+const partPage = await client.part.create({
+  data: { courseId: coursePage.id, title: "P1", titleAr: "P1", order: 1 },
+});
+const unitPage = await client.unit.create({
+  data: { partId: partPage.id, title: "U1", titleAr: "U1", order: 1 },
+});
+const Lpage = await client.lesson.create({
+  data: {
+    academicLevel: "SECOND_SECONDARY",
+    unitId: unitPage.id,
+    trackScope: "SHARED",
+    status: "PUBLISHED",
+    curriculumStatus: "OFFICIAL",
+    isPublished: true,
+    order: 1,
+    officialCode: "9-1",
+    title: "Page session",
+    titleAr: "حصة الصفحة",
+  },
+});
+const batchPage = await client.batch.create({
+  data: { name: "M4.6 Page Batch", nameAr: "دفعة الصفحة", schoolType: "ARABIC", courseId: coursePage.id },
+});
+const groupPage = await client.group.create({
+  data: { name: "M4.6 Page Group", courseId: coursePage.id, isActive: true },
+});
+async function mkPageStudent(tag) {
+  const u = await client.user.create({
+    data: { email: `${tag}@m46.test`, password: "x", name: tag, role: "STUDENT" },
+  });
+  const st = await client.student.create({
+    data: {
+      userId: u.id,
+      academicLevel: "SECOND_SECONDARY",
+      schoolType: "ARABIC",
+      groupId: groupPage.id,
+      batchId: batchPage.id,
+    },
+  });
+  return { user: u, student: st };
+}
+const sPage = await mkPageStudent("m46-page-req");
+const sPageOpt = await mkPageStudent("m46-page-opt");
+const mediaPage = await client.mediaAsset.create({
+  data: { kind: "VIDEO", storage: "LOCAL_PRIVATE", storageKey: "k-m46-page", isPrivate: true },
+});
+const vPageReq = await client.sessionVideo.create({
+  data: {
+    batchId: batchPage.id,
+    lessonId: Lpage.id,
+    mediaAssetId: mediaPage.id,
+    title: "Page required",
+    titleAr: "مطلوب",
+    requiredPercent: 95,
+    requirementMode: "ALL_STUDENTS",
+    isRequiredForProgression: true,
+    isPublished: true,
+    publishedAt: new Date(),
+  },
+});
+// D11 needs a course whose ONLY lesson is a longer (30s) REQUIRED recording:
+// a routine beat near the end (pause at 90%) then a finish reproduces the
+// reported staleness deterministically.
+const courseSlow = await client.course.create({
+  data: {
+    slug: "m46-slow",
+    name: "M4.6 Slow Course",
+    nameAr: "كورس بطيء",
+    description: "m46-slow",
+    academicLevel: "SECOND_SECONDARY",
+  },
+});
+const partSlow = await client.part.create({
+  data: { courseId: courseSlow.id, title: "P1", titleAr: "P1", order: 1 },
+});
+const unitSlow = await client.unit.create({
+  data: { partId: partSlow.id, title: "U1", titleAr: "U1", order: 1 },
+});
+const Lslow = await client.lesson.create({
+  data: {
+    academicLevel: "SECOND_SECONDARY",
+    unitId: unitSlow.id,
+    trackScope: "SHARED",
+    status: "PUBLISHED",
+    curriculumStatus: "OFFICIAL",
+    isPublished: true,
+    order: 1,
+    officialCode: "9-3",
+    title: "Long session",
+    titleAr: "حصة طويلة",
+  },
+});
+const batchSlow = await client.batch.create({
+  data: { name: "M4.6 Slow Batch", nameAr: "دفعة بطيئة", schoolType: "ARABIC", courseId: courseSlow.id },
+});
+const groupSlow = await client.group.create({
+  data: { name: "M4.6 Slow Group", courseId: courseSlow.id, isActive: true },
+});
+const slowUser = await client.user.create({
+  data: { email: "m46-slow@m46.test", password: "x", name: "m46-slow", role: "STUDENT" },
+});
+const sPageSlow = {
+  user: slowUser,
+  student: await client.student.create({
+    data: {
+      userId: slowUser.id,
+      academicLevel: "SECOND_SECONDARY",
+      schoolType: "ARABIC",
+      groupId: groupSlow.id,
+      batchId: batchSlow.id,
+    },
+  }),
+};
+const vPageSlow = await client.sessionVideo.create({
+  data: {
+    batchId: batchSlow.id,
+    lessonId: Lslow.id,
+    mediaAssetId: mediaPage.id,
+    title: "Long required",
+    titleAr: "طويل",
+    requiredPercent: 95,
+    requirementMode: "ALL_STUDENTS",
+    isRequiredForProgression: true,
+    isPublished: true,
+    publishedAt: new Date(),
+  },
+});
+const vPageOpt = await client.sessionVideo.create({
+  data: {
+    batchId: batchPage.id,
+    lessonId: Lpage.id,
+    mediaAssetId: mediaPage.id,
+    title: "Page optional",
+    titleAr: "إضافي",
+    requiredPercent: 95,
+    requirementMode: "OPTIONAL",
+    isRequiredForProgression: false,
+    isPublished: true,
+    publishedAt: new Date(),
+  },
+});
 const media = await client.mediaAsset.create({
   data: { kind: "VIDEO", storage: "LOCAL_PRIVATE", storageKey: "k-m46", isPrivate: true },
 });
@@ -1077,6 +1238,267 @@ section("C. Cold start — first request delayed ~2.3s, playback must not lose i
   const still = await viewOf(vCycles, s1.student);
   eq([still.watchedSec, still.percent], [1, 10], "C8: the extra cycles add no credit");
   media.state.playing = false;
+}
+
+// ---------------------------------------------------------------------------
+// D. The Student Lesson page — the canonical payload refreshes on the verdict
+//    transition (the stale-page bug: header badge, overall video progress,
+//    "0 of 1" requirements row and the unmet action text all live in the
+//    `/api/lessons/[id]` payload, which the 10s debounce used to skip).
+// ---------------------------------------------------------------------------
+section("D. Student Lesson page — verdict transition refreshes the canonical payload");
+
+const { StudentLessonView } = require(path.join(EMIT, "components/course/student-lesson.js"));
+const { useApp } = require(path.join(EMIT, "lib/store.js"));
+const { applyLocale } = require(path.join(EMIT, "lib/i18n-core.js"));
+
+// Every request the page makes is served by the REAL route handler.
+let lessonGets = 0;
+let unsupportedPaths = [];
+global.fetch = async (url, init) => {
+  const u = new URL(String(url), "http://t");
+  const absUrl = u.toString();
+  const method = (init?.method || "GET").toUpperCase();
+  const jsonBody = () => JSON.parse(init?.body || "{}");
+  const done = (status, json) => ({
+    ok: status < 300,
+    status,
+    json: async () => json,
+    text: async () => JSON.stringify(json),
+  });
+  const viaRoute = async (handler, req, params) => {
+    const res = await handler(req, { params: Promise.resolve(params || {}) });
+    return done(res.status, await res.json());
+  };
+  if (/^\/api\/lessons\/[^/]+$/.test(u.pathname) && method === "GET") {
+    lessonGets++;
+    const id = u.pathname.split("/").pop();
+    return viaRoute(R.lesson.GET, jsonReq(absUrl, jsonBody()), { id });
+  }
+  if (/^\/api\/students\/me\/session-videos\/[^/]+\/progress$/.test(u.pathname) && method === "POST") {
+    const id = u.pathname.split("/")[u.pathname.split("/").length - 2];
+    const body = jsonBody();
+    asUser(globalThis.__CM_PAGE_USER__ ?? s1.user);
+    const res = await R.videoProgress.POST(jsonReq(absUrl, body), { params: Promise.resolve({ id }) });
+    const json = await res.json();
+    beatPosts.push(body);
+    lastResponse = json;
+    return done(res.status, json);
+  }
+  if (u.pathname === "/api/students/me/session-videos" && method === "GET") {
+    return viaRoute(R.videos.GET, jsonReq(absUrl, {}));
+  }
+  if (u.pathname === "/api/students/me/bookmarks" && method === "GET") {
+    return viaRoute(R.bookmarks.GET, jsonReq(absUrl, {}));
+  }
+  if (u.pathname === "/api/students/me/notes" && method === "GET") {
+    return viaRoute(R.notes.GET, jsonReq(absUrl, {}));
+  }
+  unsupportedPaths.push(u.pathname);
+  return done(200, {});
+};
+
+/** Mount the real page for `student`, open `lesson`, wait for it to settle. */
+async function mountLessonPage(student, lessonId) {
+  globalThis.__CM_PAGE_USER__ = student.user;
+  asUser(student.user);
+  useApp.setState({ lessonId, navParam: lessonId, locale: "en" });
+  applyLocale("en");
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  roots.push(root);
+  await React.act(async () => {
+    root.render(React.createElement(StudentLessonView));
+    await tick(120);
+  });
+  await React.act(async () => {
+    await tick(120);
+  });
+  return container;
+}
+const flatText = (el) => (el?.textContent || "").replace(/\s+/g, " ").trim();
+const hasText = (container, needle) => flatText(container).includes(needle);
+const headerVideoPct = (container) => {
+  const label = [...container.querySelectorAll("span")].find((s) => flatText(s) === "Video progress");
+  const row = label?.parentElement;
+  if (!row) return null;
+  return [...row.querySelectorAll("span")].map(flatText).find((x) => /%$/.test(x)) ?? null;
+};
+const unmetReason = (container) =>
+  [...container.querySelectorAll("p")].find((p) => String(p.className).includes("text-amber-600")) ?? null;
+const clickVideo = async (container, title) => {
+  const button = [...container.querySelectorAll("button")].find((b) => flatText(b).includes(title));
+  if (!button) throw new Error(`playlist row not found: ${title}`);
+  await React.act(async () => {
+    button.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+    await tick(60);
+  });
+  return container.querySelector("video");
+};
+const unmountLast = async () => {
+  const root = roots.pop();
+  if (root) {
+    await React.act(async () => {
+      root.unmount();
+    });
+  }
+};
+/** Watch the active recording to its end, exactly like the browser does. */
+async function watchToEnd(el, media) {
+  await fire(el, "loadedmetadata");
+  await React.act(async () => {
+    media.state.playing = false;
+    el.play();
+    await tick(40);
+  });
+  compressPlayback(10 - media.state.position);
+  await fire(el, "ended", 120);
+  await React.act(async () => {
+    await tick(80);
+  });
+}
+
+// D1–D7 — the REQUIRED recording: 0 of 1 → 1 of 1 without a reload.
+{
+  const container = await mountLessonPage(sPage, Lpage.id);
+  eq(unsupportedPaths, [], "D0: the page made no request the test had to fake");
+  ok(hasText(container, "0 of 1 videos completed"), "D1: the requirements row starts at 0 of 1 (fresh student)");
+  ok(!!unmetReason(container), "D1: the unmet action text is rendered");
+  eq(headerVideoPct(container), "0%", "D1: the overall video progress starts at 0%");
+  ok(hasText(container, "In progress"), "D1: the lesson status badge starts at In progress");
+  ok(!hasText(container, "1 of 1 videos completed"), "D1: nothing claims completion yet");
+
+  const before = lessonGets;
+  const el0 = await clickVideo(container, "Page required");
+  ok(!!el0, "D1: the required recording is selectable in the player");
+  const media = wireMedia(el0, 10);
+  media.knowMetadata();
+  beatPosts = [];
+  lastResponse = null;
+
+  await watchToEnd(el0, media);
+  eq(lastResponse?.satisfied, true, "D2: the server reported the requirement satisfied");
+  eq(lastResponse?.isCompleted, true, "D2: the server reported the recording completed");
+  await React.act(async () => {
+    await tick(150);
+  });
+
+  ok(hasText(container, "Fully watched"), "D3: the video card shows the completed state");
+  ok(hasText(container, "100% / 95%"), "D3: the card's watch percentage is fresh (100% / 95%)");
+  ok(lessonGets > before, `D4: the canonical lesson payload was re-read (${before} → ${lessonGets})`);
+  ok(hasText(container, "1 of 1 videos completed"), "D4/D5: the requirements row moved to 1 of 1 with no page reload");
+  ok(!hasText(container, "0 of 1 videos completed"), "D5: the stale 0 of 1 row is gone");
+  ok(!unmetReason(container), "D6: the unmet action text disappeared without a reload");
+  ok(!hasText(container, "In progress"), "D6: the header status left the in-progress state");
+  ok(hasText(container, "Completed"), "D6: the header status badge shows the completed state");
+  eq(headerVideoPct(container), "100%", "D7: the overall video progress updated immediately");
+
+  const settled = lessonGets;
+  await React.act(async () => {
+    await tick(600);
+  });
+  eq(lessonGets, settled, "D8: no further canonical re-reads after the transition (no refetch loop)");
+  ok(settled - before <= 3, `D8: the refresh stays bounded (${settled - before} re-reads for the whole watch)`);
+  await unmountLast();
+}
+
+// D9 — an OPTIONAL recording completing must NOT satisfy a requirement.
+{
+  const container = await mountLessonPage(sPageOpt, Lpage.id);
+  ok(hasText(container, "0 of 1 videos completed"), "D9: the OPTIONAL case starts unmet as well");
+  const el0 = await clickVideo(container, "Page optional");
+  const media = wireMedia(el0, 10);
+  media.knowMetadata();
+  beatPosts = [];
+  lastResponse = null;
+  await watchToEnd(el0, media);
+  eq(lastResponse?.isCompleted, true, "D9: the OPTIONAL recording is still tracked (telemetry)");
+  await React.act(async () => {
+    await tick(150);
+  });
+  ok(hasText(container, "0 of 1 videos completed"), "D9: completing the OPTIONAL recording leaves the requirement unmet");
+  ok(!hasText(container, "1 of 1 videos completed"), "D9: no client-side requirement satisfaction is fabricated");
+  ok(!!unmetReason(container), "D9: the unmet action text stays (the REQUIRED recording is still unwatched)");
+  await unmountLast();
+}
+
+// D11 — the reported staleness: a routine re-read close to the end (the page
+// shows the mid-watch 90% payload) must NOT swallow the completion verdict.
+// The completion beat arrives ~3s after that routine beat — inside the 10s
+// debounce window — and the page must still refresh immediately.
+{
+  const container = await mountLessonPage(sPageSlow, Lslow.id);
+  ok(hasText(container, "0 of 1 videos completed"), "D11: the long-session case starts unmet");
+  // A single-recording lesson renders no playlist — the player is auto-selected.
+  await React.act(async () => {
+    await tick(120);
+  });
+  const el0 = container.querySelector("video");
+  ok(!!el0, "D11: the lone required recording is the active player");
+  const media = wireMedia(el0, 30);
+  media.knowMetadata();
+  beatPosts = [];
+  lastResponse = null;
+
+  await fire(el0, "loadedmetadata"); // anchor / armed window
+  await React.act(async () => {
+    media.state.playing = false;
+    el0.play();
+    await tick(40);
+  });
+  compressPlayback(27); // 27 of the 30 seconds watched (90% of the recording)
+  await fire(el0, "pause", 150); // a ROUTINE beat → the page re-reads (90%)
+  await React.act(async () => {
+    await tick(150);
+  });
+  ok(hasText(container, "0 of 1 videos completed"), "D11: the server verdict is still unmet at 90%");
+  eq(headerVideoPct(container), "90%", "D11: the routine re-read carried the mid-watch 90% payload");
+
+  // Finish it: the completion beat lands ~3s after that routine re-read.
+  await React.act(async () => {
+    media.state.playing = false;
+    el0.play();
+    await tick(40);
+  });
+  compressPlayback(3);
+  await fire(el0, "ended", 200);
+  await React.act(async () => {
+    await tick(200);
+  });
+  eq(lastResponse?.satisfied, true, "D11: the server reported the long recording satisfied");
+  ok(
+    hasText(container, "1 of 1 videos completed"),
+    "D11: the completion verdict refreshes the page even inside the debounce window"
+  );
+  ok(!hasText(container, "0 of 1 videos completed"), "D11: the stale 0 of 1 row is gone");
+  eq(headerVideoPct(container), "100%", "D11: the overall video progress catches up in the same refresh");
+  ok(!unmetReason(container), "D11: the unmet action text clears without a reload");
+  ok(!hasText(container, "In progress"), "D11: the status badge leaves In progress without a reload");
+  await unmountLast();
+}
+
+// D10 — the page owns no progression rule: it renders the server's payload.
+{
+  const pageSrc = read("src/components/course/student-lesson.tsx")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+  ok(
+    !/requiredPercent\s*[<>]=?\s*|[<>]=?\s*[\w.]*requiredPercent|[\w.]+percent\s*>=\s*\d/.test(pageSrc),
+    "D10: the page never compares a watch percent against a threshold"
+  );
+  ok(
+    /\.progress\.satisfied/.test(pageSrc),
+    "D10: the player's completed state reads the server's own verdict flag"
+  );
+  ok(
+    /fetch\(`\/api\/lessons\/\$\{encodeURIComponent\(activeLessonId\)\}`\)/.test(pageSrc),
+    "D10: the refresh re-reads the canonical lesson payload (no local mutation of requirements)"
+  );
+  ok(
+    !/setData\(\s*\(prev\)|setData\(\s*\{[\s\S]{0,200}requirements:/.test(pageSrc),
+    "D10: no client-side recomputation of the requirements object"
+  );
 }
 
 // C11 — a failing anchor request must never lock the student out of playback.
