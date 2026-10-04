@@ -25,7 +25,7 @@
 // ============================================================
 
 import * as React from "react";
-import { useT } from "@/lib/i18n";
+import { hasDictKey, useT } from "@/lib/i18n";
 import { academicLevelLabelFor } from "@/lib/academic-level-labels";
 import { motion } from "framer-motion";
 import {
@@ -81,7 +81,8 @@ type LessonView = {
   completed: boolean;
   reason: string | null;
   reasonCode: string | null;
-  unmet: { kind: string; label: string }[];
+  /** `labelKey` names the dictionary entry; `label` is canonical Arabic. */
+  unmet: { kind: string; label: string; labelKey?: string }[];
   requirements: {
     video: RequirementView | null;
     quiz: RequirementView | null;
@@ -126,8 +127,11 @@ type AbsenceView = {
 type HoldView = {
   lessonTitle: string | null;
   inUniverse: boolean;
+  /** Canonical Arabic sentence — evidence only; the UI renders `reasonKeys`. */
   reason: string | null;
-  unmet: { kind: string; label: string }[];
+  /** The same sentence as ordered dictionary keys. */
+  reasonKeys?: string[] | null;
+  unmet: { kind: string; label: string; labelKey?: string }[];
   eligible: boolean;
 };
 
@@ -148,9 +152,53 @@ type SessionView = {
 type ActionItem = {
   code: string;
   severity: "blocking" | "attention";
+  /** Phase M4.5b — a dictionary KEY, never pre-formatted text. */
   label: string;
+  /** The same sentence as ordered keys when it is a composition. */
+  labelKeys?: string[] | null;
+  /** Verbatim CONTENT (a lesson/session/homework title). */
   detail: string | null;
+  /** A composed system sentence used as the detail, as ordered keys. */
+  detailKeys?: string[] | null;
 };
+
+/**
+ * Phase M4.5b — the ONE place a payload string becomes user-visible text.
+ *
+ * The payload carries dictionary KEYS for everything the system generates
+ * (progression reasons, catch-up requirements, live-session lifecycle) and
+ * verbatim CONTENT for everything authored (student / lesson / session /
+ * homework titles, absence reasons, teacher notes). Resolution therefore
+ * happens HERE, against the locale that is active at render time:
+ *
+ *   * a language switch re-renders these strings instantly, with no refetch;
+ *   * a payload cached under another locale can no longer pin that language
+ *     (the English-Parent-Arabic-labels bug);
+ *   * content is never touched — `hasDictKey` only translates strings that are
+ *     actually dictionary keys, so a title stays exactly as stored;
+ *   * a missing key renders empty, never a raw dotted key (i18n-core contract).
+ */
+function useSystemText() {
+  const t = useT();
+  return React.useMemo(() => {
+    /** One payload string: the dictionary key it names, else the content verbatim. */
+    const resolve = (value: string | null | undefined) =>
+      !value ? "" : hasDictKey(value) ? t(value) : value;
+    /** A composed system sentence: ordered keys joined with the locale separator. */
+    const join = (keys: readonly (string | null | undefined)[] | null | undefined) => {
+      const list = (keys ?? []).filter((k): k is string => !!k);
+      return list.length > 0
+        ? list.map(resolve).join(t("common.listSeparator"))
+        : "";
+    };
+    /** A text slot: the composed keys win; otherwise the single value. */
+    const slot = (
+      value: string | null | undefined,
+      keys?: readonly (string | null | undefined)[] | null
+    ) => join(keys) || resolve(value);
+    return { resolve, join, slot };
+  }, [t]);
+}
 
 export type AcademicsSnapshot = {
   student: {
@@ -245,6 +293,7 @@ function EmptyMini({ text }: { text: string }) {
 // ---------- Action Needed ----------
 function ActionNeededCard({ items }: { items: ActionItem[] }) {
   const t = useT();
+  const sys = useSystemText();
   const blocking = items.filter((i) => i.severity === "blocking");
   const attention = items.filter((i) => i.severity === "attention");
 
@@ -288,9 +337,16 @@ function ActionNeededCard({ items }: { items: ActionItem[] }) {
                   <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
                 )}
                 <div className="min-w-0">
-                  <p className="font-semibold leading-snug">{item.label}</p>
-                  {item.detail ? (
-                    <p className="mt-0.5 text-xs text-muted-foreground">{item.detail}</p>
+                  {/* System text: the payload's dictionary keys, resolved
+                      against the ACTIVE locale. Content (`detail`) stays
+                      verbatim — it is the lesson/session/homework title. */}
+                  <p className="font-semibold leading-snug break-words">
+                    {sys.slot(item.label, item.labelKeys)}
+                  </p>
+                  {item.detail || item.detailKeys?.length ? (
+                    <p className="mt-0.5 text-xs text-muted-foreground break-words">
+                      {sys.slot(item.detail, item.detailKeys)}
+                    </p>
                   ) : null}
                 </div>
               </div>
@@ -305,6 +361,7 @@ function ActionNeededCard({ items }: { items: ActionItem[] }) {
 // ---------- Situation header ----------
 function SituationHeader({ snapshot }: { snapshot: AcademicsSnapshot }) {
   const t = useT();
+  const sys = useSystemText();
   const { progress, course, group } = snapshot;
   const current = progress.currentLesson;
 
@@ -386,16 +443,20 @@ function SituationHeader({ snapshot }: { snapshot: AcademicsSnapshot }) {
               {current.title}
             </p>
             {current.reason ? (
-              <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
-                {current.reason}
+              <p className="mt-1 text-xs text-amber-700 dark:text-amber-400 break-words">
+                {/* The engine's sentence, rebuilt from its own codes so it
+                    follows the locale (the canonical Arabic is the fallback). */}
+                {sys.slot(current.reason, current.unmet.map((u) => u.labelKey))}
               </p>
             ) : null}
             {current.unmet.length > 0 ? (
               <ul className="mt-2 space-y-1">
                 {current.unmet.map((entry) => (
-                  <li key={entry.kind} className="flex items-center gap-1.5 text-xs">
-                    <CircleDashed className="h-3 w-3 shrink-0 text-amber-600" />
-                    {entry.label}
+                  <li key={entry.kind} className="flex items-start gap-1.5 text-xs">
+                    <CircleDashed className="mt-0.5 h-3 w-3 shrink-0 text-amber-600" />
+                    <span className="min-w-0 break-words">
+                      {sys.slot(entry.label, [entry.labelKey])}
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -421,6 +482,7 @@ function stateTone(state: LessonView["state"]): string {
 
 function LessonRow({ lesson }: { lesson: LessonView }) {
   const t = useT();
+  const sys = useSystemText();
   const stateLabel =
     lesson.state === "COMPLETED"
       ? t("parent.state.COMPLETED")
@@ -498,7 +560,9 @@ function LessonRow({ lesson }: { lesson: LessonView }) {
           </Badge>
         </div>
         {lesson.reason ? (
-          <p className="mt-1 text-xs text-muted-foreground">{lesson.reason}</p>
+          <p className="mt-1 text-xs text-muted-foreground break-words">
+            {sys.slot(lesson.reason, lesson.unmet.map((u) => u.labelKey))}
+          </p>
         ) : null}
         {chips.length > 0 ? (
           <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
@@ -560,6 +624,7 @@ function AbsencesCard({
   holds: HoldView[];
 }) {
   const t = useT();
+  const sys = useSystemText();
   const hasRows = absences.recent.length > 0 || holds.length > 0;
 
   return (
@@ -612,7 +677,7 @@ function AbsencesCard({
                   </p>
                 ) : hold.inUniverse && hold.reason ? (
                   <p className="mt-1 text-xs text-amber-700 dark:text-amber-400 break-words">
-                    {hold.reason}
+                    {sys.slot(hold.reason, hold.reasonKeys)}
                   </p>
                 ) : null}
                 {hold.unmet.length > 0 ? (
@@ -620,7 +685,9 @@ function AbsencesCard({
                     {hold.unmet.map((entry) => (
                       <li key={entry.kind} className="flex items-start gap-1.5 text-xs">
                         <CircleDashed className="mt-0.5 h-3 w-3 shrink-0 text-amber-600" />
-                        <span className="min-w-0 break-words">{entry.label}</span>
+                        <span className="min-w-0 break-words">
+                          {sys.slot(entry.label, [entry.labelKey])}
+                        </span>
                       </li>
                     ))}
                   </ul>

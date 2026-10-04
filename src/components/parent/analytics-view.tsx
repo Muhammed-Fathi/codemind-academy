@@ -1,5 +1,5 @@
 "use client";
-import { useT , pickAuto } from "@/lib/i18n";
+import { useT, useLocale, pickAuto } from "@/lib/i18n";
 import { academicLevelLabelFor } from "@/lib/academic-level-labels";
 import { useApp } from "@/lib/store";
 
@@ -79,6 +79,10 @@ export function ParentAnalyticsView({
   initialStudentId?: string | null;
 }) {
   const tr = useT();
+  // Phase M4.5 — the ACTIVE locale. The payloads below carry localized strings
+  // (month labels, level/course context), so the reads are re-issued when the
+  // language changes instead of serving text fetched under the old one.
+  const locale = useLocale();
   const storedChildId = useApp((st) => st.parentChildId);
   const setStoredChildId = useApp((st) => st.setParentChildId);
 
@@ -134,16 +138,29 @@ export function ParentAnalyticsView({
         if (seq === requestSeq.current) setLoading(false);
       });
     return () => controller.abort();
-    // Mount-only on purpose: the linked-children read builds the tab list once
-    // (it must not shrink when a scoped request narrows the payload). The
-    // SHARED context is read at mount and every switch writes it back.
-  }, []);
+    // The linked-children read builds the tab list once per LOCALE — it must
+    // not shrink when a scoped request narrows the payload, and Phase M4.5 made
+    // it re-read when the language changes because the tab's Academic Level and
+    // course context are localized server-side. The SHARED context is read at
+    // mount and every switch writes it back; re-running is idempotent.
+  }, [locale]);
 
   // Every child SWITCH is a request keyed by the canonical id — the server
   // re-verifies the ParentStudentLink and answers 404 for anything else. The
   // in-flight request is aborted, and the sequence guard drops any late
   // response/error from the child we just left.
   const loadedIds = React.useRef<Set<string>>(new Set());
+  // Phase M4.5 — a language switch drops the per-child row cache: the rows
+  // carry server-localized strings (month labels, level/course context), so
+  // they are re-read in the new locale instead of being served stale. Declared
+  // BEFORE the loader below so it runs first on the same render.
+  const rowsLocale = React.useRef(locale);
+  React.useEffect(() => {
+    if (rowsLocale.current === locale) return;
+    rowsLocale.current = locale;
+    loadedIds.current.clear();
+    setRows({});
+  }, [locale]);
   React.useEffect(() => {
     if (!selectedId) return;
     setStoredChildId(selectedId);
@@ -186,7 +203,7 @@ export function ParentAnalyticsView({
         if (seq === requestSeq.current && !controller.signal.aborted) setError(true);
       });
     return () => controller.abort();
-  }, [selectedId, setStoredChildId]);
+  }, [selectedId, setStoredChildId, locale]);
 
   if (loading) {
     return (

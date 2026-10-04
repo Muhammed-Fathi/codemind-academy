@@ -34,27 +34,12 @@
 import type { NextRequest } from "next/server";
 import { ok, err, requireUser } from "@/lib/api";
 import { getServerT, serverLocale } from "@/lib/i18n-server";
-import { hasDictKey, translate } from "@/lib/i18n-core";
 import {
   listLinkedChildRefs,
   loadChildAcademicSnapshot,
   readStudentIdParam,
   resolveLinkedChild,
 } from "@/lib/parent-academics";
-
-/**
- * Resolve a `label` that is EITHER canonical Arabic text (a Phase H reason
- * string) OR an i18n dict key emitted by the aggregation layer. A canonical
- * Arabic string must never be looked up in the dictionary (it would render an
- * empty string), and a dict key must never be shown raw.
- */
-function resolveLabel(
-  label: string,
-  t: (key: string, params?: Record<string, unknown>) => string
-): string {
-  if (!label) return "";
-  return hasDictKey(label) ? t(label) : label;
-}
 
 export async function GET(req: NextRequest) {
   const tApi = await getServerT();
@@ -75,14 +60,16 @@ export async function GET(req: NextRequest) {
     listLinkedChildRefs(user.id, locale),
   ]);
 
-  const actionNeeded = snapshot.actionNeeded.map((item) => ({
-    ...item,
-    label: resolveLabel(item.label, tApi),
-  }));
-
+  // Phase M4.5b — NOTHING here is pre-formatted in a language. The aggregation
+  // emits dictionary KEYS for every system string (progression reasons,
+  // catch-up requirements, session lifecycle) and verbatim content for
+  // everything authored; the UI resolves those keys against the locale that is
+  // active when it renders. Resolving them here instead is what made an
+  // English Parent read Arabic labels: the payload was fetched under one
+  // locale and then served from the query cache after a language switch.
   return ok({
     selectedStudentId: resolution.student.id,
     children,
-    snapshot: { ...snapshot, actionNeeded },
+    snapshot,
   });
 }

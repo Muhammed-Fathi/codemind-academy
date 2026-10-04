@@ -48,9 +48,10 @@ import { studentAcademicContext } from "@/lib/student-universe";
 import { normalizeAcademicLevel, type AcademicLevel } from "@/lib/academic-level";
 import { listAbsencesForParent } from "@/lib/absence-review";
 import {
+  catchupReasonCodes,
   evaluateStudentCatchup,
   loadCourseProgression,
-  PROGRESSION_REASON_AR,
+  PROGRESSION_REASON_KEY,
   toCatchupHoldView,
   toUnmetEntries,
   type CourseProgression,
@@ -309,6 +310,28 @@ export type RequirementView = {
   completedCount?: number;
 };
 
+/**
+ * A canonical unmet requirement as the PARENT payload carries it: the machine
+ * code (`ProgressionUnmetEntry.kind`, unchanged), the canonical Arabic text
+ * (evidence / back-compat) and the dictionary key the UI resolves against the
+ * ACTIVE locale (Phase M4.5b).
+ */
+export type ParentUnmetEntry = ProgressionUnmetEntry & { labelKey: string };
+
+/**
+ * Widen canonical codes into parent entries: `toUnmetEntries` stays the ONE
+ * source of the code↔Arabic-text pairing (shared with every student surface),
+ * and this adds only the locale key. `kind` is never renamed or reordered.
+ */
+export function parentUnmetEntries(
+  codes: readonly ProgressionUnmetCode[]
+): ParentUnmetEntry[] {
+  return toUnmetEntries(codes).map((entry) => ({
+    ...entry,
+    labelKey: PROGRESSION_REASON_KEY[entry.kind] ?? entry.kind,
+  }));
+}
+
 export type ParentLessonView = {
   /** `Lesson.officialCode` when present — a display code, never a DB id. */
   code: string | null;
@@ -318,10 +341,15 @@ export type ParentLessonView = {
   state: ProgressionStateView;
   unlocked: boolean;
   completed: boolean;
-  /** Canonical Arabic reason (null when nothing blocks). */
+  /** Canonical Arabic reason (null when nothing blocks) — evidence, not UI. */
   reason: string | null;
   reasonCode: ProgressionUnmetCode | null;
-  unmet: ProgressionUnmetEntry[];
+  /**
+   * Phase M4.5b — every unmet requirement carries its canonical code, the
+   * canonical Arabic text AND the dictionary key the UI resolves against the
+   * ACTIVE locale. Server text is never what a Parent surface prints.
+   */
+  unmet: ParentUnmetEntry[];
   requirements: {
     video: RequirementView | null;
     quiz: RequirementView | null;
@@ -380,8 +408,15 @@ export type ParentHoldView = {
   lessonTitle: string | null;
   /** False when the missed lesson is outside every curriculum (vacuous hold). */
   inUniverse: boolean;
+  /** Canonical Arabic sentence — evidence, not UI (the UI renders `reasonKeys`). */
   reason: string | null;
-  unmet: ProgressionUnmetEntry[];
+  /**
+   * Phase M4.5b — the canonical codes behind `reason`, as dictionary keys in
+   * canonical order. `catchupReasonCodes` is the engine's own rule, so the
+   * sentence a Parent reads is the one the engine decided, only localized.
+   */
+  reasonKeys: string[];
+  unmet: ParentUnmetEntry[];
   /** Catch-up-eligible right now = the student can clear the hold. */
   eligible: boolean;
 };
@@ -416,16 +451,32 @@ export type ParentActionCode =
   | "SESSION_RESCHEDULED"
   | "SESSION_CANCELLED";
 
+/**
+ * Phase M4.5b — ONE item of Action Needed.
+ *
+ * Every SYSTEM string below is a dictionary KEY, resolved by the UI against
+ * the locale that is active when it renders; every CONTENT string (a lesson,
+ * session or homework title) is verbatim data. Nothing here is pre-formatted
+ * in a language, so a payload can never pin a language it was fetched in.
+ *
+ *   * `label`     — the primary reason's key (stable identity, always present).
+ *   * `labelKeys` — the full ordered composition when the label is a composed
+ *                   sentence (same codes, same order as the engine's own
+ *                   `reasonTextFor`); the UI joins them with the locale's
+ *                   list separator. Null when `label` is already the whole
+ *                   sentence.
+ *   * `detail`    — verbatim content (a title), never system text.
+ *   * `detailKeys`— a composed system sentence used as the detail (the
+ *                   blocked-catch-up reason), as ordered keys.
+ */
 export type ParentActionItem = {
   code: ParentActionCode;
   /** "blocking" = the student cannot move forward; "attention" = FYI. */
   severity: "blocking" | "attention";
-  /**
-   * Canonical Arabic when the code IS a canonical progression code
-   * (`PROGRESSION_REASON_AR`), otherwise an i18n dict key the route resolves.
-   */
   label: string;
+  labelKeys: string[] | null;
   detail: string | null;
+  detailKeys: string[] | null;
 };
 
 export type ParentChildSnapshot = {
@@ -544,7 +595,7 @@ function lessonView(
     completed: evaluation.completed,
     reason: evaluation.reason,
     reasonCode: evaluation.reasonCode,
-    unmet: toUnmetEntries(evaluation.unmet),
+    unmet: parentUnmetEntries(evaluation.unmet),
     requirements: {
       video: requirementView(evaluation.video),
       quiz: requirementView(evaluation.quiz),
@@ -642,8 +693,8 @@ function sessionView(
  *   * ABSENCE_HOLD / LESSON_LOCKED / CATCHUP_REQUIRED come from the Phase H
  *     evaluation and the Phase H catch-up evaluation;
  *   * VIDEO_INCOMPLETE / QUIZ_NOT_PASSED / HOMEWORK_NOT_SUBMITTED are the
- *     canonical unmet codes of the CURRENT lesson (their labels are the
- *     canonical `PROGRESSION_REASON_AR` strings, verbatim);
+ *     canonical unmet codes of the CURRENT lesson (their labels are those
+ *     codes' dictionary keys — Phase M4.5b — never pre-formatted text);
  *   * HOMEWORK_OVERDUE is the canonical deadline-vs-submission fact;
  *   * the session items are the Phase F lifecycle states.
  *
@@ -667,12 +718,16 @@ function buildActionNeeded(input: {
     code: ParentActionCode,
     severity: ParentActionItem["severity"],
     label: string,
-    detail: string | null
+    detail: string | null,
+    detailKeys: string[] | null = null,
+    labelKeys: string[] | null = null
   ) => {
-    const key = `${code}:${detail ?? ""}`;
+    // Dedupe on the canonical identity PLUS whichever payload the row carries,
+    // so two rows with the same code and the same evidence still collapse.
+    const key = `${code}:${detail ?? (detailKeys ?? labelKeys ?? []).join("|")}`;
     if (seen.has(key)) return;
     seen.add(key);
-    out.push({ code, severity, label, detail });
+    out.push({ code, severity, label, labelKeys, detail, detailKeys });
   };
 
   // 1. An ACTIVE hold outranks everything: it is the Phase F/H boundary.
@@ -680,13 +735,21 @@ function buildActionNeeded(input: {
     push(
       "ABSENCE_HOLD",
       "blocking",
-      PROGRESSION_REASON_AR.ABSENCE_HOLD,
+      PROGRESSION_REASON_KEY.ABSENCE_HOLD,
       hold.lessonTitle
     );
     if (hold.eligible) {
       push("CATCHUP_REQUIRED", "blocking", "parent.action.catchupNow", hold.lessonTitle);
     } else if (hold.inUniverse) {
-      push("CATCHUP_REQUIRED", "blocking", "parent.action.catchupBlocked", hold.reason);
+      // The detail of this row IS the hold's canonical reason sentence, so it
+      // travels as the keys `hold.reasonKeys` names — never as Arabic text.
+      push(
+        "CATCHUP_REQUIRED",
+        "blocking",
+        "parent.action.catchupBlocked",
+        null,
+        hold.reasonKeys
+      );
     }
   }
 
@@ -698,14 +761,19 @@ function buildActionNeeded(input: {
     // UNLOCKED lesson with an outstanding requirement is still outstanding
     // work. The codes and their labels are the engine's own, verbatim.
     for (const entry of current.unmet) {
-      push(entry.kind, "blocking", entry.label, current.title);
+      push(entry.kind, "blocking", entry.labelKey, current.title);
     }
     if (!current.unlocked && current.reasonCode) {
+      // The row's sentence is the engine's own composition of THIS lesson's
+      // unmet codes (`reason` = `reasonTextFor(unmet)`, and `reasonCode` is
+      // `unmet[0]`), so the keys reproduce it exactly — only localized.
       push(
         current.reasonCode === "ABSENCE_HOLD" ? "ABSENCE_HOLD" : "LESSON_LOCKED",
         "blocking",
-        current.reason ?? PROGRESSION_REASON_AR[current.reasonCode] ?? "",
-        current.title
+        PROGRESSION_REASON_KEY[current.reasonCode],
+        current.title,
+        null,
+        current.unmet.map((u) => u.labelKey)
       );
     }
   }
@@ -1131,11 +1199,17 @@ export async function loadChildAcademicSnapshot(params: {
   // --- Phase H holds (catch-up views, ids stripped) ------------------------
   const holds: ParentHoldView[] = catchup.holds.map((hold) => {
     const view = toCatchupHoldView(hold);
+    // The engine's own reason rule, restated as dictionary keys: the SAME
+    // message for this hold, localized by whoever renders it.
+    const reasonKeys = catchupReasonCodes(view.unmet.map((u) => u.kind)).map(
+      (code) => PROGRESSION_REASON_KEY[code]
+    );
     return {
       lessonTitle: view.lessonTitle,
       inUniverse: view.inUniverse,
       reason: view.reason,
-      unmet: view.unmet,
+      reasonKeys,
+      unmet: parentUnmetEntries(view.unmet.map((u) => u.kind)),
       eligible: view.eligible,
     };
   });

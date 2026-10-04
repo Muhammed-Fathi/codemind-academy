@@ -2906,6 +2906,22 @@ export const DICT_2026: Record<string, DictEntry> = {
   "role.student": { ar: "الطالب", en: "Student" },
   "role.system": { ar: "النظام", en: "System" },
 
+  // ---- Phase M4.5b: canonical progression vocabulary ----
+  // ONE entry per canonical `ProgressionUnmetCode`. The CODES stay the
+  // identity (`PROGRESSION_REASON_KEY` in src/lib/progression.ts maps them
+  // here); the Arabic values are byte-identical to the engine's canonical
+  // `PROGRESSION_REASON_AR`, so Arabic output never changes while English
+  // stops leaking Arabic workflow text. A test pins the equality.
+  "progression.reason.videoIncomplete": { ar: "أكمل الفيديو الأول", en: "Complete the first video" },
+  "progression.reason.quizNotPassed": { ar: "لازم تنجح في الـQuiz", en: "Pass the quiz first" },
+  "progression.reason.homeworkNotSubmitted": { ar: "سلّم الـHomework الأول", en: "Submit the homework first" },
+  "progression.reason.previousIncomplete": { ar: "خلّص الدرس اللي قبله الأول", en: "Finish the previous lesson first" },
+  "progression.reason.absenceHold": { ar: "عندك غياب محتاج تعويض", en: "You have an absence that needs catch-up" },
+  "progression.reason.noCompletionRequirements": { ar: "لا توجد متطلبات إكمال لهذا الدرس", en: "This lesson has no completion requirements" },
+  // The locale's list separator, for composed system sentences (the Arabic
+  // separator is the one the engine itself joins with).
+  "common.listSeparator": { ar: "، ", en: ", " },
+
   // ---- Phase K2: academic level (First / Second Secondary) ----
   "api.371": { ar: "الصف الدراسي مطلوب (أولى ثانوي أو ثانية ثانوي)", en: "Academic level is required (First or Second Secondary)" },
   "api.372": {

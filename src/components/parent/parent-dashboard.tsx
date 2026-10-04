@@ -314,7 +314,11 @@ export function ParentDashboard() {
     };
   }, [view]);
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ["parent-dashboard"],
+    // Phase M4.5 — the locale belongs in the key: the payload carries
+    // server-localized text (month labels, activity titles, picked titles), so
+    // a language switch must re-read it instead of serving the old language
+    // from the cache.
+    queryKey: ["parent-dashboard", locale],
     queryFn: async () => {
       const r = await fetch("/api/parents/me/dashboard", { cache: "no-store" });
       if (!r.ok) throw new Error("failed to load dashboard");
@@ -339,7 +343,11 @@ export function ParentDashboard() {
   // every call and answers 404 for anything that is not this parent's own
   // child, so switching (or tampering) can never cross into another student.
   const academicsQuery = useQuery({
-    queryKey: ["parent-academics", activeChildId],
+    // Phase M4.5 — the canonical snapshot is locale-keyed too: its system
+    // strings are dictionary keys resolved at render time (so they are already
+    // language-proof), but its CONTENT (lesson/session/homework titles) is
+    // picked server-side per request.
+    queryKey: ["parent-academics", activeChildId, locale],
     queryFn: async () => {
       const r = await fetch(
         `/api/parents/me/academics${activeChildId ? `?studentId=${encodeURIComponent(activeChildId)}` : ""}`,

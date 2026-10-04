@@ -285,6 +285,23 @@ export type ProgressionUnmetCode =
   | "ABSENCE_HOLD"
   | "NO_COMPLETION_REQUIREMENTS";
 
+/**
+ * Canonical CODE → i18n dictionary key (Phase M4.5b). The code is the identity;
+ * the label is a presentation concern, so each code names the ONE dictionary
+ * entry that carries its Arabic and English text. `PROGRESSION_REASON_AR`
+ * below stays the canonical Arabic vocabulary (server text, student surfaces,
+ * exports) and the dictionary's Arabic values are identical to it — a test
+ * pins that equality, so localizing through this map can never change Arabic.
+ */
+export const PROGRESSION_REASON_KEY: Record<ProgressionUnmetCode, string> = {
+  VIDEO_INCOMPLETE: "progression.reason.videoIncomplete",
+  QUIZ_NOT_PASSED: "progression.reason.quizNotPassed",
+  HOMEWORK_NOT_SUBMITTED: "progression.reason.homeworkNotSubmitted",
+  PREVIOUS_INCOMPLETE: "progression.reason.previousIncomplete",
+  ABSENCE_HOLD: "progression.reason.absenceHold",
+  NO_COMPLETION_REQUIREMENTS: "progression.reason.noCompletionRequirements",
+};
+
 /** Arabic-first human-readable reason per code (RTL, no tech jargon). */
 export const PROGRESSION_REASON_AR: Record<ProgressionUnmetCode, string> = {
   VIDEO_INCOMPLETE: "أكمل الفيديو الأول",
@@ -493,6 +510,21 @@ export type ProgressionCoreFacts = {
 
 export type ProgressionCoreHold = ActiveHoldRef;
 export type ProgressionCoreOverride = ActiveOverrideRef & { lessonId: string };
+
+/**
+ * The codes behind a hold's human sentence: the hold's own unmet requirements,
+ * or `ABSENCE_HOLD` when nothing specific is outstanding (a hold whose missed
+ * lesson has no pending work still has to state why progress is blocked).
+ *
+ * Exported so a presentation layer can localize the SAME sentence without
+ * re-deriving the rule — `evaluateStudentCatchup` below calls it too, so the
+ * two can never disagree.
+ */
+export function catchupReasonCodes(
+  unmet: readonly ProgressionUnmetCode[]
+): ProgressionUnmetCode[] {
+  return unmet.length > 0 ? [...unmet] : ["ABSENCE_HOLD"];
+}
 
 function reasonTextFor(unmet: readonly ProgressionUnmetCode[]): string | null {
   if (unmet.length === 0) return null;
@@ -1821,7 +1853,7 @@ export async function evaluateStudentCatchup(
         assignment: evaluation.assignment,
       },
       unmet,
-      reason: reasonTextFor(unmet.length > 0 ? unmet : (["ABSENCE_HOLD"] as const)),
+      reason: reasonTextFor(catchupReasonCodes(unmet)),
       eligible: unmet.length === 0,
     };
   });

@@ -57,6 +57,12 @@ const FILES = [
   "src/lib/notify.ts",
   "src/lib/parent-access.ts",
   "src/lib/parent-subscription.ts",
+  // Phase M4.5b — the ONE dictionary the Parent payload's system keys resolve
+  // against (pure: no db, no React).
+  "src/lib/i18n-dict.ts",
+  "src/lib/i18n-dict-2026.ts",
+  "src/lib/i18n-core.ts",
+  "src/lib/locale-direction.ts",
   "src/lib/progress.ts",
   "src/app/api/parents/me/academics/route.ts",
   "src/components/parent/academic-followup.tsx",
@@ -627,6 +633,7 @@ const catchupRoute = require(compiled("src/app/api/students/me/catchup/route.ts"
 const gradeRoute = require(compiled("src/app/api/teacher/homework/[id]/grade/route.ts"));
 const progressRoute = require(compiled("src/app/api/lessons/[id]/progress/route.ts"));
 const progressionLib = require(compiled("src/lib/progression.ts"));
+const i18n = require(compiled("src/lib/i18n-core.ts"));
 const notifyLib = require(compiled("src/lib/notify.ts"));
 
 // --- Server-side render of the shipped Phase I components -------------------
@@ -1076,11 +1083,67 @@ async function seed() {
     A.body.snapshot.actionNeeded.some((a) => a.code === "CATCHUP_REQUIRED"),
     "Action Needed reports the catch-up requirement"
   );
+  // Phase M4.5b — the payload carries the canonical CODE plus a dictionary KEY
+  // for every system string; the Arabic text is the dictionary's own `ar` value
+  // (byte-identical to the engine's canonical vocabulary), so Arabic is
+  // unchanged while English stops inheriting Arabic workflow text.
   ok(
     A.body.snapshot.actionNeeded.some(
-      (a) => a.label === progressionLib.PROGRESSION_REASON_AR.HOMEWORK_NOT_SUBMITTED
+      (a) =>
+        a.code === "HOMEWORK_NOT_SUBMITTED" &&
+        a.label === progressionLib.PROGRESSION_REASON_KEY.HOMEWORK_NOT_SUBMITTED
     ),
-    "Action Needed uses the engine's own Arabic text, never an invented rule"
+    "Action Needed carries the canonical code plus its dictionary key"
+  );
+  ok(
+    A.body.snapshot.actionNeeded.every((a) => i18n.hasDictKey(a.label)),
+    "every Action Needed label is a key that exists in the ONE dictionary"
+  );
+  ok(
+    A.body.snapshot.actionNeeded
+      .filter((a) => progressionLib.PROGRESSION_REASON_AR[a.code])
+      .every(
+        (a) => i18n.translate("ar", a.label) === progressionLib.PROGRESSION_REASON_AR[a.code]
+      ) &&
+      i18n.translate("ar", progressionLib.PROGRESSION_REASON_KEY.HOMEWORK_NOT_SUBMITTED) ===
+        progressionLib.PROGRESSION_REASON_AR.HOMEWORK_NOT_SUBMITTED,
+    "each progression code's Arabic dictionary text IS the engine's canonical label"
+  );
+  ok(
+    A.body.snapshot.actionNeeded
+      .filter((a) => progressionLib.PROGRESSION_REASON_AR[a.code])
+      .every((a) => !/[\u0600-\u06FF]/.test(i18n.translate("en", a.label))),
+    "…and each one has a real English text (no Arabic leaking through the key)"
+  );
+  ok(
+    A.body.snapshot.actionNeeded.every(
+      (a) =>
+        (a.labelKeys ?? []).every((k) => i18n.hasDictKey(k)) &&
+        (a.detailKeys ?? []).every((k) => i18n.hasDictKey(k))
+    ),
+    "composed system sentences travel as dictionary keys too"
+  );
+  ok(
+    A.body.snapshot.actionNeeded.every((a) => !/[\u0600-\u06FF]/.test(a.label)),
+    "no pre-formatted Arabic text is left in a system label"
+  );
+  ok(
+    A.body.snapshot.holds.every(
+      (h) =>
+        h.reasonKeys.length > 0 &&
+        h.reasonKeys.every((k) => i18n.hasDictKey(k)) &&
+        h.reasonKeys.map((k) => i18n.translate("ar", k)).join("\u060c ") === h.reason
+    ),
+    "a hold's canonical Arabic sentence is exactly its keys joined (Arabic unchanged)"
+  );
+  ok(
+    A.body.snapshot.holds.every((h) =>
+      h.unmet.every(
+        (u) =>
+          i18n.hasDictKey(u.labelKey) && i18n.translate("ar", u.labelKey) === u.label
+      )
+    ),
+    "each hold requirement pairs its canonical Arabic label with its key"
   );
 
   // =========================================================================

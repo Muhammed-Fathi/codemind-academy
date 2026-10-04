@@ -278,12 +278,15 @@ const { createRoot } = require(path.join(REPO, "node_modules/react-dom/client"))
 const RQ = require(require.resolve("@tanstack/react-query", { paths: [path.join(REPO, "node_modules")] }));
 
 const { useApp } = require(path.join(EMIT, "lib/store.js"));
-const { applyLocale, localeDirection, translate, hasDictKey } = require(path.join(EMIT, "lib/i18n-core.js"));
+const { applyLocale, localeDirection, translate, hasDictKey, looksLikeDictKey } = require(
+  path.join(EMIT, "lib/i18n-core.js")
+);
 const { ChildSwitcher } = require(path.join(EMIT, "components/parent/child-switcher.js"));
 const { ParentAnalyticsView } = require(path.join(EMIT, "components/parent/analytics-view.js"));
 const { WeeklyReportView } = require(path.join(EMIT, "components/parent/weekly-report.js"));
 const { MonthlyReportView } = require(path.join(EMIT, "components/parent/monthly-report.js"));
 const { ParentDashboard } = require(path.join(EMIT, "components/parent/parent-dashboard.js"));
+const { AcademicFollowup } = require(path.join(EMIT, "components/parent/academic-followup.js"));
 const { ParentAbsencesView, StudentAbsencesView } = require(
   path.join(EMIT, "components/student/live-sessions-view.js")
 );
@@ -548,7 +551,63 @@ const DASHBOARD_CHILD = {
   strongTopics: [{ id: "u-1", title: "الوحدة الأولى", avgPct: 80 }],
   weakTopics: [{ id: "u-2", title: "الوحدة التانية", avgPct: 40 }],
 };
-const ACADEMICS_PAYLOAD = {
+// The system vocabulary the payload carries: dictionary KEYS, never text.
+const SYS = {
+  video: "progression.reason.videoIncomplete",
+  homework: "progression.reason.homeworkNotSubmitted",
+  quiz: "progression.reason.quizNotPassed",
+  rescheduled: "parent.action.sessionRescheduled",
+  cancelled: "parent.action.sessionCancelled",
+  catchupBlocked: "parent.action.catchupBlocked",
+};
+// CONTENT — authored text that must survive EXACTLY as stored, in whatever
+// language the UI is showing.
+const CONTENT = {
+  lessonTitle: "درس بالعربي: مقدمة في الـMachine Learning",
+  sessionTitle: "حصة يوم السبت",
+  absenceReason: "عذر طبي — تقرير من الدكتور",
+  homeworkTitle: "واجب البرمجة الأول",
+  noteText: "ملاحظة من المعلم عن الأداء",
+};
+const SESSION_VIEW = {
+  title: CONTENT.sessionTitle,
+  lessonTitle: CONTENT.lessonTitle,
+  startAt: "2026-10-05T10:00:00.000Z",
+  endsAt: "2026-10-05T11:00:00.000Z",
+  status: "SCHEDULED",
+  teacherName: "Mr Sameh",
+  rescheduled: false,
+  originalStartAt: null,
+  rescheduleCount: 0,
+  cancelledAt: null,
+  cancelReason: null,
+};
+const CURRENT_LESSON = {
+  code: "L1",
+  title: CONTENT.lessonTitle,
+  position: 1,
+  state: "LOCKED",
+  unlocked: false,
+  completed: false,
+  reason: "أكمل الفيديو الأول، سلّم الـHomework الأول",
+  reasonCode: "VIDEO_INCOMPLETE",
+  unmet: [
+    { kind: "VIDEO_INCOMPLETE", label: "أكمل الفيديو الأول", labelKey: SYS.video },
+    {
+      kind: "HOMEWORK_NOT_SUBMITTED",
+      label: "سلّم الـHomework الأول",
+      labelKey: SYS.homework,
+    },
+  ],
+  requirements: {
+    video: { required: true, done: false, value: 40 },
+    quiz: null,
+    homework: { required: true, done: false, value: 0 },
+  },
+  overrideGranted: false,
+};
+
+const FOLLOWUP_PAYLOAD = {
   selectedStudentId: "s-first",
   children: [],
   snapshot: {
@@ -563,18 +622,108 @@ const ACADEMICS_PAYLOAD = {
     },
     course: { name: SHARED_COURSE_AR, academicLevel: "FIRST_SECONDARY", track: null },
     group: { name: "مجموعة أولى ثانوي", schedule: null },
-    progress: { completedLessons: 5, totalLessons: 12, pct: 42, currentLesson: null, lockedLessons: 0 },
-    lessons: [],
-    holds: [],
-    absences: { excused: 0, unexcused: 0, pending: 0, recent: [] },
-    homework: { submitted: 2, graded: 1, overdue: 0, items: [] },
+    progress: { completedLessons: 5, totalLessons: 12, pct: 42, currentLesson: CURRENT_LESSON, lockedLessons: 1 },
+    lessons: [CURRENT_LESSON],
+    holds: [
+      {
+        lessonTitle: CONTENT.lessonTitle,
+        inUniverse: true,
+        reason: "سلّم الـHomework الأول، لازم تنجح في الـQuiz",
+        reasonKeys: [SYS.homework, SYS.quiz],
+        unmet: [
+          { kind: "HOMEWORK_NOT_SUBMITTED", label: "سلّم الـHomework الأول", labelKey: SYS.homework },
+          { kind: "QUIZ_NOT_PASSED", label: "لازم تنجح في الـQuiz", labelKey: SYS.quiz },
+        ],
+        eligible: false,
+      },
+    ],
+    absences: {
+      excused: 1,
+      unexcused: 0,
+      pending: 0,
+      recent: [
+        {
+          sessionTitle: CONTENT.sessionTitle,
+          sessionStartAt: "2026-10-01T10:00:00.000Z",
+          status: "EXCUSED",
+          reason: CONTENT.absenceReason,
+          holdActive: false,
+          decidedAt: "2026-10-02T09:00:00.000Z",
+          decisionNote: null,
+        },
+      ],
+    },
+    homework: {
+      submitted: 2,
+      graded: 1,
+      overdue: 0,
+      items: [
+        {
+          title: CONTENT.homeworkTitle,
+          lessonTitle: CONTENT.lessonTitle,
+          acceptingSubmissions: true,
+          dueAt: "2026-10-09T20:00:00.000Z",
+          status: "SUBMITTED",
+          submittedAt: "2026-10-02T18:00:00.000Z",
+          late: false,
+          grade: null,
+          feedback: null,
+        },
+      ],
+    },
     quizzes: { taken: 2, passed: 1, items: [] },
-    sessions: { upcoming: [], rescheduled: [], cancelled: [] },
+    sessions: { upcoming: [SESSION_VIEW], rescheduled: [SESSION_VIEW], cancelled: [SESSION_VIEW] },
     teacherFeedback: [],
-    actionNeeded: [],
+    // Action Needed — the QA finding: ENGLISH must render the English text of
+    // these keys, Arabic the Arabic one, and neither may come from a payload
+    // that was pre-formatted in the other language.
+    actionNeeded: [
+      {
+        code: "VIDEO_INCOMPLETE",
+        severity: "blocking",
+        label: SYS.video,
+        labelKeys: [SYS.video],
+        detail: CONTENT.lessonTitle,
+        detailKeys: null,
+      },
+      {
+        code: "LESSON_LOCKED",
+        severity: "blocking",
+        label: SYS.video,
+        labelKeys: [SYS.video, SYS.homework],
+        detail: CONTENT.lessonTitle,
+        detailKeys: null,
+      },
+      {
+        code: "CATCHUP_REQUIRED",
+        severity: "blocking",
+        label: SYS.catchupBlocked,
+        labelKeys: null,
+        detail: null,
+        detailKeys: [SYS.homework, SYS.quiz],
+      },
+      {
+        code: "SESSION_RESCHEDULED",
+        severity: "attention",
+        label: SYS.rescheduled,
+        labelKeys: null,
+        detail: CONTENT.sessionTitle,
+        detailKeys: null,
+      },
+      {
+        code: "SESSION_CANCELLED",
+        severity: "attention",
+        label: SYS.cancelled,
+        labelKeys: null,
+        detail: CONTENT.sessionTitle,
+        detailKeys: null,
+      },
+    ],
     evaluatedAt: "2026-10-03T10:00:00.000Z",
   },
 };
+
+const ACADEMICS_PAYLOAD = FOLLOWUP_PAYLOAD;
 const DASHBOARD_PAYLOAD = {
   parent: { id: "p-1", name: "Abu Mohamed", email: "p@example.test", phone: null, avatarUrl: null },
   children: [DASHBOARD_CHILD],
@@ -780,6 +929,9 @@ async function mountAll(locale) {
   );
   trees.weekly = await render(React.createElement(WeeklyReportView, { onClose: () => {}, studentId: null }));
   trees.monthly = await render(React.createElement(MonthlyReportView, { onClose: () => {}, studentId: "s-first" }));
+  trees.followup = await render(
+    React.createElement(AcademicFollowup, { payload: FOLLOWUP_PAYLOAD })
+  );
   trees.absences = await render(React.createElement(ParentAbsencesView));
   trees.studentAbsences = await render(React.createElement(StudentAbsencesView));
   trees.dashboard = await render(
@@ -799,6 +951,10 @@ async function mountAll(locale) {
 }
 
 section("D. English / LTR — the Parent surfaces render English chrome, LTR");
+
+// Text snapshots taken inside each locale pass (a mounted tree re-renders when
+// the locale changes, so a snapshot must be taken while its locale is active).
+const SNAPSHOT = { enFollowup: "", arFollowup: "" };
 
 const EN = await mountAll("en");
 const rendered = { en: EN, ar: null };
@@ -859,6 +1015,53 @@ const rendered = { en: EN, ar: null };
   ok(!/\bTEACHER\b|\bPARENT\b/.test(el.textContent), "D25c: the raw role enum never reaches the reader");
 }
 {
+  // The QA finding lived HERE: Action Needed used to print Arabic because the
+  // system text arrived pre-formatted (and cached) from the server.
+  const el = rendered.en.followup;
+  const text = el.textContent;
+  ok(text.includes("Complete the first video"), "D33: system progression text renders in English");
+  ok(text.includes("A session was rescheduled"), "D34: …and the rescheduled-session text");
+  ok(text.includes("A session was cancelled"), "D35: …and the cancelled-session text");
+  ok(
+    text.includes("Complete the first video, Submit the homework first"),
+    "D36: a composed system sentence joins its parts with the English separator"
+  );
+  ok(
+    text.includes(translate("en", SYS.catchupBlocked)) &&
+      text.includes("Submit the homework first, Pass the quiz first"),
+    "D37: the blocked catch-up row renders its composed detail in English"
+  );
+  ok(
+    text.includes(CONTENT.lessonTitle) &&
+      text.includes(CONTENT.sessionTitle) &&
+      text.includes(CONTENT.homeworkTitle) &&
+      text.includes(CONTENT.absenceReason),
+    "D38: authored content renders verbatim (Arabic content in English mode is data, not chrome)"
+  );
+  ok(
+    !text.includes(translate("ar", SYS.video)) &&
+      !text.includes(translate("ar", SYS.rescheduled)) &&
+      !text.includes(translate("ar", SYS.cancelled)) &&
+      !text.includes(translate("ar", SYS.homework)),
+    "D39: no Arabic system string survives in English mode"
+  );
+  ok(
+    !/\b(VIDEO_INCOMPLETE|HOMEWORK_NOT_SUBMITTED|QUIZ_NOT_PASSED|LESSON_LOCKED|CATCHUP_REQUIRED|SESSION_RESCHEDULED|SESSION_CANCELLED)\b/.test(text),
+    "D40: no raw status enum leaks"
+  );
+  eq(
+    Object.values(SYS).filter((k) => text.includes(k)),
+    [],
+    "D41: no raw dictionary key leaks (the payload's keys never render as text)"
+  );
+  ok(
+    translate("ar", SYS.video) !== translate("en", SYS.video) &&
+      /[\u0600-\u06FF]/.test(translate("ar", SYS.video)),
+    "D42: the key really carries two languages (the test would catch a stub)"
+  );
+  SNAPSHOT.enFollowup = text;
+}
+{
   const el = rendered.en.dashboard;
   const text = el.textContent;
   ok(text.includes("Performance Trend") && text.includes("Recent Activity"), "D26: the dashboard card titles are English");
@@ -875,6 +1078,28 @@ section("E. Arabic / RTL — the same surfaces render Arabic chrome, no forced d
 const AR = await mountAll("ar");
 rendered.ar = AR;
 
+{
+  const el = rendered.ar.followup;
+  const text = el.textContent;
+  ok(text.includes("أكمل الفيديو الأول"), "E26: system progression text renders in Arabic");
+  ok(
+    text.includes("حصة اتأجلت عن معادها") && text.includes("حصة اتلغت"),
+    "E27: …and the session lifecycle text"
+  );
+  ok(
+    text.includes("أكمل الفيديو الأول، سلّم الـHomework الأول"),
+    "E28: the composed sentence keeps the Arabic separator"
+  );
+  ok(
+    text.includes(CONTENT.lessonTitle) && text.includes(CONTENT.absenceReason),
+    "E29: authored content is identical in Arabic mode"
+  );
+  ok(
+    !/Complete the first video|A session was (rescheduled|cancelled)|Pass the quiz first/.test(text),
+    "E30: no English system text leaks into Arabic mode"
+  );
+  SNAPSHOT.arFollowup = text;
+}
 {
   const el = rendered.ar.switcher;
   ok(el.querySelector('[role="tablist"]').getAttribute("aria-label") === "اختار الطالب", "E1: the switcher label is Arabic");
@@ -1104,6 +1329,78 @@ section("I. Server month labels follow the request locale; no schema change");
   eq(m45, [], "I9: no M4.5 migration directory exists");
   const schema = read("prisma/schema.prisma");
   ok(!/parentAcademicLevel/.test(schema), "I10: no Parent level column was added");
+}
+
+section("J. System text follows the ACTIVE locale (the M4.5 manual-QA finding)");
+
+{
+  // (1) English-mode leak analysis: every Arabic RUN left on the surface must
+  //     be part of an authored content string. System text is dictionary-keyed,
+  //     so a leak of the old kind (Phase H Arabic reasons, pre-formatted
+  //     lifecycle labels) is impossible to miss here.
+  const content = [
+    CONTENT.lessonTitle,
+    CONTENT.sessionTitle,
+    CONTENT.absenceReason,
+    CONTENT.homeworkTitle,
+    CONTENT.noteText,
+    LONG_NAME_AR,
+    SHARED_COURSE_AR,
+    "مجموعة أولى ثانوي",
+  ];
+  let stripped = SNAPSHOT.enFollowup;
+  for (const c of content) stripped = stripped.split(c).join(" ");
+  const leftovers = (stripped.match(/[\u0600-\u06FF][\u0600-\u06FF\s\u0640]*/g) ?? [])
+    .map((r) => r.trim())
+    .filter(Boolean);
+  eq(leftovers, [], "J1: once authored content is removed, no Arabic is left in English mode");
+  ok(
+    [CONTENT.lessonTitle, CONTENT.sessionTitle, CONTENT.homeworkTitle, CONTENT.absenceReason].every((c) =>
+      SNAPSHOT.enFollowup.includes(c)
+    ),
+    "J2: …and the authored content it stripped really is on the surface"
+  );
+}
+{
+  // (2) The QA scenario, inverted: this tree was mounted while the app was
+  //     ARABIC; switching the language must re-localize it IN PLACE — no
+  //     refetch, no reload, no second payload.
+  const el = rendered.ar.followup;
+  ok(el.textContent.includes("أكمل الفيديو الأول"), "J3: the Arabic mount renders the Arabic system text");
+  const before = fetchCalls.length;
+  setLocale("en");
+  await React.act(async () => {
+    await new Promise((r) => setTimeout(r, 20));
+  });
+  const text = el.textContent;
+  ok(text.includes("Complete the first video"), "J4: switching to English re-localizes the SAME mounted tree");
+  ok(text.includes("A session was rescheduled"), "J5: …including the session lifecycle rows");
+  ok(!text.includes("أكمل الفيديو الأول") && !text.includes("حصة اتأجلت عن معادها"), "J6: …and the Arabic system text is gone");
+  ok(
+    before > 0 && fetchCalls.length >= before,
+    "J7: the other mounted trees re-read their locale-keyed queries (the surface itself owns no request)"
+  );
+  ok(text.includes(CONTENT.lessonTitle), "J8: content is untouched by the switch");
+}
+{
+  // (3) The boundary the fix moved: the API stops pre-formatting, the React
+  //     layer owns localization, and the Parent queries are locale-keyed.
+  const route = stripComments(read("src/app/api/parents/me/academics/route.ts"));
+  ok(!/resolveLabel/.test(route), "J9: the academics route no longer pre-formats system text");
+  ok(/selectedStudentId: resolution\.student\.id,[\s\S]{0,80}snapshot,/.test(route), "J10: it hands the aggregation's canonical keys through untouched");
+  const followup = stripComments(read("src/components/parent/academic-followup.tsx"));
+  ok(/hasDictKey\(value\) \? t\(value\) : value/.test(followup), "J11: the surface resolves dictionary keys against the active locale");
+  ok((followup.match(/useSystemText\(\)/g) ?? []).length >= 1, "J12: …through ONE resolver (no per-string translation map)");
+  ok(!/PROGRESSION_REASON_AR|أكمل الفيديو|حصة اتأجلت/.test(followup), "J13: the component hard-codes no system text of its own");
+  const dash = stripComments(read("src/components/parent/parent-dashboard.tsx"));
+  ok(
+    /queryKey: \["parent-academics", activeChildId, locale\]/.test(dash),
+    "J14: the academics query is locale-keyed (a language switch re-reads it)"
+  );
+  ok(/queryKey: \["parent-dashboard", locale\]/.test(dash), "J15: …and so is the dashboard query");
+  const engine = stripComments(read("src/lib/progression.ts"));
+  ok(/PROGRESSION_REASON_KEY: Record<ProgressionUnmetCode, string>/.test(engine), "J16: canonical codes map to dictionary keys in the domain layer");
+  ok(/export function catchupReasonCodes/.test(engine), "J17: the catch-up reason rule stays canonical (ONE definition)");
 }
 
 section("Done");
